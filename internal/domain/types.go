@@ -5,9 +5,9 @@ import "time"
 type VersionType int
 
 const (
-	VersionFechada VersionType = iota // X.0.0
-	VersionAjustada                   // X.Y.0
-	VersionCliente                    // X.Y.Z
+	VersionFechada  VersionType = iota // X.0.0
+	VersionAjustada                    // X.Y.0
+	VersionCliente                     // X.Y.Z
 )
 
 type BaseRef struct {
