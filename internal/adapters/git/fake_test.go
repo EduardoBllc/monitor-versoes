@@ -93,3 +93,23 @@ func TestFakeGitIsAncestorEMergeBase(t *testing.T) {
 		t.Errorf("IsAncestor(naoexiste, master) = %v, %v; quer false, nil", ok, err)
 	}
 }
+
+func TestFakeGitMergeBaseBranchesDivergentes(t *testing.T) {
+	g := NewFakeGit()
+	t0 := time.Now()
+	g.AddCommit("r", "", "raiz", t0)
+	g.AddCommit("y", "r", "commit y", t0)
+	g.AddCommit("x", "y", "commit x", t0)
+	g.AddCommit("w", "r", "commit w", t0)
+	g.AddCommit("z", "w", "commit z", t0)
+	g.SetBranch("branchA", "x")
+	g.SetBranch("branchB", "z")
+
+	base, err := g.MergeBase("branchA", "branchB")
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if base != "r" {
+		t.Errorf("MergeBase(branchA, branchB) = %q, quer r", base)
+	}
+}

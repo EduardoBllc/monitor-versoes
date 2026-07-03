@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,11 +14,11 @@ import (
 // Nao simula merge de verdade: conflitos e previsao de merge sao configurados
 // explicitamente via os campos exportados abaixo.
 type FakeGit struct {
-	Commits          map[string]*FakeCommit
-	Branches         map[string]string
-	Tags             map[string]bool
-	Remotes          map[string]bool
-	Files            map[string]map[string][]byte
+	Commits  map[string]*FakeCommit
+	Branches map[string]string
+	Tags     map[string]bool
+	Remotes  map[string]bool
+	Files    map[string]map[string][]byte
 
 	ConflictOn       map[string]bool
 	MergePredictions map[string]ports.MergePrediction
@@ -59,10 +60,20 @@ func (g *FakeGit) SetBranch(branch, hash string) {
 }
 
 func (g *FakeGit) MergeBase(a, b string) (string, error) {
-	ha := g.resolveRefLocal(a)
-	h := g.resolveRefLocal(b)
+	ancestorsOfA := map[string]bool{}
+	h := g.resolveRefLocal(a)
 	for h != "" {
-		if h == ha {
+		ancestorsOfA[h] = true
+		c, ok := g.Commits[h]
+		if !ok {
+			break
+		}
+		h = c.Parent
+	}
+
+	h = g.resolveRefLocal(b)
+	for h != "" {
+		if ancestorsOfA[h] {
 			return h, nil
 		}
 		c, ok := g.Commits[h]
@@ -249,6 +260,7 @@ func (g *FakeGit) ListVersionBranches() ([]string, error) {
 	for b := range g.Branches {
 		nomes = append(nomes, b)
 	}
+	sort.Strings(nomes)
 	return nomes, nil
 }
 
