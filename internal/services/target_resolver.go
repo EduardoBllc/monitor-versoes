@@ -30,6 +30,13 @@ func (r TargetResolver) Resolve(versao string) (domain.TargetSet, error) {
 		}
 		commits := domain.MatchExato(candidatos, t.Chamado, t.Task)
 		commits = domain.OrdenarPorData(commits)
+		for i := range commits {
+			// SearchCommits nao sabe de chamado/task - carimba aqui, unico lugar
+			// que sabe pra qual task esta busca era (evita perder o dado ao
+			// achatar TaskTarget.Commits em CommitRef mais adiante, ex. Faltantes).
+			commits[i].Chamado = t.Chamado
+			commits[i].Task = t.Task
+		}
 		resultado[t.Chamado] = domain.TaskTarget{
 			Chamado: t.Chamado,
 			Task:    t.Task,
