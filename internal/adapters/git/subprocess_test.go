@@ -31,6 +31,72 @@ func initRepoDeTeste(t *testing.T) string {
 	return dir
 }
 
+// TestGitSubprocessWriteFileNoopQuandoConteudoIgual cobre o achado do teste
+// e2e da tarefa 21: WriteFile grava, `git add` e comita sem checar se ha algo
+// de fato staged. Quando o conteudo escrito e byte-identico ao ja commitado
+// (ex: Criar grava o lock inicial, Incrementar tenta gravar o mesmo lock de
+// novo por nao ter Faltantes), `git commit` sem --allow-empty falha com
+// "nothing to commit, working tree clean" e aborta a operacao inteira.
+func TestGitSubprocessWriteFileNoopQuandoConteudoIgual(t *testing.T) {
+	repoDir := initRepoDeTeste(t)
+
+	g, err := NewGitSubprocess(repoDir)
+	if err != nil {
+		t.Fatalf("NewGitSubprocess: %v", err)
+	}
+	if err := g.WorktreeAdd("13.8.0", "master"); err != nil {
+		t.Fatalf("WorktreeAdd: %v", err)
+	}
+
+	if err := g.WriteFile("13.8.0", "VERSAO.lock", []byte("{}"), "lock inicial"); err != nil {
+		t.Fatalf("1a WriteFile (primeiro commit do arquivo): %v", err)
+	}
+	primeiroHash, err := g.output(g.worktreeDir("13.8.0"), "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse apos 1a WriteFile: %v", err)
+	}
+
+	// 2a chamada com o MESMO conteudo: nada staged apos o `git add`, entao
+	// `git commit` deve ser evitado (sem --allow-empty ele falharia aqui).
+	if err := g.WriteFile("13.8.0", "VERSAO.lock", []byte("{}"), "lock inalterado"); err != nil {
+		t.Fatalf("2a WriteFile (mesmo conteudo, deveria ser no-op): %v", err)
+	}
+	segundoHash, err := g.output(g.worktreeDir("13.8.0"), "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse apos 2a WriteFile: %v", err)
+	}
+	if segundoHash != primeiroHash {
+		t.Errorf("2a WriteFile com conteudo igual criou commit novo: HEAD mudou de %s para %s", primeiroHash, segundoHash)
+	}
+	conteudo, err := g.ReadFile("13.8.0", "VERSAO.lock")
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(conteudo) != "{}" {
+		t.Errorf("conteudo = %q, quer {}", conteudo)
+	}
+
+	// 3a chamada com conteudo DIFERENTE: precisa gerar commit real, provando
+	// que a checagem de "nada staged" nao suprime commits legitimos.
+	if err := g.WriteFile("13.8.0", "VERSAO.lock", []byte(`{"v":1}`), "lock atualizado"); err != nil {
+		t.Fatalf("3a WriteFile (conteudo diferente): %v", err)
+	}
+	terceiroHash, err := g.output(g.worktreeDir("13.8.0"), "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse apos 3a WriteFile: %v", err)
+	}
+	if terceiroHash == segundoHash {
+		t.Error("3a WriteFile com conteudo diferente nao criou commit novo")
+	}
+	conteudo3, err := g.ReadFile("13.8.0", "VERSAO.lock")
+	if err != nil {
+		t.Fatalf("ReadFile apos 3a WriteFile: %v", err)
+	}
+	if string(conteudo3) != `{"v":1}` {
+		t.Errorf("conteudo apos 3a WriteFile = %q, quer {\"v\":1}", conteudo3)
+	}
+}
+
 func TestGitSubprocessWorktreeCherryPickEArquivo(t *testing.T) {
 	repoDir := initRepoDeTeste(t)
 

@@ -360,6 +360,13 @@ func (g *GitSubprocess) WriteFile(branch, path string, content []byte, mensagemC
 	if err := g.run(dir, "add", path); err != nil {
 		return err
 	}
+
+	diffCmd := exec.Command("git", "diff", "--cached", "--quiet", "--", path)
+	diffCmd.Dir = dir
+	if err := diffCmd.Run(); err == nil {
+		return nil // conteudo igual ao ja commitado - nada a fazer
+	}
+
 	return g.run(dir, "commit", "-m", mensagemCommit)
 }
 
