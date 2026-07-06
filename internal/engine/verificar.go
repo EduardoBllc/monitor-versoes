@@ -23,9 +23,11 @@ func Verificar(d Deps, versao string) (domain.VersionStatus, error) {
 	alvoFiltrado := domain.FiltrarExcluidos(alvo, lock.Excluidos)
 
 	todosOsHashes := map[string]domain.CommitRef{}
+	candidatosConflito := map[string]bool{}
 	for _, tt := range alvoFiltrado {
 		for _, c := range tt.Commits {
 			todosOsHashes[c.HashOrigem] = c
+			candidatosConflito[c.HashOrigem] = true
 		}
 	}
 	for _, tt := range lock.Tasks {
@@ -50,7 +52,10 @@ func Verificar(d Deps, versao string) (domain.VersionStatus, error) {
 			return domain.VersionStatus{}, err
 		}
 		presentes[hash] = ok
-		if !ok {
+		// PredictMerge so faz sentido pra commits que sao candidatos reais de
+		// cherry-pick (lado alvo) - Conflitantes e subconjunto de Faltantes
+		// (domain.VersionStatus), nunca de commits sumidos so-no-lock.
+		if !ok && candidatosConflito[hash] {
 			meta, err := d.Git.CommitMeta(hash)
 			if err != nil {
 				return domain.VersionStatus{}, err

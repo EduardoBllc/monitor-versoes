@@ -20,8 +20,9 @@ type FakeGit struct {
 	Remotes  map[string]bool
 	Files    map[string]map[string][]byte
 
-	ConflictOn       map[string]bool
-	MergePredictions map[string]ports.MergePrediction
+	ConflictOn        map[string]bool
+	MergePredictions  map[string]ports.MergePrediction
+	CommitsInRangeErr error // fixture de teste: forca CommitsInRange a falhar (§2 fallback "ausente")
 
 	currentBranch string
 	pendingPick   string
@@ -127,6 +128,9 @@ func (g *FakeGit) SearchCommits(padroes []string, refs string) ([]domain.CommitR
 }
 
 func (g *FakeGit) CommitsInRange(from, to string) ([]domain.CommitRef, error) {
+	if g.CommitsInRangeErr != nil {
+		return nil, g.CommitsInRangeErr
+	}
 	stopAt := g.resolveRefLocal(from)
 	h := g.resolveRefLocal(to)
 	var resultado []domain.CommitRef

@@ -85,13 +85,14 @@ func registrarCommit(lock domain.Lock, c domain.CommitRef) domain.Lock {
 
 // IncrementarContinue retoma um cherry-pick pendente resolvido manualmente
 // (checkpoint resumivel, §8). E uma invocacao nova do CLI - sem contexto em
-// memoria do commit em conflito, por isso usa PendingCherryPick + CommitMeta
-// pra registrar no lock antes de continuar o lote.
+// memoria de quais commits do lote ja foram aplicados antes do conflito, por
+// isso usa LockStore.Reconstruir (varre base..branch de verdade) pra
+// recompor o lock inteiro antes de continuar o lote.
 func IncrementarContinue(d Deps, versao string) (IncrementResult, error) {
 	if err := d.Git.UseWorktree(versao); err != nil {
 		return IncrementResult{}, err
 	}
-	hash, ok, err := d.Git.PendingCherryPick()
+	_, ok, err := d.Git.PendingCherryPick()
 	if err != nil {
 		return IncrementResult{}, err
 	}
@@ -103,21 +104,22 @@ func IncrementarContinue(d Deps, versao string) (IncrementResult, error) {
 		return IncrementResult{}, err
 	}
 
-	origem, err := d.Git.CommitMeta(hash)
-	if err != nil {
-		return IncrementResult{}, err
-	}
-	chamado, _ := domain.ExtrairChamado(origem.Msg)
-	vbID, _ := domain.ExtrairVBID(origem.Msg)
-	origem.Chamado = chamado
-	origem.Task = vbID
-
 	lockStore := services.LockStore{Git: d.Git}
-	lock, err := lockStore.Ler(versao)
+	anterior, err := lockStore.Ler(versao)
 	if err != nil {
 		return IncrementResult{}, err
 	}
-	lock = registrarCommit(lock, origem)
+
+	// O lote (§5) so escreve o lock no fim de um lote bem-sucedido - se o
+	// conflito que trouxe a gente aqui aconteceu no meio de um lote, os
+	// commits anteriores a ele ja foram cherry-picked pra branch mas ainda nao
+	// estao no lock. Reconstruir varre base..branch de verdade (git) e
+	// recupera todos eles de uma vez, em vez de registrar so o commit que
+	// acabou de ser resolvido.
+	lock, _, err := lockStore.Reconstruir(versao, anterior.Base, versao, &anterior)
+	if err != nil {
+		return IncrementResult{}, err
+	}
 	if err := lockStore.Escrever(versao, lock); err != nil {
 		return IncrementResult{}, err
 	}

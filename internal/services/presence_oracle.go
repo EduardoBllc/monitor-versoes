@@ -22,7 +22,9 @@ func (o PresenceOracle) Presente(hashOrigem, base, branch string) (bool, error) 
 
 	commits, err := o.Git.CommitsInRange(base, branch)
 	if err != nil {
-		return false, err
+		// nao deu pra confirmar (ex.: objeto sumiu do historico) - trata como
+		// ausente em vez de propagar, per §2 "senao -> ausente".
+		return false, nil
 	}
 
 	trailer := "cherry picked from commit " + hashOrigem

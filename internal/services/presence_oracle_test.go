@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -61,5 +62,29 @@ func TestPresenceOracleAusente(t *testing.T) {
 	}
 	if ok {
 		t.Error("esperava presente=false")
+	}
+}
+
+// TestPresenceOracleCommitsInRangeFalhaTrataComoAusente cobre o fallback do
+// §2 ("senao -> ausente"): se CommitsInRange nao consegue confirmar (ex.: o
+// objeto sumiu do historico, git retorna erro), Presente deve reportar
+// ausente sem propagar o erro - Verificar existe justamente pra reportar
+// esse tipo de problema com graca (CommitsSumidos/LockIntegro), nao abortar.
+func TestPresenceOracleCommitsInRangeFalhaTrataComoAusente(t *testing.T) {
+	g := git.NewFakeGit()
+	t0 := time.Now()
+	g.AddCommit("origem1", "", "fix: algo", t0)
+	g.AddCommit("base-tip", "", "base", t0)
+	g.SetBranch("13.6.0", "base-tip")
+	g.SetBranch("13.7.0", "base-tip")
+	g.CommitsInRangeErr = errors.New("objeto sumiu do historico (simulado)")
+
+	oracle := PresenceOracle{Git: g}
+	ok, err := oracle.Presente("origem1", "13.6.0", "13.7.0")
+	if err != nil {
+		t.Fatalf("esperava err=nil (fallback ausente), veio: %v", err)
+	}
+	if ok {
+		t.Error("esperava presente=false quando CommitsInRange falha")
 	}
 }
