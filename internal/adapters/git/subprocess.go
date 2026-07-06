@@ -181,14 +181,18 @@ func (g *GitSubprocess) PatchID(hash string) (string, error) {
 		return "", err
 	}
 	if err := patchIDCmd.Start(); err != nil {
+		_ = showCmd.Wait()
 		return "", err
 	}
-	if err := showCmd.Wait(); err != nil {
-		return "", err
+	showErr := showCmd.Wait()
+	patchErr := patchIDCmd.Wait()
+	if showErr != nil {
+		return "", showErr
 	}
-	if err := patchIDCmd.Wait(); err != nil {
-		return "", err
+	if patchErr != nil {
+		return "", patchErr
 	}
+
 	campos := strings.Fields(buf.String())
 	if len(campos) == 0 {
 		return "", fmt.Errorf("patch-id vazio para %s", hash)
@@ -217,8 +221,7 @@ func (g *GitSubprocess) CherryPickX(hash string) (ports.CherryPickOutcome, error
 	if err == nil {
 		return ports.Aplicado, nil
 	}
-	paths, pathErr := g.ConflictedPaths()
-	if pathErr == nil && len(paths) > 0 {
+	if _, pending, pendErr := g.PendingCherryPick(); pendErr == nil && pending {
 		return ports.Conflito, nil
 	}
 	return ports.Conflito, fmt.Errorf("git cherry-pick -x %s: %w: %s", hash, err, out)
@@ -265,18 +268,26 @@ func (g *GitSubprocess) AbortCherryPick() error {
 }
 
 func (g *GitSubprocess) PredictMerge(parent, branchTip, commit string) (ports.MergePrediction, error) {
-	out, err := g.output(g.RepoPath, "merge-tree", "--write-tree", "--merge-base="+parent, branchTip, commit)
-	if err != nil {
-		return ports.MergePrediction{Conflita: true, ArquivosConflito: parseConflictFiles(out)}, nil
+	cmd := exec.Command("git", "merge-tree", "--write-tree", "--merge-base="+parent, branchTip, commit)
+	cmd.Dir = g.RepoPath
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return ports.MergePrediction{Conflita: false}, nil
 	}
-	return ports.MergePrediction{Conflita: false}, nil
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return ports.MergePrediction{Conflita: true, ArquivosConflito: parseConflictFiles(string(out))}, nil
+	}
+	return ports.MergePrediction{}, fmt.Errorf("git merge-tree --write-tree --merge-base=%s %s %s: %w: %s", parent, branchTip, commit, err, out)
 }
+
+var padraoConflito = regexp.MustCompile(`^CONFLICT \([^)]*\): .* in (\S.*)$`)
 
 func parseConflictFiles(out string) []string {
 	var arquivos []string
 	for _, linha := range strings.Split(out, "\n") {
-		if strings.Contains(linha, "CONFLICT") {
-			arquivos = append(arquivos, linha)
+		if m := padraoConflito.FindStringSubmatch(linha); m != nil {
+			arquivos = append(arquivos, m[1])
 		}
 	}
 	return arquivos
