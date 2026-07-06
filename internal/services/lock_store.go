@@ -154,6 +154,11 @@ func (s LockStore) Reconstruir(branch string, base domain.BaseRef, versao string
 		tasks[chave] = tt
 	}
 
+	for chave, tt := range tasks {
+		tt.Commits = domain.OrdenarPorData(tt.Commits)
+		tasks[chave] = tt
+	}
+
 	lock := domain.Lock{Versao: versao, Tipo: tipo, Base: base, Tasks: tasks}
 
 	var orfaos []domain.Exclusion

@@ -96,3 +96,33 @@ func TestLockStoreReconstruirRetornaOrfaosDeJulgamento(t *testing.T) {
 		t.Errorf("orfaos = %+v, quer so a exclusao por julgamento", orfaos)
 	}
 }
+
+func TestLockStoreReconstruirOrdenaCommitsPorData(t *testing.T) {
+	g := git.NewFakeGit()
+	t0 := time.Now()
+	t1 := t0.Add(time.Hour)
+	g.AddCommit("origem1", "", "fix: ch255514 primeira parte", t0)
+	g.AddCommit("origem2", "", "fix: ch255514 segunda parte", t1)
+	g.AddCommit("base-tip", "", "base", t0)
+	g.SetBranch("13.6.0", "base-tip")
+	g.SetBranch("13.7.0", "base-tip")
+	if _, err := g.CherryPickX("origem1"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if _, err := g.CherryPickX("origem2"); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	store := LockStore{Git: g}
+	lock, _, err := store.Reconstruir("13.7.0", domain.BaseRef{Ref: "13.6.0"}, "13.7.0", nil)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	commits := lock.Tasks["255514"].Commits
+	if len(commits) != 2 {
+		t.Fatalf("esperava 2 commits, veio %+v", commits)
+	}
+	if commits[0].HashOrigem != "origem1" || commits[1].HashOrigem != "origem2" {
+		t.Errorf("ordem = [%s, %s], quer [origem1, origem2] (CommitDate asc)", commits[0].HashOrigem, commits[1].HashOrigem)
+	}
+}
