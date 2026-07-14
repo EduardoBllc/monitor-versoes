@@ -1,0 +1,15 @@
+[project]
+name = "motor-versoes"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["httpx"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
