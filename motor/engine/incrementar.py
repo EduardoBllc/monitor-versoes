@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
 from motor.domain.commits import ordenar_por_data
-from motor.domain.types import CommitRef, Lock, TargetSet, TaskTarget
+from motor.domain.types import CommitRef, Lock, TargetSet, TaskTarget, Exclusion, ExclusionReason
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
 from motor.services.lock_store import LockStore
+
+logger = logging.getLogger(__name__)
 
 
 class IncrementStatus(IntEnum):
@@ -35,11 +39,27 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
     status = verificar(deps, versao)
 
     faltam = ordenar_por_data(status.faltantes)
-    lock_store = LockStore(git=deps.git)
+    lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
     lock = lock_store.ler(versao)
+
+    if status.ancestrais:
+        excluidos = list(lock.excluidos)
+        ja_excluidos = {e.commit for e in excluidos}
+        for c in status.ancestrais:
+            if c.hash_origem not in ja_excluidos:
+                excluidos.append(
+                    Exclusion(
+                        commit=c.hash_origem,
+                        chamado=c.chamado,
+                        motivo=f"ja presente na base {lock.base.ref}",
+                        reason=ExclusionReason.AUTOMATICA,
+                    )
+                )
+        lock = replace(lock, excluidos=excluidos)
 
     deps.git.use_worktree(versao)
 
+    t = time.monotonic()
     for c in faltam:
         outcome = deps.git.cherry_pick_x(c.hash_origem)
         if outcome == CherryPickOutcome.CONFLITO:
@@ -55,6 +75,7 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
                 arquivos_conflito=paths,
             )
         lock = _registrar_commit(lock, c)
+    logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
 
     lock_store.escrever(versao, lock)
     return IncrementResult(status=IncrementStatus.DONE)
@@ -64,7 +85,10 @@ def _registrar_commit(lock: Lock, c: CommitRef) -> Lock:
     tasks: TargetSet = dict(lock.tasks)
     tt = tasks.get(c.chamado, TaskTarget())
     tasks[c.chamado] = TaskTarget(
-        chamado=c.chamado, task=c.task, titulo=tt.titulo, commits=[*tt.commits, c]
+        chamado=c.chamado,
+        task=c.task or tt.task,
+        titulo=c.titulo or tt.titulo,
+        commits=[*tt.commits, c],
     )
     return replace(lock, tasks=tasks)
 
@@ -83,7 +107,7 @@ def incrementar_continue(deps: Deps, versao: str) -> IncrementResult:
 
     deps.git.continue_cherry_pick()
 
-    lock_store = LockStore(git=deps.git)
+    lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
     anterior = lock_store.ler(versao)
 
     # O lote (§5) so escreve o lock no fim de um lote bem-sucedido - se o

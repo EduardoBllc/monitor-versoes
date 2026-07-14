@@ -1,7 +1,7 @@
 """Porte de internal/domain/reconcile_test.go."""
 
 from motor.domain.reconcile import filtrar_excluidos, reconciliar
-from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, TaskTarget
+from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, TaskTarget, Presence
 
 
 def mk_target_set(chamado: str, task: str, *hashes: str) -> TargetSet:
@@ -12,7 +12,7 @@ def mk_target_set(chamado: str, task: str, *hashes: str) -> TargetSet:
 def test_reconciliar_verde():
     alvo = mk_target_set("255514", "VB-2354", "hash1")
     lock = Lock(tasks=mk_target_set("255514", "VB-2354", "hash1"))
-    presentes = {"hash1": True}
+    presentes = {"hash1": Presence.TRAILER}
 
     status = reconciliar(alvo, lock, presentes, [])
 
@@ -22,7 +22,7 @@ def test_reconciliar_verde():
 def test_reconciliar_task_nova():
     alvo = mk_target_set("255514", "VB-2354", "hash1")
     lock = Lock(tasks={})
-    presentes = {"hash1": True}
+    presentes = {"hash1": Presence.TRAILER}
 
     status = reconciliar(alvo, lock, presentes, [])
 
@@ -33,7 +33,7 @@ def test_reconciliar_task_nova():
 def test_reconciliar_task_removida():
     alvo: TargetSet = {}
     lock = Lock(tasks=mk_target_set("255514", "VB-2354", "hash1"))
-    presentes = {"hash1": True}
+    presentes = {"hash1": Presence.TRAILER}
 
     status = reconciliar(alvo, lock, presentes, [])
 
@@ -43,7 +43,7 @@ def test_reconciliar_task_removida():
 def test_reconciliar_lock_nao_integro():
     alvo = mk_target_set("255514", "VB-2354", "hash1")
     lock = Lock(tasks=mk_target_set("255514", "VB-2354", "hash1"))
-    presentes: dict[str, bool] = {}  # hash1 nao presente
+    presentes: dict[str, Presence] = {}  # hash1 nao presente
 
     status = reconciliar(alvo, lock, presentes, [])
 

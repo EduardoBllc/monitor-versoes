@@ -1,5 +1,7 @@
 """Porte de internal/adapters/tasksource/fake_test.go."""
 
+import pytest
+
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import TaskTarget
 
@@ -17,8 +19,5 @@ def test_fake_task_source_erro():
     f = FakeTaskSource()
     f.err = Exception("falha simulada")
 
-    try:
+    with pytest.raises(Exception):
         f.fetch("13.7.0")
-        assert False, "esperava erro"
-    except Exception:
-        pass

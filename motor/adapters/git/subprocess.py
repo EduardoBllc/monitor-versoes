@@ -8,18 +8,32 @@ engine — espelhando onde o Go liga isso.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
+import logging
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome, MergePrediction
 
+logger = logging.getLogger(__name__)
+
 SEPARADOR_CAMPO = "\x1f"
 SEPARADOR_REGISTRO = "\x1e"
+
+
+@contextlib.contextmanager
+def _cronometrar(*args: str):
+    inicio = time.monotonic()
+    try:
+        yield
+    finally:
+        logger.debug("git %s: %.3fs", " ".join(args), time.monotonic() - inicio)
 
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
 _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
@@ -83,13 +97,15 @@ class GitSubprocess:
         return os.path.join(parent, base + "-worktrees", branch)
 
     def _run(self, dir_: str, *args: str) -> None:
-        proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
+        with _cronometrar(*args):
+            proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
         if proc.returncode != 0:
             saida = (proc.stdout or "") + (proc.stderr or "")
             raise MotorError(f"git {' '.join(args)}: exit status {proc.returncode}: {saida}")
 
     def _output(self, dir_: str, *args: str) -> str:
-        proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
+        with _cronometrar(*args):
+            proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
         if proc.returncode != 0:
             raise MotorError(
                 f"git {' '.join(args)}: exit status {proc.returncode}: {proc.stderr}"
@@ -102,12 +118,13 @@ class GitSubprocess:
         return self._output(self.repo_path, "merge-base", a, b)
 
     def is_ancestor(self, commit: str, branch: str) -> bool:
-        proc = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", commit, branch],
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-        )
+        with _cronometrar("merge-base", "--is-ancestor", commit, branch):
+            proc = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", commit, branch],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+            )
         if proc.returncode == 0:
             return True
         if proc.returncode == 1:
@@ -120,6 +137,7 @@ class GitSubprocess:
         args = [
             "log",
             refs,
+            "--no-merges",
             f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}",
         ]
         for p in padroes:
@@ -159,21 +177,22 @@ class GitSubprocess:
         return CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2], parent=parent)
 
     def patch_id(self, hash: str) -> str:
-        show = subprocess.Popen(
-            ["git", "show", hash], cwd=self.repo_path, stdout=subprocess.PIPE
-        )
-        try:
-            patch = subprocess.run(
-                ["git", "patch-id", "--stable"],
-                cwd=self.repo_path,
-                stdin=show.stdout,
-                capture_output=True,
-                text=True,
+        with _cronometrar("show", hash, "|", "patch-id"):
+            show = subprocess.Popen(
+                ["git", "show", hash], cwd=self.repo_path, stdout=subprocess.PIPE
             )
-        finally:
-            if show.stdout is not None:
-                show.stdout.close()
-            show_ret = show.wait()
+            try:
+                patch = subprocess.run(
+                    ["git", "patch-id", "--stable"],
+                    cwd=self.repo_path,
+                    stdin=show.stdout,
+                    capture_output=True,
+                    text=True,
+                )
+            finally:
+                if show.stdout is not None:
+                    show.stdout.close()
+                show_ret = show.wait()
         if show_ret != 0:
             raise MotorError(f"git show {hash}: exit status {show_ret}")
         if patch.returncode != 0:
@@ -189,16 +208,27 @@ class GitSubprocess:
         return self._output(self.repo_path, "rev-parse", ref)
 
     def use_worktree(self, branch: str) -> None:
+        """Se a worktree ja existe em disco, so usa. Senao, tenta adotar uma
+        branch ja existente (local ou remota) - caso de branch de versao
+        criada manualmente (ex: Bitbucket) sem passar por `criar`."""
         dir_ = self._worktree_dir(branch)
         if not os.path.exists(dir_):
-            raise MotorError(f"worktree de {branch} nao encontrada em {dir_}")
+            try:
+                self._run(self.repo_path, "worktree", "add", dir_, branch)
+            except MotorError as e:
+                raise MotorError(
+                    f"worktree de {branch} nao encontrada em {dir_} e branch "
+                    f"{branch} nao existe pra adotar (rode 'motor criar {branch}' "
+                    f"primeiro): {e}"
+                ) from e
         self._current_branch = branch
 
     def cherry_pick_x(self, hash: str) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)
-        proc = subprocess.run(
-            ["git", "cherry-pick", "-x", hash], cwd=dir_, capture_output=True, text=True
-        )
+        with _cronometrar("cherry-pick", "-x", hash):
+            proc = subprocess.run(
+                ["git", "cherry-pick", "-x", hash], cwd=dir_, capture_output=True, text=True
+            )
         if proc.returncode == 0:
             return CherryPickOutcome.APLICADO
         _, pendente = self.pending_cherry_pick()
@@ -229,13 +259,14 @@ class GitSubprocess:
         self._run(dir_, "add", "-A")
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
-        proc = subprocess.run(
-            ["git", "cherry-pick", "--continue"],
-            cwd=dir_,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+        with _cronometrar("cherry-pick", "--continue"):
+            proc = subprocess.run(
+                ["git", "cherry-pick", "--continue"],
+                cwd=dir_,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
         if proc.returncode != 0:
             saida = (proc.stdout or "") + (proc.stderr or "")
             raise MotorError(f"git cherry-pick --continue: exit status {proc.returncode}: {saida}")
@@ -244,19 +275,14 @@ class GitSubprocess:
         self._run(self._worktree_dir(self._current_branch), "cherry-pick", "--abort")
 
     def predict_merge(self, parent: str, branch_tip: str, commit: str) -> MergePrediction:
-        proc = subprocess.run(
-            [
-                "git",
-                "merge-tree",
-                "--write-tree",
-                f"--merge-base={parent}",
-                branch_tip,
-                commit,
-            ],
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-        )
+        args = ("merge-tree", "--write-tree", f"--merge-base={parent}", branch_tip, commit)
+        with _cronometrar(*args):
+            proc = subprocess.run(
+                ["git", *args],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+            )
         if proc.returncode == 0:
             return MergePrediction(conflita=False, arquivos_conflito=[])
         saida = (proc.stdout or "") + (proc.stderr or "")
@@ -284,12 +310,27 @@ class GitSubprocess:
         return out != ""
 
     def list_version_branches(self) -> list[str]:
+        # %(refname) + strip manual do prefixo, nao %(refname:short): quando
+        # branch e tag tem o mesmo nome (versao fechada, tag criada, branch
+        # ainda nao apagada), o short-name fica ambiguo entre refs/heads/X e
+        # refs/tags/X e o git devolve "heads/X"/"tags/X" em vez de "X", o que
+        # faz a versao sumir do padrao \d+\.\d+\.\d+. Inclui refs/tags/ pra
+        # tambem enxergar versoes fechadas cuja branch ja foi apagada.
         out = self._output(
-            self.repo_path, "for-each-ref", "--format=%(refname:short)", "refs/heads/"
+            self.repo_path,
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads/",
+            "refs/tags/",
         )
         if out == "":
             return []
-        return [linha for linha in out.split("\n") if _PADRAO_BRANCH_VERSAO.match(linha)]
+        nomes = set()
+        for linha in out.split("\n"):
+            nome = linha.removeprefix("refs/heads/").removeprefix("refs/tags/")
+            if _PADRAO_BRANCH_VERSAO.match(nome):
+                nomes.add(nome)
+        return sorted(nomes)
 
     def read_file(self, branch: str, path: str) -> bytes:
         proc = subprocess.run(

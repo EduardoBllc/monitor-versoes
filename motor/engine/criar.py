@@ -28,7 +28,7 @@ def criar(deps: Deps, versao: str) -> IncrementResult:
     deps.git.worktree_add(versao, base.ref)
 
     tipo = inferir_tipo(versao)
-    lock_store = LockStore(git=deps.git)
+    lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
     lock_inicial = Lock(versao=versao, tipo=tipo, base=base, tasks=TargetSet())
     lock_store.escrever(versao, lock_inicial)
 

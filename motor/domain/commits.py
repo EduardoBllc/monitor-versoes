@@ -16,9 +16,9 @@ def match_exato(candidatos: list[CommitRef], chamado: str, vb_id: str) -> list[C
     traz candidatos brutos.
     """
     padroes = []
-    if chamado != "":
+    if chamado:
         padroes.append(re.compile(r"\bch" + re.escape(chamado) + r"\b"))
-    if vb_id != "":
+    if vb_id:
         padroes.append(re.compile(r"\b" + re.escape(vb_id) + r"\b"))
 
     resultado = []

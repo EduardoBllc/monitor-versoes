@@ -28,7 +28,7 @@ def reconstruir_lock(deps: Deps, versao: str) -> ReconstructResult:
     apagado/corrompido (§3). Nunca interativo - PENDING_JUDGMENT e um valor
     de retorno, quem pergunta ao humano e o front-end (§14).
     """
-    lock_store = LockStore(git=deps.git)
+    lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
 
     anterior = None
     try:

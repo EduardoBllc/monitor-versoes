@@ -10,7 +10,7 @@ from motor.engine.verificar import verificar
 from motor.ports import MergePrediction
 
 
-def test_verificar_verde_quando_tudo_aplicado():
+def test_verificar_verde_quando_tudo_aplicado(tmp_path):
     g = FakeGit()
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
@@ -19,25 +19,22 @@ def test_verificar_verde_quando_tudo_aplicado():
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "base-tip")
     g.cherry_pick_x("origem1")
-    g.write_file(
-        "13.7.0",
-        "VERSAO.lock",
+    (tmp_path / "13.7.0.lock").write_bytes(
         b"""{
         "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
         "tasks":{"255514":{"task":"VB-2354","titulo":"Logs","commits":["origem1"]}}
-        }""",
-        "lock inicial",
+        }"""
     )
 
     tasks = FakeTaskSource()
     tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
 
-    status = verificar(Deps(git=g, tasks=tasks), "13.7.0")
+    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert status.verde, f"esperava verde, status = {status!r}"
 
 
-def test_verificar_faltante():
+def test_verificar_faltante(tmp_path):
     g = FakeGit()
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
@@ -45,20 +42,17 @@ def test_verificar_faltante():
     g.set_branch("master", "origem1")
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "base-tip")
-    g.write_file(
-        "13.7.0",
-        "VERSAO.lock",
+    (tmp_path / "13.7.0.lock").write_bytes(
         b"""{
         "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
         "tasks":{}
-        }""",
-        "lock vazio",
+        }"""
     )
 
     tasks = FakeTaskSource()
     tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
 
-    status = verificar(Deps(git=g, tasks=tasks), "13.7.0")
+    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert not status.verde, "nao deveria ser verde"
     assert (
@@ -66,7 +60,7 @@ def test_verificar_faltante():
     ), f"faltantes = {status.faltantes!r}"
 
 
-def test_verificar_sumido_nunca_entra_em_conflitantes():
+def test_verificar_sumido_nunca_entra_em_conflitantes(tmp_path):
     """Cobre o invariante documentado em VersionStatus: conflitantes e
     subconjunto de faltantes (lado alvo), nunca de commits sumidos so-no-lock.
     Um commit ausente do git E do alvo atual nao e candidato real de
@@ -82,24 +76,21 @@ def test_verificar_sumido_nunca_entra_em_conflitantes():
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "base-tip")
     g.cherry_pick_x("origem1")
-    g.write_file(
-        "13.7.0",
-        "VERSAO.lock",
+    (tmp_path / "13.7.0.lock").write_bytes(
         b"""{
         "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
         "tasks":{
             "255514":{"task":"VB-2354","titulo":"Logs","commits":["origem1"]},
             "999999":{"task":"","titulo":"Removida","commits":["sumido1"]}
         }
-        }""",
-        "lock inicial",
+        }"""
     )
     g.merge_predictions["sumido1"] = MergePrediction(conflita=True, arquivos_conflito=[])
 
     tasks = FakeTaskSource()
     tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
 
-    status = verificar(Deps(git=g, tasks=tasks), "13.7.0")
+    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert status.commits_sumidos == [
         "sumido1"

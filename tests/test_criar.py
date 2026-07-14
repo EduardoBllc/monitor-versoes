@@ -13,7 +13,7 @@ from motor.engine.incrementar import IncrementStatus
 from motor.errors import MotorError
 
 
-def test_criar_nova_versao():
+def test_criar_nova_versao(tmp_path):
     g = FakeGit()
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
@@ -24,16 +24,16 @@ def test_criar_nova_versao():
     tasks = FakeTaskSource()
     tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
 
-    resultado = criar(Deps(git=g, tasks=tasks), "13.7.0")
+    resultado = criar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
     assert "13.7.0" in g.branches, "esperava branch 13.7.0 criada"
 
 
-def test_criar_falha_se_ja_publicada():
+def test_criar_falha_se_ja_publicada(tmp_path):
     g = FakeGit()
     g.tags["13.7.0"] = True
     tasks = FakeTaskSource()
 
     with pytest.raises(MotorError):
-        criar(Deps(git=g, tasks=tasks), "13.7.0")
+        criar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")

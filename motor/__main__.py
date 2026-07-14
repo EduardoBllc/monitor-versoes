@@ -10,6 +10,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 
 try:
     from dotenv import load_dotenv
@@ -34,14 +35,6 @@ from motor.engine.reconstruir_lock import reconstruir_lock
 from motor.engine.verificar import verificar
 
 
-def _go_bool(b: bool) -> str:
-    return "true" if b else "false"
-
-
-def _go_list(itens: list[str]) -> str:
-    return "[" + " ".join(itens) + "]"
-
-
 def _build_parser() -> argparse.ArgumentParser:
     """Espelha flag.NewFlagSet(comando, ...) do Go: o mesmo conjunto de
     flags existe pra todo comando (o Go nunca varia o flagset por comando).
@@ -62,6 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--continue", dest="continuar", action="store_true")
     parser.add_argument("--abort", dest="abortar", action="store_true")
+    parser.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
 
     return parser
 
@@ -117,9 +111,9 @@ def _imprimir_commits_por_task(titulo: str, commits: list, conflitantes: set[str
 
 
 def imprimir_status(s: VersionStatus) -> None:
-    print(f"verde: {_go_bool(s.verde)}")
-    print(f"tasks novas: {_go_list(s.tasks_novas)}")
-    print(f"tasks removidas: {_go_list(s.tasks_removidas)}")
+    print(f"verde: {s.verde}")
+    print(f"tasks novas: {s.tasks_novas}")
+    print(f"tasks removidas: {s.tasks_removidas}")
     if not s.lock_integro:
         print(f"lock: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
         for hash_ in s.commits_sumidos:
@@ -132,18 +126,13 @@ def imprimir_status(s: VersionStatus) -> None:
 
 def imprimir_incremento(r: IncrementResult) -> None:
     if r.status == IncrementStatus.BLOCKED:
-        print(f"BLOQUEADO em {r.blocked_commit}, arquivos: {_go_list(r.arquivos_conflito)}")
+        print(f"BLOQUEADO em {r.blocked_commit}, arquivos: {r.arquivos_conflito}")
         print("resolva e rode: motor incrementar <versao> --repo <path> --continue")
         return
     print("concluido")
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s: %(message)s",
-    )
-
     if load_dotenv:
         load_dotenv()
 
@@ -157,6 +146,11 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     args = _build_parser().parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.ERROR,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s" if args.debug else "%(levelname)s: %(message)s",
+    )
 
     if args.repo == "":
         print("--repo e obrigatorio", file=sys.stderr)
@@ -181,6 +175,7 @@ def main(argv: list[str] | None = None) -> None:
 
         deps = Deps(git=git_repo, tasks=tasks, lock_dir=lock_dir)
 
+        inicio = time.monotonic()
         if args.comando == "verificar":
             status = verificar(deps, args.versao)
             imprimir_status(status)
@@ -206,6 +201,7 @@ def main(argv: list[str] | None = None) -> None:
             # igual ao Go (mesmo flagset, mesma ordem de checagem).
             imprimir_uso()
             sys.exit(1)
+        logging.debug("comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio)
     except MotorError as e:
         logging.error(str(e))
         sys.exit(1)

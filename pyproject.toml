@@ -2,7 +2,11 @@
 name = "motor-versoes"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = ["httpx"]
+dependencies = [
+    "httpx",
+    "python-dotenv",
+    "textual>=8.2.8",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -10,6 +14,9 @@ dev = ["pytest"]
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["motor*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

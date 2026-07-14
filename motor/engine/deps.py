@@ -11,3 +11,4 @@ from motor.ports import GitRepo, TaskSource
 class Deps:
     git: GitRepo
     tasks: TaskSource
+    lock_dir: str = ""

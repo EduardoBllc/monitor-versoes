@@ -93,6 +93,67 @@ def test_git_subprocess_write_file_noop_quando_conteudo_igual(tmp_path):
     assert conteudo3 == b'{"v":1}'
 
 
+def test_git_subprocess_search_commits_ignora_merge(tmp_path):
+    """Merge commits do PR (ex.: "Merged in VB-2687 (pull request #948)")
+    citam a task no texto auto-gerado pelo Bitbucket so por causa do nome da
+    branch, mas nao carregam mudanca propria pra aplicar - search_commits nao
+    deve traze-los como candidatos (senao viram faltantes/conflitantes
+    fantasmas em TargetResolver).
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("v1\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+
+    _run_git(dir_, "checkout", "-b", "VB-2687")
+    (tmp_path / "arquivo.txt").write_text("v2\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "ch256308. corrige algo")
+
+    _run_git(dir_, "checkout", "master")
+    _run_git(dir_, "merge", "--no-ff", "VB-2687", "-m", "Merged in VB-2687 (pull request #948)")
+
+    g = new_git_subprocess(dir_)
+    candidatos = g.search_commits(["ch256308", "VB-2687"], "master")
+
+    msgs = [c.msg.splitlines()[0] for c in candidatos]
+    assert msgs == ["ch256308. corrige algo"], (
+        f"esperava so o commit de conteudo, veio {msgs!r}"
+    )
+
+
+def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
+    """Quando uma versao tem tag com o mesmo nome da branch (ex.: fechada mas
+    ainda nao limpa), `%(refname:short)` fica ambigua entre refs/heads/X e
+    refs/tags/X e o git devolve "heads/X" em vez de "X" - a branch some da
+    lista por nao bater mais no padrao \\d+\\.\\d+\\.\\d+. list_version_branches
+    precisa continuar enxergando a branch (e tambem versoes so-com-tag, cuja
+    branch ja foi apagada apos o fechamento).
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("v1\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+
+    _run_git(dir_, "branch", "13.13.0")
+    _run_git(dir_, "tag", "13.13.0")
+
+    (tmp_path / "arquivo.txt").write_text("v2\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "so tag, branch ja apagada")
+    _run_git(dir_, "tag", "13.12.0")
+
+    g = new_git_subprocess(dir_)
+    versoes = g.list_version_branches()
+
+    assert "13.13.0" in versoes, f"branch com tag homonima sumiu da lista: {versoes!r}"
+    assert "13.12.0" in versoes, f"versao so-com-tag sumiu da lista: {versoes!r}"
+
+
 def test_git_subprocess_worktree_cherry_pick_e_arquivo(tmp_path):
     repo_dir = init_repo_de_teste(tmp_path)
 
@@ -110,6 +171,31 @@ def test_git_subprocess_worktree_cherry_pick_e_arquivo(tmp_path):
 
     existe = g.tag_exists("13.7.0")
     assert not existe, "nao esperava tag 13.7.0 ainda"
+
+
+def test_git_subprocess_use_worktree_adota_branch_existente(tmp_path):
+    """Branch de versao criada por fora do motor (ex: manualmente no
+    Bitbucket) nunca passou por `worktree_add` - use_worktree precisa adotar
+    a branch existente em vez de exigir que a worktree ja esteja em disco.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "branch", "14.0.0")
+
+    g = new_git_subprocess(repo_dir)
+    assert not os.path.exists(g._worktree_dir("14.0.0"))
+
+    g.use_worktree("14.0.0")
+
+    assert os.path.exists(g._worktree_dir("14.0.0"))
+    assert g.resolve_ref("14.0.0") == g.resolve_ref("master")
+
+
+def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):
+    repo_dir = init_repo_de_teste(tmp_path)
+    g = new_git_subprocess(repo_dir)
+
+    with pytest.raises(Exception):
+        g.use_worktree("99.0.0")
 
 
 def test_git_subprocess_cherry_pick_x_rerere_auto_resolvido(tmp_path):

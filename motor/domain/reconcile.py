@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, VersionStatus
+from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, VersionStatus, Presence
 
 
 def filtrar_excluidos(alvo: TargetSet, excluidos: list[Exclusion]) -> TargetSet:
@@ -30,7 +30,7 @@ def diff_tasks(alvo: TargetSet, lock_tasks: TargetSet) -> tuple[list[str], list[
 def reconciliar(
     alvo: TargetSet,
     lock: Lock,
-    presentes: dict[str, bool],
+    presentes: dict[str, Presence],
     conflitantes: list[CommitRef],
 ) -> VersionStatus:
     """Cruza as 3 fontes (§2, §9) e produz o VersionStatus. `presentes`
@@ -40,16 +40,20 @@ def reconciliar(
     novas, removidas = diff_tasks(alvo, lock.tasks)
 
     faltantes: list[CommitRef] = []
+    ancestrais: list[CommitRef] = []
     for tt in alvo.values():
         for c in tt.commits:
-            if not presentes.get(c.hash_origem, False):
+            p = presentes.get(c.hash_origem, Presence.AUSENTE)
+            if p == Presence.AUSENTE:
                 faltantes.append(c)
+            elif p == Presence.ANCESTRAL:
+                ancestrais.append(c)
 
     lock_integro = True
     sumidos: list[str] = []
     for tt in lock.tasks.values():
         for c in tt.commits:
-            if not presentes.get(c.hash_origem, False):
+            if presentes.get(c.hash_origem, Presence.AUSENTE) == Presence.AUSENTE:
                 lock_integro = False
                 sumidos.append(c.hash_origem)
     sumidos = sorted(sumidos)
@@ -63,5 +67,6 @@ def reconciliar(
         lock_integro=lock_integro,
         commits_sumidos=sumidos,
         faltantes=faltantes,
+        ancestrais=ancestrais,
         conflitantes=conflitantes,
     )

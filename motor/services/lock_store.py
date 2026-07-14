@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, replace
 
 from motor.domain.commits import extrair_chamado, extrair_vb_id, ordenar_por_data
@@ -20,22 +21,26 @@ from motor.domain.version import inferir_tipo
 from motor.errors import MotorError
 from motor.ports import GitRepo
 
-LOCK_PATH = "VERSAO.lock"
 
 
 @dataclass
 class LockStore:
     git: GitRepo
+    lock_dir: str
 
     def ler(self, branch: str) -> Lock:
+        path = os.path.join(self.lock_dir, f"{branch}.lock")
         try:
-            raw = self.git.read_file(branch, LOCK_PATH)
+            with open(path, "rb") as f:
+                raw = f.read()
+        except FileNotFoundError:
+            raise MotorError(f"Arquivo lock da versão '{branch}' não encontrado. Você já rodou 'motor criar {branch}'?")
         except Exception as e:
-            raise MotorError(f"lendo {LOCK_PATH}: {e}") from e
+            raise MotorError(f"lendo {path}: {e}") from e
         try:
             lj = json.loads(raw)
         except Exception as e:
-            raise MotorError(f"parseando {LOCK_PATH}: {e}") from e
+            raise MotorError(f"parseando {path}: {e}") from e
 
         versao = lj.get("versao", "")
         tipo = inferir_tipo(versao)
@@ -83,8 +88,15 @@ class LockStore:
         try:
             raw = json.dumps(lj, indent=2).encode("utf-8")
         except Exception as e:
-            raise MotorError(f"serializando {LOCK_PATH}: {e}") from e
-        self.git.write_file(branch, LOCK_PATH, raw, "atualiza " + LOCK_PATH)
+            raise MotorError(f"serializando lock para {branch}: {e}") from e
+        
+        path = os.path.join(self.lock_dir, f"{branch}.lock")
+        try:
+            os.makedirs(self.lock_dir, exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(raw)
+        except Exception as e:
+            raise MotorError(f"escrevendo {path}: {e}") from e
 
     def reconstruir(
         self, branch: str, base: BaseRef, versao: str, anterior: Lock | None
@@ -104,11 +116,15 @@ class LockStore:
         for c in commits:
             origem_hash = _extrair_trailer(c.msg)
             if origem_hash is None:
-                continue  # commit sem trailer -x: nao reconstruivel (dependencia dura, §3)
-            try:
-                origem_meta = self.git.commit_meta(origem_hash)
-            except Exception:
-                continue  # origem sumiu do historico
+                # commit direto na branch (sem cherry-pick -x): usa a si mesmo
+                # como origem, ja tem chamado/vb_id na propria mensagem.
+                origem_hash = c.hash_origem
+                origem_meta = c
+            else:
+                try:
+                    origem_meta = self.git.commit_meta(origem_hash)
+                except Exception:
+                    continue  # origem sumiu do historico
 
             chamado = extrair_chamado(origem_meta.msg)
             vb_id = extrair_vb_id(origem_meta.msg)

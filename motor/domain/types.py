@@ -13,6 +13,13 @@ class VersionType(IntEnum):
     CLIENTE = 2  # X.Y.Z
 
 
+class Presence(IntEnum):
+    AUSENTE = 0
+    ANCESTRAL = 1
+    TRAILER = 2
+    PATCH_ID = 3
+
+
 @dataclass(frozen=True)
 class BaseRef:
     ref: str = ""  # "13.6.0"
@@ -32,6 +39,7 @@ class CommitRef:
     parent: str = ""  # pai do commit na branch de origem (necessario pra PredictMerge)
     chamado: str = ""  # "255514"
     task: str = ""  # "VB-2354"
+    titulo: str = ""
     commit_date: datetime.datetime = field(default_factory=lambda: datetime.datetime.min)
     msg: str = ""
 
@@ -78,4 +86,5 @@ class VersionStatus:
     lock_integro: bool = False
     commits_sumidos: list[str] = field(default_factory=list)  # no lock, ausentes no git
     faltantes: list[CommitRef] = field(default_factory=list)
+    ancestrais: list[CommitRef] = field(default_factory=list)  # na base da versao
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)
