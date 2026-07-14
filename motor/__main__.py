@@ -7,13 +7,20 @@ dominio aqui.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.rest import ClickUpRest
 from motor.domain.types import VersionStatus
+from motor.errors import MotorError
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.incrementar import (
@@ -48,38 +55,79 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("comando")
     parser.add_argument("versao")
     parser.add_argument("--repo", default="")
-    parser.add_argument("--task-source", dest="fonte_flag", default="manual")
+    parser.add_argument("--task-source", dest="fonte_flag", default="rest")
     parser.add_argument("--lista", dest="lista_manual", default="")
     parser.add_argument(
         "--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", "")
     )
-    parser.add_argument("--clickup-team", dest="team_id", default="")
-    parser.add_argument("--clickup-campo-chamado", dest="campo_chamado", default="")
     parser.add_argument("--continue", dest="continuar", action="store_true")
     parser.add_argument("--abort", dest="abortar", action="store_true")
 
     return parser
 
 
+def _resolver_repo(valor: str) -> str:
+    """Resolve --repo: caminho literal existente tem prioridade; senao tenta
+    PROJECTS_DIR/valor (ex: PROJECTS_DIR=/Volumes/ESSD/Projetos/ + --repo=foo)."""
+    if os.path.isdir(valor):
+        return os.path.abspath(valor)
+
+    projects_dir = os.environ.get("PROJECTS_DIR", "")
+    if projects_dir:
+        candidato = os.path.join(projects_dir, valor)
+        if os.path.isdir(candidato):
+            return candidato
+
+    print(
+        f"--repo nao encontrado: tentou '{valor}' e '{os.path.join(projects_dir, valor) if projects_dir else '(PROJECTS_DIR nao setada)'}'",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def imprimir_uso() -> None:
     print(
         """uso:
   motor verificar        <X.Y.Z> --repo <path>
-  motor criar             <X.Y.Z> --repo <path> [--task-source=rest|manual --clickup-token=... --clickup-team=... --clickup-campo-chamado=...] [--lista=arquivo]
+  motor criar             <X.Y.Z> --repo <path> [--task-source=rest|manual (default: rest) --clickup-token=...] [--lista=arquivo]
   motor incrementar      <X.Y.Z> --repo <path> [--continue | --abort]
   motor reconstruir-lock <X.Y.Z> --repo <path>""",
         file=sys.stderr,
     )
 
 
+def _agrupar_por_task(commits: list) -> dict[str, list]:
+    """Agrupa preservando a ordem de 1a aparicao de cada task."""
+    grupos: dict[str, list] = {}
+    for c in commits:
+        chave = f"{c.chamado} {c.task}".strip() or c.hash_origem[:8]
+        grupos.setdefault(chave, []).append(c)
+    return grupos
+
+
+def _imprimir_commits_por_task(titulo: str, commits: list, conflitantes: set[str]) -> None:
+    grupos = _agrupar_por_task(commits)
+    print(f"{titulo} ({len(commits)} em {len(grupos)} tasks):")
+    for chave, itens in grupos.items():
+        print(f"  {chave}:")
+        for c in itens:
+            primeira_linha_msg = c.msg.splitlines()[0] if c.msg else ""
+            tag = " [CONFLITANTE]" if c.hash_origem in conflitantes else ""
+            print(f"    - {c.hash_origem[:8]} {primeira_linha_msg}{tag}".rstrip())
+
+
 def imprimir_status(s: VersionStatus) -> None:
     print(f"verde: {_go_bool(s.verde)}")
     print(f"tasks novas: {_go_list(s.tasks_novas)}")
     print(f"tasks removidas: {_go_list(s.tasks_removidas)}")
-    print(f"lock integro: {_go_bool(s.lock_integro)}")
-    print(f"commits sumidos: {_go_list(s.commits_sumidos)}")
-    print(f"faltantes: {len(s.faltantes)}")
-    print(f"conflitantes: {len(s.conflitantes)}")
+    if not s.lock_integro:
+        print(f"lock: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
+        for hash_ in s.commits_sumidos:
+            print(f"  - {hash_[:8]}")
+    else:
+        print("lock: integro")
+    conflitantes = {c.hash_origem for c in s.conflitantes}
+    _imprimir_commits_por_task("faltantes", s.faltantes, conflitantes)
 
 
 def imprimir_incremento(r: IncrementResult) -> None:
@@ -91,6 +139,14 @@ def imprimir_incremento(r: IncrementResult) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+
+    if load_dotenv:
+        load_dotenv()
+
     argv = list(sys.argv[1:] if argv is None else argv)
 
     if len(argv) < 2:
@@ -106,15 +162,24 @@ def main(argv: list[str] | None = None) -> None:
         print("--repo e obrigatorio", file=sys.stderr)
         sys.exit(1)
 
+    repo = _resolver_repo(args.repo)
+
     try:
-        git_repo = new_git_subprocess(args.repo)
+        git_repo = new_git_subprocess(repo)
 
         if args.fonte_flag == "rest":
-            tasks = ClickUpRest(team_id=args.team_id, token=args.token, campo_chamado_id=args.campo_chamado)
+            tasks = ClickUpRest(token=args.token)
         else:
+            if not args.lista_manual:
+                print("--lista e obrigatorio quando --task-source=manual (ou use --task-source=rest para ClickUp)", file=sys.stderr)
+                sys.exit(1)
             tasks = ManualList(caminho=args.lista_manual)
 
-        deps = Deps(git=git_repo, tasks=tasks)
+        motor_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_repo_name = os.path.basename(repo)
+        lock_dir = os.path.join(motor_root, "locks", target_repo_name)
+
+        deps = Deps(git=git_repo, tasks=tasks, lock_dir=lock_dir)
 
         if args.comando == "verificar":
             status = verificar(deps, args.versao)
@@ -141,13 +206,11 @@ def main(argv: list[str] | None = None) -> None:
             # igual ao Go (mesmo flagset, mesma ordem de checagem).
             imprimir_uso()
             sys.exit(1)
-    except Exception as e:
-        # Go's checar(err) trata qualquer error retornado pelas chamadas
-        # acima, nao panics. O `except Exception` aqui e estritamente mais
-        # amplo: tambem engole bugs de programacao (ex.: AttributeError) que
-        # em Go seriam panics nao recuperados - nao ha paridade exata, so a
-        # mesma garantia pratica de nao vazar stacktrace pro usuario.
-        print("erro:", e, file=sys.stderr)
+    except MotorError as e:
+        logging.error(str(e))
+        sys.exit(1)
+    except Exception:
+        logging.exception("Erro interno fatal (bug). Traceback completo:")
         sys.exit(1)
 
 
