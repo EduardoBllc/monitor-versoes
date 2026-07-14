@@ -26,8 +26,6 @@ from motor.engine.incrementar import (
 from motor.engine.reconstruir_lock import reconstruir_lock
 from motor.engine.verificar import verificar
 
-_COMANDOS = ("verificar", "criar", "incrementar", "reconstruir-lock")
-
 
 def _go_bool(b: bool) -> str:
     return "true" if b else "false"
@@ -40,23 +38,25 @@ def _go_list(itens: list[str]) -> str:
 def _build_parser() -> argparse.ArgumentParser:
     """Espelha flag.NewFlagSet(comando, ...) do Go: o mesmo conjunto de
     flags existe pra todo comando (o Go nunca varia o flagset por comando).
+
+    Um unico parser flat (sem subparsers): `comando` nao usa `choices=` pra
+    que um comando desconhecido nao vire erro do argparse - ele precisa
+    seguir adiante ate o dispatch em main(), onde cai no `else` (equivalente
+    ao `default` do switch do Go), depois de repo/git ja terem sido validados.
     """
     parser = argparse.ArgumentParser(prog="motor", add_help=False)
-    sub = parser.add_subparsers(dest="comando")
-
-    for nome in _COMANDOS:
-        sp = sub.add_parser(nome, add_help=False)
-        sp.add_argument("versao")
-        sp.add_argument("--repo", default="")
-        sp.add_argument("--task-source", dest="fonte_flag", default="manual")
-        sp.add_argument("--lista", dest="lista_manual", default="")
-        sp.add_argument(
-            "--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", "")
-        )
-        sp.add_argument("--clickup-team", dest="team_id", default="")
-        sp.add_argument("--clickup-campo-chamado", dest="campo_chamado", default="")
-        sp.add_argument("--continue", dest="continuar", action="store_true")
-        sp.add_argument("--abort", dest="abortar", action="store_true")
+    parser.add_argument("comando")
+    parser.add_argument("versao")
+    parser.add_argument("--repo", default="")
+    parser.add_argument("--task-source", dest="fonte_flag", default="manual")
+    parser.add_argument("--lista", dest="lista_manual", default="")
+    parser.add_argument(
+        "--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", "")
+    )
+    parser.add_argument("--clickup-team", dest="team_id", default="")
+    parser.add_argument("--clickup-campo-chamado", dest="campo_chamado", default="")
+    parser.add_argument("--continue", dest="continuar", action="store_true")
+    parser.add_argument("--abort", dest="abortar", action="store_true")
 
     return parser
 
@@ -93,11 +93,10 @@ def imprimir_incremento(r: IncrementResult) -> None:
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    if len(argv) < 2 or argv[0] not in _COMANDOS:
-        # ponytail: Go ainda constroi o GitRepo antes de bater no `default` do
-        # switch pra comando desconhecido; sem teste cobrindo isso, aqui a
-        # validacao de comando sai mais cedo - mesmo resultado observavel
-        # (usa e exit 1) pro caso que importa.
+    if len(argv) < 2:
+        # Espelha `if len(os.Args) < 3` do Go: so checa aridade (comando +
+        # versao), nao valida se o comando existe - isso fica pro dispatch
+        # em main(), depois de repo/git ja terem sido validados.
         imprimir_uso()
         sys.exit(1)
 
@@ -133,15 +132,21 @@ def main(argv: list[str] | None = None) -> None:
                 resultado = incrementar(deps, args.versao)
             if not args.abortar:
                 imprimir_incremento(resultado)
-        else:  # reconstruir-lock
+        elif args.comando == "reconstruir-lock":
             resultado = reconstruir_lock(deps, args.versao)
             print(f"status: {resultado.status}, orfaos: {len(resultado.orfaos)}")
+        else:
+            # Equivalente ao `default` do switch em main.go: comando
+            # desconhecido chega aqui SO depois de repo/git ja validados,
+            # igual ao Go (mesmo flagset, mesma ordem de checagem).
+            imprimir_uso()
+            sys.exit(1)
     except Exception as e:
-        # ponytail: Go's checar(err) trata qualquer error, nao so um tipo
-        # especifico - MotorError e o caminho esperado, mas alguns adapters
-        # (ex.: subprocess com cwd inexistente) ainda escapam com excecoes
-        # nativas do Python (OSError) em vez de MotorError. Captura ampla
-        # aqui reproduz a garantia do Go de nunca vazar stacktrace pro usuario.
+        # Go's checar(err) trata qualquer error retornado pelas chamadas
+        # acima, nao panics. O `except Exception` aqui e estritamente mais
+        # amplo: tambem engole bugs de programacao (ex.: AttributeError) que
+        # em Go seriam panics nao recuperados - nao ha paridade exata, so a
+        # mesma garantia pratica de nao vazar stacktrace pro usuario.
         print("erro:", e, file=sys.stderr)
         sys.exit(1)
 
