@@ -59,7 +59,7 @@ def test_git_subprocess_write_file_noop_quando_conteudo_igual(tmp_path):
     """Cobre o achado da tarefa 21: WriteFile grava, `git add` e comita sem
     checar se há algo de fato staged. Quando o conteúdo escrito é
     byte-idêntico ao já commitado (ex: Criar grava o lock inicial,
-    Incrementar tenta gravar o mesmo lock de novo por não ter Faltantes),
+    atualizar tenta gravar o mesmo lock de novo por não ter Faltantes),
     `git commit` sem --allow-empty falha com "nothing to commit, working
     tree clean" e aborta a operação inteira.
     """

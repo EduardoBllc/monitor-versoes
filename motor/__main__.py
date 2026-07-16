@@ -24,12 +24,12 @@ from motor.domain.types import VersionStatus
 from motor.errors import MotorError
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
-from motor.engine.incrementar import (
-    IncrementResult,
-    IncrementStatus,
-    incrementar,
-    incrementar_abort,
-    incrementar_continue,
+from motor.engine.atualizar import (
+    AtualizarResult,
+    AtualizarStatus,
+    atualizar,
+    atualizar_abort,
+    atualizar_continue,
 )
 from motor.engine.reconstruir_lock import reconstruir_lock
 from motor.engine.verificar import verificar
@@ -55,7 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_criar.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
     p_criar.add_argument("--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", ""), help="token ClickUp (default: $CLICKUP_TOKEN)")
 
-    p_inc = sub.add_parser("incrementar", parents=[comum], help="aplica commits faltantes na branch da versao")
+    p_inc = sub.add_parser("atualizar", parents=[comum], help="aplica commits faltantes na branch da versao")
     grupo = p_inc.add_mutually_exclusive_group()
     grupo.add_argument("--continue", dest="continuar", action="store_true", help="retoma apos resolver conflito")
     grupo.add_argument("--abort", dest="abortar", action="store_true", help="aborta o incremento em andamento")
@@ -118,7 +118,7 @@ def imprimir_status(s: VersionStatus) -> None:
     _imprimir_commits_por_task("faltantes", s.faltantes, conflitantes)
 
 
-def imprimir_incremento(r: IncrementResult) -> None:
+def imprimir_atualizacao(r: AtualizarResult) -> None:
     if r.aplicados:
         _imprimir_commits_por_task("cherry-picks aplicados", r.aplicados, set())
     else:
@@ -126,9 +126,9 @@ def imprimir_incremento(r: IncrementResult) -> None:
     if r.ja_presentes:
         print(f"{r.ja_presentes} commits ja presentes no historico (ignorados)")
 
-    if r.status == IncrementStatus.BLOCKED:
+    if r.status == AtualizarStatus.BLOCKED:
         print(f"BLOQUEADO em {r.blocked_commit[:8]}, arquivos: {r.arquivos_conflito}")
-        print("resolva e rode: motor incrementar <versao> --repo <path> --continue")
+        print("resolva e rode: motor atualizar <versao> --repo <path> --continue")
         return
     print("concluido")
 
@@ -173,15 +173,15 @@ def main(argv: list[str] | None = None) -> None:
             imprimir_status(status)
         elif args.comando == "criar":
             resultado = criar(deps, args.versao)
-            imprimir_incremento(resultado)
-        elif args.comando == "incrementar":
+            imprimir_atualizacao(resultado)
+        elif args.comando == "atualizar":
             if args.abortar:
-                incrementar_abort(deps, args.versao)
+                atualizar_abort(deps, args.versao)
                 print("abortado")
             elif args.continuar:
-                imprimir_incremento(incrementar_continue(deps, args.versao))
+                imprimir_atualizacao(atualizar_continue(deps, args.versao))
             else:
-                imprimir_incremento(incrementar(deps, args.versao))
+                imprimir_atualizacao(atualizar(deps, args.versao))
         else:  # reconstruir-lock (unico comando restante; argparse ja validou)
             resultado = reconstruir_lock(deps, args.versao)
             print(f"status: {resultado.status}, orfaos: {len(resultado.orfaos)}")

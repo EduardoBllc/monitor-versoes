@@ -5,14 +5,14 @@ from __future__ import annotations
 from motor.domain.types import Lock, TargetSet
 from motor.domain.version import inferir_tipo
 from motor.engine.deps import Deps
-from motor.engine.incrementar import IncrementResult, incrementar
+from motor.engine.atualizar import AtualizarResult, atualizar
 from motor.errors import MotorError
 from motor.services.base_resolver import BaseResolver
 from motor.services.lock_store import LockStore
 from motor.services.publication_gate import PublicationGate
 
 
-def criar(deps: Deps, versao: str) -> IncrementResult:
+def criar(deps: Deps, versao: str) -> AtualizarResult:
     """Monta uma versao do zero (§5). Branch nova e nao publicada - rebuild
     idempotente e permitido ate a primeira publicacao (§6), mas esta operacao
     so cria; recriar do zero e responsabilidade do chamador (remover a
@@ -20,7 +20,7 @@ def criar(deps: Deps, versao: str) -> IncrementResult:
     """
     gate = PublicationGate(git=deps.git)
     if gate.publicada(versao):
-        raise MotorError(f"versao {versao} ja publicada - use incrementar")
+        raise MotorError(f"versao {versao} ja publicada - use atualizar")
 
     base_resolver = BaseResolver(git=deps.git)
     base = base_resolver.resolve(versao)
@@ -33,4 +33,4 @@ def criar(deps: Deps, versao: str) -> IncrementResult:
     lock_inicial = Lock(versao=versao, tipo=tipo, base=base, tasks=TargetSet())
     lock_store.escrever(versao, lock_inicial)
 
-    return incrementar(deps, versao)
+    return atualizar(deps, versao)

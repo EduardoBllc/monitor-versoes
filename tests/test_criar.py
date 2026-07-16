@@ -9,7 +9,7 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import TaskTarget
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
-from motor.engine.incrementar import IncrementStatus
+from motor.engine.atualizar import AtualizarStatus
 from motor.errors import MotorError
 
 
@@ -26,7 +26,7 @@ def test_criar_nova_versao(tmp_path):
 
     resultado = criar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
-    assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
     assert "13.7.0" in g.branches, "esperava branch 13.7.0 criada"
     assert g.remotes.get("13.7.0") is True, "esperava push da branch nova pro remoto"
     assert g.read_file("13.7.0", "VERSAO") == b"13.7.0\n", "esperava arquivo VERSAO com a versao"
@@ -46,7 +46,7 @@ def test_criar_nao_publica_se_bloqueada_por_conflito(tmp_path):
 
     resultado = criar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
-    assert resultado.status == IncrementStatus.BLOCKED, f"status = {resultado.status!r}, quer BLOCKED"
+    assert resultado.status == AtualizarStatus.BLOCKED, f"status = {resultado.status!r}, quer BLOCKED"
     assert "13.7.0" not in g.remotes, "nao esperava push com composicao bloqueada por conflito"
 
 

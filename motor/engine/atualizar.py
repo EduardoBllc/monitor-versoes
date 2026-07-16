@@ -1,5 +1,3 @@
-"""Porte de internal/engine/incrementar.go."""
-
 from __future__ import annotations
 
 import logging
@@ -18,14 +16,14 @@ from motor.services.lock_store import LockStore
 logger = logging.getLogger(__name__)
 
 
-class IncrementStatus(IntEnum):
+class AtualizarStatus(IntEnum):
     DONE = 0
     BLOCKED = 1
 
 
 @dataclass
-class IncrementResult:
-    status: IncrementStatus
+class AtualizarResult:
+    status: AtualizarStatus
     blocked_commit: str = ""
     arquivos_conflito: list[str] = field(default_factory=list)
     # commits cherry-picked nesta invocacao (vazio = nada a fazer)
@@ -34,11 +32,11 @@ class IncrementResult:
     ja_presentes: int = 0
 
 
-def incrementar(deps: Deps, versao: str) -> IncrementResult:
+def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     """Aplica os commits faltantes por commit-date asc (§5). So adiciona
     historia - e o unico modo permitido quando a versao ja tem tag (§6, checado
     pelo chamador via services.PublicationGate antes de decidir entre criar e
-    incrementar).
+    atulizar).
     """
     status = verificar(deps, versao)
 
@@ -76,8 +74,8 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
                 lock = _registrar_commit(lock, c)
                 aplicados.append(c)
                 continue
-            return IncrementResult(
-                status=IncrementStatus.BLOCKED,
+            return AtualizarResult(
+                status=AtualizarStatus.BLOCKED,
                 blocked_commit=c.hash_origem,
                 arquivos_conflito=paths,
                 aplicados=aplicados,
@@ -94,7 +92,7 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
     # a worktree e so um checkout local descartavel - o que importa (commits,
     # lock) ja esta na branch e no remoto. use_worktree recria sob demanda.
     deps.git.worktree_remove(versao)
-    return IncrementResult(status=IncrementStatus.DONE, aplicados=aplicados, ja_presentes=ja_presentes)
+    return AtualizarResult(status=AtualizarStatus.DONE, aplicados=aplicados, ja_presentes=ja_presentes)
 
 
 def _registrar_commit(lock: Lock, c: CommitRef) -> Lock:
@@ -109,7 +107,7 @@ def _registrar_commit(lock: Lock, c: CommitRef) -> Lock:
     return replace(lock, tasks=tasks)
 
 
-def incrementar_continue(deps: Deps, versao: str) -> IncrementResult:
+def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
     """Retoma um cherry-pick pendente resolvido manualmente (checkpoint
     resumivel, §8). E uma invocacao nova do CLI - sem contexto em memoria de
     quais commits do lote ja foram aplicados antes do conflito, por isso usa
@@ -135,10 +133,10 @@ def incrementar_continue(deps: Deps, versao: str) -> IncrementResult:
     lock, _ = lock_store.reconstruir(versao, anterior.base, versao, anterior)
     lock_store.escrever(versao, lock)
 
-    return incrementar(deps, versao)
+    return atualizar(deps, versao)
 
 
-def incrementar_abort(deps: Deps, versao: str) -> None:
+def atualizar_abort(deps: Deps, versao: str) -> None:
     deps.git.use_worktree(versao)
     deps.git.abort_cherry_pick()
     deps.git.worktree_remove(versao)

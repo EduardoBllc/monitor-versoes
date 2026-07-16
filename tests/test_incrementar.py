@@ -1,16 +1,14 @@
-"""Porte de internal/engine/incrementar_test.go."""
-
 import datetime
 
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import TaskTarget
 from motor.engine.deps import Deps
-from motor.engine.incrementar import (
-    IncrementStatus,
-    incrementar,
-    incrementar_abort,
-    incrementar_continue,
+from motor.engine.atualizar import (
+    AtualizarStatus,
+    atualizar,
+    atualizar_abort,
+    atualizar_continue,
 )
 from motor.services.lock_store import LockStore
 
@@ -39,12 +37,12 @@ def _setup_incremento_basico(tmp_path) -> tuple[FakeGit, FakeTaskSource]:
     return g, tasks
 
 
-def test_incrementar_aplica_tudo(tmp_path):
+def test_atualizar_aplica_tudo(tmp_path):
     g, tasks = _setup_incremento_basico(tmp_path)
 
-    resultado = incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    resultado = atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
-    assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
     assert g.remotes.get("13.7.0") is True, "esperava push apos lote fechar sem conflito"
     assert g.removed_worktrees == ["13.7.0"], "esperava worktree removida apos lote fechar sem conflito"
     assert "13.7.0" in g.branches, "worktree_remove nao pode apagar a branch, so o checkout local"
@@ -53,17 +51,17 @@ def test_incrementar_aplica_tudo(tmp_path):
     lock = lock_store.ler("13.7.0")
     assert (
         len(lock.tasks["255514"].commits) == 1
-    ), f"lock apos incrementar = {lock.tasks!r}"
+    ), f"lock apos atualizar = {lock.tasks!r}"
 
 
-def test_incrementar_para_em_conflito(tmp_path):
+def test_atualizar_para_em_conflito(tmp_path):
     g, tasks = _setup_incremento_basico(tmp_path)
     g.conflict_on["origem1"] = True
 
-    resultado = incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    resultado = atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert (
-        resultado.status == IncrementStatus.BLOCKED
+        resultado.status == AtualizarStatus.BLOCKED
     ), f"status = {resultado.status!r}, quer BLOCKED"
     assert resultado.blocked_commit == "origem1", (
         f"blocked_commit = {resultado.blocked_commit!r}, quer origem1"
@@ -74,26 +72,26 @@ def test_incrementar_para_em_conflito(tmp_path):
     )
 
 
-def test_incrementar_abort_remove_worktree(tmp_path):
+def test_atualizar_abort_remove_worktree(tmp_path):
     g, tasks = _setup_incremento_basico(tmp_path)
     g.conflict_on["origem1"] = True
-    incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
-    incrementar_abort(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    atualizar_abort(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert g.removed_worktrees == ["13.7.0"], "esperava worktree removida apos abort"
     assert "13.7.0" in g.branches, "worktree_remove nao pode apagar a branch, so o checkout local"
 
 
-def test_incrementar_continue_registra_no_lock(tmp_path):
+def test_atualizar_continue_registra_no_lock(tmp_path):
     g, tasks = _setup_incremento_basico(tmp_path)
     g.conflict_on["origem1"] = True
 
-    incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
-    resultado = incrementar_continue(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    resultado = atualizar_continue(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
-    assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
 
     lock_store = _service_lock_store(g, tmp_path)
     lock = lock_store.ler("13.7.0")
@@ -102,10 +100,10 @@ def test_incrementar_continue_registra_no_lock(tmp_path):
     ), f"lock apos continue = {lock.tasks!r}"
 
 
-def test_incrementar_continue_preserva_commits_anteriores(tmp_path):
+def test_atualizar_continue_preserva_commits_anteriores(tmp_path):
     """Cobre um lote de 2 commits onde o SEGUNDO conflita. O primeiro ja foi
-    cherry-picked pra branch (e so nao esta no lock ainda, porque incrementar
-    escreve o lock em lote, no fim). incrementar_continue precisa recuperar
+    cherry-picked pra branch (e so nao esta no lock ainda, porque atualizar
+    escreve o lock em lote, no fim). atualizar_continue precisa recuperar
     OS DOIS commits do git (via LockStore.reconstruir), nao so o que acabou de
     ser resolvido - senao o registro do primeiro chamado se perde pra sempre
     do lock, mesmo estando correto no historico do git.
@@ -133,13 +131,13 @@ def test_incrementar_continue_preserva_commits_anteriores(tmp_path):
         TaskTarget(chamado="255515", task="VB-9999", titulo="Outra"),
     ]
 
-    resultado = incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-    assert resultado.status == IncrementStatus.BLOCKED and resultado.blocked_commit == "origem2", (
+    resultado = atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    assert resultado.status == AtualizarStatus.BLOCKED and resultado.blocked_commit == "origem2", (
         f"resultado inicial = {resultado!r}, quer BLOCKED em origem2"
     )
 
-    resultado = incrementar_continue(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-    assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    resultado = atualizar_continue(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
 
     lock_store = _service_lock_store(g, tmp_path)
     lock = lock_store.ler("13.7.0")
