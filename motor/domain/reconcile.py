@@ -22,7 +22,9 @@ def filtrar_excluidos(alvo: TargetSet, excluidos: list[Exclusion]) -> TargetSet:
 
 def diff_tasks(alvo: TargetSet, lock_tasks: TargetSet) -> tuple[list[str], list[str]]:
     """Calcula a diferenca simetrica entre alvo e lock (§5, §9)."""
-    novas = [chamado for chamado in alvo if chamado not in lock_tasks]
+    novas = [
+        chamado for chamado, tt in alvo.items() if chamado not in lock_tasks and tt.commits
+    ]
     removidas = [chamado for chamado in lock_tasks if chamado not in alvo]
     return sorted(novas), sorted(removidas)
 
@@ -46,7 +48,9 @@ def reconciliar(
             p = presentes.get(c.hash_origem, Presence.AUSENTE)
             if p == Presence.AUSENTE:
                 faltantes.append(c)
-            elif p == Presence.ANCESTRAL:
+            else:
+                # ANCESTRAL, TRAILER ou PATCH_ID - ja presente no historico,
+                # sem cherry-pick a fazer (§2/§9 "pick manual sem o tool").
                 ancestrais.append(c)
 
     lock_integro = True

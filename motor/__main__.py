@@ -36,26 +36,31 @@ from motor.engine.verificar import verificar
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Espelha flag.NewFlagSet(comando, ...) do Go: o mesmo conjunto de
-    flags existe pra todo comando (o Go nunca varia o flagset por comando).
-
-    Um unico parser flat (sem subparsers): `comando` nao usa `choices=` pra
-    que um comando desconhecido nao vire erro do argparse - ele precisa
-    seguir adiante ate o dispatch em main(), onde cai no `else` (equivalente
-    ao `default` do switch do Go), depois de repo/git ja terem sido validados.
+    """Um subparser por comando: `motor -h` lista os comandos e
+    `motor <comando> -h` mostra so as flags daquele comando (help nativo do
+    argparse). Flags compartilhadas (--repo, --debug) vivem num parent parser.
     """
-    parser = argparse.ArgumentParser(prog="motor", add_help=False)
-    parser.add_argument("comando")
-    parser.add_argument("versao")
-    parser.add_argument("--repo", default="")
-    parser.add_argument("--task-source", dest="fonte_flag", default="rest")
-    parser.add_argument("--lista", dest="lista_manual", default="")
-    parser.add_argument(
-        "--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", "")
-    )
-    parser.add_argument("--continue", dest="continuar", action="store_true")
-    parser.add_argument("--abort", dest="abortar", action="store_true")
-    parser.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
+    comum = argparse.ArgumentParser(add_help=False)
+    comum.add_argument("versao", help="versao alvo no formato X.Y.Z")
+    comum.add_argument("--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR")
+    comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
+
+    parser = argparse.ArgumentParser(prog="motor")
+    sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
+
+    sub.add_parser("verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)")
+
+    p_criar = sub.add_parser("criar", parents=[comum], help="cria a branch da versao a partir das tasks")
+    p_criar.add_argument("--task-source", dest="fonte_flag", default="rest", choices=["rest", "manual"], help="fonte das tasks (default: rest = ClickUp)")
+    p_criar.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
+    p_criar.add_argument("--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", ""), help="token ClickUp (default: $CLICKUP_TOKEN)")
+
+    p_inc = sub.add_parser("incrementar", parents=[comum], help="aplica commits faltantes na branch da versao")
+    grupo = p_inc.add_mutually_exclusive_group()
+    grupo.add_argument("--continue", dest="continuar", action="store_true", help="retoma apos resolver conflito")
+    grupo.add_argument("--abort", dest="abortar", action="store_true", help="aborta o incremento em andamento")
+
+    sub.add_parser("reconstruir-lock", parents=[comum], help="regenera o lock a partir do git")
 
     return parser
 
@@ -77,17 +82,6 @@ def _resolver_repo(valor: str) -> str:
         file=sys.stderr,
     )
     sys.exit(1)
-
-
-def imprimir_uso() -> None:
-    print(
-        """uso:
-  motor verificar        <X.Y.Z> --repo <path>
-  motor criar             <X.Y.Z> --repo <path> [--task-source=rest|manual (default: rest) --clickup-token=...] [--lista=arquivo]
-  motor incrementar      <X.Y.Z> --repo <path> [--continue | --abort]
-  motor reconstruir-lock <X.Y.Z> --repo <path>""",
-        file=sys.stderr,
-    )
 
 
 def _agrupar_por_task(commits: list) -> dict[str, list]:
@@ -125,8 +119,15 @@ def imprimir_status(s: VersionStatus) -> None:
 
 
 def imprimir_incremento(r: IncrementResult) -> None:
+    if r.aplicados:
+        _imprimir_commits_por_task("cherry-picks aplicados", r.aplicados, set())
+    else:
+        print("nenhum cherry-pick (branch ja atualizada)")
+    if r.ja_presentes:
+        print(f"{r.ja_presentes} commits ja presentes no historico (ignorados)")
+
     if r.status == IncrementStatus.BLOCKED:
-        print(f"BLOQUEADO em {r.blocked_commit}, arquivos: {r.arquivos_conflito}")
+        print(f"BLOQUEADO em {r.blocked_commit[:8]}, arquivos: {r.arquivos_conflito}")
         print("resolva e rode: motor incrementar <versao> --repo <path> --continue")
         return
     print("concluido")
@@ -138,13 +139,6 @@ def main(argv: list[str] | None = None) -> None:
 
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    if len(argv) < 2:
-        # Espelha `if len(os.Args) < 3` do Go: so checa aridade (comando +
-        # versao), nao valida se o comando existe - isso fica pro dispatch
-        # em main(), depois de repo/git ja terem sido validados.
-        imprimir_uso()
-        sys.exit(1)
-
     args = _build_parser().parse_args(argv)
 
     logging.basicConfig(
@@ -152,17 +146,15 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s" if args.debug else "%(levelname)s: %(message)s",
     )
 
-    if args.repo == "":
-        print("--repo e obrigatorio", file=sys.stderr)
-        sys.exit(1)
-
     repo = _resolver_repo(args.repo)
 
     try:
         git_repo = new_git_subprocess(repo)
 
-        if args.fonte_flag == "rest":
-            tasks = ClickUpRest(token=args.token)
+        # fonte_flag/token/lista_manual so existem no subparser 'criar';
+        # os demais comandos usam ClickUp (rest) por default.
+        if getattr(args, "fonte_flag", "rest") == "rest":
+            tasks = ClickUpRest(token=getattr(args, "token", os.environ.get("CLICKUP_TOKEN", "")))
         else:
             if not args.lista_manual:
                 print("--lista e obrigatorio quando --task-source=manual (ou use --task-source=rest para ClickUp)", file=sys.stderr)
@@ -183,24 +175,16 @@ def main(argv: list[str] | None = None) -> None:
             resultado = criar(deps, args.versao)
             imprimir_incremento(resultado)
         elif args.comando == "incrementar":
-            if args.continuar:
-                resultado = incrementar_continue(deps, args.versao)
-            elif args.abortar:
+            if args.abortar:
                 incrementar_abort(deps, args.versao)
-                resultado = None
+                print("abortado")
+            elif args.continuar:
+                imprimir_incremento(incrementar_continue(deps, args.versao))
             else:
-                resultado = incrementar(deps, args.versao)
-            if not args.abortar:
-                imprimir_incremento(resultado)
-        elif args.comando == "reconstruir-lock":
+                imprimir_incremento(incrementar(deps, args.versao))
+        else:  # reconstruir-lock (unico comando restante; argparse ja validou)
             resultado = reconstruir_lock(deps, args.versao)
             print(f"status: {resultado.status}, orfaos: {len(resultado.orfaos)}")
-        else:
-            # Equivalente ao `default` do switch em main.go: comando
-            # desconhecido chega aqui SO depois de repo/git ja validados,
-            # igual ao Go (mesmo flagset, mesma ordem de checagem).
-            imprimir_uso()
-            sys.exit(1)
         logging.debug("comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio)
     except MotorError as e:
         logging.error(str(e))

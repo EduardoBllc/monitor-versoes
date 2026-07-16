@@ -86,5 +86,5 @@ class VersionStatus:
     lock_integro: bool = False
     commits_sumidos: list[str] = field(default_factory=list)  # no lock, ausentes no git
     faltantes: list[CommitRef] = field(default_factory=list)
-    ancestrais: list[CommitRef] = field(default_factory=list)  # na base da versao
+    ancestrais: list[CommitRef] = field(default_factory=list)  # presente no historico mas fora do lock (ancestral, trailer ou patch-id)
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)

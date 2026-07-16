@@ -28,6 +28,10 @@ class IncrementResult:
     status: IncrementStatus
     blocked_commit: str = ""
     arquivos_conflito: list[str] = field(default_factory=list)
+    # commits cherry-picked nesta invocacao (vazio = nada a fazer)
+    aplicados: list[CommitRef] = field(default_factory=list)
+    # commits que ja estavam no historico (ancestrais, sem cherry-pick a fazer)
+    ja_presentes: int = 0
 
 
 def incrementar(deps: Deps, versao: str) -> IncrementResult:
@@ -51,7 +55,7 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
                     Exclusion(
                         commit=c.hash_origem,
                         chamado=c.chamado,
-                        motivo=f"ja presente na base {lock.base.ref}",
+                        motivo="ja presente no historico (sem cherry-pick a fazer)",
                         reason=ExclusionReason.AUTOMATICA,
                     )
                 )
@@ -59,6 +63,8 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
 
     deps.git.use_worktree(versao)
 
+    aplicados: list[CommitRef] = []
+    ja_presentes = len(status.ancestrais)
     t = time.monotonic()
     for c in faltam:
         outcome = deps.git.cherry_pick_x(c.hash_origem)
@@ -68,13 +74,17 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
                 # rerere.autoUpdate resolveu sozinho (§8) - segue o pick.
                 deps.git.continue_cherry_pick()
                 lock = _registrar_commit(lock, c)
+                aplicados.append(c)
                 continue
             return IncrementResult(
                 status=IncrementStatus.BLOCKED,
                 blocked_commit=c.hash_origem,
                 arquivos_conflito=paths,
+                aplicados=aplicados,
+                ja_presentes=ja_presentes,
             )
         lock = _registrar_commit(lock, c)
+        aplicados.append(c)
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
 
     lock_store.escrever(versao, lock)
@@ -84,7 +94,7 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
     # a worktree e so um checkout local descartavel - o que importa (commits,
     # lock) ja esta na branch e no remoto. use_worktree recria sob demanda.
     deps.git.worktree_remove(versao)
-    return IncrementResult(status=IncrementStatus.DONE)
+    return IncrementResult(status=IncrementStatus.DONE, aplicados=aplicados, ja_presentes=ja_presentes)
 
 
 def _registrar_commit(lock: Lock, c: CommitRef) -> Lock:
