@@ -52,6 +52,28 @@ def test_reconciliar_lock_nao_integro():
     assert len(status.faltantes) == 1, f"faltantes = {status.faltantes!r}, quer 1 item"
 
 
+def test_reconciliar_task_sem_commits_nao_verde():
+    # task veio do ClickUp mas nenhuma fonte achou commit/PR: NAO pode ser verde.
+    alvo = {"255514": TaskTarget(chamado="255514", task="VB-2354", commits=[])}
+    lock = Lock(tasks={})
+
+    status = reconciliar(alvo, lock, {}, [])
+
+    assert not status.verde, "task sem commits nao pode sair verde"
+    assert status.tasks_sem_commits == ["255514"], f"tasks_sem_commits = {status.tasks_sem_commits}"
+
+
+def test_reconciliar_task_sem_commits_reconhecida_fica_verde():
+    # escape hatch: chamado listado em tasks_sem_entrega (edicao manual do lock).
+    alvo = {"255514": TaskTarget(chamado="255514", task="VB-2354", commits=[])}
+    lock = Lock(tasks={}, tasks_sem_entrega=["255514"])
+
+    status = reconciliar(alvo, lock, {}, [])
+
+    assert status.tasks_sem_commits == [], f"reconhecida nao deveria entrar: {status.tasks_sem_commits}"
+    assert status.verde, f"esperava verde com escape hatch, status = {status!r}"
+
+
 def test_filtrar_excluidos():
     alvo = mk_target_set("251099", "VB-2549", "hashA", "hashB")
     excluidos = [Exclusion(commit="hashA", chamado="251099", motivo="ja presente na base")]

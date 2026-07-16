@@ -34,10 +34,13 @@ def test_lock_store_escrever_e_ler(tmp_path):
         excluidos=[
             Exclusion(commit="83cd5cb8a2", chamado="251099", motivo="ja presente na base 13.6.0")
         ],
+        tasks_sem_entrega=["270001"],
     )
 
     store.escrever("13.7.0", original)
     lido = store.ler("13.7.0")
+
+    assert lido.tasks_sem_entrega == ["270001"], f"tasks_sem_entrega lida = {lido.tasks_sem_entrega!r}"
 
     assert lido.versao == "13.7.0" and lido.tipo == VersionType.AJUSTADA, f"lock lido = {lido!r}"
     assert lido.base.ref == "13.6.0" and lido.base.commit == "571fea583e", f"base lida = {lido.base!r}"

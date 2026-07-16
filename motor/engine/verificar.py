@@ -5,14 +5,38 @@ from __future__ import annotations
 import logging
 import time
 
+from motor.adapters.commitsource.bitbucket import (
+    BitbucketPRCommitSource,
+    parse_workspace_repo,
+)
+from motor.adapters.commitsource.chain import ChainCommitSource
+from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.domain.reconcile import filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, VersionStatus, Presence
 from motor.engine.deps import Deps
+from motor.ports import CommitSource
 from motor.services.lock_store import LockStore
 from motor.services.presence_oracle import PresenceOracle
 from motor.services.target_resolver import TargetResolver
 
 logger = logging.getLogger(__name__)
+
+
+def _montar_commit_source(deps: Deps) -> CommitSource:
+    """Grep em master é o fallback sempre disponível. Com token do Bitbucket,
+    a PR (merged) vira a fonte primária: ordem = prioridade (§CommitSource).
+    """
+    grep = GrepCommitSource(git=deps.git)
+    if not deps.bitbucket_token:
+        return grep
+    workspace, repo = parse_workspace_repo(deps.git.remote_url("origin"))
+    pr = BitbucketPRCommitSource(
+        token=deps.bitbucket_token,
+        workspace=workspace,
+        repo=repo,
+        git=deps.git,
+    )
+    return ChainCommitSource(sources=[pr, grep])
 
 
 def verificar(deps: Deps, versao: str) -> VersionStatus:
@@ -27,7 +51,7 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     if deps.git.remote_branch_exists("origin", versao):
         deps.git.pull_branch("origin", versao)
 
-    resolver = TargetResolver(tasks=deps.tasks, git=deps.git)
+    resolver = TargetResolver(tasks=deps.tasks, commits=_montar_commit_source(deps))
     alvo = resolver.resolve(versao)
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 

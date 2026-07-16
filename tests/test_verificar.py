@@ -85,6 +85,54 @@ def test_verificar_faltante(tmp_path):
     ), f"faltantes = {status.faltantes!r}"
 
 
+def test_verificar_task_sem_commit_nao_verde(tmp_path):
+    # task no ClickUp pra versao, mas nenhum commit achado em master: vermelho.
+    g = FakeGit()
+    t0 = datetime.datetime.now(datetime.timezone.utc)
+    g.add_commit("base-tip", "", "base", t0)
+    g.set_branch("master", "base-tip")
+    g.set_branch("13.6.0", "base-tip")
+    g.set_branch("13.7.0", "base-tip")
+    (tmp_path / "13.7.0.lock").write_bytes(
+        b"""{
+        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
+        "tasks":{}
+        }"""
+    )
+
+    tasks = FakeTaskSource()
+    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+
+    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+
+    assert not status.verde, "task sem commit nao pode sair verde"
+    assert status.tasks_sem_commits == ["255514"], f"tasks_sem_commits = {status.tasks_sem_commits}"
+
+
+def test_verificar_task_sem_entrega_reconhecida_fica_verde(tmp_path):
+    # escape hatch: chamado listado em tasks_sem_entrega no lock (edicao manual).
+    g = FakeGit()
+    t0 = datetime.datetime.now(datetime.timezone.utc)
+    g.add_commit("base-tip", "", "base", t0)
+    g.set_branch("master", "base-tip")
+    g.set_branch("13.6.0", "base-tip")
+    g.set_branch("13.7.0", "base-tip")
+    (tmp_path / "13.7.0.lock").write_bytes(
+        b"""{
+        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
+        "tasks":{},"tasks_sem_entrega":["255514"]
+        }"""
+    )
+
+    tasks = FakeTaskSource()
+    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Sem entrega aqui")]
+
+    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+
+    assert status.tasks_sem_commits == [], f"reconhecida nao deveria entrar: {status.tasks_sem_commits}"
+    assert status.verde, f"esperava verde com escape hatch, status = {status!r}"
+
+
 def test_verificar_sumido_nunca_entra_em_conflitantes(tmp_path):
     """Cobre o invariante documentado em VersionStatus: conflitantes e
     subconjunto de faltantes (lado alvo), nunca de commits sumidos so-no-lock.

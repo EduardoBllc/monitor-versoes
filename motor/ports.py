@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from motor.domain.types import CommitRef, TaskTarget
+from motor.domain.types import CommitRef, TargetSet, TaskTarget
 
 
 class CherryPickOutcome(IntEnum):
@@ -29,6 +29,20 @@ class TaskSource(Protocol):
 
     def fetch(self, versao: str) -> list[TaskTarget]:
         """Busca tarefas para a versão."""
+        ...
+
+
+class CommitSource(Protocol):
+    """Fonte de commits de uma task (grep em master, PR do Bitbucket, etc).
+
+    Recebe o lote de tasks (batch) pra permitir uma varredura única — ex.
+    grep com --grep de todos os chamados juntos. Chave do TargetSet = chamado.
+    Pode omitir tasks sem commit; a completude (task vazia sobrevive ao alvo)
+    é garantida pelo TargetResolver.
+    """
+
+    def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
+        """Acha os commits de cada task."""
         ...
 
 
@@ -105,6 +119,10 @@ class GitRepo(Protocol):
 
     def remote_branch_exists(self, remote: str, branch: str) -> bool:
         """Verifica se branch remota existe."""
+        ...
+
+    def remote_url(self, remote: str) -> str:
+        """URL do remoto (ex: git@bitbucket.org:ws/repo.git)."""
         ...
 
     def push_branch(self, remote: str, branch: str) -> None:

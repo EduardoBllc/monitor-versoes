@@ -69,6 +69,7 @@ class LockStore:
             base=BaseRef(ref=base.get("ref", ""), commit=base.get("commit", "")),
             tasks=tasks,
             excluidos=excluidos,
+            tasks_sem_entrega=list(lj.get("tasks_sem_entrega") or []),
         )
 
     def escrever(self, branch: str, lock: Lock) -> None:
@@ -78,6 +79,7 @@ class LockStore:
             "base": {"ref": lock.base.ref, "commit": lock.base.commit},
             "tasks": {},
             "excluidos": [],
+            "tasks_sem_entrega": list(lock.tasks_sem_entrega),
         }
         for chamado, t in lock.tasks.items():
             hashes = [c.hash_origem for c in t.commits]

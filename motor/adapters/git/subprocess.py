@@ -312,6 +312,9 @@ class GitSubprocess:
         out = self._output(self.repo_path, "ls-remote", "--heads", remote, branch)
         return out != ""
 
+    def remote_url(self, remote: str) -> str:
+        return self._output(self.repo_path, "remote", "get-url", remote)
+
     def push_branch(self, remote: str, branch: str) -> None:
         self._run(self._worktree_dir(branch), "push", "-u", remote, branch)
 

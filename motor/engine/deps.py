@@ -12,3 +12,4 @@ class Deps:
     git: GitRepo
     tasks: TaskSource
     lock_dir: str = ""
+    bitbucket_token: str = ""  # se presente, PR do Bitbucket vira fonte primaria de commits

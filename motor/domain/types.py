@@ -76,6 +76,9 @@ class Lock:
     base: BaseRef = field(default_factory=BaseRef)
     tasks: TargetSet = field(default_factory=dict)
     excluidos: list[Exclusion] = field(default_factory=list)
+    # chamados reconhecidos como sem commit/PR neste projeto (julgamento
+    # manual, so vive no lock) - impede que a task caia em tasks_sem_commits.
+    tasks_sem_entrega: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -88,3 +91,4 @@ class VersionStatus:
     faltantes: list[CommitRef] = field(default_factory=list)
     ancestrais: list[CommitRef] = field(default_factory=list)  # presente no historico mas fora do lock (ancestral, trailer ou patch-id)
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)
+    tasks_sem_commits: list[str] = field(default_factory=list)  # task no ClickUp sem nenhum commit achado e nao reconhecida em tasks_sem_entrega

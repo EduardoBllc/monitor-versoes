@@ -55,6 +55,15 @@ def init_repo_de_teste(tmp_path) -> str:
     return dir_
 
 
+def test_git_subprocess_remote_url(tmp_path):
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "remote", "add", "origin", "git@bitbucket.org:acme/monitor.git")
+
+    g = new_git_subprocess(repo_dir)
+
+    assert g.remote_url("origin") == "git@bitbucket.org:acme/monitor.git"
+
+
 def test_git_subprocess_write_file_noop_quando_conteudo_igual(tmp_path):
     """Cobre o achado da tarefa 21: WriteFile grava, `git add` e comita sem
     checar se há algo de fato staged. Quando o conteúdo escrito é

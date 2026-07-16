@@ -62,7 +62,23 @@ def reconciliar(
                 sumidos.append(c.hash_origem)
     sumidos = sorted(sumidos)
 
-    verde = len(novas) == 0 and len(removidas) == 0 and lock_integro and len(faltantes) == 0
+    # Task no ClickUp sem nenhum commit achado: nao pode passar despercebida
+    # (falso-verde). So sai da lista se reconhecida manualmente em
+    # tasks_sem_entrega (task sem entrega neste projeto, julgamento do operador).
+    reconhecidas = set(lock.tasks_sem_entrega)
+    sem_commits = sorted(
+        chamado
+        for chamado, tt in alvo.items()
+        if not tt.commits and chamado not in reconhecidas
+    )
+
+    verde = (
+        len(novas) == 0
+        and len(removidas) == 0
+        and lock_integro
+        and len(faltantes) == 0
+        and len(sem_commits) == 0
+    )
 
     return VersionStatus(
         verde=verde,
@@ -73,4 +89,5 @@ def reconciliar(
         faltantes=faltantes,
         ancestrais=ancestrais,
         conflitantes=conflitantes,
+        tasks_sem_commits=sem_commits,
     )

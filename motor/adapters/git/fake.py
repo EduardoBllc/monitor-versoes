@@ -30,6 +30,7 @@ class FakeGit:
     branches: dict[str, str] = field(default_factory=dict)
     tags: dict[str, bool] = field(default_factory=dict)
     remotes: dict[str, bool] = field(default_factory=dict)
+    remote_urls: dict[str, str] = field(default_factory=dict)
     files: dict[str, dict[str, bytes]] = field(default_factory=dict)
 
     conflict_on: dict[str, bool] = field(default_factory=dict)
@@ -200,6 +201,12 @@ class FakeGit:
 
     def remote_branch_exists(self, remote: str, branch: str) -> bool:
         return self.remotes.get(branch, False)
+
+    def remote_url(self, remote: str) -> str:
+        url = self.remote_urls.get(remote)
+        if url is None:
+            raise MotorError(f"remoto {remote} nao configurado")
+        return url
 
     def push_branch(self, remote: str, branch: str) -> None:
         if branch not in self.branches:

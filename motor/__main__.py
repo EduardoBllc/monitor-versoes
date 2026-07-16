@@ -44,6 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument("versao", help="versao alvo no formato X.Y.Z")
     comum.add_argument("--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR")
     comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
+    comum.add_argument("--bitbucket-token", dest="bitbucket_token", default=os.environ.get("BITBUCKET_TOKEN", ""), help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR")
 
     parser = argparse.ArgumentParser(prog="motor")
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
@@ -108,6 +109,9 @@ def imprimir_status(s: VersionStatus) -> None:
     print(f"verde: {s.verde}")
     print(f"tasks novas: {s.tasks_novas}")
     print(f"tasks removidas: {s.tasks_removidas}")
+    if s.tasks_sem_commits:
+        print(f"tasks sem commits: {s.tasks_sem_commits}")
+        print("  (nenhum commit/PR achado - adicione ao lock em tasks_sem_entrega se for proposital)")
     if not s.lock_integro:
         print(f"lock: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
         for hash_ in s.commits_sumidos:
@@ -165,7 +169,12 @@ def main(argv: list[str] | None = None) -> None:
         target_repo_name = os.path.basename(repo)
         lock_dir = os.path.join(motor_root, "locks", target_repo_name)
 
-        deps = Deps(git=git_repo, tasks=tasks, lock_dir=lock_dir)
+        deps = Deps(
+            git=git_repo,
+            tasks=tasks,
+            lock_dir=lock_dir,
+            bitbucket_token=getattr(args, "bitbucket_token", ""),
+        )
 
         inicio = time.monotonic()
         if args.comando == "verificar":

@@ -6,6 +6,12 @@ from motor.adapters.git.fake import FakeGit
 from motor.ports import CherryPickOutcome
 
 
+def test_fake_git_remote_url():
+    g = FakeGit()
+    g.remote_urls["origin"] = "git@bitbucket.org:acme/monitor.git"
+    assert g.remote_url("origin") == "git@bitbucket.org:acme/monitor.git"
+
+
 def test_fake_git_cherry_pick_aplica_e_encadeia_trailer():
     g = FakeGit()
     base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
