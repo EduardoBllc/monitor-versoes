@@ -299,7 +299,10 @@ class GitSubprocess:
         self._current_branch = branch
 
     def worktree_remove(self, branch: str) -> None:
-        self._run(self.repo_path, "worktree", "remove", self._worktree_dir(branch))
+        # --force: descarta cruft nao rastreado (deps instaladas, .env etc) que
+        # bloquearia a remocao - a branch ja esta com tudo commitado e pushado
+        # nesse ponto, nao ha nada de valor no diretorio da worktree em si.
+        self._run(self.repo_path, "worktree", "remove", "--force", self._worktree_dir(branch))
 
     def tag_exists(self, tag: str) -> bool:
         out = self._output(self.repo_path, "tag", "-l", tag)

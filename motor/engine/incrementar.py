@@ -81,6 +81,9 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
     # publica so apos o lote fechar sem conflito (§6, "branch compartilhada") -
     # um lote BLOCKED fica so local ate resolver e rodar de novo.
     deps.git.push_branch("origin", versao)
+    # a worktree e so um checkout local descartavel - o que importa (commits,
+    # lock) ja esta na branch e no remoto. use_worktree recria sob demanda.
+    deps.git.worktree_remove(versao)
     return IncrementResult(status=IncrementStatus.DONE)
 
 
@@ -128,3 +131,4 @@ def incrementar_continue(deps: Deps, versao: str) -> IncrementResult:
 def incrementar_abort(deps: Deps, versao: str) -> None:
     deps.git.use_worktree(versao)
     deps.git.abort_cherry_pick()
+    deps.git.worktree_remove(versao)

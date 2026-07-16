@@ -36,6 +36,7 @@ class FakeGit:
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
     commits_in_range_err: Exception | None = None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
     pulled: list[str] = field(default_factory=list)  # espiao de teste: branches que sofreram pull_branch
+    removed_worktrees: list[str] = field(default_factory=list)  # espiao de teste: branches com worktree removida
 
     _current_branch: str = ""
     _pending_pick: str = ""
@@ -190,7 +191,9 @@ class FakeGit:
         self._current_branch = branch
 
     def worktree_remove(self, branch: str) -> None:
-        self.branches.pop(branch, None)
+        # so desanexa a worktree (como o git de verdade) - a branch em si
+        # continua existindo, pra use_worktree poder recria-la sob demanda.
+        self.removed_worktrees.append(branch)
 
     def tag_exists(self, tag: str) -> bool:
         return self.tags.get(tag, False)

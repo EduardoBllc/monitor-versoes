@@ -9,6 +9,7 @@ from motor.engine.deps import Deps
 from motor.engine.incrementar import (
     IncrementStatus,
     incrementar,
+    incrementar_abort,
     incrementar_continue,
 )
 from motor.services.lock_store import LockStore
@@ -45,6 +46,8 @@ def test_incrementar_aplica_tudo(tmp_path):
 
     assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
     assert g.remotes.get("13.7.0") is True, "esperava push apos lote fechar sem conflito"
+    assert g.removed_worktrees == ["13.7.0"], "esperava worktree removida apos lote fechar sem conflito"
+    assert "13.7.0" in g.branches, "worktree_remove nao pode apagar a branch, so o checkout local"
 
     lock_store = _service_lock_store(g, tmp_path)
     lock = lock_store.ler("13.7.0")
@@ -66,6 +69,20 @@ def test_incrementar_para_em_conflito(tmp_path):
         f"blocked_commit = {resultado.blocked_commit!r}, quer origem1"
     )
     assert "13.7.0" not in g.remotes, "nao esperava push com lote bloqueado por conflito"
+    assert g.removed_worktrees == [], (
+        "nao esperava remover a worktree com lote bloqueado - --continue precisa dela"
+    )
+
+
+def test_incrementar_abort_remove_worktree(tmp_path):
+    g, tasks = _setup_incremento_basico(tmp_path)
+    g.conflict_on["origem1"] = True
+    incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+
+    incrementar_abort(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+
+    assert g.removed_worktrees == ["13.7.0"], "esperava worktree removida apos abort"
+    assert "13.7.0" in g.branches, "worktree_remove nao pode apagar a branch, so o checkout local"
 
 
 def test_incrementar_continue_registra_no_lock(tmp_path):
