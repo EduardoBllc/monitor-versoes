@@ -17,8 +17,12 @@ class BaseResolver:
     def resolve(self, numero: str) -> BaseRef:
         existentes = self.git.list_version_branches()
         ref = inferir_base(numero, existentes)
+        # ref pode existir como branch E tag (versao fechada cuja branch nao
+        # foi apagada) - nome puro fica ambiguo pro git. Tag e o estado
+        # publicado e definitivo, entao desempata pra ela quando presente.
+        ref_qualificado = f"refs/tags/{ref}" if self.git.tag_exists(ref) else ref
         try:
-            commit = self.git.resolve_ref(ref)
+            commit = self.git.resolve_ref(ref_qualificado)
         except Exception as e:
-            raise MotorError(f"resolvendo ref {ref}: {e}") from e
+            raise MotorError(f"resolvendo ref {ref_qualificado}: {e}") from e
         return BaseRef(ref=ref, commit=commit)

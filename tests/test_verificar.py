@@ -32,6 +32,31 @@ def test_verificar_verde_quando_tudo_aplicado(tmp_path):
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert status.verde, f"esperava verde, status = {status!r}"
+    assert g.pulled == [], "sem branch remota, verificar nao deveria puxar nada"
+
+
+def test_verificar_puxa_remoto_quando_branch_publicada(tmp_path):
+    g = FakeGit()
+    t0 = datetime.datetime.now(datetime.timezone.utc)
+    g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
+    g.add_commit("base-tip", "", "base", t0)
+    g.set_branch("master", "origem1")
+    g.set_branch("13.6.0", "base-tip")
+    g.set_branch("13.7.0", "base-tip")
+    g.remotes["13.7.0"] = True
+    (tmp_path / "13.7.0.lock").write_bytes(
+        b"""{
+        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
+        "tasks":{}
+        }"""
+    )
+
+    tasks = FakeTaskSource()
+    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+
+    verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+
+    assert g.pulled == ["13.7.0"], "branch ja publicada, esperava pull antes de verificar"
 
 
 def test_verificar_faltante(tmp_path):

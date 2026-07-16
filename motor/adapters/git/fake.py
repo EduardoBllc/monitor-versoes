@@ -35,6 +35,7 @@ class FakeGit:
     conflict_on: dict[str, bool] = field(default_factory=dict)
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
     commits_in_range_err: Exception | None = None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
+    pulled: list[str] = field(default_factory=list)  # espiao de teste: branches que sofreram pull_branch
 
     _current_branch: str = ""
     _pending_pick: str = ""
@@ -196,6 +197,16 @@ class FakeGit:
 
     def remote_branch_exists(self, remote: str, branch: str) -> bool:
         return self.remotes.get(branch, False)
+
+    def push_branch(self, remote: str, branch: str) -> None:
+        if branch not in self.branches:
+            raise MotorError(f"branch {branch} nao existe")
+        self.remotes[branch] = True
+
+    def pull_branch(self, remote: str, branch: str) -> None:
+        if branch not in self.branches:
+            raise MotorError(f"branch {branch} nao existe")
+        self.pulled.append(branch)
 
     def list_version_branches(self) -> list[str]:
         return sorted(self.branches.keys())

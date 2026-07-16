@@ -78,6 +78,9 @@ def incrementar(deps: Deps, versao: str) -> IncrementResult:
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
 
     lock_store.escrever(versao, lock)
+    # publica so apos o lote fechar sem conflito (§6, "branch compartilhada") -
+    # um lote BLOCKED fica so local ate resolver e rodar de novo.
+    deps.git.push_branch("origin", versao)
     return IncrementResult(status=IncrementStatus.DONE)
 
 

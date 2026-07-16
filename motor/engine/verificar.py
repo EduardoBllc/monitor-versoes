@@ -17,9 +17,16 @@ logger = logging.getLogger(__name__)
 
 def verificar(deps: Deps, versao: str) -> VersionStatus:
     """Implementa a operacao read-only do §5: cruza ClickUp x lock x git
-    e retorna o VersionStatus. Nunca muta nada.
+    e retorna o VersionStatus. Nao muta dados do usuario - so avanca (fast-
+    forward) a branch local ate o que ja esta publicado no remoto, pra nao
+    cruzar contra um estado desatualizado (ex.: incremento rodado em outra
+    maquina).
     """
     inicio = time.monotonic()
+    deps.git.use_worktree(versao)
+    if deps.git.remote_branch_exists("origin", versao):
+        deps.git.pull_branch("origin", versao)
+
     resolver = TargetResolver(tasks=deps.tasks, git=deps.git)
     alvo = resolver.resolve(versao)
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
@@ -49,7 +56,7 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     presentes: dict[str, Presence] = {}
     conflitantes: list[CommitRef] = []
     for hash_, c in todos_os_hashes.items():
-        p = oracle.presente(hash_, lock.base.ref, versao)
+        p = oracle.presente(hash_, lock.base.commit, versao)
         presentes[hash_] = p
         # predict_merge so faz sentido pra commits que sao candidatos reais de
         # cherry-pick (lado alvo) - conflitantes e subconjunto de faltantes

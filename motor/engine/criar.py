@@ -25,7 +25,8 @@ def criar(deps: Deps, versao: str) -> IncrementResult:
     base_resolver = BaseResolver(git=deps.git)
     base = base_resolver.resolve(versao)
 
-    deps.git.worktree_add(versao, base.ref)
+    deps.git.worktree_add(versao, base.commit)
+    deps.git.write_file(versao, "VERSAO", f"{versao}\n".encode(), f"chore: versao {versao}")
 
     tipo = inferir_tipo(versao)
     lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)

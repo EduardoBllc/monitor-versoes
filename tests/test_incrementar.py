@@ -44,6 +44,7 @@ def test_incrementar_aplica_tudo(tmp_path):
     resultado = incrementar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
     assert resultado.status == IncrementStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert g.remotes.get("13.7.0") is True, "esperava push apos lote fechar sem conflito"
 
     lock_store = _service_lock_store(g, tmp_path)
     lock = lock_store.ler("13.7.0")
@@ -64,6 +65,7 @@ def test_incrementar_para_em_conflito(tmp_path):
     assert resultado.blocked_commit == "origem1", (
         f"blocked_commit = {resultado.blocked_commit!r}, quer origem1"
     )
+    assert "13.7.0" not in g.remotes, "nao esperava push com lote bloqueado por conflito"
 
 
 def test_incrementar_continue_registra_no_lock(tmp_path):

@@ -309,6 +309,12 @@ class GitSubprocess:
         out = self._output(self.repo_path, "ls-remote", "--heads", remote, branch)
         return out != ""
 
+    def push_branch(self, remote: str, branch: str) -> None:
+        self._run(self._worktree_dir(branch), "push", "-u", remote, branch)
+
+    def pull_branch(self, remote: str, branch: str) -> None:
+        self._run(self._worktree_dir(branch), "pull", "--ff-only", remote, branch)
+
     def list_version_branches(self) -> list[str]:
         # %(refname) + strip manual do prefixo, nao %(refname:short): quando
         # branch e tag tem o mesmo nome (versao fechada, tag criada, branch

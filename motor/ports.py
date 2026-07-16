@@ -107,6 +107,14 @@ class GitRepo(Protocol):
         """Verifica se branch remota existe."""
         ...
 
+    def push_branch(self, remote: str, branch: str) -> None:
+        """Publica branch no remoto (-u)."""
+        ...
+
+    def pull_branch(self, remote: str, branch: str) -> None:
+        """Atualiza a branch local com o remoto (fast-forward only)."""
+        ...
+
     def list_version_branches(self) -> list[str]:
         """Lista branches de versão."""
         ...

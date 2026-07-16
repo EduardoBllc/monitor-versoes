@@ -106,7 +106,7 @@ class LockStore:
         julgamento que nao dao pra recuperar da varredura - viram orfaos.
         """
         try:
-            commits = self.git.commits_in_range(base.ref, branch)
+            commits = self.git.commits_in_range(base.commit, branch)
         except Exception as e:
             raise MotorError(f"varrendo commits: {e}") from e
 
