@@ -18,7 +18,7 @@ def test_criar_nova_versao(tmp_path):
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("hash136", "", "base 13.6.0", t0)
-    g.set_branch("master", "origem1")
+    g.set_branch("origin/master", "origem1")
     g.set_branch("13.6.0", "hash136")
 
     tasks = FakeTaskSource()
@@ -37,7 +37,7 @@ def test_criar_nao_publica_se_bloqueada_por_conflito(tmp_path):
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("hash136", "", "base 13.6.0", t0)
-    g.set_branch("master", "origem1")
+    g.set_branch("origin/master", "origem1")
     g.set_branch("13.6.0", "hash136")
     g.conflict_on["origem1"] = True
 

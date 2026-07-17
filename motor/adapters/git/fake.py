@@ -34,9 +34,11 @@ class FakeGit:
     files: dict[str, dict[str, bytes]] = field(default_factory=dict)
 
     conflict_on: dict[str, bool] = field(default_factory=dict)
+    file_changes: dict[str, frozenset[str]] = field(default_factory=dict)  # fixture: arquivos alterados por commit (nivel 4)
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
     commits_in_range_err: Exception | None = None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
     pulled: list[str] = field(default_factory=list)  # espiao de teste: branches que sofreram pull_branch
+    fetched: list[str] = field(default_factory=list)  # espiao de teste: remotos que sofreram fetch
     removed_worktrees: list[str] = field(default_factory=list)  # espiao de teste: branches com worktree removida
 
     _current_branch: str = ""
@@ -126,6 +128,11 @@ class FakeGit:
         if hash not in self.commits:
             raise MotorError(f"commit {hash} nao encontrado")
         return "patchid-" + hash
+
+    def changed_files(self, hash: str) -> frozenset[str]:
+        if hash not in self.commits:
+            raise MotorError(f"commit {hash} nao encontrado")
+        return self.file_changes.get(hash, frozenset())
 
     def resolve_ref(self, ref: str) -> str:
         if ref in self.branches:
@@ -217,6 +224,9 @@ class FakeGit:
         if branch not in self.branches:
             raise MotorError(f"branch {branch} nao existe")
         self.pulled.append(branch)
+
+    def fetch(self, remote: str) -> None:
+        self.fetched.append(remote)
 
     def list_version_branches(self) -> list[str]:
         return sorted(self.branches.keys())

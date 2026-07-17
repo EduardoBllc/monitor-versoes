@@ -74,6 +74,17 @@ def test_reconciliar_task_sem_commits_reconhecida_fica_verde():
     assert status.verde, f"esperava verde com escape hatch, status = {status!r}"
 
 
+def test_reconciliar_suspeitos_conteudo_passthrough():
+    alvo = mk_target_set("255514", "VB-2354", "hash1")
+    lock = Lock(tasks={})
+    presentes: dict[str, Presence] = {}  # hash1 ausente -> entra em faltantes
+    suspeita = CommitRef(hash_origem="hash1", chamado="255514")
+
+    status = reconciliar(alvo, lock, presentes, [], [suspeita])
+
+    assert status.suspeitos_conteudo == [suspeita], f"suspeitos_conteudo = {status.suspeitos_conteudo!r}"
+
+
 def test_filtrar_excluidos():
     alvo = mk_target_set("251099", "VB-2549", "hashA", "hashB")
     excluidos = [Exclusion(commit="hashA", chamado="251099", motivo="ja presente na base")]

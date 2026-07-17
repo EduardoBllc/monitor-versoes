@@ -1,5 +1,7 @@
 import datetime
 
+import pytest
+
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import TaskTarget
@@ -10,6 +12,7 @@ from motor.engine.atualizar import (
     atualizar_abort,
     atualizar_continue,
 )
+from motor.errors import MotorError
 from motor.services.lock_store import LockStore
 
 
@@ -22,7 +25,7 @@ def _setup_incremento_basico(tmp_path) -> tuple[FakeGit, FakeTaskSource]:
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("master", "origem1")
+    g.set_branch("origin/master", "origem1")
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "base-tip")
     (tmp_path / "13.7.0.lock").write_bytes(
@@ -52,6 +55,24 @@ def test_atualizar_aplica_tudo(tmp_path):
     assert (
         len(lock.tasks["255514"].commits) == 1
     ), f"lock apos atualizar = {lock.tasks!r}"
+
+
+def test_atualizar_bloqueia_com_suspeita_de_conteudo(tmp_path):
+    """Nao pode cherry-pickar de novo um commit suspeito de ja ter sido
+    aplicado manualmente (sem -x) com conteudo divergente - repetiria o
+    conflito que o operador ja resolveu na mao. Supervisionado: levanta erro
+    em vez de tentar sozinho.
+    """
+    g, tasks = _setup_incremento_basico(tmp_path)
+    g.add_commit("alvo1", "base-tip", "fix: ch255514 corrige logs", datetime.datetime.now(datetime.timezone.utc))
+    g.set_branch("13.7.0", "alvo1")
+    g.file_changes["origem1"] = frozenset({"a.txt"})
+    g.file_changes["alvo1"] = frozenset({"a.txt"})
+
+    with pytest.raises(MotorError):
+        atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+
+    assert "13.7.0" not in g.remotes, "nao esperava push com suspeita nao resolvida"
 
 
 def test_atualizar_para_em_conflito(tmp_path):
@@ -114,7 +135,7 @@ def test_atualizar_continue_preserva_commits_anteriores(tmp_path):
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("origem2", "origem1", "fix: ch255515 outra correcao VB-9999", t1)
     g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("master", "origem2")
+    g.set_branch("origin/master", "origem2")
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "base-tip")
     (tmp_path / "13.7.0.lock").write_bytes(

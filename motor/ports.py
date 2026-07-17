@@ -73,6 +73,10 @@ class GitRepo(Protocol):
         """ID do patch (para comparação de conteúdo)."""
         ...
 
+    def changed_files(self, hash: str) -> frozenset[str]:
+        """Caminhos alterados pelo commit (para o nível 4 do oráculo de presença)."""
+        ...
+
     def resolve_ref(self, ref: str) -> str:
         """Resolve uma referência para hash."""
         ...
@@ -131,6 +135,11 @@ class GitRepo(Protocol):
 
     def pull_branch(self, remote: str, branch: str) -> None:
         """Atualiza a branch local com o remoto (fast-forward only)."""
+        ...
+
+    def fetch(self, remote: str) -> None:
+        """Atualiza as referencias remote-tracking (ex: origin/master), sem
+        tocar em branch local nenhuma."""
         ...
 
     def list_version_branches(self) -> list[str]:

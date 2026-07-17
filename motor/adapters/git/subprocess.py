@@ -204,6 +204,12 @@ class GitSubprocess:
             raise MotorError(f"patch-id vazio para {hash}")
         return campos[0]
 
+    def changed_files(self, hash: str) -> frozenset[str]:
+        out = self._output(
+            self.repo_path, "diff-tree", "--no-commit-id", "--name-only", "-r", hash
+        )
+        return frozenset(l for l in out.split("\n") if l != "")
+
     def resolve_ref(self, ref: str) -> str:
         return self._output(self.repo_path, "rev-parse", ref)
 
@@ -320,6 +326,9 @@ class GitSubprocess:
 
     def pull_branch(self, remote: str, branch: str) -> None:
         self._run(self._worktree_dir(branch), "pull", "--ff-only", remote, branch)
+
+    def fetch(self, remote: str) -> None:
+        self._run(self.repo_path, "fetch", remote)
 
     def list_version_branches(self) -> list[str]:
         # %(refname) + strip manual do prefixo, nao %(refname:short): quando

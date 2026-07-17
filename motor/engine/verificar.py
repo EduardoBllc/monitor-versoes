@@ -32,6 +32,7 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
     workspace, repo = parse_workspace_repo(deps.git.remote_url("origin"))
     pr = BitbucketPRCommitSource(
         token=deps.bitbucket_token,
+        email=deps.bitbucket_email,
         workspace=workspace,
         repo=repo,
         git=deps.git,
@@ -47,6 +48,7 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     maquina).
     """
     inicio = time.monotonic()
+    deps.git.fetch("origin")
     deps.git.use_worktree(versao)
     if deps.git.remote_branch_exists("origin", versao):
         deps.git.pull_branch("origin", versao)
@@ -79,13 +81,17 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     t = time.monotonic()
     presentes: dict[str, Presence] = {}
     conflitantes: list[CommitRef] = []
+    suspeitos_conteudo: list[CommitRef] = []
     for hash_, c in todos_os_hashes.items():
         p = oracle.presente(hash_, lock.base.commit, versao)
         presentes[hash_] = p
-        # predict_merge so faz sentido pra commits que sao candidatos reais de
-        # cherry-pick (lado alvo) - conflitantes e subconjunto de faltantes
-        # (VersionStatus), nunca de commits sumidos so-no-lock.
+        # predict_merge e o nivel 4 (msg+arquivos) so fazem sentido pra commits
+        # que sao candidatos reais de cherry-pick (lado alvo) - conflitantes e
+        # suspeitos_conteudo sao subconjunto de faltantes (VersionStatus), nunca
+        # de commits sumidos so-no-lock.
         if p == Presence.AUSENTE and candidatos_conflito.get(hash_):
+            if oracle.suspeita_por_conteudo(hash_, lock.base.commit, versao) is not None:
+                suspeitos_conteudo.append(c)
             meta = deps.git.commit_meta(hash_)
             pred = deps.git.predict_merge(meta.parent, tip, hash_)
             if pred.conflita:
@@ -95,4 +101,4 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     )
 
     logger.debug("verificar total: %.3fs", time.monotonic() - inicio)
-    return reconciliar(alvo_filtrado, lock, presentes, conflitantes)
+    return reconciliar(alvo_filtrado, lock, presentes, conflitantes, suspeitos_conteudo)

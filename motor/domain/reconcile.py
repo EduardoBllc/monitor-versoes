@@ -34,10 +34,11 @@ def reconciliar(
     lock: Lock,
     presentes: dict[str, Presence],
     conflitantes: list[CommitRef],
+    suspeitos_conteudo: list[CommitRef] = (),
 ) -> VersionStatus:
-    """Cruza as 3 fontes (§2, §9) e produz o VersionStatus. `presentes`
-    e `conflitantes` sao pre-computados pelo chamador (services.PresenceOracle e
-    GitRepo.PredictMerge) - esta funcao fica pura.
+    """Cruza as 3 fontes (§2, §9) e produz o VersionStatus. `presentes`,
+    `conflitantes` e `suspeitos_conteudo` sao pre-computados pelo chamador
+    (services.PresenceOracle e GitRepo.PredictMerge) - esta funcao fica pura.
     """
     novas, removidas = diff_tasks(alvo, lock.tasks)
 
@@ -89,5 +90,6 @@ def reconciliar(
         faltantes=faltantes,
         ancestrais=ancestrais,
         conflitantes=conflitantes,
+        suspeitos_conteudo=list(suspeitos_conteudo),
         tasks_sem_commits=sem_commits,
     )

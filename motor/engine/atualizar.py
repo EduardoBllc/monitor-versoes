@@ -40,6 +40,14 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     """
     status = verificar(deps, versao)
 
+    if status.suspeitos_conteudo:
+        hashes = ", ".join(c.hash_origem[:8] for c in status.suspeitos_conteudo)
+        raise MotorError(
+            "commits suspeitos de cherry-pick manual com conteudo divergente "
+            f"(mesma mensagem e arquivos ja existem no alvo, sem trailer -x): {hashes}. "
+            "Confirme manualmente (exclua do lock se ja aplicado) antes de rodar atualizar de novo."
+        )
+
     faltam = ordenar_por_data(status.faltantes)
     lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
     lock = lock_store.ler(versao)

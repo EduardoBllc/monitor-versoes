@@ -10,6 +10,7 @@ __pycache__/
 
 .rtk
 locks/
+conflitos/
 
 # Secrets / ambiente
 .env

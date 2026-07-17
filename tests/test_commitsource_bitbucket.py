@@ -49,6 +49,7 @@ def _fonte(handler, git: FakeGit) -> BitbucketPRCommitSource:
     return BitbucketPRCommitSource(
         base_url="http://testserver",
         token="tok123",
+        email="dev@x.com",
         workspace="acme",
         repo="monitor",
         git=git,
@@ -58,7 +59,7 @@ def _fonte(handler, git: FakeGit) -> BitbucketPRCommitSource:
 
 def _handler_pr(prs: list[dict], commits_por_pr: dict[int, list[dict]]):
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers.get("Authorization") == "Bearer tok123"
+        assert request.headers.get("Authorization") == "Basic ZGV2QHguY29tOnRvazEyMw=="
         path = request.url.path
         if path.endswith("/pullrequests"):
             return httpx.Response(200, json={"values": prs})
@@ -110,6 +111,24 @@ def test_pr_titulo_que_nao_comeca_com_vb_e_ignorado():
     resultado = fonte.resolve([TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")])
 
     assert resultado == {}, f"PR sem prefixo/branch batendo nao deveria contar: {resultado!r}"
+
+
+def test_pr_ignora_merge_commit():
+    # commit com 2 pais e merge: cherry-pick -x sem -m falha, entao nao entra na lista.
+    g = _git_com_master("c1")
+    prs = [{"id": 1, "title": "VB-2354 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
+    commits = {
+        1: [
+            {"hash": "merge1", "date": "2024-01-02T10:00:00+00:00", "message": "merge", "parents": [{"hash": "a"}, {"hash": "b"}]},
+            {"hash": "c1", "date": "2024-01-03T10:00:00+00:00", "message": "fix", "parents": [{"hash": "p1"}]},
+        ]
+    }
+    fonte = _fonte(_handler_pr(prs, commits), g)
+
+    resultado = fonte.resolve([TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")])
+
+    hashes = [c.hash_origem for c in resultado["255514"].commits]
+    assert hashes == ["c1"], f"merge commit nao deveria entrar: {hashes}"
 
 
 def test_task_sem_vb_id_nao_consulta_bitbucket():

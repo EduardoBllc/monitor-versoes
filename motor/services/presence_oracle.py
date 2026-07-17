@@ -20,6 +20,15 @@ class PresenceOracle:
         default_factory=dict, repr=False, compare=False
     )
     _patch_id_cache: dict[str, str | None] = field(default_factory=dict, repr=False, compare=False)
+    _changed_files_cache: dict[str, frozenset[str] | None] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    # (base, branch) -> chave (msg, arquivos) -> fila de candidatos do alvo ainda
+    # nao consumidos. Consumo (pop) evita que 2 commits de origem com msg+arquivos
+    # identicos (comum dentro da mesma PR) colidam no mesmo candidato do alvo.
+    _por_msg_arquivos_cache: dict[tuple[str, str], dict[tuple[str, frozenset[str]], list[CommitRef]]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def presente(self, hash_origem: str, base: str, branch: str) -> Presence:
         """Implementa o oraculo de 3 niveis (§2): ancestral direto, trailer de
@@ -52,6 +61,46 @@ class PresenceOracle:
             if pid is not None and pid == patch_id_origem:
                 return Presence.PATCH_ID
         return Presence.AUSENTE
+
+    def suspeita_por_conteudo(self, hash_origem: str, base: str, branch: str) -> CommitRef | None:
+        """Nivel 4 (fora do oraculo de presenca formal - so alerta, nao conta
+        como presente): cherry-pick manual sem -x cujo conteudo foi alterado na
+        resolucao do conflito muda o patch-id, entao o nivel 3 nao pega. Aqui
+        procura no alvo um commit com a mesma mensagem E os mesmos arquivos
+        alterados - a mensagem sozinha colide demais quando o time repete a
+        mesma msg em commits distintos da mesma PR.
+        """
+        meta = self.git.commit_meta(hash_origem)
+        arquivos_origem = self._changed_files(hash_origem)
+        if arquivos_origem is None:
+            return None
+        chave = (meta.msg.strip(), arquivos_origem)
+        candidatos = self._por_msg_arquivos(base, branch).get(chave)
+        if not candidatos:
+            return None
+        return candidatos.pop(0)
+
+    def _por_msg_arquivos(
+        self, base: str, branch: str
+    ) -> dict[tuple[str, frozenset[str]], list[CommitRef]]:
+        chave = (base, branch)
+        if chave not in self._por_msg_arquivos_cache:
+            agrupado: dict[tuple[str, frozenset[str]], list[CommitRef]] = {}
+            for c in self._commits_in_range(base, branch) or []:
+                arquivos = self._changed_files(c.hash_origem)
+                if arquivos is None:
+                    continue
+                agrupado.setdefault((c.msg.strip(), arquivos), []).append(c)
+            self._por_msg_arquivos_cache[chave] = agrupado
+        return self._por_msg_arquivos_cache[chave]
+
+    def _changed_files(self, hash_: str) -> frozenset[str] | None:
+        if hash_ not in self._changed_files_cache:
+            try:
+                self._changed_files_cache[hash_] = self.git.changed_files(hash_)
+            except Exception:
+                self._changed_files_cache[hash_] = None
+        return self._changed_files_cache[hash_]
 
     def _commits_in_range(self, base: str, branch: str) -> list[CommitRef] | None:
         chave = (base, branch)

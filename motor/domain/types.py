@@ -91,4 +91,5 @@ class VersionStatus:
     faltantes: list[CommitRef] = field(default_factory=list)
     ancestrais: list[CommitRef] = field(default_factory=list)  # presente no historico mas fora do lock (ancestral, trailer ou patch-id)
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)
+    suspeitos_conteudo: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes com match de mensagem+arquivos no alvo (provavel cherry-pick manual com conteudo divergente) - so alerta, nao conta como presente
     tasks_sem_commits: list[str] = field(default_factory=list)  # task no ClickUp sem nenhum commit achado e nao reconhecida em tasks_sem_entrega

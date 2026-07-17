@@ -45,6 +45,7 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument("--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR")
     comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
     comum.add_argument("--bitbucket-token", dest="bitbucket_token", default=os.environ.get("BITBUCKET_TOKEN", ""), help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR")
+    comum.add_argument("--bitbucket-email", dest="bitbucket_email", default=os.environ.get("BITBUCKET_EMAIL", ""), help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)")
 
     parser = argparse.ArgumentParser(prog="motor")
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
@@ -94,7 +95,9 @@ def _agrupar_por_task(commits: list) -> dict[str, list]:
     return grupos
 
 
-def _imprimir_commits_por_task(titulo: str, commits: list, conflitantes: set[str]) -> None:
+def _imprimir_commits_por_task(
+    titulo: str, commits: list, conflitantes: set[str], suspeitos: set[str] = frozenset()
+) -> None:
     grupos = _agrupar_por_task(commits)
     print(f"{titulo} ({len(commits)} em {len(grupos)} tasks):")
     for chave, itens in grupos.items():
@@ -102,6 +105,7 @@ def _imprimir_commits_por_task(titulo: str, commits: list, conflitantes: set[str
         for c in itens:
             primeira_linha_msg = c.msg.splitlines()[0] if c.msg else ""
             tag = " [CONFLITANTE]" if c.hash_origem in conflitantes else ""
+            tag += " [SUSPEITO: msg+arquivos ja existem no alvo com conteudo diferente]" if c.hash_origem in suspeitos else ""
             print(f"    - {c.hash_origem[:8]} {primeira_linha_msg}{tag}".rstrip())
 
 
@@ -119,7 +123,8 @@ def imprimir_status(s: VersionStatus) -> None:
     else:
         print("lock: integro")
     conflitantes = {c.hash_origem for c in s.conflitantes}
-    _imprimir_commits_por_task("faltantes", s.faltantes, conflitantes)
+    suspeitos = {c.hash_origem for c in s.suspeitos_conteudo}
+    _imprimir_commits_por_task("faltantes", s.faltantes, conflitantes, suspeitos)
 
 
 def imprimir_atualizacao(r: AtualizarResult) -> None:
@@ -174,6 +179,7 @@ def main(argv: list[str] | None = None) -> None:
             tasks=tasks,
             lock_dir=lock_dir,
             bitbucket_token=getattr(args, "bitbucket_token", ""),
+            bitbucket_email=getattr(args, "bitbucket_email", ""),
         )
 
         inicio = time.monotonic()

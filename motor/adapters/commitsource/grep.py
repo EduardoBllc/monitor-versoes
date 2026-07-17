@@ -19,7 +19,7 @@ from motor.ports import GitRepo
 @dataclass
 class GrepCommitSource:
     git: GitRepo
-    ref: str = "master"
+    ref: str = "origin/master"
 
     def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
         if not tasks:

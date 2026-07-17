@@ -8,11 +8,12 @@ commits que já estão na master (is_ancestor) — commit fora da master não en
 API Bitbucket Cloud 2.0:
   GET /2.0/repositories/{ws}/{repo}/pullrequests?q=...&state=MERGED&pagelen=50
   GET /2.0/repositories/{ws}/{repo}/pullrequests/{id}/commits
-Auth: Authorization: Bearer <token>. Paginação pelo campo `next`.
+Auth: Authorization: Basic base64(email:token). Paginação pelo campo `next`.
 """
 
 from __future__ import annotations
 
+import base64
 import datetime
 import re
 from dataclasses import dataclass, field
@@ -42,12 +43,17 @@ def parse_workspace_repo(url: str) -> tuple[str, str]:
 @dataclass
 class BitbucketPRCommitSource:
     token: str
+    email: str
     workspace: str
     repo: str
     git: GitRepo
     base_url: str = ""
     master_ref: str = "master"
     client: httpx.Client | None = None
+
+    def _auth_header(self) -> str:
+        credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
+        return f"Basic {credenciais}"
 
     def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
         resultado: TargetSet = {}
@@ -84,6 +90,8 @@ class BitbucketPRCommitSource:
                 h = c.get("hash", "")
                 if not h or h in vistos:
                     continue
+                if len(c.get("parents") or []) > 1:
+                    continue  # merge commit: cherry-pick -x nao aceita sem -m; conteudo ja vem pelos pais individuais
                 if not self.git.is_ancestor(h, self.master_ref):
                     continue  # so o que ja esta na master
                 vistos.add(h)
@@ -122,7 +130,7 @@ class BitbucketPRCommitSource:
         """Itera os `values` de uma resposta paginada, seguindo `next`."""
         while url:
             try:
-                resp = client.get(url, params=params, headers={"Authorization": f"Bearer {self.token}"})
+                resp = client.get(url, params=params, headers={"Authorization": self._auth_header()})
             except httpx.HTTPError as e:
                 raise MotorError(f"chamando Bitbucket {url}: {e}") from e
             if resp.status_code != 200:
