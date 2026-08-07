@@ -676,7 +676,15 @@ def _agrupar_por_task(commits: list) -> dict[str, list]:
     return grupos
 ```
 
-Remover o bloco `if getattr(args, "fonte_flag", "rest") == "rest": tasks = ClickUpRest(...)` (linhas 165-171) e deixar temporariamente só o `ManualList`; a fonte Tickio entra na Task 12.
+Remover o bloco `if getattr(args, "fonte_flag", "rest") == "rest": tasks = ClickUpRest(...)` (linhas 165-171) e deixar só o `ManualList`. Para a CLI não ficar incoerente até a Task 11, o parser acompanha — sem isso o default `"rest"` cairia no ramo do `ManualList` e passaria a exigir `--lista` sem dizer por quê:
+
+```python
+    p_criar.add_argument("--task-source", dest="fonte_flag", default="manual",
+                         choices=["manual"],
+                         help="fonte das tasks (tickio volta na integracao)")
+```
+
+Remover também `--clickup-token`. A Task 11 devolve `tickio` como default.
 
 - [ ] **Step 6: Deletar o que era do ClickUp**
 
@@ -1586,20 +1594,11 @@ Expected: FAIL com `ModuleNotFoundError: No module named 'motor.adapters.estado.
 
 - [ ] **Step 3: Implementar os tipos de domínio**
 
-Em `motor/domain/types.py`: remover `ExclusionReason` e `Lock`, substituir `Exclusion` e adicionar os três tipos novos:
+> **Esta task é puramente aditiva.** Nada sai de `types.py` aqui. `Lock`, `ExclusionReason`, o `Exclusion` antigo e os campos atuais de `VersionStatus` continuam existindo, porque `criar.py:5`, `atualizar.py:9`, `reconcile.py:7` e `lock_store.py:14-15` os importam **em nível de módulo** — removê-los agora daria `ImportError` na coleta do pytest, e a suíte inteira pararia de rodar até a Task 9. Cada remoção viaja junto do último consumidor reescrito: `Exclusion`/`ExclusionReason` e os campos de `VersionStatus` na Task 8, `Lock` na Task 9.
+
+Adicionar a `motor/domain/types.py`:
 
 ```python
-@dataclass(frozen=True)
-class Exclusion:
-    """Julgamento humano: commit que nao entra. Estado irredutivel — nao e
-    re-derivavel do Tickio nem do git.
-    """
-
-    hash_origem: str = ""
-    versao_numero: str | None = None  # None = vale para toda versao do repo
-    motivo: str = ""
-
-
 @dataclass(frozen=True)
 class Atribuicao:
     chamado: str = ""
@@ -1623,12 +1622,7 @@ class RepoInfo:
     tickio_sistema_id: int = 0
 ```
 
-Em `VersionStatus`, trocar `lock_integro` por `estado_integro`, e adicionar `tasks_ambiguas`:
-
-```python
-    estado_integro: bool = False
-    tasks_ambiguas: list[str] = field(default_factory=list)
-```
+`VersionStatus` não muda nesta task — a troca de `lock_integro` por `estado_integro` e o campo `tasks_ambiguas` entram na Task 8, junto com a reescrita do único código que os produz e consome.
 
 - [ ] **Step 4: Implementar a porta**
 
@@ -1763,24 +1757,20 @@ class FakeEstado:
 
 - [ ] **Step 6: Rodar**
 
-Run: `uv run pytest tests/test_estado_fake.py -v`
-Expected: PASS.
-
-Run: `uv run pytest -v`
-Expected: falhas em `test_lock_store.py`, `test_reconstruir_lock.py`, `test_reconcile.py`, `test_verificar.py`, `test_incrementar.py`, `test_criar.py` — `Lock` e `ExclusionReason` não existem mais. **Isso é esperado**; essas suítes são reescritas nas Tasks 8-11. Para manter o repositório verde entre commits, marcar os arquivos afetados com `pytestmark = pytest.mark.skip(reason="reescrito na task 8-11")` no topo, e remover a marca na task que reescreve cada um.
+Run: `uv run pytest -v -m "not integracao"`
+Expected: PASS, suíte inteira. A task é aditiva — nenhum teste existente deve quebrar. Se algum quebrou, algo foi removido que não devia.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add motor/domain/types.py motor/ports.py motor/adapters/estado/fake.py \
-        tests/test_estado_fake.py tests/test_lock_store.py \
-        tests/test_reconstruir_lock.py tests/test_reconcile.py \
-        tests/test_verificar.py tests/test_incrementar.py tests/test_criar.py
+        tests/test_estado_fake.py
 git commit -m "feat(ports): porta EstadoRepo e FakeEstado em memoria
 
-Lock e ExclusionReason saem do dominio. O fake espelha a trigger do Postgres
-e recusa escrita em versao liberada — se aceitasse, os testes de engine
-validariam um comportamento que nao existe em producao."
+Aditivo: Lock e ExclusionReason continuam ate o ultimo consumidor ser
+reescrito. O fake espelha a trigger do Postgres e recusa escrita em versao
+liberada — se aceitasse, os testes de engine validariam um comportamento que
+nao existe em producao."
 ```
 
 ---
@@ -2203,19 +2193,29 @@ em vez de traceback de psycopg."
 
 ---
 
-### Task 8: Reconciliação contra as atribuições do estado
+### Task 8: Reconciliação e `verificar` contra o estado
+
+> **Por que reconciliação e `verificar` são uma task só.** Esta task muda as assinaturas de `reconciliar` e `filtrar_excluidos`, e o único chamador das duas é `verificar.py:65,104`. Separá-las deixaria a suíte vermelha entre elas — não há ponto de corte em que uma esteja pronta e a outra não. É também aqui que `Exclusion`, `ExclusionReason` e os campos de `VersionStatus` mudam de forma, porque este é o commit em que o último código que os usa é reescrito.
 
 **Files:**
-- Modify: `motor/domain/reconcile.py`
-- Test: `tests/test_reconcile.py` (remover o `pytestmark` de skip)
+- Modify: `motor/domain/reconcile.py`, `motor/domain/types.py`, `motor/engine/verificar.py`, `motor/engine/deps.py`
+- Modify: `motor/engine/atualizar.py`, `motor/services/lock_store.py` (só o suficiente para seguirem importáveis)
+- Create: `motor/services/reconstrutor.py` (a varredura de trailers, extraída do lock_store)
+- Test: `tests/test_reconcile.py`, `tests/test_verificar.py`
 
 **Interfaces:**
-- Consumes: `Atribuicao`, `Exclusion`, `Alvo` (Tasks 3, 6)
+- Consumes: `Atribuicao`, `Exclusion`, `Alvo`, `EstadoRepo` (Tasks 3, 6)
 - Produces:
+  - `Exclusion(hash_origem: str, versao_numero: str | None, motivo: str)` — forma nova
+  - `VersionStatus.estado_integro` (era `lock_integro`) e `VersionStatus.tasks_ambiguas`
   - `filtrar_excluidos(alvo: TargetSet, excluidos: list[Exclusion], versao: str) -> TargetSet`
   - `diff_tasks(alvo: TargetSet, anteriores: list[Atribuicao]) -> tuple[list[str], list[str]]`
   - `reconciliar(alvo: Alvo, anteriores: list[Atribuicao], sem_entrega: dict[str,str], presentes: dict[str,Presence], conflitantes: list[CommitRef], suspeitos_conteudo: list[CommitRef]) -> VersionStatus`
   - `atribuicoes_de(alvo: TargetSet, presentes: dict[str, Presence]) -> list[Atribuicao]`
+  - `Deps(git, tasks, estado: EstadoRepo, repo: str, bitbucket_token, bitbucket_email, _commit_source)`
+  - `verificar(deps: Deps, versao: str) -> VersionStatus`
+  - `reconstruir_atribuicoes(git: GitRepo, base_commit: str, branch: str) -> tuple[list[Atribuicao], list[str]]` — o segundo elemento são os órfãos (commits sem `ch<num>`)
+  - `extrair_trailer(msg: str) -> str | None`
 
 - [ ] **Step 1: Escrever os testes que falham**
 
@@ -2474,40 +2474,41 @@ def reconciliar(
     )
 ```
 
-- [ ] **Step 4: Rodar**
+- [ ] **Step 4: Reformar os tipos e manter os legados importáveis**
 
-Run: `uv run pytest tests/test_reconcile.py -v`
-Expected: PASS, 7 testes.
+Em `motor/domain/types.py`, substituir `Exclusion` e remover `ExclusionReason`:
 
-- [ ] **Step 5: Commit**
+```python
+@dataclass(frozen=True)
+class Exclusion:
+    """Julgamento humano: commit que nao entra. Estado irredutivel — nao e
+    re-derivavel do Tickio nem do git.
 
-```bash
-git add motor/domain/reconcile.py tests/test_reconcile.py
-git commit -m "refactor(domain): reconciliacao passa a cruzar contra as atribuicoes do estado
+    As exclusoes automaticas ("ja presente na base") sumiram: eram
+    recomputaveis por definicao e quem responde isso e o oraculo de presenca.
+    """
 
-Exclusao com versao_numero None vale para o repo inteiro. tasks_ambiguas
-entra na conta do verde. atribuicoes_de projeta o alvo no formato do estado."
+    hash_origem: str = ""
+    versao_numero: str | None = None  # None = vale para toda versao do repo
+    motivo: str = ""
 ```
 
----
+Em `VersionStatus`, renomear `lock_integro` para `estado_integro` e adicionar `tasks_ambiguas`:
 
-### Task 9: `verificar` com congelamento e snapshot
+```python
+    estado_integro: bool = False
+    tasks_ambiguas: list[str] = field(default_factory=list)
+```
 
-**Files:**
-- Modify: `motor/engine/verificar.py`, `motor/engine/deps.py`
-- Delete: `motor/services/lock_store.py`, `tests/test_lock_store.py`
-- Create: `motor/services/reconstrutor.py` (a varredura de trailers, extraída do lock_store)
-- Test: `tests/test_verificar.py` (remover o skip)
+`Lock` **fica** — `criar.py:5`, `atualizar.py:9` e `lock_store.py:15` ainda o importam em nível de módulo e só são reescritos na Task 9. Removê-lo agora dá `ImportError` na coleta do pytest.
 
-**Interfaces:**
-- Consumes: tudo das Tasks 1, 3, 6, 8
-- Produces:
-  - `Deps(git, tasks, estado: EstadoRepo, repo: str, bitbucket_token, bitbucket_email, _commit_source)`
-  - `verificar(deps: Deps, versao: str) -> VersionStatus`
-  - `reconstruir_atribuicoes(git: GitRepo, base_commit: str, branch: str) -> tuple[list[Atribuicao], list[str]]` em `services/reconstrutor.py` — o segundo elemento são os órfãos (commits sem `ch<num>`)
-  - `extrair_trailer(msg: str) -> str | None` em `services/reconstrutor.py`
+Dois consumidores de `ExclusionReason` precisam de um retoque mínimo para seguirem importáveis:
 
-- [ ] **Step 1: Escrever os testes que falham**
+`motor/engine/atualizar.py` — remover `Exclusion, ExclusionReason` do import da linha 9 e apagar o bloco `if status.ancestrais:` (linhas 55-68) inteiro. Ele gravava exclusões automáticas no lock; o oráculo de presença responde isso a cada run, então o bloco deixou de ter função.
+
+`motor/services/lock_store.py` — remover `Exclusion` e `ExclusionReason` do import (linhas 13-14), apagar a construção de `Exclusion` em `ler` (linhas 55-63, `excluidos` passa a `[]`) e trocar o filtro de órfãos da linha 160 por `orfaos = []`. O arquivo e deletado no Step 9 desta mesma task; aqui só precisa importar e passar nos testes.
+
+- [ ] **Step 5: Escrever os testes de `verificar` que falham**
 
 Substituir `tests/test_verificar.py` por:
 
@@ -2617,12 +2618,12 @@ def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():
     assert estado.versao("r", "13.33.1") is None
 ```
 
-- [ ] **Step 2: Rodar e confirmar que falha**
+- [ ] **Step 6: Rodar e confirmar que falha**
 
 Run: `uv run pytest tests/test_verificar.py -v`
 Expected: FAIL — `Deps` não aceita `estado`.
 
-- [ ] **Step 3: Extrair a varredura de trailers**
+- [ ] **Step 7: Extrair a varredura de trailers**
 
 Criar `motor/services/reconstrutor.py` com a lógica que estava em `LockStore.reconstruir` (`lock_store.py:103-162`):
 
@@ -2694,7 +2695,7 @@ def reconstruir_atribuicoes(
     return atribuicoes, sorted(set(orfaos))
 ```
 
-- [ ] **Step 4: Reescrever `Deps` e `verificar`**
+- [ ] **Step 8: Reescrever `Deps` e `verificar`**
 
 `motor/engine/deps.py`:
 
@@ -2862,18 +2863,18 @@ from motor.domain.version import chave, inferir_tipo, versoes_abertas
 from motor.services.base_resolver import BaseResolver
 ```
 
-- [ ] **Step 5: Deletar o lock store**
+- [ ] **Step 9: Deletar o lock store**
 
 ```bash
 git rm motor/services/lock_store.py tests/test_lock_store.py
 ```
 
-- [ ] **Step 6: Rodar**
+- [ ] **Step 10: Rodar**
 
 Run: `uv run pytest tests/test_verificar.py tests/test_reconcile.py -v`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add -A
@@ -2886,14 +2887,14 @@ LockStore deletado; a varredura de trailers vira services/reconstrutor.py."
 
 ---
 
-### Task 10: `atualizar`, `criar` e a recusa em versão com tag
+### Task 9: `atualizar`, `criar` e a recusa em versão com tag
 
 **Files:**
 - Modify: `motor/engine/atualizar.py`, `motor/engine/criar.py`, `motor/services/publication_gate.py`
 - Test: `tests/test_incrementar.py`, `tests/test_criar.py`, `tests/test_publication_gate.py` (remover os skips)
 
 **Interfaces:**
-- Consumes: `verificar` (Task 9), `Deps` (Task 9)
+- Consumes: `verificar`, `Deps`, `PublicationGate` (Task 8)
 - Produces:
   - `PublicationGate.liberada(versao: str) -> bool`
   - `PublicationGate.publicada(versao: str) -> bool` (mantida: tag OU branch remota)
@@ -3059,12 +3060,21 @@ def criar(deps: Deps, versao: str) -> AtualizarResult:
     return atualizar(deps, versao)
 ```
 
-- [ ] **Step 6: Rodar**
+- [ ] **Step 6: Remover `Lock` do domínio**
+
+Este é o commit em que o último consumidor de `Lock` é reescrito, então é aqui que ele sai. Em `motor/domain/types.py`, apagar a dataclass `Lock` (linha 73 do arquivo original) e conferir que nenhum import sobrou:
+
+Run: `grep -rn "\bLock\b" motor tests | grep -v "\.lock"`
+Expected: nenhuma saída.
+
+Se `TargetSet` ou `BaseRef` tiverem ficado sem uso depois disso, deixá-los — ambos continuam sendo usados por `TaskTarget` e `VersaoInfo`.
+
+- [ ] **Step 7: Rodar**
 
 Run: `uv run pytest -v -m "not integracao"`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -3077,14 +3087,14 @@ e o proibido. PublicationGate ganha `liberada` (so tag) ao lado de `publicada`
 
 ---
 
-### Task 11: `reconstruir-estado`
+### Task 10: `reconstruir-estado`
 
 **Files:**
 - Rename: `motor/engine/reconstruir_lock.py` → `motor/engine/reconstruir_estado.py`
 - Test: `tests/test_reconstruir_lock.py` → `tests/test_reconstruir_estado.py`
 
 **Interfaces:**
-- Consumes: `reconstruir_atribuicoes` (Task 9), `Deps`, `BaseResolver`
+- Consumes: `reconstruir_atribuicoes` (Task 8), `Deps`, `BaseResolver`
 - Produces: `reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult` com `ReconstructResult(status, orfaos: list[str])`
 
 - [ ] **Step 1: Escrever o teste que falha**
@@ -3259,7 +3269,7 @@ reportado — sem o VB-xxxx nao ha mais fallback de identidade."
 
 ---
 
-### Task 12: Adapter TickioRest
+### Task 11: Adapter TickioRest
 
 **Files:**
 - Create: `motor/adapters/tasksource/tickio.py`
@@ -3487,7 +3497,7 @@ tres formas plausiveis ate a resposta real ser conhecida."
 
 ---
 
-### Task 13: CLI
+### Task 12: CLI
 
 **Files:**
 - Modify: `motor/__main__.py`
@@ -3680,7 +3690,7 @@ alias) e o tickio_sistema_id sai de la para o adapter."
 
 ---
 
-### Task 14: Reescrever o documento de desenho
+### Task 13: Reescrever o documento de desenho
 
 **Files:**
 - Modify: `ferramenta_versoes_design.md`
