@@ -100,8 +100,9 @@ trigger, que é `op.execute()` à mão. Ninguém escreve este SQL num arquivo de
 
 ```sql
 create table repo (
-  id   serial primary key,
-  nome text not null unique                 -- basename do --repo resolvido
+  id         serial primary key,
+  nome       text not null unique,          -- basename do --repo resolvido
+  sistema_id text not null                  -- ?sistema= do Tickio, repassado verbatim
 );
 
 create table versao (
@@ -273,6 +274,34 @@ e não dentro do SQL.
 O Bitbucket nunca soube do ClickUp; o `CommitSource` inteiro segue intacto fora da remoção do
 padrão `VB-`.
 
+### TickioRest
+
+```
+POST /api/v1/ws/token/                              {username, password} -> {access, refresh}
+GET  /api/v1/ws/versoes/chamados/?sistema=<id>&versao=<X.Y.Z>
+Authorization: Bearer <access>
+```
+
+**Autenticação por credencial, não por token colado no `.env`.** O adapter faz o `POST
+/token/` no início de cada run e usa o `access` obtido. Custa uma chamada HTTP; evita
+refazer o `.env` toda vez que o JWT expira.
+
+O `refresh` fica **de fora**. Ele existe para processo longo que não quer reter credencial —
+um comando que vive dois segundos re-autentica mais barato do que gerencia ciclo de refresh.
+
+**`sistema` não entra na porta.** É parâmetro de construção do `TickioRest`, lido de
+`repo.sistema_id` e injetado no `__main__`, que já monta o adapter por repo. A assinatura
+`fetch(versao) -> list[str]` fica intacta.
+
+Repo desconhecido no primeiro run → `MotorError` pedindo a linha:
+`insert into repo (nome, sistema_id) values ('vendabemweb', '<id>')`. Sem comando de CLI para
+isso: é uma linha, uma vez por repositório.
+
+**Efeito no multi-projeto.** O `?sistema=` corta na fonte o que o §11 antigo cortava depois,
+por "commit existe neste repo". A checagem de existência continua como rede — tarefa
+fullstack marcada para um sistema mas com commits nos dois repos —, mas deixa de ser o
+mecanismo principal de desambiguação.
+
 ### Limpeza no domínio
 
 | Sai | Onde |
@@ -373,6 +402,10 @@ DATABASE_PORT=5433
 DATABASE_NAME=monitor_versoes
 DATABASE_USER=motor
 DATABASE_PASSWORD=motor
+
+TICKIO_BASE_URL=http://tickio.vendabem.com.br
+TICKIO_USER=...
+TICKIO_PASSWORD=...
 ```
 
 ```python
@@ -462,10 +495,11 @@ pinta vermelho, comando termina normal. Dado inconsistente no Tickio não derrub
 
 ## 8. Pendências e fora de escopo
 
-**Pendência bloqueante para o adapter (não para o resto):** a API do Tickio. Falta endpoint de
-listagem, formato de autenticação e um exemplo de resposta mostrando onde fica o número do
-chamado e o campo de versão. A porta `TaskSource` isola isso — todo o resto do plano pode ser
-implementado e testado com `FakeTaskSource` antes de a resposta chegar.
+**Pendência única, restrita ao parsing:** o corpo da resposta de
+`GET /api/v1/ws/versoes/chamados/`. Endpoints, autenticação e parâmetros estão definidos
+(§4); falta só saber sob qual chave vem o número do chamado e se a listagem pagina. Uma
+resposta de exemplo resolve. Tudo o mais — domínio, estado, engine, migrações — é
+implementável e testável contra `FakeTaskSource` antes disso.
 
 **Migração de dados: nenhuma.** `locks/` está em `.gitignore:12` e nunca foi criado. Primeira
 rodada do `reconstruir-estado` popula do git.
