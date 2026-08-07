@@ -5,9 +5,9 @@ import pytest
 from motor.__main__ import _build_parser, _resolver_repo
 
 
-def test_task_source_default_e_rest():
+def test_task_source_default_e_manual():
     args = _build_parser().parse_args(["criar", "1.0.0", "--repo", "."])
-    assert args.fonte_flag == "rest"
+    assert args.fonte_flag == "manual"
 
 
 def test_resolver_repo_caminho_literal(tmp_path):

@@ -4,14 +4,14 @@ from motor.domain.reconcile import filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, TaskTarget, Presence
 
 
-def mk_target_set(chamado: str, task: str, *hashes: str) -> TargetSet:
+def mk_target_set(chamado: str, *hashes: str) -> TargetSet:
     commits = [CommitRef(hash_origem=h) for h in hashes]
-    return {chamado: TaskTarget(chamado=chamado, task=task, commits=commits)}
+    return {chamado: TaskTarget(chamado=chamado, commits=commits)}
 
 
 def test_reconciliar_verde():
-    alvo = mk_target_set("255514", "VB-2354", "hash1")
-    lock = Lock(tasks=mk_target_set("255514", "VB-2354", "hash1"))
+    alvo = mk_target_set("255514", "hash1")
+    lock = Lock(tasks=mk_target_set("255514", "hash1"))
     presentes = {"hash1": Presence.TRAILER}
 
     status = reconciliar(alvo, lock, presentes, [])
@@ -20,7 +20,7 @@ def test_reconciliar_verde():
 
 
 def test_reconciliar_task_nova():
-    alvo = mk_target_set("255514", "VB-2354", "hash1")
+    alvo = mk_target_set("255514", "hash1")
     lock = Lock(tasks={})
     presentes = {"hash1": Presence.TRAILER}
 
@@ -32,7 +32,7 @@ def test_reconciliar_task_nova():
 
 def test_reconciliar_task_removida():
     alvo: TargetSet = {}
-    lock = Lock(tasks=mk_target_set("255514", "VB-2354", "hash1"))
+    lock = Lock(tasks=mk_target_set("255514", "hash1"))
     presentes = {"hash1": Presence.TRAILER}
 
     status = reconciliar(alvo, lock, presentes, [])
@@ -41,8 +41,8 @@ def test_reconciliar_task_removida():
 
 
 def test_reconciliar_lock_nao_integro():
-    alvo = mk_target_set("255514", "VB-2354", "hash1")
-    lock = Lock(tasks=mk_target_set("255514", "VB-2354", "hash1"))
+    alvo = mk_target_set("255514", "hash1")
+    lock = Lock(tasks=mk_target_set("255514", "hash1"))
     presentes: dict[str, Presence] = {}  # hash1 nao presente
 
     status = reconciliar(alvo, lock, presentes, [])
@@ -54,7 +54,7 @@ def test_reconciliar_lock_nao_integro():
 
 def test_reconciliar_task_sem_commits_nao_verde():
     # task veio do ClickUp mas nenhuma fonte achou commit/PR: NAO pode ser verde.
-    alvo = {"255514": TaskTarget(chamado="255514", task="VB-2354", commits=[])}
+    alvo = {"255514": TaskTarget(chamado="255514", commits=[])}
     lock = Lock(tasks={})
 
     status = reconciliar(alvo, lock, {}, [])
@@ -65,7 +65,7 @@ def test_reconciliar_task_sem_commits_nao_verde():
 
 def test_reconciliar_task_sem_commits_reconhecida_fica_verde():
     # escape hatch: chamado listado em tasks_sem_entrega (edicao manual do lock).
-    alvo = {"255514": TaskTarget(chamado="255514", task="VB-2354", commits=[])}
+    alvo = {"255514": TaskTarget(chamado="255514", commits=[])}
     lock = Lock(tasks={}, tasks_sem_entrega=["255514"])
 
     status = reconciliar(alvo, lock, {}, [])
@@ -75,7 +75,7 @@ def test_reconciliar_task_sem_commits_reconhecida_fica_verde():
 
 
 def test_reconciliar_suspeitos_conteudo_passthrough():
-    alvo = mk_target_set("255514", "VB-2354", "hash1")
+    alvo = mk_target_set("255514", "hash1")
     lock = Lock(tasks={})
     presentes: dict[str, Presence] = {}  # hash1 ausente -> entra em faltantes
     suspeita = CommitRef(hash_origem="hash1", chamado="255514")
@@ -86,7 +86,7 @@ def test_reconciliar_suspeitos_conteudo_passthrough():
 
 
 def test_filtrar_excluidos():
-    alvo = mk_target_set("251099", "VB-2549", "hashA", "hashB")
+    alvo = mk_target_set("251099", "hashA", "hashB")
     excluidos = [Exclusion(commit="hashA", chamado="251099", motivo="ja presente na base")]
 
     filtrado = filtrar_excluidos(alvo, excluidos)

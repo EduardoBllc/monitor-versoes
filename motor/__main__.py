@@ -19,7 +19,6 @@ except ImportError:
 
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
-from motor.adapters.tasksource.rest import ClickUpRest
 from motor.domain.types import VersionStatus
 from motor.errors import MotorError
 from motor.engine.criar import criar
@@ -53,9 +52,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)")
 
     p_criar = sub.add_parser("criar", parents=[comum], help="cria a branch da versao a partir das tasks")
-    p_criar.add_argument("--task-source", dest="fonte_flag", default="rest", choices=["rest", "manual"], help="fonte das tasks (default: rest = ClickUp)")
+    p_criar.add_argument("--task-source", dest="fonte_flag", default="manual",
+                         choices=["manual"],
+                         help="fonte das tasks (tickio volta na integracao)")
     p_criar.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
-    p_criar.add_argument("--clickup-token", dest="token", default=os.environ.get("CLICKUP_TOKEN", ""), help="token ClickUp (default: $CLICKUP_TOKEN)")
 
     p_inc = sub.add_parser("atualizar", parents=[comum], help="aplica commits faltantes na branch da versao")
     grupo = p_inc.add_mutually_exclusive_group()
@@ -87,10 +87,10 @@ def _resolver_repo(valor: str) -> str:
 
 
 def _agrupar_por_task(commits: list) -> dict[str, list]:
-    """Agrupa preservando a ordem de 1a aparicao de cada task."""
+    """Agrupa preservando a ordem de 1a aparicao de cada chamado."""
     grupos: dict[str, list] = {}
     for c in commits:
-        chave = f"{c.chamado} {c.task}".strip() or c.hash_origem[:8]
+        chave = c.chamado or c.hash_origem[:8]
         grupos.setdefault(chave, []).append(c)
     return grupos
 
@@ -160,15 +160,13 @@ def main(argv: list[str] | None = None) -> None:
     try:
         git_repo = new_git_subprocess(repo)
 
-        # fonte_flag/token/lista_manual so existem no subparser 'criar';
-        # os demais comandos usam ClickUp (rest) por default.
-        if getattr(args, "fonte_flag", "rest") == "rest":
-            tasks = ClickUpRest(token=getattr(args, "token", os.environ.get("CLICKUP_TOKEN", "")))
-        else:
-            if not args.lista_manual:
-                print("--lista e obrigatorio quando --task-source=manual (ou use --task-source=rest para ClickUp)", file=sys.stderr)
-                sys.exit(1)
-            tasks = ManualList(caminho=args.lista_manual)
+        # lista_manual so existe no subparser 'criar'; os demais comandos
+        # ainda nao tem fonte de tasks propria (tickio volta na Task 11).
+        lista_manual = getattr(args, "lista_manual", "")
+        if not lista_manual:
+            print("--lista e obrigatorio (unica fonte de tasks disponivel e --task-source=manual)", file=sys.stderr)
+            sys.exit(1)
+        tasks = ManualList(caminho=lista_manual)
 
         motor_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target_repo_name = os.path.basename(repo)

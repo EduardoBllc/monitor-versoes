@@ -4,7 +4,6 @@ import pytest
 
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import TaskTarget
 from motor.engine.deps import Deps
 from motor.engine.atualizar import (
     AtualizarStatus,
@@ -36,7 +35,7 @@ def _setup_incremento_basico(tmp_path) -> tuple[FakeGit, FakeTaskSource]:
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
     return g, tasks
 
 
@@ -147,10 +146,7 @@ def test_atualizar_continue_preserva_commits_anteriores(tmp_path):
     g.conflict_on["origem2"] = True
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [
-        TaskTarget(chamado="255514", task="VB-2354", titulo="Logs"),
-        TaskTarget(chamado="255515", task="VB-9999", titulo="Outra"),
-    ]
+    tasks.chamados["13.7.0"] = ["255514", "255515"]
 
     resultado = atualizar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
     assert resultado.status == AtualizarStatus.BLOCKED and resultado.blocked_commit == "origem2", (

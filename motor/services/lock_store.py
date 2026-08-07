@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass, replace
 
-from motor.domain.commits import extrair_chamado, extrair_vb_id, ordenar_por_data
+from motor.domain.commits import extrair_chamado, ordenar_por_data
 from motor.domain.types import (
     BaseRef,
     CommitRef,
@@ -48,9 +48,7 @@ class LockStore:
         tasks: TargetSet = {}
         for chamado, t in (lj.get("tasks") or {}).items():
             commits = [CommitRef(hash_origem=h) for h in t.get("commits") or []]
-            tasks[chamado] = TaskTarget(
-                chamado=chamado, task=t.get("task", ""), titulo=t.get("titulo", ""), commits=commits
-            )
+            tasks[chamado] = TaskTarget(chamado=chamado, commits=commits)
 
         excluidos = [
             Exclusion(
@@ -83,7 +81,7 @@ class LockStore:
         }
         for chamado, t in lock.tasks.items():
             hashes = [c.hash_origem for c in t.commits]
-            lj["tasks"][chamado] = {"task": t.task, "titulo": t.titulo, "commits": hashes}
+            lj["tasks"][chamado] = {"commits": hashes}
         for e in lock.excluidos:
             lj["excluidos"].append({"commit": e.commit, "chamado": e.chamado, "motivo": e.motivo})
 
@@ -119,7 +117,7 @@ class LockStore:
             origem_hash = _extrair_trailer(c.msg)
             if origem_hash is None:
                 # commit direto na branch (sem cherry-pick -x): usa a si mesmo
-                # como origem, ja tem chamado/vb_id na propria mensagem.
+                # como origem, ja tem o chamado na propria mensagem.
                 origem_hash = c.hash_origem
                 origem_meta = c
             else:
@@ -129,25 +127,18 @@ class LockStore:
                     continue  # origem sumiu do historico
 
             chamado = extrair_chamado(origem_meta.msg)
-            vb_id = extrair_vb_id(origem_meta.msg)
-            if chamado is None and vb_id is None:
+            if chamado is None:
                 continue
-            chamado_str = chamado or ""
-            chave = chamado_str if chamado_str != "" else (vb_id or "")
 
-            tt = tasks.get(chave, TaskTarget())
+            tt = tasks.get(chamado, TaskTarget())
             novo_commit = CommitRef(
                 hash_origem=origem_hash,
-                chamado=chamado_str,
-                task=vb_id or "",
+                chamado=chamado,
                 commit_date=origem_meta.commit_date,
                 msg=origem_meta.msg,
             )
-            tasks[chave] = replace(
-                tt,
-                chamado=chamado_str,
-                task=(vb_id if vb_id is not None else tt.task),
-                commits=[*tt.commits, novo_commit],
+            tasks[chamado] = replace(
+                tt, chamado=chamado, commits=[*tt.commits, novo_commit]
             )
 
         for chave, tt in tasks.items():

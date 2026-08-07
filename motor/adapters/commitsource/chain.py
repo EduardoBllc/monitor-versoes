@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from motor.domain.types import TargetSet, TaskTarget
+from motor.domain.types import CommitRef
 from motor.ports import CommitSource
 
 
@@ -18,15 +18,14 @@ from motor.ports import CommitSource
 class ChainCommitSource:
     sources: list[CommitSource]  # ordem = prioridade
 
-    def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
-        resultado: TargetSet = {}
-        pendentes = list(tasks)
+    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+        resultado: dict[str, list[CommitRef]] = {}
+        pendentes = list(chamados)
         for src in self.sources:
             if not pendentes:
                 break
-            achados = src.resolve(pendentes)
-            for chamado, tt in achados.items():
-                if tt.commits:
-                    resultado[chamado] = tt
-            pendentes = [t for t in pendentes if t.chamado not in resultado]
+            for chamado, commits in src.resolve(pendentes).items():
+                if commits:
+                    resultado[chamado] = commits
+            pendentes = [c for c in pendentes if c not in resultado]
         return resultado

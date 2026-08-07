@@ -1,8 +1,9 @@
-"""BitbucketPRCommitSource: acha commits da task via PR merged do Bitbucket Cloud.
+"""BitbucketPRCommitSource: acha commits do chamado via PR merged do Bitbucket Cloud.
 
-Regra: PR MERGED cujo titulo COMECA com o VB-id, OU cuja source.branch.name
-CONTEM o VB-id. So conta commit que esta na master (is_ancestor) — commit
-fora da master nao entra. httpx.MockTransport no lugar de servidor real.
+Regra: PR MERGED cujo titulo COMECA com `ch<chamado>`, OU cuja
+source.branch.name CONTEM `ch<chamado>`. So conta commit que esta na master
+(is_ancestor) — commit fora da master nao entra. httpx.MockTransport no
+lugar de servidor real.
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from motor.adapters.commitsource.bitbucket import (
     parse_workspace_repo,
 )
 from motor.adapters.git.fake import FakeGit
-from motor.domain.types import TaskTarget
 
 
 @pytest.mark.parametrize(
@@ -72,7 +72,7 @@ def _handler_pr(prs: list[dict], commits_por_pr: dict[int, list[dict]]):
 
 def test_pr_titulo_prefixo_so_commits_na_master():
     g = _git_com_master("c1")  # c1 na master, c2 nao
-    prs = [{"id": 1, "title": "VB-2354 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
+    prs = [{"id": 1, "title": "ch255514 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
     commits = {
         1: [
             {"hash": "c1", "date": "2024-01-02T10:00:00+00:00", "message": "fix logs", "parents": [{"hash": "p1"}]},
@@ -81,34 +81,34 @@ def test_pr_titulo_prefixo_so_commits_na_master():
     }
     fonte = _fonte(_handler_pr(prs, commits), g)
 
-    resultado = fonte.resolve([TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")])
+    resultado = fonte.resolve(["255514"])
 
-    tt = resultado.get("255514")
-    assert tt is not None, f"esperava a task: {resultado!r}"
-    hashes = [c.hash_origem for c in tt.commits]
+    commits_achados = resultado.get("255514")
+    assert commits_achados is not None, f"esperava o chamado: {resultado!r}"
+    hashes = [c.hash_origem for c in commits_achados]
     assert hashes == ["c1"], f"so c1 esta na master, veio {hashes}"
-    assert tt.commits[0].task == "VB-2354" and tt.commits[0].chamado == "255514", "faltou carimbar"
+    assert commits_achados[0].chamado == "255514", "faltou carimbar"
 
 
 def test_pr_casa_por_nome_da_branch():
     g = _git_com_master("c1")
-    prs = [{"id": 7, "title": "corrige logs", "source": {"branch": {"name": "bugfix/VB-2354-logs"}}}]
+    prs = [{"id": 7, "title": "corrige logs", "source": {"branch": {"name": "bugfix/ch255514-logs"}}}]
     commits = {7: [{"hash": "c1", "date": "2024-01-02T10:00:00+00:00", "message": "fix", "parents": []}]}
     fonte = _fonte(_handler_pr(prs, commits), g)
 
-    resultado = fonte.resolve([TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")])
+    resultado = fonte.resolve(["255514"])
 
-    assert "255514" in resultado and resultado["255514"].commits[0].hash_origem == "c1"
+    assert "255514" in resultado and resultado["255514"][0].hash_origem == "c1"
 
 
-def test_pr_titulo_que_nao_comeca_com_vb_e_ignorado():
-    # titulo CONTEM VB-2354 mas nao COMECA com ele, e branch nao bate: ignora.
+def test_pr_titulo_que_nao_comeca_com_o_termo_e_ignorado():
+    # titulo CONTEM ch255514 mas nao COMECA com ele, e branch nao bate: ignora.
     g = _git_com_master("c1")
-    prs = [{"id": 3, "title": "fix relacionado a VB-2354", "source": {"branch": {"name": "feature/x"}}}]
+    prs = [{"id": 3, "title": "fix relacionado a ch255514", "source": {"branch": {"name": "feature/x"}}}]
     commits = {3: [{"hash": "c1", "date": "2024-01-02T10:00:00+00:00", "message": "fix", "parents": []}]}
     fonte = _fonte(_handler_pr(prs, commits), g)
 
-    resultado = fonte.resolve([TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")])
+    resultado = fonte.resolve(["255514"])
 
     assert resultado == {}, f"PR sem prefixo/branch batendo nao deveria contar: {resultado!r}"
 
@@ -116,7 +116,7 @@ def test_pr_titulo_que_nao_comeca_com_vb_e_ignorado():
 def test_pr_ignora_merge_commit():
     # commit com 2 pais e merge: cherry-pick -x sem -m falha, entao nao entra na lista.
     g = _git_com_master("c1")
-    prs = [{"id": 1, "title": "VB-2354 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
+    prs = [{"id": 1, "title": "ch255514 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
     commits = {
         1: [
             {"hash": "merge1", "date": "2024-01-02T10:00:00+00:00", "message": "merge", "parents": [{"hash": "a"}, {"hash": "b"}]},
@@ -125,16 +125,15 @@ def test_pr_ignora_merge_commit():
     }
     fonte = _fonte(_handler_pr(prs, commits), g)
 
-    resultado = fonte.resolve([TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")])
+    resultado = fonte.resolve(["255514"])
 
-    hashes = [c.hash_origem for c in resultado["255514"].commits]
+    hashes = [c.hash_origem for c in resultado["255514"]]
     assert hashes == ["c1"], f"merge commit nao deveria entrar: {hashes}"
 
 
-def test_task_sem_vb_id_nao_consulta_bitbucket():
-    chamado_handler = _handler_pr([], {})
-    fonte = _fonte(chamado_handler, _git_com_master("c1"))
+def test_chamado_sem_pr_correspondente_e_omitido():
+    fonte = _fonte(_handler_pr([], {}), _git_com_master("c1"))
 
-    resultado = fonte.resolve([TaskTarget(chamado="255514", task="", titulo="Sem VB")])
+    resultado = fonte.resolve(["255514"])
 
-    assert resultado == {}, "task sem VB-id nao tem como casar PR"
+    assert resultado == {}, "chamado sem PR correspondente nao deveria aparecer no resultado"

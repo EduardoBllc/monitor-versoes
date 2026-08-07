@@ -106,12 +106,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
 def _registrar_commit(lock: Lock, c: CommitRef) -> Lock:
     tasks: TargetSet = dict(lock.tasks)
     tt = tasks.get(c.chamado, TaskTarget())
-    tasks[c.chamado] = TaskTarget(
-        chamado=c.chamado,
-        task=c.task or tt.task,
-        titulo=c.titulo or tt.titulo,
-        commits=[*tt.commits, c],
-    )
+    tasks[c.chamado] = TaskTarget(chamado=c.chamado, commits=[*tt.commits, c])
     return replace(lock, tasks=tasks)
 
 

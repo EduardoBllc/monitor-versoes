@@ -1,9 +1,10 @@
-"""BitbucketPRCommitSource: descobre commits de uma task via PRs do Bitbucket Cloud.
+"""BitbucketPRCommitSource: descobre commits de uma tarefa via PRs do Bitbucket Cloud.
 
-Mais robusto que o grep de mensagem: associa commit->task pela PR (título que
-começa com o VB-id, ou nome da branch de origem que contém o VB-id), não pela
-formatação do trailer que o dev pode errar. Considera só PRs MERGED e só
-commits que já estão na master (is_ancestor) — commit fora da master não entra.
+Mais robusto que o grep de mensagem: associa commit->chamado pela PR (título
+que começa com `ch<chamado>`, ou nome da branch de origem que contém
+`ch<chamado>`), não pela formatação do trailer que o dev pode errar.
+Considera só PRs MERGED e só commits que já estão na master (is_ancestor) —
+commit fora da master não entra.
 
 API Bitbucket Cloud 2.0:
   GET /2.0/repositories/{ws}/{repo}/pullrequests?q=...&state=MERGED&pagelen=50
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from motor.domain.types import CommitRef, TargetSet, TaskTarget
+from motor.domain.types import CommitRef
 from motor.errors import MotorError
 from motor.ports import GitRepo
 
@@ -55,34 +56,30 @@ class BitbucketPRCommitSource:
         credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
         return f"Basic {credenciais}"
 
-    def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
-        resultado: TargetSet = {}
-        for t in tasks:
-            if not t.task:  # sem VB-id nao tem como casar PR
-                continue
-            commits = self._commits_da_task(t)
+    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+        resultado: dict[str, list[CommitRef]] = {}
+        for chamado in chamados:
+            commits = self._commits_do_chamado(chamado)
             if commits:
-                resultado[t.chamado] = TaskTarget(
-                    chamado=t.chamado, task=t.task, titulo=t.titulo, commits=commits
-                )
+                resultado[chamado] = commits
         return resultado
 
-    def _commits_da_task(self, t: TaskTarget) -> list[CommitRef]:
+    def _commits_do_chamado(self, chamado: str) -> list[CommitRef]:
         client = self.client if self.client is not None else httpx.Client()
         base = self.base_url or _BASE_URL_PADRAO
-        vb = t.task
+        termo = "ch" + chamado
 
         prs_url = f"{base}/repositories/{self.workspace}/{self.repo}/pullrequests"
         params = {
             "state": "MERGED",
-            "q": f'title ~ "{vb}" OR source.branch.name ~ "{vb}"',
+            "q": f'title ~ "{termo}" OR source.branch.name ~ "{termo}"',
             "pagelen": 50,
         }
 
         vistos: set[str] = set()
         commits: list[CommitRef] = []
         for pr in self._paginar(client, prs_url, params):
-            if not self._pr_casa(pr, vb):
+            if not self._pr_casa(pr, termo):
                 continue
             pr_id = pr.get("id")
             commits_url = f"{prs_url}/{pr_id}/commits"
@@ -95,20 +92,20 @@ class BitbucketPRCommitSource:
                 if not self.git.is_ancestor(h, self.master_ref):
                     continue  # so o que ja esta na master
                 vistos.add(h)
-                commits.append(self._para_commit_ref(c, t))
+                commits.append(self._para_commit_ref(c, chamado))
         commits.sort(key=lambda c: c.commit_date)
         return commits
 
     @staticmethod
-    def _pr_casa(pr: dict, vb: str) -> bool:
+    def _pr_casa(pr: dict, termo: str) -> bool:
         titulo = pr.get("title") or ""
-        if titulo.startswith(vb):
+        if titulo.startswith(termo):
             return True
         branch = ((pr.get("source") or {}).get("branch") or {}).get("name") or ""
-        return vb in branch
+        return termo in branch
 
     @staticmethod
-    def _para_commit_ref(c: dict, t: TaskTarget) -> CommitRef:
+    def _para_commit_ref(c: dict, chamado: str) -> CommitRef:
         parents = c.get("parents") or []
         parent = parents[0].get("hash", "") if parents else ""
         data_raw = c.get("date", "")
@@ -119,9 +116,7 @@ class BitbucketPRCommitSource:
         return CommitRef(
             hash_origem=c.get("hash", ""),
             parent=parent,
-            chamado=t.chamado,
-            task=t.task,
-            titulo=t.titulo,
+            chamado=chamado,
             commit_date=data,
             msg=c.get("message", ""),
         )

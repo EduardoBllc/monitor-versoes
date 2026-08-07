@@ -26,8 +26,6 @@ def test_lock_store_escrever_e_ler(tmp_path):
         tasks={
             "255514": TaskTarget(
                 chamado="255514",
-                task="VB-2354",
-                titulo="Logs pedidos ecommerce",
                 commits=[CommitRef(hash_origem="d1a0ff9450")],
             )
         },

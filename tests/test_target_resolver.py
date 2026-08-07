@@ -3,13 +3,13 @@ garante que toda task buscada sobrevive ao alvo, mesmo sem commit."""
 
 from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import CommitRef, TaskTarget
+from motor.domain.types import CommitRef
 from motor.services.target_resolver import TargetResolver
 
 
 def _tasks():
     fake = FakeTaskSource()
-    fake.tasks["13.7.0"] = [TaskTarget(chamado="5514", task="VB-2354", titulo="Logs")]
+    fake.chamados["13.7.0"] = ["5514"]
     return fake
 
 
@@ -30,4 +30,4 @@ def test_resolver_emite_task_vazia_quando_nenhuma_fonte_acha():
     tt = resultado.get("5514")
     assert tt is not None, f"task sem commit deveria sobreviver ao alvo: {resultado!r}"
     assert tt.commits == [], f"esperava commits vazios, veio {tt.commits!r}"
-    assert tt.task == "VB-2354" and tt.titulo == "Logs", f"metadados perdidos: {tt!r}"
+    assert tt.marcada == "13.7.0", f"marcada nao carimbada: {tt!r}"

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from motor.domain.types import CommitRef, TargetSet, TaskTarget
+from motor.domain.types import CommitRef
 
 
 class CherryPickOutcome(IntEnum):
@@ -25,24 +25,23 @@ class MergePrediction:
 
 
 class TaskSource(Protocol):
-    """Fonte de tarefas (ClickUp, etc)."""
+    """Fonte de tarefas (Tickio, lista manual)."""
 
-    def fetch(self, versao: str) -> list[TaskTarget]:
-        """Busca tarefas para a versão."""
+    def fetch(self, versao: str) -> list[str]:
+        """Numeros de chamado marcados para a versao."""
         ...
 
 
 class CommitSource(Protocol):
-    """Fonte de commits de uma task (grep em master, PR do Bitbucket, etc).
+    """Fonte de commits de uma tarefa (grep em master, PR do Bitbucket).
 
-    Recebe o lote de tasks (batch) pra permitir uma varredura única — ex.
-    grep com --grep de todos os chamados juntos. Chave do TargetSet = chamado.
-    Pode omitir tasks sem commit; a completude (task vazia sobrevive ao alvo)
-    é garantida pelo TargetResolver.
+    Recebe o lote inteiro para permitir uma varredura unica — grep com o
+    --grep de todos os chamados juntos. Pode omitir chamado sem commit; a
+    completude e garantida pelo TargetResolver.
     """
 
-    def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
-        """Acha os commits de cada task."""
+    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+        """Acha os commits de cada chamado."""
         ...
 
 

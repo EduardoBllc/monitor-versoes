@@ -36,23 +36,20 @@ class Version:
 @dataclass(frozen=True)
 class CommitRef:
     hash_origem: str = ""
-    parent: str = ""  # pai do commit na branch de origem (necessario pra PredictMerge)
+    parent: str = ""  # pai do commit na origem (necessario pro predict_merge)
     chamado: str = ""  # "255514"
-    task: str = ""  # "VB-2354"
-    titulo: str = ""
     commit_date: datetime.datetime = field(default_factory=lambda: datetime.datetime.min)
     msg: str = ""
 
 
 @dataclass(frozen=True)
 class TaskTarget:
-    chamado: str = ""  # numero do chamado — chave externa
-    task: str = ""  # "VB-xxxx"
-    titulo: str = ""
+    chamado: str = ""  # numero do chamado — identidade unica da tarefa
+    marcada: str = ""  # versao para a qual o Tickio marcou
     commits: list[CommitRef] = field(default_factory=list)
 
 
-# TargetSet = task->commits resolvido (§4). Chave = chamado.
+# TargetSet = chamado -> TaskTarget resolvido.
 TargetSet = dict[str, TaskTarget]
 
 

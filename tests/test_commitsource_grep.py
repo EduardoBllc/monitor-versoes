@@ -1,34 +1,43 @@
-"""GrepCommitSource: descoberta por --grep em master + match exato."""
+from __future__ import annotations
 
 import datetime
 
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.git.fake import FakeGit
-from motor.domain.types import TaskTarget
 
 
-def test_grep_acha_chamado_exato_nao_substring():
-    g = FakeGit()
-    base = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("origem1", "", "fix: ch5514 corrige logs", base)
-    g.add_commit("origem2", "origem1", "fix: ch55140 chamado diferente", base)
-    g.set_branch("origin/master", "origem2")
-
-    fonte = GrepCommitSource(git=g)
-    resultado = fonte.resolve([TaskTarget(chamado="5514", task="VB-2354", titulo="Logs")])
-
-    tt = resultado.get("5514")
-    assert tt is not None, f"esperava 5514 no resultado: {resultado!r}"
-    assert (
-        len(tt.commits) == 1 and tt.commits[0].hash_origem == "origem1"
-    ), f"commits = {tt.commits!r}, quer so origem1 (ch5514 exato, nao ch55140)"
+def _git_com_commits(*mensagens: str) -> FakeGit:
+    """FakeGit e baseado em grafo: add_commit encadeia pelo parent e set_branch
+    posiciona o tip que search_commits varre."""
+    d = datetime.datetime(2026, 1, 1)
+    git = FakeGit()
+    parent = ""
+    for i, msg in enumerate(mensagens):
+        hash_ = f"c{i}"
+        git.add_commit(hash_, parent, msg, d)
+        parent = hash_
+    if mensagens:
+        git.set_branch("origin/master", f"c{len(mensagens) - 1}")
+    return git
 
 
-def test_grep_omite_task_sem_commit():
-    g = FakeGit()
-    g.set_branch("origin/master", "")
+def test_grep_agrupa_por_chamado_e_carimba():
+    git = _git_com_commits("ch123456 alfa", "ch999111 beta")
 
-    fonte = GrepCommitSource(git=g)
-    resultado = fonte.resolve([TaskTarget(chamado="9999", task="VB-9", titulo="Nada")])
+    achados = GrepCommitSource(git=git).resolve(["123456", "999111"])
 
-    assert resultado == {}, f"task sem commit nao deveria aparecer: {resultado!r}"
+    assert set(achados) == {"123456", "999111"}
+    assert [c.hash_origem for c in achados["123456"]] == ["c0"]
+    assert achados["123456"][0].chamado == "123456"
+
+
+def test_grep_nao_casa_chamado_como_substring():
+    git = _git_com_commits("ch255514 alfa")
+
+    assert GrepCommitSource(git=git).resolve(["5514"]) == {}
+
+
+def test_grep_omite_chamado_sem_commit():
+    git = _git_com_commits("ajuste sem identificador")
+
+    assert GrepCommitSource(git=git).resolve(["123456"]) == {}

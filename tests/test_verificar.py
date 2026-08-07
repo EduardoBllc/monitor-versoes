@@ -4,7 +4,6 @@ import datetime
 
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import TaskTarget
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.ports import MergePrediction
@@ -27,7 +26,7 @@ def test_verificar_verde_quando_tudo_aplicado(tmp_path):
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -53,7 +52,7 @@ def test_verificar_puxa_remoto_quando_branch_publicada(tmp_path):
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -76,7 +75,7 @@ def test_verificar_faltante(tmp_path):
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -102,7 +101,7 @@ def test_verificar_task_sem_commit_nao_verde(tmp_path):
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -126,7 +125,7 @@ def test_verificar_task_sem_entrega_reconhecida_fica_verde(tmp_path):
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Sem entrega aqui")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -158,7 +157,7 @@ def test_verificar_suspeita_por_conteudo_cherry_pick_manual_sem_x(tmp_path):
     )
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -197,7 +196,7 @@ def test_verificar_sumido_nunca_entra_em_conflitantes(tmp_path):
     g.merge_predictions["sumido1"] = MergePrediction(conflita=True, arquivos_conflito=[])
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 

@@ -3,16 +3,15 @@
 import pytest
 
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import TaskTarget
 
 
 def test_fake_task_source_fetch():
     f = FakeTaskSource()
-    f.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354")]
+    f.chamados["13.7.0"] = ["255514"]
 
-    tasks = f.fetch("13.7.0")
+    chamados = f.fetch("13.7.0")
 
-    assert len(tasks) == 1 and tasks[0].chamado == "255514", f"tasks = {tasks!r}"
+    assert chamados == ["255514"], f"chamados = {chamados!r}"
 
 
 def test_fake_task_source_erro():

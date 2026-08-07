@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from motor.domain.types import CommitRef, TargetSet, TaskTarget
+from motor.domain.types import CommitRef
 
 
 @dataclass
@@ -13,14 +13,9 @@ class FakeCommitSource:
     por_chamado: dict[str, list[CommitRef]] = field(default_factory=dict)
     err: Exception | None = None
 
-    def resolve(self, tasks: list[TaskTarget]) -> TargetSet:
+    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
         if self.err is not None:
             raise self.err
-        out: TargetSet = {}
-        for t in tasks:
-            commits = self.por_chamado.get(t.chamado)
-            if commits:
-                out[t.chamado] = TaskTarget(
-                    chamado=t.chamado, task=t.task, titulo=t.titulo, commits=commits
-                )
-        return out
+        return {
+            c: self.por_chamado[c] for c in chamados if self.por_chamado.get(c)
+        }

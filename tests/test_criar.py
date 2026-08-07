@@ -6,7 +6,6 @@ import pytest
 
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import TaskTarget
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.atualizar import AtualizarStatus
@@ -22,7 +21,7 @@ def test_criar_nova_versao(tmp_path):
     g.set_branch("13.6.0", "hash136")
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     resultado = criar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 
@@ -42,7 +41,7 @@ def test_criar_nao_publica_se_bloqueada_por_conflito(tmp_path):
     g.conflict_on["origem1"] = True
 
     tasks = FakeTaskSource()
-    tasks.tasks["13.7.0"] = [TaskTarget(chamado="255514", task="VB-2354", titulo="Logs")]
+    tasks.chamados["13.7.0"] = ["255514"]
 
     resultado = criar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
 

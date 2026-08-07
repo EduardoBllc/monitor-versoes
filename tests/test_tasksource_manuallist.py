@@ -1,5 +1,3 @@
-"""Transcrição de internal/adapters/tasksource/manuallist_test.go."""
-
 from __future__ import annotations
 
 import pytest
@@ -8,26 +6,16 @@ from motor.adapters.tasksource.manuallist import ManualList
 from motor.errors import MotorError
 
 
-def test_manual_list_fetch(tmp_path):
-    caminho = tmp_path / "lista.txt"
-    caminho.write_text(
-        "# comentario\n"
-        "255514;VB-2354;Logs pedidos ecommerce\n"
-        "255074;VB-2391;Uappi status pedido\n"
-    )
+def test_manuallist_le_um_chamado_por_linha(tmp_path):
+    arquivo = tmp_path / "lista.txt"
+    arquivo.write_text("# comentario\n123456\n\n999111\n", encoding="utf-8")
 
-    fonte = ManualList(caminho=str(caminho))
-    tasks = fonte.fetch("13.7.0")
-
-    assert len(tasks) == 2
-    assert tasks[0].chamado == "255514"
-    assert tasks[0].task == "VB-2354"
+    assert ManualList(caminho=str(arquivo)).fetch("13.34.0") == ["123456", "999111"]
 
 
-def test_manual_list_linha_invalida(tmp_path):
-    caminho = tmp_path / "lista.txt"
-    caminho.write_text("linha sem separador\n")
+def test_manuallist_recusa_linha_que_nao_e_numero(tmp_path):
+    arquivo = tmp_path / "lista.txt"
+    arquivo.write_text("VB-2354\n", encoding="utf-8")
 
-    fonte = ManualList(caminho=str(caminho))
-    with pytest.raises(MotorError):
-        fonte.fetch("13.7.0")
+    with pytest.raises(MotorError, match="linha invalida"):
+        ManualList(caminho=str(arquivo)).fetch("13.34.0")
