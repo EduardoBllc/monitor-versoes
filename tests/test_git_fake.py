@@ -104,3 +104,14 @@ def test_fake_list_version_branches_filtra_por_formato():
     # no conjunto e versoes_abertas estoura em chave("master").
     git = FakeGit(branches={"master": "m", "13.34.0": "aaa"}, tags={"13.33.0": True})
     assert git.list_version_branches() == ["13.33.0", "13.34.0"]
+
+
+def test_fake_list_version_branches_respeita_tag_false():
+    # tags dict tem valores bool: True = tag existe, False = nao existe.
+    # list_version_branches deve respeitar isso — versao com False nao deve aparecer.
+    git = FakeGit(
+        branches={"13.34.0": "aaa"},
+        tags={"13.33.0": True, "13.35.0": False}
+    )
+    assert git.list_version_branches() == ["13.33.0", "13.34.0"]
+    assert git.list_version_tags() == ["13.33.0"]

@@ -236,9 +236,9 @@ class FakeGit:
         # Espelha o adapter real: heads UNIAO tags, filtrado por X.Y.Z. Sem o
         # filtro, 'master' entra no conjunto e versoes_abertas estoura em
         # chave("master") — o fake nao pode ser mais permissivo que o real.
-        return sorted(
-            {n for n in (*self.branches, *self.tags) if _PADRAO_VERSAO.match(n)}
-        )
+        nomes = set(self.branches.keys())
+        nomes.update(t for t, existe in self.tags.items() if existe)
+        return sorted(n for n in nomes if _PADRAO_VERSAO.match(n))
 
     def list_version_tags(self) -> list[str]:
         return sorted(

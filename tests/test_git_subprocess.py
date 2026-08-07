@@ -199,6 +199,47 @@ def test_git_subprocess_use_worktree_adota_branch_existente(tmp_path):
     assert g.resolve_ref("14.0.0") == g.resolve_ref("master")
 
 
+def test_git_subprocess_list_version_tags(tmp_path):
+    """list_version_tags devolve so tags (nao branches) no formato X.Y.Z.
+    Diferente de list_version_branches que inclui heads tambem.
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("v1\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+
+    # Tag no formato X.Y.Z
+    _run_git(dir_, "tag", "13.33.0")
+
+    # Branch de versao sem tag
+    _run_git(dir_, "branch", "13.34.0")
+
+    # Outra tag no formato X.Y.Z
+    _run_git(dir_, "tag", "13.35.0")
+
+    # Tag nao-version (nao deve aparecer)
+    _run_git(dir_, "tag", "v1.0")
+    _run_git(dir_, "tag", "release-2024-01")
+
+    g = new_git_subprocess(dir_)
+    tags = g.list_version_tags()
+    branches = g.list_version_branches()
+
+    # Apenas tags X.Y.Z aparecem em list_version_tags
+    assert tags == ["13.33.0", "13.35.0"], f"tags = {tags!r}"
+
+    # Branches aparecem em list_version_branches mas nao em list_version_tags
+    assert "13.34.0" in branches, f"branch 13.34.0 deve estar em branches: {branches!r}"
+    assert "13.34.0" not in tags, f"branch 13.34.0 nao deve estar em tags: {tags!r}"
+
+    # Non-version tags nao aparecem em nenhum
+    assert "v1.0" not in tags, f"tag v1.0 nao deve estar em tags: {tags!r}"
+    assert "release-2024-01" not in tags, f"tag release-2024-01 nao deve estar em tags: {tags!r}"
+    assert "v1.0" not in branches, f"tag v1.0 nao deve estar em branches: {branches!r}"
+
+
 def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):
     repo_dir = init_repo_de_teste(tmp_path)
     g = new_git_subprocess(repo_dir)
