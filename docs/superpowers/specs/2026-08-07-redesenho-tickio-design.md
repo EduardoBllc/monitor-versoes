@@ -102,8 +102,8 @@ trigger, que é `op.execute()` à mão. Ninguém escreve este SQL num arquivo de
 create table repo (
   id                serial primary key,
   nome              text not null unique,   -- basename do --repo resolvido
-  tickio_sistema_id text not null           -- ID do sistema NO TICKIO; opaco aqui,
-);                                          -- repassado verbatim em ?sistema=
+  tickio_sistema_id int  not null           -- ID do sistema NO TICKIO, vai em ?sistema=
+);
 
 create table versao (
   id          serial primary key,
@@ -293,13 +293,14 @@ um comando que vive dois segundos re-autentica mais barato do que gerencia ciclo
 `repo.tickio_sistema_id` e injetado no `__main__`, que já monta o adapter por repo. A
 assinatura `fetch(versao) -> list[str]` fica intacta.
 
-O valor é o **ID do sistema no Tickio** — chave de lá, sem significado do lado do motor.
-Guardado como `text` porque o único uso é virar query param: assim o adapter não quebra se o
-Tickio expuser o ID como número hoje e como slug ou UUID depois.
+O valor é o **ID numérico do sistema no Tickio** — chave de lá, sem significado do lado do
+motor. Coluna `int`: o tipo recusa dedo errado que `text` deixaria virar um `?sistema=abc`
+silencioso. Se o Tickio trocar o formato do ID um dia, isso é uma migração, e o Alembic está
+aí para isso.
 
 Repo desconhecido no primeiro run → `MotorError` pedindo a linha:
-`insert into repo (nome, tickio_sistema_id) values ('vendabemweb', '<id>')`. Sem comando de
-CLI para isso: é uma linha, uma vez por repositório.
+`insert into repo (nome, tickio_sistema_id) values ('vendabemweb', 42)`. Sem comando de CLI
+para isso: é uma linha, uma vez por repositório.
 
 **Efeito no multi-projeto.** O `?sistema=` corta na fonte o que o §11 antigo cortava depois,
 por "commit existe neste repo". A checagem de existência continua como rede — tarefa
