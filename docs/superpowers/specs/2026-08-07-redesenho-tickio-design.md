@@ -105,6 +105,11 @@ create table repo (
   tickio_sistema_id int  not null           -- ID do sistema NO TICKIO, vai em ?sistema=
 );
 
+create table repo_alias (
+  nome    text primary key,                 -- basename alternativo do diretorio
+  repo_id int  not null references repo(id)
+);
+
 create table versao (
   id          serial primary key,
   repo_id     int  not null references repo(id),
@@ -303,9 +308,29 @@ isso: é uma linha, uma vez por repositório.
 
 ```sql
 insert into repo (nome, tickio_sistema_id) values
-  ('vendabemweb', 1),   -- VB Web    (slug vb_web)
-  ('vb2web',      3);   -- VB Web 2  (slug vb_web2)
+  ('vendabemweb',  1),  -- VB Web         (slug vb_web)
+  ('vendabemweb2', 3),  -- VB Web 2       (slug vb_web2)
+  ('vb2web',       2);  -- Tela de Venda  (slug vb_compilado)
 ```
+
+**Alias de diretório divide o estado.** `repo.nome` sai do basename do `--repo` e é a chave de
+todo o estado. Se o mesmo repositório for clonado como `vb2web` numa máquina e `vb2` noutra,
+nascem duas linhas em `repo` e dois estados paralelos — atribuições, exclusões e snapshots
+partidos ao meio, sem erro nenhum aparecer.
+
+Por isso alias é **resolvido**, não cadastrado:
+
+```sql
+create table repo_alias (
+  nome    text primary key,               -- basename alternativo ('vb2')
+  repo_id int not null references repo(id)
+);
+```
+
+`_resolver_repo` (`__main__.py:70`) já normaliza o caminho; a resolução do nome fecha o par:
+basename bate em `repo.nome` ou em `repo_alias.nome`, e nunca cria linha nova em `repo`
+sozinho. Repo desconhecido continua sendo erro pedindo o `insert` explícito — o que impede o
+estado de se fragmentar por um `git clone` com nome diferente.
 
 **Simplificação futura, não hoje.** O endpoint de sistemas do Tickio devolve um campo
 `repositorios` por sistema — hoje vazio em todos. Se ele for populado, o mapeamento
