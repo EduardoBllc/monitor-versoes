@@ -202,6 +202,7 @@ def test_git_subprocess_use_worktree_adota_branch_existente(tmp_path):
 def test_git_subprocess_list_version_tags(tmp_path):
     """list_version_tags devolve so tags (nao branches) no formato X.Y.Z.
     Diferente de list_version_branches que inclui heads tambem.
+    Cobre todos os casos: tag-only, branch-only, both, non-version.
     """
     dir_ = str(tmp_path)
     _run_git(dir_, "init", "-b", "master")
@@ -210,16 +211,20 @@ def test_git_subprocess_list_version_tags(tmp_path):
     _run_git(dir_, "add", "arquivo.txt")
     _run_git(dir_, "commit", "-m", "base")
 
-    # Tag no formato X.Y.Z
+    # Case 1: Tag no formato X.Y.Z (tag-only)
     _run_git(dir_, "tag", "13.33.0")
 
-    # Branch de versao sem tag
+    # Case 2: Branch de versao sem tag (branch-only)
     _run_git(dir_, "branch", "13.34.0")
 
-    # Outra tag no formato X.Y.Z
+    # Case 3: Branch com tag homonima (both branch and tag)
+    _run_git(dir_, "branch", "13.36.0")
+    _run_git(dir_, "tag", "13.36.0")
+
+    # Case 4: Outra tag no formato X.Y.Z (tag-only)
     _run_git(dir_, "tag", "13.35.0")
 
-    # Tag nao-version (nao deve aparecer)
+    # Case 5: Tags nao-version (nao devem aparecer)
     _run_git(dir_, "tag", "v1.0")
     _run_git(dir_, "tag", "release-2024-01")
 
@@ -228,11 +233,15 @@ def test_git_subprocess_list_version_tags(tmp_path):
     branches = g.list_version_branches()
 
     # Apenas tags X.Y.Z aparecem em list_version_tags
-    assert tags == ["13.33.0", "13.35.0"], f"tags = {tags!r}"
+    assert tags == ["13.33.0", "13.35.0", "13.36.0"], f"tags = {tags!r}"
 
-    # Branches aparecem em list_version_branches mas nao em list_version_tags
+    # Branch-only aparecem em list_version_branches mas nao em list_version_tags
     assert "13.34.0" in branches, f"branch 13.34.0 deve estar em branches: {branches!r}"
     assert "13.34.0" not in tags, f"branch 13.34.0 nao deve estar em tags: {tags!r}"
+
+    # Branch+tag aparecem em ambos, mas list_version_tags deve devolver exatamente uma vez
+    assert "13.36.0" in branches, f"13.36.0 deve estar em branches: {branches!r}"
+    assert tags.count("13.36.0") == 1, f"13.36.0 deve aparecer exatamente uma vez em tags: {tags!r}"
 
     # Non-version tags nao aparecem em nenhum
     assert "v1.0" not in tags, f"tag v1.0 nao deve estar em tags: {tags!r}"
