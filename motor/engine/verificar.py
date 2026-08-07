@@ -13,6 +13,7 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.domain.reconcile import filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, VersionStatus, Presence
+from motor.domain.version import chave, versoes_abertas
 from motor.engine.deps import Deps
 from motor.ports import CommitSource
 from motor.services.lock_store import LockStore
@@ -53,8 +54,10 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     if deps.git.remote_branch_exists("origin", versao):
         deps.git.pull_branch("origin", versao)
 
+    abertas = versoes_abertas(deps.git.list_version_branches(), deps.git.list_version_tags())
     resolver = TargetResolver(tasks=deps.tasks, commits=_montar_commit_source(deps))
-    alvo = resolver.resolve(versao)
+    resultado_alvo = resolver.resolve(versao, sorted({*abertas, versao}, key=chave))
+    alvo = resultado_alvo.tasks
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
     t = time.monotonic()

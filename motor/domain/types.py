@@ -53,6 +53,15 @@ class TaskTarget:
 TargetSet = dict[str, TaskTarget]
 
 
+@dataclass(frozen=True)
+class Alvo:
+    """Resultado da resolucao de alvo: as tarefas mais o que deu errado nelas."""
+
+    tasks: TargetSet = field(default_factory=dict)
+    # chamado marcado em mais de uma versao — dado inconsistente no Tickio.
+    ambiguas: list[str] = field(default_factory=list)
+
+
 class ExclusionReason(IntEnum):
     AUTOMATICA = 0  # recomputavel via Presente()
     JULGAMENTO = 1  # irredutivel, so existe no lock
