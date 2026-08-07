@@ -59,6 +59,8 @@ class BitbucketPRCommitSource:
     def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
         for chamado in chamados:
+            if not chamado:  # sem numero nao tem como casar PR
+                continue
             commits = self._commits_do_chamado(chamado)
             if commits:
                 resultado[chamado] = commits
