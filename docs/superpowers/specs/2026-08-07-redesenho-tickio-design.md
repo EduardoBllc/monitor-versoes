@@ -298,9 +298,19 @@ motor. Coluna `int`: o tipo recusa dedo errado que `text` deixaria virar um `?si
 silencioso. Se o Tickio trocar o formato do ID um dia, isso é uma migração, e o Alembic está
 aí para isso.
 
-Repo desconhecido no primeiro run → `MotorError` pedindo a linha:
-`insert into repo (nome, tickio_sistema_id) values ('vendabemweb', 42)`. Sem comando de CLI
-para isso: é uma linha, uma vez por repositório.
+Repo desconhecido no primeiro run → `MotorError` pedindo a linha. Sem comando de CLI para
+isso: é uma linha, uma vez por repositório.
+
+```sql
+insert into repo (nome, tickio_sistema_id) values
+  ('vendabemweb', 1),   -- VB Web    (slug vb_web)
+  ('vb2web',      3);   -- VB Web 2  (slug vb_web2)
+```
+
+**Simplificação futura, não hoje.** O endpoint de sistemas do Tickio devolve um campo
+`repositorios` por sistema — hoje vazio em todos. Se ele for populado, o mapeamento
+repo→sistema passa a vir da fonte e esta coluna deixa de ter razão de existir. Vale
+reavaliar quando isso acontecer; enquanto o array estiver vazio, não há de onde derivar.
 
 **Efeito no multi-projeto.** O `?sistema=` corta na fonte o que o §11 antigo cortava depois,
 por "commit existe neste repo". A checagem de existência continua como rede — tarefa
