@@ -56,24 +56,35 @@ def test_resolve_mantem_chamado_sem_commit_no_alvo():
     assert alvo.tasks["123456"].commits == []
 
 
-def test_resolve_reporta_chamado_marcado_em_duas_versoes():
-    tasks = FakeTaskSource(chamados={"13.33.1": ["123123"], "13.34.0": ["123123"]})
+@pytest.mark.parametrize(
+    "chamados, abertas, esperado",
+    [
+        pytest.param(
+            {"13.34.0": ["123123", "123123"]},
+            ["13.34.0"],
+            [],
+            id="repeticao_na_mesma_versao_nao_e_ambiguidade",
+        ),
+        pytest.param(
+            {"13.33.1": ["123123"], "13.34.0": ["123123"]},
+            ["13.33.1", "13.34.0"],
+            ["123123"],
+            id="marcado_em_duas_versoes_e_ambiguidade",
+        ),
+    ],
+)
+def test_resolve_ambiguidade_so_entre_versoes_diferentes(chamados, abertas, esperado):
+    # As duas variacoes tem que conviver no mesmo teste: repeticao dentro do
+    # fetch de uma versao e dedup (nao ambiguidade), repeticao entre fetches
+    # de versoes diferentes e ambiguidade. Separadas em dois testes, cada um
+    # so prova metade da regra e a outra metade pode sumir sem quebrar nada.
+    tasks = FakeTaskSource(chamados=chamados)
     commits = FakeCommitSource(por_chamado={"123123": [_commit("aaa", "123123")]})
     resolver = TargetResolver(tasks=tasks, commits=commits)
 
-    alvo = resolver.resolve("13.34.0", ["13.33.1", "13.34.0"])
+    alvo = resolver.resolve("13.34.0", abertas)
 
-    assert alvo.ambiguas == ["123123"]
-
-
-def test_resolve_nao_reporta_ambiguidade_por_repeticao_na_mesma_versao():
-    tasks = FakeTaskSource(chamados={"13.34.0": ["123123", "123123"]})
-    commits = FakeCommitSource(por_chamado={"123123": [_commit("aaa", "123123")]})
-    resolver = TargetResolver(tasks=tasks, commits=commits)
-
-    alvo = resolver.resolve("13.34.0", ["13.34.0"])
-
-    assert alvo.ambiguas == []
+    assert alvo.ambiguas == esperado
 
 
 def test_resolve_propaga_erro_da_fonte_como_motorerror():

@@ -36,6 +36,9 @@ class TargetResolver:
                 # repeticao dentro da mesma fetch e dedup, nao ambiguidade.
                 if marcada_de.get(ch, v) != v:
                     ambiguas.append(ch)
+                # last-writer-wins: se o chamado e ambiguo, este valor nao
+                # significa nada — a versao ja vai reprovar por causa da
+                # ambiguidade, entao ninguem deve confiar em qual "venceu".
                 marcada_de[ch] = v
 
         if not marcada_de:
