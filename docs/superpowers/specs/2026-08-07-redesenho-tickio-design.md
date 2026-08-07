@@ -100,10 +100,10 @@ trigger, que é `op.execute()` à mão. Ninguém escreve este SQL num arquivo de
 
 ```sql
 create table repo (
-  id         serial primary key,
-  nome       text not null unique,          -- basename do --repo resolvido
-  sistema_id text not null                  -- ?sistema= do Tickio, repassado verbatim
-);
+  id                serial primary key,
+  nome              text not null unique,   -- basename do --repo resolvido
+  tickio_sistema_id text not null           -- ID do sistema NO TICKIO; opaco aqui,
+);                                          -- repassado verbatim em ?sistema=
 
 create table versao (
   id          serial primary key,
@@ -290,12 +290,16 @@ O `refresh` fica **de fora**. Ele existe para processo longo que não quer reter
 um comando que vive dois segundos re-autentica mais barato do que gerencia ciclo de refresh.
 
 **`sistema` não entra na porta.** É parâmetro de construção do `TickioRest`, lido de
-`repo.sistema_id` e injetado no `__main__`, que já monta o adapter por repo. A assinatura
-`fetch(versao) -> list[str]` fica intacta.
+`repo.tickio_sistema_id` e injetado no `__main__`, que já monta o adapter por repo. A
+assinatura `fetch(versao) -> list[str]` fica intacta.
+
+O valor é o **ID do sistema no Tickio** — chave de lá, sem significado do lado do motor.
+Guardado como `text` porque o único uso é virar query param: assim o adapter não quebra se o
+Tickio expuser o ID como número hoje e como slug ou UUID depois.
 
 Repo desconhecido no primeiro run → `MotorError` pedindo a linha:
-`insert into repo (nome, sistema_id) values ('vendabemweb', '<id>')`. Sem comando de CLI para
-isso: é uma linha, uma vez por repositório.
+`insert into repo (nome, tickio_sistema_id) values ('vendabemweb', '<id>')`. Sem comando de
+CLI para isso: é uma linha, uma vez por repositório.
 
 **Efeito no multi-projeto.** O `?sistema=` corta na fonte o que o §11 antigo cortava depois,
 por "commit existe neste repo". A checagem de existência continua como rede — tarefa
