@@ -19,6 +19,15 @@ def test_match_exato_respeita_word_boundary():
     achados = match_exato(candidatos, "5514")
     assert [c.hash_origem for c in achados] == ["a"]
 
+    # a colisao que o \b realmente evita e de prefixo: "123" nao pode casar
+    # dentro de "1234" (sem boundary, "ch123" e substring valida de "ch1234").
+    candidatos_prefixo = [
+        CommitRef(hash_origem="c", msg="ch123 fix"),
+        CommitRef(hash_origem="d", msg="ch1234 other fix"),
+    ]
+    achados_prefixo = match_exato(candidatos_prefixo, "123")
+    assert [c.hash_origem for c in achados_prefixo] == ["c"]
+
 
 def test_match_exato_sem_chamado_nao_casa_nada():
     candidatos = [CommitRef(hash_origem="a", msg="ch5514 alfa")]

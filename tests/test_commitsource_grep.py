@@ -36,6 +36,12 @@ def test_grep_nao_casa_chamado_como_substring():
 
     assert GrepCommitSource(git=git).resolve(["5514"]) == {}
 
+    # colisao de prefixo: "123" nao pode casar dentro de "ch1234" (search_commits
+    # traz o candidato bruto por substring; match_exato precisa rejeitar aqui).
+    git_prefixo = _git_com_commits("ch1234 outra correcao")
+
+    assert GrepCommitSource(git=git_prefixo).resolve(["123"]) == {}
+
 
 def test_grep_omite_chamado_sem_commit():
     git = _git_com_commits("ajuste sem identificador")

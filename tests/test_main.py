@@ -10,6 +10,16 @@ def test_task_source_default_e_manual():
     assert args.fonte_flag == "manual"
 
 
+def test_lista_disponivel_em_todos_os_subcomandos():
+    # --task-source/--lista vivem no parser pai 'comum': sem isso, verificar/
+    # atualizar/reconstruir-lock nao tem como fornecer --lista (AttributeError
+    # ou exit(1) impossivel de resolver via CLI).
+    args = _build_parser().parse_args(
+        ["verificar", "13.34.0", "--repo", "/tmp", "--lista", "x.txt"]
+    )
+    assert args.lista_manual == "x.txt"
+
+
 def test_resolver_repo_caminho_literal(tmp_path):
     alvo = tmp_path / "meurepo"
     alvo.mkdir()

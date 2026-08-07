@@ -45,17 +45,17 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
     comum.add_argument("--bitbucket-token", dest="bitbucket_token", default=os.environ.get("BITBUCKET_TOKEN", ""), help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR")
     comum.add_argument("--bitbucket-email", dest="bitbucket_email", default=os.environ.get("BITBUCKET_EMAIL", ""), help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)")
+    comum.add_argument("--task-source", dest="fonte_flag", default="manual",
+                       choices=["manual"],
+                       help="fonte das tasks (tickio volta na integracao)")
+    comum.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
 
     parser = argparse.ArgumentParser(prog="motor")
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
 
     sub.add_parser("verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)")
 
-    p_criar = sub.add_parser("criar", parents=[comum], help="cria a branch da versao a partir das tasks")
-    p_criar.add_argument("--task-source", dest="fonte_flag", default="manual",
-                         choices=["manual"],
-                         help="fonte das tasks (tickio volta na integracao)")
-    p_criar.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
+    sub.add_parser("criar", parents=[comum], help="cria a branch da versao a partir das tasks")
 
     p_inc = sub.add_parser("atualizar", parents=[comum], help="aplica commits faltantes na branch da versao")
     grupo = p_inc.add_mutually_exclusive_group()
@@ -160,13 +160,12 @@ def main(argv: list[str] | None = None) -> None:
     try:
         git_repo = new_git_subprocess(repo)
 
-        # lista_manual so existe no subparser 'criar'; os demais comandos
-        # ainda nao tem fonte de tasks propria (tickio volta na Task 11).
-        lista_manual = getattr(args, "lista_manual", "")
-        if not lista_manual:
+        # --task-source/--lista sao compartilhados por todos os comandos (nenhum
+        # tem fonte de tasks propria ainda; tickio volta na Task 12).
+        if not args.lista_manual:
             print("--lista e obrigatorio (unica fonte de tasks disponivel e --task-source=manual)", file=sys.stderr)
             sys.exit(1)
-        tasks = ManualList(caminho=lista_manual)
+        tasks = ManualList(caminho=args.lista_manual)
 
         motor_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target_repo_name = os.path.basename(repo)
