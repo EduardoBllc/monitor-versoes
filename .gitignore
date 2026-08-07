@@ -9,7 +9,6 @@ __pycache__/
 *.egg-info/
 
 .rtk
-locks/
 conflitos/
 
 # Secrets / ambiente
