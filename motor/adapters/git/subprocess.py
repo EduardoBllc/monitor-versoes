@@ -353,6 +353,22 @@ class GitSubprocess:
                 nomes.add(nome)
         return sorted(nomes)
 
+    def list_version_tags(self) -> list[str]:
+        # So refs/tags/ — diferente de list_version_branches, que inclui heads
+        # tambem de proposito (para inferir_base achar versao fechada cuja
+        # branch ja foi apagada).
+        out = self._output(
+            self.repo_path, "for-each-ref", "--format=%(refname)", "refs/tags/"
+        )
+        if out == "":
+            return []
+        nomes = set()
+        for linha in out.split("\n"):
+            nome = linha.removeprefix("refs/tags/")
+            if _PADRAO_BRANCH_VERSAO.match(nome):
+                nomes.add(nome)
+        return sorted(nomes)
+
     def read_file(self, branch: str, path: str) -> bytes:
         proc = subprocess.run(
             ["git", "show", f"{branch}:{path}"], cwd=self.repo_path, capture_output=True

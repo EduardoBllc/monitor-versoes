@@ -8,11 +8,14 @@ os atributos públicos abaixo.
 from __future__ import annotations
 
 import datetime
+import re
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome, MergePrediction
+
+_PADRAO_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 @dataclass
@@ -135,10 +138,11 @@ class FakeGit:
         return self.file_changes.get(hash, frozenset())
 
     def resolve_ref(self, ref: str) -> str:
-        if ref in self.branches:
-            return self.branches[ref]
-        if ref in self.commits:
-            return ref
+        nome = ref.removeprefix("refs/tags/").removeprefix("refs/heads/")
+        if nome in self.branches:
+            return self.branches[nome]
+        if nome in self.commits:
+            return nome
         raise MotorError(f"ref {ref} nao encontrada")
 
     def use_worktree(self, branch: str) -> None:
@@ -229,7 +233,19 @@ class FakeGit:
         self.fetched.append(remote)
 
     def list_version_branches(self) -> list[str]:
-        return sorted(self.branches.keys())
+        # Espelha o adapter real: heads UNIAO tags, filtrado por X.Y.Z. Sem o
+        # filtro, 'master' entra no conjunto e versoes_abertas estoura em
+        # chave("master") — o fake nao pode ser mais permissivo que o real.
+        return sorted(
+            {n for n in (*self.branches, *self.tags) if _PADRAO_VERSAO.match(n)}
+        )
+
+    def list_version_tags(self) -> list[str]:
+        return sorted(
+            t
+            for t, existe in self.tags.items()
+            if existe and _PADRAO_VERSAO.match(t)
+        )
 
     def read_file(self, branch: str, path: str) -> bytes:
         arquivos = self.files.get(branch)

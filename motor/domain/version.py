@@ -48,3 +48,30 @@ def inferir_base(numero: str, versoes_existentes: list[str]) -> str:
     if candidato in versoes_existentes:
         return candidato
     return f"{x}.{y}.0"
+
+
+def chave(numero: str) -> tuple[int, int, int]:
+    """Ordem semver. Existe porque ordenacao textual erra em '13.9.0' vs
+    '13.10.0' — o unico bug de ordenacao que nao aparece nos testes de
+    fixture pequeno e aparece em producao no mes seguinte.
+    """
+    return _parse_versao(numero)
+
+
+def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
+    """Em construcao = existe como versao e nao tem tag homonima.
+
+    `todas` vem de GitRepo.list_version_branches(), que ja devolve
+    refs/heads/ UNIAO refs/tags/ filtrado por X.Y.Z; `tags` vem de
+    list_version_tags(). A diferenca e o conjunto aberto.
+    """
+    return sorted(set(todas) - set(tags), key=chave)
+
+
+def fontes_de_alvo(alvo: str, abertas: list[str]) -> list[str]:
+    """Versoes cujas tarefas caem no alvo: toda aberta <= alvo, alvo incluso.
+
+    E a regra de distribuicao vista pelo lado da versao (spec §2).
+    """
+    k = chave(alvo)
+    return [v for v in abertas if chave(v) <= k]

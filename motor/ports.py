@@ -146,6 +146,10 @@ class GitRepo(Protocol):
         """Lista branches de versão."""
         ...
 
+    def list_version_tags(self) -> list[str]:
+        """Tags no formato X.Y.Z. Versao com tag = liberada (§6)."""
+        ...
+
     def read_file(self, branch: str, path: str) -> bytes:
         """Lê arquivo em branch."""
         ...

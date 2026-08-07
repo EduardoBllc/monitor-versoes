@@ -91,3 +91,16 @@ def test_fake_git_merge_base_branches_divergentes():
     base = g.merge_base("branchA", "branchB")
 
     assert base == "r", f"merge_base(branchA, branchB) = {base!r}, quer r"
+
+
+def test_fake_list_version_tags_so_devolve_tags():
+    git = FakeGit(branches={"13.34.0": "aaa", "14.0.0": "bbb"},
+                  tags={"13.34.0": True})
+    assert git.list_version_tags() == ["13.34.0"]
+
+
+def test_fake_list_version_branches_filtra_por_formato():
+    # Espelha o adapter real (subprocess.py:352). Sem o filtro, 'master' entra
+    # no conjunto e versoes_abertas estoura em chave("master").
+    git = FakeGit(branches={"master": "m", "13.34.0": "aaa"}, tags={"13.33.0": True})
+    assert git.list_version_branches() == ["13.33.0", "13.34.0"]
