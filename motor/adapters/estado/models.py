@@ -8,12 +8,12 @@ from __future__ import annotations
 import datetime
 
 from sqlalchemy import (
+    DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     MetaData,
     UniqueConstraint,
-    func,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -66,7 +66,9 @@ class Versao(Base):
     base_ref: Mapped[str]
     base_commit: Mapped[str]
     # null = em construcao. Preenchida com a data do commit apontado pela tag.
-    liberada_em: Mapped[datetime.datetime | None] = mapped_column(default=None)
+    liberada_em: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
 
 class Atribuicao(Base):
