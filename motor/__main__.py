@@ -159,9 +159,6 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
     print("concluido")
 
 
-_VARS_TICKIO = ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD")
-
-
 @contextmanager
 def _abrir_sessao():
     """Ciclo de vida do banco: uma engine e uma sessao por comando.
@@ -184,15 +181,13 @@ def _montar_task_source(args: argparse.Namespace, info: RepoInfo) -> TaskSource:
     """A fonte de tasks depende do repo: o sistema_id do Tickio sai da linha
     `repo` do banco, lida antes daqui via EstadoRepo.resolver_repo."""
     if args.fonte_flag == "tickio":
-        # Checado aqui, nao em main(): TICKIO_USER/TICKIO_PASSWORD sao vazios no
-        # .env.example de proposito, e quem usa --lista nao tem que preencher.
-        v = {c: os.environ.get(c, "") for c in _VARS_TICKIO}
-        if faltando := [c for c, valor in v.items() if not valor]:
-            raise MotorError(f"faltando no .env: {', '.join(faltando)}")
+        # Sem validar as variaveis aqui: montar nao e usar. `atualizar --abort`
+        # e `reconstruir-estado` recebem esta fonte e nunca chamam fetch — quem
+        # cobra credencial e o TickioRest, na primeira busca.
         return TickioRest(
-            base_url=v["TICKIO_BASE_URL"],
-            usuario=v["TICKIO_USER"],
-            senha=v["TICKIO_PASSWORD"],
+            base_url=os.environ.get("TICKIO_BASE_URL", ""),
+            usuario=os.environ.get("TICKIO_USER", ""),
+            senha=os.environ.get("TICKIO_PASSWORD", ""),
             sistema_id=info.tickio_sistema_id,
         )
     return ManualList(caminho=args.lista_manual)

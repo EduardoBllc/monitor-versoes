@@ -30,6 +30,23 @@ class TickioRest:
     _access: str = field(default="", init=False, repr=False)
 
     def fetch(self, versao: str) -> list[str]:
+        # Cobrado no uso, nao na construcao: o CLI monta a fonte de tarefas para
+        # todo comando, mas `atualizar --abort` e `reconstruir-estado` nunca
+        # buscam nada — e sao justamente os comandos de recuperacao, que nao
+        # podem travar por credencial de um servico que nao vao consultar. Sem
+        # esta checagem, base_url vazia sai como reclamacao de protocolo do
+        # httpx, que nao nomeia a variavel que falta.
+        if faltando := [
+            nome
+            for nome, valor in (
+                ("TICKIO_BASE_URL", self.base_url),
+                ("TICKIO_USER", self.usuario),
+                ("TICKIO_PASSWORD", self.senha),
+            )
+            if not valor
+        ]:
+            raise MotorError(f"faltando no .env: {', '.join(faltando)}")
+
         cliente = self.client if self.client is not None else httpx.Client()
         token = self._autenticar(cliente)
 

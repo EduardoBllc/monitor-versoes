@@ -272,7 +272,31 @@ def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(bordas, tmp_path, monkeyp
         main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
     assert saida.value.code == 1
-    assert caplog.messages == ["faltando no .env: TICKIO_BASE_URL"]
+    # o engine prefixa com "buscando tasks da versao ..."; o que importa e a
+    # variavel nomeada, em vez da reclamacao de protocolo do httpx.
+    assert "faltando no .env: TICKIO_BASE_URL" in caplog.text
+
+
+@pytest.mark.parametrize("comando,esperado", [
+    (["atualizar", "13.34.0", "--abort"], "abortado"),
+    (["reconstruir-estado", "13.34.0"], "status: DONE"),
+])
+def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
+    bordas, tmp_path, monkeypatch, capsys, comando, esperado
+):
+    """`atualizar --abort` e `reconstruir-estado` montam a fonte de tarefas mas
+    nunca chamam fetch. Sao os comandos de recuperacao: exigir TICKIO_USER/
+    TICKIO_PASSWORD (vazios no .env.example) travaria justamente o comando que
+    se usa quando algo ja esta quebrado.
+    """
+    # "" e nao delenv: main() chama load_dotenv(), que repovoaria do .env.
+    for var in ("TICKIO_USER", "TICKIO_PASSWORD"):
+        monkeypatch.setenv(var, "")
+
+    main([*comando, "--repo", _repo_dir(tmp_path)])
+
+    # chegou ao fim do comando, nao so deixou de reclamar
+    assert esperado in capsys.readouterr().out
 
 
 def test_lista_manual_nao_exige_variavel_do_tickio(bordas, tmp_path, monkeypatch,
