@@ -135,3 +135,27 @@ def test_atribuicoes_de_marca_aplicado_so_quando_presente():
     assert por_chamado["1"].estado == "aplicado"
     assert por_chamado["2"].estado == "pendente"
     assert por_chamado["1"].commits == ["aaa"]
+
+
+def test_reconciliar_nao_confunde_pendente_com_commit_sumido():
+    """Discrimina os dois casos que o `estado` separa: commit ainda nao
+    aplicado (pendente) x commit que foi aplicado e desapareceu do git
+    (aplicado). Sem as duas metades, um fix que sempre devolvesse
+    estado_integro=True passaria.
+    """
+    alvo = Alvo(tasks=_alvo(**{"1": ["aaa"], "2": []}))
+    pendente = Atribuicao(chamado="1", marcada="13.34.0", estado="pendente",
+                          commits=["aaa"])
+    aplicado_sumido = Atribuicao(chamado="2", marcada="13.34.0",
+                                 estado="aplicado", commits=["bbb"])
+
+    # metade 1: pendente ausente do alvo nao e "sumido" — nao foi aplicado ainda
+    so_pendente = reconciliar(alvo, [pendente], {"2": "sem entrega"}, {}, [], [])
+    assert so_pendente.commits_sumidos == []
+    assert so_pendente.estado_integro is True
+
+    # metade 2: aplicado que desapareceu do git segue sendo sumido
+    com_sumido = reconciliar(alvo, [pendente, aplicado_sumido],
+                             {"2": "sem entrega"}, {}, [], [])
+    assert com_sumido.commits_sumidos == ["bbb"]
+    assert com_sumido.estado_integro is False

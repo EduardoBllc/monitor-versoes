@@ -95,10 +95,15 @@ def reconciliar(
             else:
                 ancestrais.append(c)
 
+    # So atribuicao aplicada pode ter commit "sumido": pendente e commit que
+    # ainda nao foi cherry-pickado, entao estar ausente do alvo e o normal —
+    # contar isso diria "estado divergente do git" (estado corrompido) numa
+    # versao recem-criada, mandando o operador investigar o que nao existe.
     sumidos = sorted(
         {
             h
             for a in anteriores
+            if a.estado == "aplicado"
             for h in a.commits
             if presentes.get(h, Presence.AUSENTE) == Presence.AUSENTE
         }
