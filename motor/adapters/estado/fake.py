@@ -65,7 +65,9 @@ class FakeEstado:
         # recusa, senao os testes de engine validam um comportamento que nao
         # existe em producao.
         atual = self.versao(repo, versao)
-        if atual is not None and atual.liberada_em is not None:
+        if atual is None:
+            raise MotorError(f"versao {versao} nao registrada")
+        if atual.liberada_em is not None:
             raise MotorError(f"versao {versao} liberada e imutavel")
         self._atribuicoes[(repo, versao)] = list(novas)
 

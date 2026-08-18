@@ -57,6 +57,16 @@ def test_substituir_atribuicoes_recusa_versao_liberada():
         estado.substituir_atribuicoes("r", "13.34.0", [])
 
 
+def test_substituir_atribuicoes_recusa_versao_nao_registrada():
+    # Espelha a FK atribuicao.versao_id -> versao.id: sem registrar_versao
+    # antes, o Postgres rejeitaria o insert. Mensagem distinta da versao
+    # liberada, para nao confundir os dois motivos de recusa.
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+
+    with pytest.raises(MotorError, match="nao registrada"):
+        estado.substituir_atribuicoes("r", "13.34.0", [])
+
+
 def test_marcar_liberadas_ignora_versao_que_nao_esta_no_estado():
     estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
     estado.marcar_liberadas("r", {"9.9.9": datetime.datetime(2026, 8, 1)})
