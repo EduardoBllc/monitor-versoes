@@ -1,209 +1,138 @@
-"""Porte de internal/engine/verificar_test.go."""
+from __future__ import annotations
 
 import datetime
 
+from motor.adapters.commitsource.fake import FakeCommitSource
+from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.ports import MergePrediction
 
-
-def test_verificar_verde_quando_tudo_aplicado(tmp_path):
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
-    g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("origin/master", "origem1")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "base-tip")
-    g.cherry_pick_x("origem1")
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{"255514":{"task":"VB-2354","titulo":"Logs","commits":["origem1"]}}
-        }"""
-    )
-
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
-
-    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-
-    assert status.verde, f"esperava verde, status = {status!r}"
-    assert g.pulled == [], "sem branch remota, verificar nao deveria puxar nada"
-    assert g.fetched == ["origin"], "verificar deveria sempre atualizar origin/master"
+D = datetime.datetime(2026, 1, 1)
 
 
-def test_verificar_puxa_remoto_quando_branch_publicada(tmp_path):
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
-    g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("origin/master", "origem1")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "base-tip")
-    g.remotes["13.7.0"] = True
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{}
-        }"""
-    )
-
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
-
-    verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-
-    assert g.pulled == ["13.7.0"], "branch ja publicada, esperava pull antes de verificar"
+def _deps(git, tasks, commits, estado) -> Deps:
+    return Deps(git=git, tasks=tasks, estado=estado, repo="r", _commit_source=commits)
 
 
-def test_verificar_faltante(tmp_path):
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
-    g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("origin/master", "origem1")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "base-tip")
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{}
-        }"""
-    )
-
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
-
-    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-
-    assert not status.verde, "nao deveria ser verde"
-    assert (
-        len(status.faltantes) == 1 and status.faltantes[0].hash_origem == "origem1"
-    ), f"faltantes = {status.faltantes!r}"
+def _estado_com_repo() -> FakeEstado:
+    return FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
 
 
-def test_verificar_task_sem_commit_nao_verde(tmp_path):
-    # task no ClickUp pra versao, mas nenhum commit achado em master: vermelho.
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("origin/master", "base-tip")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "base-tip")
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{}
-        }"""
-    )
+def _git(tags: dict[str, bool] | None = None) -> FakeGit:
+    """Grafo: m0 e a raiz; a0 e um commit que so existe no master.
 
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
-
-    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-
-    assert not status.verde, "task sem commit nao pode sair verde"
-    assert status.tasks_sem_commits == ["255514"], f"tasks_sem_commits = {status.tasks_sem_commits}"
-
-
-def test_verificar_task_sem_entrega_reconhecida_fica_verde(tmp_path):
-    # escape hatch: chamado listado em tasks_sem_entrega no lock (edicao manual).
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("base-tip", "", "base", t0)
-    g.set_branch("origin/master", "base-tip")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "base-tip")
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{},"tasks_sem_entrega":["255514"]
-        }"""
-    )
-
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
-
-    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-
-    assert status.tasks_sem_commits == [], f"reconhecida nao deveria entrar: {status.tasks_sem_commits}"
-    assert status.verde, f"esperava verde com escape hatch, status = {status!r}"
-
-
-def test_verificar_suspeita_por_conteudo_cherry_pick_manual_sem_x(tmp_path):
-    """Reproduz o caso real: cherry-pick manual sem -x que altera o conteudo
-    na resolucao do conflito (patch-id diverge, nivel 3 nao pega) mas
-    preserva mensagem+arquivos - deve aparecer em suspeitos_conteudo, subset
-    de faltantes, sem contar como presente (§ nivel 4, supervisionado).
+    As versoes ficam em m0, entao a0 e faltante em todas elas — e o que
+    permite afirmar que o commit foi cobrado, e nao herdado da base.
     """
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
-    g.add_commit("base-tip", "", "base", t0)
-    g.add_commit("alvo1", "base-tip", "fix: ch255514 corrige logs", t0)
-    g.set_branch("origin/master", "origem1")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "alvo1")
-    g.file_changes["origem1"] = frozenset({"a.txt"})
-    g.file_changes["alvo1"] = frozenset({"a.txt"})
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{}
-        }"""
-    )
-
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
-
-    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
-
-    assert not status.verde, "commit suspeito ainda e ausente, nao pode sair verde"
-    assert len(status.faltantes) == 1 and status.faltantes[0].hash_origem == "origem1"
-    assert (
-        len(status.suspeitos_conteudo) == 1 and status.suspeitos_conteudo[0].hash_origem == "origem1"
-    ), f"suspeitos_conteudo = {status.suspeitos_conteudo!r}"
+    git = FakeGit(tags=tags or {})
+    git.add_commit("m0", "", "raiz", D)
+    git.add_commit("a0", "m0", "ch123123 alfa", D)
+    git.set_branch("master", "a0")
+    git.set_branch("origin/master", "a0")
+    for versao in ("13.33.1", "13.34.0", "14.0.0"):
+        git.set_branch(versao, "m0")
+    return git
 
 
-def test_verificar_sumido_nunca_entra_em_conflitantes(tmp_path):
-    """Cobre o invariante documentado em VersionStatus: conflitantes e
-    subconjunto de faltantes (lado alvo), nunca de commits sumidos so-no-lock.
-    Um commit ausente do git E do alvo atual nao e candidato real de
-    cherry-pick, entao mesmo com uma previsao de conflito configurada pra
-    ele, PredictMerge nao deveria nem ser chamado.
+def test_verificar_une_tarefas_das_versoes_abertas_menores():
+    git = _git()
+    tasks = FakeTaskSource(chamados={"13.33.1": ["123123"], "14.0.0": []})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+    # base gravada na criacao: m0. Sem isso o BaseResolver resolveria "master",
+    # que hoje aponta para a0 — e o commit apareceria como ja presente.
+    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
+                                            base_ref="master", base_commit="m0"))
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    # marcada para 13.33.1, cobrada na 14.0.0
+    assert [c.hash_origem for c in status.faltantes] == ["a0"]
+
+
+def test_verificar_congela_versao_quando_a_tag_aparece():
+    git = _git(tags={"13.34.0": True})
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA,
+                                            base_ref="13.33.0", base_commit="m0"))
+    estado.substituir_atribuicoes("r", "13.34.0", [
+        Atribuicao(chamado="123456", marcada="13.34.0", estado="aplicado",
+                   commits=["a0"])
+    ])
+
+    status = verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado),
+                       "13.34.0")
+
+    assert estado.versao("r", "13.34.0").liberada_em is not None
+    # devolve o snapshot congelado, nao recalcula
+    assert status.verde is True
+    assert status.tasks_novas == []
+
+
+def test_verificar_nao_grava_em_versao_liberada():
+    git = _git(tags={"13.34.0": True})
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA,
+                                            base_ref="13.33.0", base_commit="m0"))
+    tasks = FakeTaskSource(chamados={"13.34.0": ["999111"]})
+
+    verificar(_deps(git, tasks, FakeCommitSource(), estado), "13.34.0")
+
+    # a trava do fake nao disparou => nao tentou escrever
+    assert estado.atribuicoes("r", "13.34.0") == []
+
+
+def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
+    """Invariante documentada em VersionStatus: `conflitantes` e subconjunto de
+    `faltantes` (lado alvo), nunca de `commits_sumidos`. Commit que so o estado
+    conhecia e que sumiu do alvo nao e candidato a cherry-pick, entao
+    predict_merge nao pode nem ser consultado para ele.
+
+    Herdado do teste equivalente contra o lock: sem ele a guarda
+    `hash_ in candidatos_conflito` do verificar fica sem cobertura. Os dois
+    commits tem conflito plantado de proposito — assim a assercao distingue
+    "a guarda funciona" de "nenhum commit conflita".
     """
-    g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
-    g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
-    g.add_commit("base-tip", "", "base", t0)
-    g.add_commit("sumido1", "", "fix: ch999999 tarefa removida do clickup", t0)
-    g.set_branch("origin/master", "origem1")
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", "base-tip")
-    g.cherry_pick_x("origem1")
-    (tmp_path / "13.7.0.lock").write_bytes(
-        b"""{
-        "versao":"13.7.0","tipo":"ajustada","base":{"ref":"13.6.0","commit":"base-tip"},
-        "tasks":{
-            "255514":{"task":"VB-2354","titulo":"Logs","commits":["origem1"]},
-            "999999":{"task":"","titulo":"Removida","commits":["sumido1"]}
-        }
-        }"""
+    git = _git()
+    git.add_commit("sumido", "", "ch999999 tarefa que saiu do Tickio", D)
+    git.merge_predictions["a0"] = MergePrediction(conflita=True, arquivos_conflito=[])
+    git.merge_predictions["sumido"] = MergePrediction(
+        conflita=True, arquivos_conflito=[]
     )
-    g.merge_predictions["sumido1"] = MergePrediction(conflita=True, arquivos_conflito=[])
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
+                                            base_ref="master", base_commit="m0"))
+    estado.substituir_atribuicoes("r", "14.0.0", [
+        Atribuicao(chamado="999999", marcada="14.0.0", estado="aplicado",
+                   commits=["sumido"])
+    ])
 
-    tasks = FakeTaskSource()
-    tasks.chamados["13.7.0"] = ["255514"]
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 
-    status = verificar(Deps(git=g, tasks=tasks, lock_dir=str(tmp_path)), "13.7.0")
+    assert status.commits_sumidos == ["sumido"]
+    assert status.estado_integro is False
+    assert [c.hash_origem for c in status.conflitantes] == ["a0"]
 
-    assert status.commits_sumidos == [
-        "sumido1"
-    ], f"commits_sumidos = {status.commits_sumidos!r}, quer [sumido1]"
-    for c in status.conflitantes:
-        assert c.hash_origem != "sumido1", (
-            f"sumido1 nao deveria aparecer em conflitantes: {status.conflitantes!r}"
-        )
+
+def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():
+    git = _git(tags={"13.33.1": True})
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
+                                            base_ref="master", base_commit="m0"))
+
+    verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado), "14.0.0")
+
+    # nada a congelar: sem linha no estado, nao ha snapshot para proteger
+    assert estado.versao("r", "13.33.1") is None

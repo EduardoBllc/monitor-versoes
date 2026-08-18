@@ -116,12 +116,12 @@ def imprimir_status(s: VersionStatus) -> None:
     if s.tasks_sem_commits:
         print(f"tasks sem commits: {s.tasks_sem_commits}")
         print("  (nenhum commit/PR achado - adicione ao lock em tasks_sem_entrega se for proposital)")
-    if not s.lock_integro:
-        print(f"lock: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
+    if not s.estado_integro:
+        print(f"estado: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
         for hash_ in s.commits_sumidos:
             print(f"  - {hash_[:8]}")
     else:
-        print("lock: integro")
+        print("estado: integro")
     conflitantes = {c.hash_origem for c in s.conflitantes}
     suspeitos = {c.hash_origem for c in s.suspeitos_conteudo}
     _imprimir_commits_por_task("faltantes", s.faltantes, conflitantes, suspeitos)

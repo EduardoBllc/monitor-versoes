@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
 from motor.domain.commits import ordenar_por_data
-from motor.domain.types import CommitRef, Lock, TargetSet, TaskTarget, Exclusion, ExclusionReason
+from motor.domain.types import CommitRef, Lock, TargetSet, TaskTarget
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
@@ -51,21 +51,6 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     faltam = ordenar_por_data(status.faltantes)
     lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
     lock = lock_store.ler(versao)
-
-    if status.ancestrais:
-        excluidos = list(lock.excluidos)
-        ja_excluidos = {e.commit for e in excluidos}
-        for c in status.ancestrais:
-            if c.hash_origem not in ja_excluidos:
-                excluidos.append(
-                    Exclusion(
-                        commit=c.hash_origem,
-                        chamado=c.chamado,
-                        motivo="ja presente no historico (sem cherry-pick a fazer)",
-                        reason=ExclusionReason.AUTOMATICA,
-                    )
-                )
-        lock = replace(lock, excluidos=excluidos)
 
     deps.git.use_worktree(versao)
 

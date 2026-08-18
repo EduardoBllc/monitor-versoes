@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError
 
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.domain.types import Atribuicao, VersaoInfo, VersionType
+from motor.domain.types import Atribuicao, Exclusion, VersaoInfo, VersionType
 from motor.errors import MotorError
 
 pytestmark = pytest.mark.integracao
@@ -178,6 +178,40 @@ def test_substituir_atribuicoes_recusa_versao_liberada_com_snapshot_vazio(sessao
 
     with pytest.raises(MotorError, match="imutavel"):
         estado.substituir_atribuicoes("vendabemweb", "13.34.0", [])
+
+
+def test_exclusoes(sessao_postgres):
+    """Primeira execucao real do corpo de `exclusoes()`: ate aqui nada semeava
+    linha em `exclusao`, entao o adapter construia um `Exclusion` na forma nova
+    sem nunca ter rodado uma vez.
+
+    Duas linhas de proposito: `versao_numero` null (vale para todo o repo, ex.:
+    commit revertido) e preenchida (vale so para aquela versao). E a distincao
+    em que `filtrar_excluidos` se apoia — uma traducao que perdesse o null
+    passaria num teste de uma linha so.
+    """
+    _semear_repo(sessao_postgres)
+    repo_id = sessao_postgres.execute(
+        text("select id from repo where nome = 'vendabemweb'")
+    ).scalar_one()
+    sessao_postgres.execute(
+        text(
+            "insert into exclusao (repo_id, hash_origem, versao_numero, motivo) "
+            "values (:repo_id, 'aaa111', null, 'revertido em master'), "
+            "       (:repo_id, 'bbb222', '13.34.0', 'nao se aplica a esta versao')"
+        ),
+        {"repo_id": repo_id},
+    )
+    sessao_postgres.commit()
+
+    estado = PostgresEstado(sessao=sessao_postgres)
+
+    assert estado.exclusoes("vendabemweb") == [
+        Exclusion(hash_origem="aaa111", versao_numero=None,
+                  motivo="revertido em master"),
+        Exclusion(hash_origem="bbb222", versao_numero="13.34.0",
+                  motivo="nao se aplica a esta versao"),
+    ]
 
 
 def test_sem_entrega(sessao_postgres):

@@ -1,91 +1,131 @@
-"""Porte de internal/domain/reconcile.go."""
+"""Cruzamento das tres fontes: Tickio (alvo) x estado x git."""
 
 from __future__ import annotations
 
 from dataclasses import replace
 
-from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, VersionStatus, Presence
+from motor.domain.types import (
+    Alvo,
+    Atribuicao,
+    CommitRef,
+    Exclusion,
+    Presence,
+    TargetSet,
+    VersionStatus,
+)
 
 
-def filtrar_excluidos(alvo: TargetSet, excluidos: list[Exclusion]) -> TargetSet:
-    """Remove do alvo os commits ja marcados como excluidos no
-    lock (§3) - sem isso, todo verificar reportaria o mesmo falso-positivo pra
-    sempre.
+def filtrar_excluidos(
+    alvo: TargetSet, excluidos: list[Exclusion], versao: str
+) -> TargetSet:
+    """Tira do alvo os commits marcados como excluidos.
+
+    `versao_numero` None vale para todo o repo (ex.: commit revertido); com
+    valor, so para aquela versao. Sem isso, todo verificar reportaria o mesmo
+    falso-positivo para sempre.
     """
-    excluido = {e.commit for e in excluidos}
-    filtrado: TargetSet = {}
-    for chamado, tt in alvo.items():
-        commits = [c for c in tt.commits if c.hash_origem not in excluido]
-        filtrado[chamado] = replace(tt, commits=commits)
-    return filtrado
+    fora = {
+        e.hash_origem
+        for e in excluidos
+        if e.versao_numero is None or e.versao_numero == versao
+    }
+    return {
+        chamado: replace(
+            tt, commits=[c for c in tt.commits if c.hash_origem not in fora]
+        )
+        for chamado, tt in alvo.items()
+    }
 
 
-def diff_tasks(alvo: TargetSet, lock_tasks: TargetSet) -> tuple[list[str], list[str]]:
-    """Calcula a diferenca simetrica entre alvo e lock (§5, §9)."""
-    novas = [
-        chamado for chamado, tt in alvo.items() if chamado not in lock_tasks and tt.commits
-    ]
-    removidas = [chamado for chamado in lock_tasks if chamado not in alvo]
+def diff_tasks(
+    alvo: TargetSet, anteriores: list[Atribuicao]
+) -> tuple[list[str], list[str]]:
+    """Diferenca simetrica entre o alvo de agora e o estado gravado no run
+    anterior. E o que detecta tarefa desmarcada no Tickio — comparar depois de
+    sobrescrever apagaria a propria evidencia.
+    """
+    antes = {a.chamado for a in anteriores}
+    novas = [ch for ch, tt in alvo.items() if ch not in antes and tt.commits]
+    removidas = [ch for ch in antes if ch not in alvo]
     return sorted(novas), sorted(removidas)
 
 
+def atribuicoes_de(
+    alvo: TargetSet, presentes: dict[str, Presence]
+) -> list[Atribuicao]:
+    """Projeta o alvo resolvido no formato que vai para o estado."""
+    return [
+        Atribuicao(
+            chamado=tt.chamado,
+            marcada=tt.marcada,
+            estado=(
+                "aplicado"
+                if tt.commits
+                and all(
+                    presentes.get(c.hash_origem, Presence.AUSENTE) != Presence.AUSENTE
+                    for c in tt.commits
+                )
+                else "pendente"
+            ),
+            commits=[c.hash_origem for c in tt.commits],
+        )
+        for tt in alvo.values()
+    ]
+
+
 def reconciliar(
-    alvo: TargetSet,
-    lock: Lock,
+    alvo: Alvo,
+    anteriores: list[Atribuicao],
+    sem_entrega: dict[str, str],
     presentes: dict[str, Presence],
     conflitantes: list[CommitRef],
     suspeitos_conteudo: list[CommitRef] = (),
 ) -> VersionStatus:
-    """Cruza as 3 fontes (§2, §9) e produz o VersionStatus. `presentes`,
-    `conflitantes` e `suspeitos_conteudo` sao pre-computados pelo chamador
-    (services.PresenceOracle e GitRepo.PredictMerge) - esta funcao fica pura.
+    """Produz o VersionStatus. Funcao pura: `presentes`, `conflitantes` e
+    `suspeitos_conteudo` chegam pre-computados pelo chamador.
     """
-    novas, removidas = diff_tasks(alvo, lock.tasks)
+    novas, removidas = diff_tasks(alvo.tasks, anteriores)
 
     faltantes: list[CommitRef] = []
     ancestrais: list[CommitRef] = []
-    for tt in alvo.values():
-        for c in tt.commits:
-            p = presentes.get(c.hash_origem, Presence.AUSENTE)
-            if p == Presence.AUSENTE:
-                faltantes.append(c)
-            else:
-                # ANCESTRAL, TRAILER ou PATCH_ID - ja presente no historico,
-                # sem cherry-pick a fazer (§2/§9 "pick manual sem o tool").
-                ancestrais.append(c)
-
-    lock_integro = True
-    sumidos: list[str] = []
-    for tt in lock.tasks.values():
+    for tt in alvo.tasks.values():
         for c in tt.commits:
             if presentes.get(c.hash_origem, Presence.AUSENTE) == Presence.AUSENTE:
-                lock_integro = False
-                sumidos.append(c.hash_origem)
-    sumidos = sorted(sumidos)
+                faltantes.append(c)
+            else:
+                ancestrais.append(c)
 
-    # Task no ClickUp sem nenhum commit achado: nao pode passar despercebida
-    # (falso-verde). So sai da lista se reconhecida manualmente em
-    # tasks_sem_entrega (task sem entrega neste projeto, julgamento do operador).
-    reconhecidas = set(lock.tasks_sem_entrega)
+    sumidos = sorted(
+        {
+            h
+            for a in anteriores
+            for h in a.commits
+            if presentes.get(h, Presence.AUSENTE) == Presence.AUSENTE
+        }
+    )
+    estado_integro = not sumidos
+
+    # Tarefa marcada sem nenhum commit achado nao pode passar despercebida
+    # (falso-verde). So sai da lista se reconhecida em sem_entrega.
     sem_commits = sorted(
-        chamado
-        for chamado, tt in alvo.items()
-        if not tt.commits and chamado not in reconhecidas
+        ch for ch, tt in alvo.tasks.items() if not tt.commits and ch not in sem_entrega
     )
 
     verde = (
-        len(novas) == 0
-        and len(removidas) == 0
-        and lock_integro
-        and len(faltantes) == 0
-        and len(sem_commits) == 0
+        not novas
+        and not removidas
+        and estado_integro
+        and not faltantes
+        and not sem_commits
+        and not alvo.ambiguas
     )
 
     return VersionStatus(
         verde=verde,
         tasks_novas=novas,
         tasks_removidas=removidas,
-        lock_integro=lock_integro,
+        tasks_ambiguas=list(alvo.ambiguas),
+        estado_integro=estado_integro,
         commits_sumidos=sumidos,
         faltantes=faltantes,
         ancestrais=ancestrais,

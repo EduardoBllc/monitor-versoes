@@ -62,17 +62,18 @@ class Alvo:
     ambiguas: list[str] = field(default_factory=list)
 
 
-class ExclusionReason(IntEnum):
-    AUTOMATICA = 0  # recomputavel via Presente()
-    JULGAMENTO = 1  # irredutivel, so existe no lock
-
-
 @dataclass(frozen=True)
 class Exclusion:
-    commit: str = ""
-    chamado: str = ""
+    """Julgamento humano: commit que nao entra. Estado irredutivel — nao e
+    re-derivavel do Tickio nem do git.
+
+    As exclusoes automaticas ("ja presente na base") sumiram: eram
+    recomputaveis por definicao e quem responde isso e o oraculo de presenca.
+    """
+
+    hash_origem: str = ""
+    versao_numero: str | None = None  # None = vale para toda versao do repo
     motivo: str = ""
-    reason: ExclusionReason = ExclusionReason.AUTOMATICA
 
 
 @dataclass(frozen=True)
@@ -113,12 +114,13 @@ class Lock:
 @dataclass(frozen=True)
 class VersionStatus:
     verde: bool = False
-    tasks_novas: list[str] = field(default_factory=list)  # em ClickUp, fora do lock
-    tasks_removidas: list[str] = field(default_factory=list)  # no lock, fora do ClickUp
-    lock_integro: bool = False
-    commits_sumidos: list[str] = field(default_factory=list)  # no lock, ausentes no git
+    tasks_novas: list[str] = field(default_factory=list)  # no Tickio, fora do estado
+    tasks_removidas: list[str] = field(default_factory=list)  # no estado, fora do Tickio
+    estado_integro: bool = False
+    tasks_ambiguas: list[str] = field(default_factory=list)  # chamado marcado em mais de uma versao aberta
+    commits_sumidos: list[str] = field(default_factory=list)  # no estado, ausentes no git
     faltantes: list[CommitRef] = field(default_factory=list)
-    ancestrais: list[CommitRef] = field(default_factory=list)  # presente no historico mas fora do lock (ancestral, trailer ou patch-id)
+    ancestrais: list[CommitRef] = field(default_factory=list)  # presente no historico, sem cherry-pick a fazer (ancestral, trailer ou patch-id)
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)
     suspeitos_conteudo: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes com match de mensagem+arquivos no alvo (provavel cherry-pick manual com conteudo divergente) - so alerta, nao conta como presente
-    tasks_sem_commits: list[str] = field(default_factory=list)  # task no ClickUp sem nenhum commit achado e nao reconhecida em tasks_sem_entrega
+    tasks_sem_commits: list[str] = field(default_factory=list)  # tarefa no Tickio sem nenhum commit achado e nao reconhecida em sem_entrega

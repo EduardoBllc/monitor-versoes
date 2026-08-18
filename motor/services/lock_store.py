@@ -10,8 +10,6 @@ from motor.domain.commits import extrair_chamado, ordenar_por_data
 from motor.domain.types import (
     BaseRef,
     CommitRef,
-    Exclusion,
-    ExclusionReason,
     Lock,
     TargetSet,
     TaskTarget,
@@ -50,15 +48,9 @@ class LockStore:
             commits = [CommitRef(hash_origem=h) for h in t.get("commits") or []]
             tasks[chamado] = TaskTarget(chamado=chamado, commits=commits)
 
-        excluidos = [
-            Exclusion(
-                commit=e.get("commit", ""),
-                chamado=e.get("chamado", ""),
-                motivo=e.get("motivo", ""),
-                reason=ExclusionReason.AUTOMATICA,
-            )
-            for e in (lj.get("excluidos") or [])
-        ]
+        # A exclusao virou julgamento humano no banco: nao ha mais como
+        # reconstrui-la a partir do JSON do lock.
+        excluidos = []
 
         base = lj.get("base") or {}
         return Lock(
@@ -100,10 +92,12 @@ class LockStore:
 
     def reconstruir(
         self, branch: str, base: BaseRef, versao: str, anterior: Lock | None
-    ) -> tuple[Lock, list[Exclusion]]:
+    ) -> tuple[Lock, list[str]]:
         """Varre os trailers de cherry-pick em base..branch e regenera o lock
-        (§3). `anterior`, se fornecido, e usado so pra apontar exclusoes por
-        julgamento que nao dao pra recuperar da varredura - viram orfaos.
+        (§3). `anterior` ficou sem uso: as exclusoes por julgamento saem do
+        lock e passam a viver no banco. Substituido por
+        services/reconstrutor.py; este metodo sai junto com o LockStore quando
+        o ultimo chamador for reescrito.
         """
         try:
             commits = self.git.commits_in_range(base.commit, branch)
@@ -146,9 +140,9 @@ class LockStore:
 
         lock = Lock(versao=versao, tipo=tipo, base=base, tasks=tasks)
 
-        orfaos: list[Exclusion] = []
-        if anterior is not None:
-            orfaos = [e for e in anterior.excluidos if e.reason == ExclusionReason.JULGAMENTO]
+        # Sem ExclusionReason nao ha como separar julgamento de automatica no
+        # lock antigo. Quem responde orfaos agora e services/reconstrutor.py.
+        orfaos: list[str] = []
 
         return lock, orfaos
 

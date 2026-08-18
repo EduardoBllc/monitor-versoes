@@ -1,95 +1,103 @@
-"""Porte de internal/domain/reconcile_test.go."""
+from __future__ import annotations
 
-from motor.domain.reconcile import filtrar_excluidos, reconciliar
-from motor.domain.types import CommitRef, Exclusion, Lock, TargetSet, TaskTarget, Presence
-
-
-def mk_target_set(chamado: str, *hashes: str) -> TargetSet:
-    commits = [CommitRef(hash_origem=h) for h in hashes]
-    return {chamado: TaskTarget(chamado=chamado, commits=commits)}
-
-
-def test_reconciliar_verde():
-    alvo = mk_target_set("255514", "hash1")
-    lock = Lock(tasks=mk_target_set("255514", "hash1"))
-    presentes = {"hash1": Presence.TRAILER}
-
-    status = reconciliar(alvo, lock, presentes, [])
-
-    assert status.verde, f"esperava verde, status = {status!r}"
+from motor.domain.reconcile import (
+    atribuicoes_de,
+    diff_tasks,
+    filtrar_excluidos,
+    reconciliar,
+)
+from motor.domain.types import (
+    Alvo,
+    Atribuicao,
+    CommitRef,
+    Exclusion,
+    Presence,
+    TaskTarget,
+)
 
 
-def test_reconciliar_task_nova():
-    alvo = mk_target_set("255514", "hash1")
-    lock = Lock(tasks={})
-    presentes = {"hash1": Presence.TRAILER}
-
-    status = reconciliar(alvo, lock, presentes, [])
-
-    assert not status.verde, "nao deveria ser verde com task nova"
-    assert status.tasks_novas == ["255514"], f"tasks_novas = {status.tasks_novas}, quer [255514]"
+def _alvo(**tasks) -> dict:
+    return {
+        ch: TaskTarget(chamado=ch, marcada="13.34.0",
+                       commits=[CommitRef(hash_origem=h, chamado=ch) for h in hashes])
+        for ch, hashes in tasks.items()
+    }
 
 
-def test_reconciliar_task_removida():
-    alvo: TargetSet = {}
-    lock = Lock(tasks=mk_target_set("255514", "hash1"))
-    presentes = {"hash1": Presence.TRAILER}
+def test_filtrar_excluidos_remove_exclusao_global_e_da_versao():
+    alvo = _alvo(**{"1": ["aaa", "bbb", "ccc"]})
+    excluidos = [
+        Exclusion(hash_origem="aaa", versao_numero=None, motivo="revertido"),
+        Exclusion(hash_origem="bbb", versao_numero="13.34.0", motivo="nao se aplica"),
+        Exclusion(hash_origem="ccc", versao_numero="14.0.0", motivo="outra versao"),
+    ]
 
-    status = reconciliar(alvo, lock, presentes, [])
+    filtrado = filtrar_excluidos(alvo, excluidos, "13.34.0")
 
-    assert status.tasks_removidas == ["255514"], f"tasks_removidas = {status.tasks_removidas}, quer [255514]"
-
-
-def test_reconciliar_lock_nao_integro():
-    alvo = mk_target_set("255514", "hash1")
-    lock = Lock(tasks=mk_target_set("255514", "hash1"))
-    presentes: dict[str, Presence] = {}  # hash1 nao presente
-
-    status = reconciliar(alvo, lock, presentes, [])
-
-    assert not status.lock_integro, "esperava lock_integro=False"
-    assert status.commits_sumidos == ["hash1"], f"commits_sumidos = {status.commits_sumidos}, quer [hash1]"
-    assert len(status.faltantes) == 1, f"faltantes = {status.faltantes!r}, quer 1 item"
+    assert [c.hash_origem for c in filtrado["1"].commits] == ["ccc"]
 
 
-def test_reconciliar_task_sem_commits_nao_verde():
-    # task veio do ClickUp mas nenhuma fonte achou commit/PR: NAO pode ser verde.
-    alvo = {"255514": TaskTarget(chamado="255514", commits=[])}
-    lock = Lock(tasks={})
+def test_diff_tasks_acusa_nova_e_removida():
+    alvo = _alvo(**{"1": ["aaa"], "2": ["bbb"]})
+    anteriores = [
+        Atribuicao(chamado="2", marcada="13.34.0", estado="aplicado", commits=["bbb"]),
+        Atribuicao(chamado="3", marcada="13.34.0", estado="aplicado", commits=["ccc"]),
+    ]
 
-    status = reconciliar(alvo, lock, {}, [])
+    novas, removidas = diff_tasks(alvo, anteriores)
 
-    assert not status.verde, "task sem commits nao pode sair verde"
-    assert status.tasks_sem_commits == ["255514"], f"tasks_sem_commits = {status.tasks_sem_commits}"
-
-
-def test_reconciliar_task_sem_commits_reconhecida_fica_verde():
-    # escape hatch: chamado listado em tasks_sem_entrega (edicao manual do lock).
-    alvo = {"255514": TaskTarget(chamado="255514", commits=[])}
-    lock = Lock(tasks={}, tasks_sem_entrega=["255514"])
-
-    status = reconciliar(alvo, lock, {}, [])
-
-    assert status.tasks_sem_commits == [], f"reconhecida nao deveria entrar: {status.tasks_sem_commits}"
-    assert status.verde, f"esperava verde com escape hatch, status = {status!r}"
+    assert novas == ["1"]
+    assert removidas == ["3"]
 
 
-def test_reconciliar_suspeitos_conteudo_passthrough():
-    alvo = mk_target_set("255514", "hash1")
-    lock = Lock(tasks={})
-    presentes: dict[str, Presence] = {}  # hash1 ausente -> entra em faltantes
-    suspeita = CommitRef(hash_origem="hash1", chamado="255514")
+def test_reconciliar_verde_quando_tudo_bate():
+    alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
+    anteriores = [
+        Atribuicao(chamado="1", marcada="13.34.0", estado="aplicado", commits=["aaa"])
+    ]
+    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
 
-    status = reconciliar(alvo, lock, presentes, [], [suspeita])
+    assert status.verde is True
+    assert status.faltantes == []
 
-    assert status.suspeitos_conteudo == [suspeita], f"suspeitos_conteudo = {status.suspeitos_conteudo!r}"
+
+def test_reconciliar_nao_fica_verde_com_tarefa_ambigua():
+    alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}), ambiguas=["1"])
+    anteriores = [
+        Atribuicao(chamado="1", marcada="13.34.0", estado="aplicado", commits=["aaa"])
+    ]
+    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+
+    assert status.verde is False
+    assert status.tasks_ambiguas == ["1"]
 
 
-def test_filtrar_excluidos():
-    alvo = mk_target_set("251099", "hashA", "hashB")
-    excluidos = [Exclusion(commit="hashA", chamado="251099", motivo="ja presente na base")]
+def test_reconciliar_acusa_tarefa_sem_commit_e_aceita_sem_entrega():
+    alvo = Alvo(tasks=_alvo(**{"1": []}))
+    assert reconciliar(alvo, [], {}, {}, [], []).tasks_sem_commits == ["1"]
 
-    filtrado = filtrar_excluidos(alvo, excluidos)
+    reconhecida = reconciliar(alvo, [], {"1": "so backend"}, {}, [], [])
+    assert reconhecida.tasks_sem_commits == []
 
-    commits = filtrado["251099"].commits
-    assert len(commits) == 1 and commits[0].hash_origem == "hashB", f"commits apos filtro = {commits!r}, quer so hashB"
+
+def test_reconciliar_acusa_commit_que_sumiu_do_git():
+    alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
+    anteriores = [
+        Atribuicao(chamado="1", marcada="13.34.0", estado="aplicado",
+                   commits=["aaa", "sumido"])
+    ]
+    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+
+    assert status.estado_integro is False
+    assert status.commits_sumidos == ["sumido"]
+
+
+def test_atribuicoes_de_marca_aplicado_so_quando_presente():
+    alvo = _alvo(**{"1": ["aaa"], "2": ["bbb"]})
+    presentes = {"aaa": Presence.TRAILER, "bbb": Presence.AUSENTE}
+
+    por_chamado = {a.chamado: a for a in atribuicoes_de(alvo, presentes)}
+
+    assert por_chamado["1"].estado == "aplicado"
+    assert por_chamado["2"].estado == "pendente"
+    assert por_chamado["1"].commits == ["aaa"]
