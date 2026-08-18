@@ -56,7 +56,9 @@ class FakeEstado:
         return self.versoes.get((repo, numero))
 
     def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]:
-        return list(self._atribuicoes.get((repo, versao), []))
+        # Ordenado por chamado: o adapter real usa ORDER BY, o dict aqui
+        # devolveria ordem de insercao por acidente se nao normalizasse.
+        return sorted(self._atribuicoes.get((repo, versao), []), key=lambda a: a.chamado)
 
     def substituir_atribuicoes(
         self, repo: str, versao: str, novas: list[Atribuicao]

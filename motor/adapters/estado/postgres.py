@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass
+from typing import NoReturn
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import DatabaseError, OperationalError
@@ -26,15 +27,15 @@ class PostgresEstado:
     sessao: Session
 
     def resolver_repo(self, basename: str) -> RepoInfo:
-        linha = self.sessao.scalar(
-            select(models.Repo).where(models.Repo.nome == basename)
-        )
+        linha = self._scalar(select(models.Repo).where(models.Repo.nome == basename))
         if linha is None:
-            alias = self.sessao.scalar(
+            alias = self._scalar(
                 select(models.RepoAlias).where(models.RepoAlias.nome == basename)
             )
             if alias is not None:
-                linha = self.sessao.get(models.Repo, alias.repo_id)
+                linha = self._scalar(
+                    select(models.Repo).where(models.Repo.id == alias.repo_id)
+                )
         if linha is None:
             raise MotorError(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
@@ -79,9 +80,15 @@ class PostgresEstado:
         linha = self._versao(self._repo_id(repo), numero)
         if linha is None:
             return None
+        tipo = _TEXTO_PARA_TIPO.get(linha.tipo)
+        if tipo is None:
+            raise MotorError(
+                f"tipo de versao invalido no banco: '{linha.tipo}' "
+                f"(esperado fechada, ajustada ou cliente)"
+            )
         return VersaoInfo(
             numero=linha.numero,
-            tipo=_TEXTO_PARA_TIPO[linha.tipo],
+            tipo=tipo,
             base_ref=linha.base_ref,
             base_commit=linha.base_commit,
             liberada_em=linha.liberada_em,
@@ -92,7 +99,7 @@ class PostgresEstado:
         if versao_id is None:
             return []
         commits: dict[str, list[str]] = {}
-        for linha in self.sessao.scalars(
+        for linha in self._scalars(
             select(models.AtribuicaoCommit)
             .where(models.AtribuicaoCommit.versao_id == versao_id)
             .order_by(models.AtribuicaoCommit.chamado, models.AtribuicaoCommit.hash_origem)
@@ -105,7 +112,7 @@ class PostgresEstado:
                 estado=a.estado,
                 commits=sorted(commits.get(a.chamado, [])),
             )
-            for a in self.sessao.scalars(
+            for a in self._scalars(
                 select(models.Atribuicao)
                 .where(models.Atribuicao.versao_id == versao_id)
                 .order_by(models.Atribuicao.chamado)
@@ -115,9 +122,17 @@ class PostgresEstado:
     def substituir_atribuicoes(
         self, repo: str, versao: str, novas: list[Atribuicao]
     ) -> None:
-        versao_id = self._versao_id(repo, versao)
-        if versao_id is None:
+        linha = self._versao(self._repo_id(repo), versao)
+        if linha is None:
             raise MotorError(f"versao {versao} nao registrada no estado")
+        # A recusa nao pode depender so da trigger: se a versao ja estiver
+        # liberada mas o snapshot atual estiver vazio e `novas` tambem vier
+        # vazia, os deletes afetam 0 linhas e nenhum insert dispara a trigger
+        # — o commit passaria em silencio. Checa aqui, a trigger fica so como
+        # cinto-e-suspensorio para SQL escrito a mao.
+        if linha.liberada_em is not None:
+            raise MotorError(f"versao {versao} liberada e imutavel")
+        versao_id = linha.id
 
         # As duas deletes sao statements Core enviados na hora (nao esperam
         # o flush do commit): se a versao estiver congelada, a trigger dispara
@@ -163,7 +178,7 @@ class PostgresEstado:
                 versao_numero=e.versao_numero,
                 motivo=e.motivo,
             )
-            for e in self.sessao.scalars(
+            for e in self._scalars(
                 select(models.Exclusao)
                 .where(models.Exclusao.repo_id == repo_id)
                 .order_by(models.Exclusao.id)
@@ -174,7 +189,7 @@ class PostgresEstado:
         repo_id = self._repo_id(repo)
         return {
             s.chamado: s.motivo
-            for s in self.sessao.scalars(
+            for s in self._scalars(
                 select(models.SemEntrega)
                 .where(models.SemEntrega.repo_id == repo_id)
                 .order_by(models.SemEntrega.chamado)
@@ -184,19 +199,32 @@ class PostgresEstado:
     # -- internos --------------------------------------------------------
 
     def _repo_id(self, repo: str) -> int:
-        linha = self.sessao.scalar(
-            select(models.Repo).where(models.Repo.nome == repo)
-        )
+        linha = self._scalar(select(models.Repo).where(models.Repo.nome == repo))
         if linha is None:
             raise MotorError(f"repo '{repo}' nao encontrado no estado")
         return linha.id
 
     def _versao(self, repo_id: int, numero: str) -> models.Versao | None:
-        return self.sessao.scalar(
+        return self._scalar(
             select(models.Versao).where(
                 models.Versao.repo_id == repo_id, models.Versao.numero == numero
             )
         )
+
+    def _scalar(self, stmt):
+        """Le uma linha (ou None). Ler tambem pode achar o banco fora do ar
+        — sem isso todo metodo de escrita, que abre com uma leitura, vazaria
+        um OperationalError crua antes de chegar perto de um commit."""
+        try:
+            return self.sessao.scalar(stmt)
+        except DatabaseError as e:
+            self._traduzir_erro(e)
+
+    def _scalars(self, stmt):
+        try:
+            return self.sessao.scalars(stmt)
+        except DatabaseError as e:
+            self._traduzir_erro(e)
 
     def _versao_id(self, repo: str, numero: str) -> int | None:
         linha = self._versao(self._repo_id(repo), numero)
@@ -213,7 +241,7 @@ class PostgresEstado:
         except DatabaseError as e:
             self._traduzir_erro(e)
 
-    def _traduzir_erro(self, e: DatabaseError) -> None:
+    def _traduzir_erro(self, e: DatabaseError) -> NoReturn:
         self.sessao.rollback()
         if isinstance(e, OperationalError):
             raise MotorError(
