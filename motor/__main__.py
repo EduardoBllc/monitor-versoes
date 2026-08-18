@@ -30,7 +30,7 @@ from motor.engine.atualizar import (
     atualizar_abort,
     atualizar_continue,
 )
-from motor.engine.reconstruir_lock import reconstruir_lock
+from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 
 
@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 imprimir_atualizacao(atualizar(deps, args.versao))
         else:  # reconstruir-lock (unico comando restante; argparse ja validou)
-            resultado = reconstruir_lock(deps, args.versao)
+            resultado = reconstruir_estado(deps, args.versao)
             print(f"status: {resultado.status}, orfaos: {len(resultado.orfaos)}")
         logging.debug("comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio)
     except MotorError as e:

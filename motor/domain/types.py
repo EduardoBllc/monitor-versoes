@@ -100,18 +100,6 @@ class RepoInfo:
 
 
 @dataclass(frozen=True)
-class Lock:
-    versao: str = ""
-    tipo: VersionType = VersionType.FECHADA
-    base: BaseRef = field(default_factory=BaseRef)
-    tasks: TargetSet = field(default_factory=dict)
-    excluidos: list[Exclusion] = field(default_factory=list)
-    # chamados reconhecidos como sem commit/PR neste projeto (julgamento
-    # manual, so vive no lock) - impede que a task caia em tasks_sem_commits.
-    tasks_sem_entrega: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
 class VersionStatus:
     verde: bool = False
     tasks_novas: list[str] = field(default_factory=list)  # no Tickio, fora do estado
