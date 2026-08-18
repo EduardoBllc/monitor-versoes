@@ -80,6 +80,40 @@ def test_reconciliar_acusa_tarefa_sem_commit_e_aceita_sem_entrega():
     assert reconhecida.tasks_sem_commits == []
 
 
+def test_reconciliar_reprova_e_reporta_tarefa_nova_e_removida():
+    """`diff_tasks` tem teste proprio; o que faltava era a ligacao dele com o
+    `verde` e com o status. Os commits de `anteriores` ficam vazios de proposito,
+    para que estado_integro siga True e o vermelho seja atribuivel so a
+    novas/removidas.
+    """
+    alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
+    anteriores = [
+        Atribuicao(chamado="2", marcada="13.34.0", estado="aplicado", commits=[])
+    ]
+    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+
+    assert status.tasks_novas == ["1"]
+    assert status.tasks_removidas == ["2"]
+    assert status.estado_integro is True
+    assert status.verde is False
+
+
+def test_reconciliar_repassa_conflitantes_e_suspeitos_de_conteudo():
+    """Os dois campos chegam pre-computados do chamador; `atualizar` levanta
+    MotorError em cima de suspeitos_conteudo, entao um repasse que os perdesse
+    passaria calado.
+    """
+    alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
+    aaa = CommitRef(hash_origem="aaa", chamado="1")
+
+    status = reconciliar(alvo, [], {}, {}, [aaa], [aaa])
+
+    assert status.conflitantes == [aaa]
+    assert status.suspeitos_conteudo == [aaa]
+    # suspeita nao conta como presente
+    assert [c.hash_origem for c in status.faltantes] == ["aaa"]
+
+
 def test_reconciliar_acusa_commit_que_sumiu_do_git():
     alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
     anteriores = [

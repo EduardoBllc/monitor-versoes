@@ -52,6 +52,14 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     """
     inicio = time.monotonic()
 
+    # Antes de ler as refs, nao depois: `fetch` e o unico ponto em que tag
+    # criada em outra maquina entra. Lendo primeiro, o motor decidiria sobre um
+    # ref store velho — a versao liberada la fora apareceria como aberta, com
+    # `liberada_em` ainda NULL, e o congelamento abaixo seria pulado. O
+    # substituir_atribuicoes do fim reescreveria o registro de uma versao que
+    # ja saiu, que e exatamente a perda que o congelamento existe para evitar.
+    deps.git.fetch("origin")
+
     todas = deps.git.list_version_branches()
     tags = deps.git.list_version_tags()
     abertas = versoes_abertas(todas, tags)
@@ -73,7 +81,6 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     if info is not None and info.liberada_em is not None:
         return _snapshot_congelado(deps, versao)
 
-    deps.git.fetch("origin")
     deps.git.use_worktree(versao)
     if deps.git.remote_branch_exists("origin", versao):
         deps.git.pull_branch("origin", versao)

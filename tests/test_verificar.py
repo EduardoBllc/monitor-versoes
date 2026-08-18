@@ -22,13 +22,26 @@ def _estado_com_repo() -> FakeEstado:
     return FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
 
 
-def _git(tags: dict[str, bool] | None = None) -> FakeGit:
+class _GitQueTagueiaNoFetch(FakeGit):
+    """FakeGit em que a tag da 13.34.0 so existe DEPOIS do fetch.
+
+    E o unico jeito de pinar a ordem: no git de verdade `fetch` e o ponto em
+    que a tag criada em outra maquina entra no ref store local. Se o verificar
+    ler as refs antes de buscar, esta tag e invisivel no run inteiro.
+    """
+
+    def fetch(self, remote: str) -> None:
+        super().fetch(remote)
+        self.tags["13.34.0"] = True
+
+
+def _git(tags: dict[str, bool] | None = None, classe=FakeGit) -> FakeGit:
     """Grafo: m0 e a raiz; a0 e um commit que so existe no master.
 
     As versoes ficam em m0, entao a0 e faltante em todas elas — e o que
     permite afirmar que o commit foi cobrado, e nao herdado da base.
     """
-    git = FakeGit(tags=tags or {})
+    git = classe(tags=tags or {})
     git.add_commit("m0", "", "raiz", D)
     git.add_commit("a0", "m0", "ch123123 alfa", D)
     git.set_branch("master", "a0")
@@ -55,6 +68,9 @@ def test_verificar_une_tarefas_das_versoes_abertas_menores():
 
     # marcada para 13.33.1, cobrada na 14.0.0
     assert [c.hash_origem for c in status.faltantes] == ["a0"]
+    assert git.fetched == ["origin"]
+    # sem branch remota nao ha o que puxar
+    assert git.pulled == []
 
 
 def test_verificar_congela_versao_quando_a_tag_aparece():
@@ -127,12 +143,111 @@ def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
 
 
 def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():
-    git = _git(tags={"13.33.1": True})
+    """13.99.0 existe como tag e nao resolve para commit nenhum no fake. E isso
+    que faz o teste discriminar: com a guarda `conhecida is not None`, o
+    verificar nunca toca no git por causa dela; sem a guarda, o
+    resolve_ref("refs/tags/13.99.0") estoura e o comando morre por causa de uma
+    versao que nao e nem o alvo.
+
+    Assertar so que `estado.versao(...)` continua None nao provava nada: so
+    registrar_versao cria linha, e o verificar so registra a versao alvo.
+    """
+    git = _git(tags={"13.99.0": True})
     estado = _estado_com_repo()
     estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
                                             base_ref="master", base_commit="m0"))
 
-    verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado), "14.0.0")
+    status = verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado),
+                       "14.0.0")
 
+    assert status.verde is True
     # nada a congelar: sem linha no estado, nao ha snapshot para proteger
-    assert estado.versao("r", "13.33.1") is None
+    assert estado.versao("r", "13.99.0") is None
+
+
+def test_verificar_busca_antes_de_ler_as_refs_e_congela_tag_nova_no_mesmo_run():
+    """A 13.34.0 foi liberada em outra maquina: a tag so aparece no fetch.
+
+    Pina a ORDEM, nao so o comportamento. Com o fetch depois da leitura das
+    refs, `tags` sai vazia, o congelamento e pulado, e o substituir_atribuicoes
+    do fim reescreve o snapshot de uma versao ja liberada — a trava do banco
+    nao salva, porque `liberada_em` ainda esta NULL.
+    """
+    git = _git(classe=_GitQueTagueiaNoFetch)
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA,
+                                            base_ref="13.33.0", base_commit="m0"))
+    estado.substituir_atribuicoes("r", "13.34.0", [
+        Atribuicao(chamado="123456", marcada="13.34.0", estado="aplicado",
+                   commits=["a0"])
+    ])
+    # tarefa nova no Tickio: e com ela que o run reescreveria o snapshot
+    tasks = FakeTaskSource(chamados={"13.34.0": ["999111"]})
+
+    status = verificar(_deps(git, tasks, FakeCommitSource(), estado), "13.34.0")
+
+    assert git.fetched == ["origin"]
+    assert estado.versao("r", "13.34.0").liberada_em is not None
+    # o snapshot da versao liberada continua intacto, sem a tarefa nova
+    assert [a.chamado for a in estado.atribuicoes("r", "13.34.0")] == ["123456"]
+    assert status.verde is True
+
+
+def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
+    """Nada pre-registrado: e o unico teste que entra no ramo `info is None`.
+
+    Pre-registrar a versao no arrange (o que os outros fazem) e exatamente o
+    que impede este ramo de rodar. Ele tambem prova a ordem
+    registrar_versao -> substituir_atribuicoes: sem o registro, o
+    substituir_atribuicoes do fim levantaria MotorError("nao registrada").
+    """
+    git = _git()
+    git.remotes["14.0.0"] = True  # branch ja publicada: exercita o pull
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+
+    verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    gravada = estado.versao("r", "14.0.0")
+    assert gravada is not None
+    # 14.0.0 e X.0.0, logo a base e master, que aponta para a0
+    assert (gravada.base_ref, gravada.base_commit) == ("master", "a0")
+    assert gravada.tipo == VersionType.FECHADA
+    # escreveu as atribuicoes, ou seja o registro veio antes
+    assert [a.chamado for a in estado.atribuicoes("r", "14.0.0")] == ["123123"]
+    assert git.fetched == ["origin"]
+    assert git.pulled == ["14.0.0"]
+
+
+def test_verificar_reporta_suspeita_de_cherry_pick_manual_sem_x():
+    """Nivel 4 do oraculo: pick manual sem `-x` cujo conteudo mudou na
+    resolucao do conflito. O patch-id diverge, entao o nivel 3 nao pega, mas
+    mensagem + arquivos batem. Sai em suspeitos_conteudo E continua em
+    faltantes — suspeita nao conta como presente.
+
+    Cobre o append em verificar.py e o repasse em reconcile.py. Sem isto,
+    `atualizar` levanta MotorError num campo que a suite nunca preenche.
+    """
+    git = _git()
+    git.add_commit("alvo0", "m0", "ch123123 alfa", D)  # mesma msg que a0
+    git.set_branch("14.0.0", "alvo0")
+    git.file_changes["a0"] = frozenset({"a.txt"})
+    git.file_changes["alvo0"] = frozenset({"a.txt"})
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
+                                            base_ref="master", base_commit="m0"))
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.suspeitos_conteudo] == ["a0"]
+    assert [c.hash_origem for c in status.faltantes] == ["a0"]
+    assert status.verde is False
