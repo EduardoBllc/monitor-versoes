@@ -20,6 +20,7 @@ from motor.__main__ import _build_parser, _resolver_repo, imprimir_status, main
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo, VersionStatus
+from motor.engine.deps import Deps
 from motor.errors import MotorError
 
 D = datetime.datetime(2026, 1, 1)
@@ -120,6 +121,9 @@ def bordas(monkeypatch):
     estado = FakeEstado(
         repos={"vendabemweb": RepoInfo(nome="vendabemweb", tickio_sistema_id=7)}
     )
+    for var, valor in (("TICKIO_BASE_URL", "http://tickio.exemplo"),
+                       ("TICKIO_USER", "u"), ("TICKIO_PASSWORD", "p")):
+        monkeypatch.setenv(var, valor)
     monkeypatch.setattr(cli, "new_git_subprocess", lambda repo: git)
     monkeypatch.setattr(cli, "_abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
@@ -258,6 +262,45 @@ def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
     assert "Traceback" in caplog.text
 
 
+def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(bordas, tmp_path, monkeypatch,
+                                                       caplog):
+    # vazio, nao removido: main() chama load_dotenv(), que repovoaria a variavel
+    # a partir do .env do worktree — e o teste sairia para a rede.
+    monkeypatch.setenv("TICKIO_BASE_URL", "")
+
+    with pytest.raises(SystemExit) as saida:
+        main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    assert saida.value.code == 1
+    assert caplog.messages == ["faltando no .env: TICKIO_BASE_URL"]
+
+
+def test_lista_manual_nao_exige_variavel_do_tickio(bordas, tmp_path, monkeypatch,
+                                                   capsys):
+    # TICKIO_USER/TICKIO_PASSWORD sao vazios no .env.example: quem usa --lista
+    # nao pode ser obrigado a preencher.
+    for var in ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD"):
+        monkeypatch.setenv(var, "")
+    lista = tmp_path / "lista.txt"
+    lista.write_text("123456\n", encoding="utf-8")
+
+    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path),
+          "--task-source", "manual", "--lista", str(lista)])
+
+    assert "verde:" in capsys.readouterr().out
+
+
+def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
+    # o CLI entrega o token do Bitbucket aqui; com repr default, um dump de deps
+    # sob --debug imprimiria a credencial em claro.
+    deps = Deps(git=_git(), tasks=None, estado=FakeEstado(), repo="r",
+                bitbucket_token="tok123", bitbucket_email="dev@x.com")
+
+    assert (deps.bitbucket_token, deps.bitbucket_email) == ("tok123", "dev@x.com")
+    assert "tok123" not in repr(deps)
+    assert "dev@x.com" not in repr(deps)
+
+
 # -- _resolver_repo -----------------------------------------------------------
 
 
@@ -275,6 +318,16 @@ def test_resolver_repo_via_projects_dir(tmp_path, monkeypatch):
     resolvido = _resolver_repo("vendabemweb")
 
     assert resolvido == os.path.join(str(projetos), "vendabemweb")
+
+
+def test_resolver_repo_tira_a_barra_final(tmp_path, monkeypatch):
+    # tab-completion do shell manda "vendabemweb/", e o basename disso e "" —
+    # o nome do repo e a chave do estado inteiro.
+    projetos = tmp_path / "projetos"
+    (projetos / "vendabemweb").mkdir(parents=True)
+    monkeypatch.setenv("PROJECTS_DIR", str(projetos))
+
+    assert os.path.basename(_resolver_repo("vendabemweb/")) == "vendabemweb"
 
 
 def test_resolver_repo_nao_encontrado(tmp_path, monkeypatch):

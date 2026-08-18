@@ -42,3 +42,12 @@ def test_database_url_lista_todas_as_variaveis_faltando(monkeypatch):
         database_url()
     assert "DATABASE_PORT" in str(erro.value)
     assert "DATABASE_PASSWORD" in str(erro.value)
+
+
+def test_database_url_recusa_porta_nao_numerica(monkeypatch):
+    # create_engine converte a porta na hora e levanta ValueError, que cairia no
+    # ramo de bug do CLI (traceback) em vez de virar mensagem para o operador.
+    _ambiente(monkeypatch, {**COMPLETO, "DATABASE_PORT": "5433a"})
+    with pytest.raises(MotorError) as erro:
+        database_url()
+    assert "DATABASE_PORT" in str(erro.value)
