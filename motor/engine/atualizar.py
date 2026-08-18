@@ -6,12 +6,12 @@ from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
 from motor.domain.commits import ordenar_por_data
-from motor.domain.types import CommitRef, Lock, TargetSet, TaskTarget
+from motor.domain.types import CommitRef
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
-from motor.services.lock_store import LockStore
+from motor.services.publication_gate import PublicationGate
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,24 @@ class AtualizarResult:
 
 
 def atualizar(deps: Deps, versao: str) -> AtualizarResult:
-    """Aplica os commits faltantes por commit-date asc (§5). So adiciona
-    historia - e o unico modo permitido quando a versao ja tem tag (§6, checado
-    pelo chamador via services.PublicationGate antes de decidir entre criar e
-    atulizar).
+    """Aplica os commits faltantes por commit-date asc (spec §5).
+
+    Versao com tag e recusada: o alvo dela congelou na liberacao, e alteracao
+    na branch nao reflete no que a tag aponta. Esquecimento vai para a proxima
+    versao (spec §2).
     """
+    # Antes de ler a tag, nao depois: `tag_exists` le o ref store local, e a
+    # tag de uma versao liberada em outra maquina so entra aqui pelo fetch. Sem
+    # ele a recusa abaixo seria decidida em cima de refs velhas e o motor
+    # tentaria mexer numa versao que ja saiu.
+    deps.git.fetch("origin")
+
+    if PublicationGate(git=deps.git).liberada(versao):
+        raise MotorError(
+            f"versao {versao} ja liberada (tem tag) - remarque a tarefa "
+            "para a proxima versao em construcao"
+        )
+
     status = verificar(deps, versao)
 
     if status.suspeitos_conteudo:
@@ -45,12 +58,10 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
         raise MotorError(
             "commits suspeitos de cherry-pick manual com conteudo divergente "
             f"(mesma mensagem e arquivos ja existem no alvo, sem trailer -x): {hashes}. "
-            "Confirme manualmente (exclua do lock se ja aplicado) antes de rodar atualizar de novo."
+            "Confirme manualmente (exclua no estado se ja aplicado) antes de rodar atualizar de novo."
         )
 
     faltam = ordenar_por_data(status.faltantes)
-    lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
-    lock = lock_store.ler(versao)
 
     deps.git.use_worktree(versao)
 
@@ -64,7 +75,6 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
             if len(paths) == 0:
                 # rerere.autoUpdate resolveu sozinho (§8) - segue o pick.
                 deps.git.continue_cherry_pick()
-                lock = _registrar_commit(lock, c)
                 aplicados.append(c)
                 continue
             return AtualizarResult(
@@ -74,33 +84,36 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
                 aplicados=aplicados,
                 ja_presentes=ja_presentes,
             )
-        lock = _registrar_commit(lock, c)
         aplicados.append(c)
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
 
-    lock_store.escrever(versao, lock)
+    # O estado ja foi gravado pelo verificar no comeco do run, com a presenca de
+    # ANTES dos picks; regrava com o lote aplicado para o `estado` das
+    # atribuicoes refletir a realidade. Tarefa sem commit nenhum continua
+    # pendente: o lote nao entregou nada dela.
+    aplicadas = [
+        replace(a, estado="aplicado") if a.commits else a
+        for a in deps.estado.atribuicoes(deps.repo, versao)
+    ]
+    deps.estado.substituir_atribuicoes(deps.repo, versao, aplicadas)
+
     # publica so apos o lote fechar sem conflito (§6, "branch compartilhada") -
     # um lote BLOCKED fica so local ate resolver e rodar de novo.
     deps.git.push_branch("origin", versao)
-    # a worktree e so um checkout local descartavel - o que importa (commits,
-    # lock) ja esta na branch e no remoto. use_worktree recria sob demanda.
+    # a worktree e so um checkout local descartavel - o que importa (commits) ja
+    # esta na branch e no remoto. use_worktree recria sob demanda.
     deps.git.worktree_remove(versao)
-    return AtualizarResult(status=AtualizarStatus.DONE, aplicados=aplicados, ja_presentes=ja_presentes)
-
-
-def _registrar_commit(lock: Lock, c: CommitRef) -> Lock:
-    tasks: TargetSet = dict(lock.tasks)
-    tt = tasks.get(c.chamado, TaskTarget())
-    tasks[c.chamado] = TaskTarget(chamado=c.chamado, commits=[*tt.commits, c])
-    return replace(lock, tasks=tasks)
+    return AtualizarResult(
+        status=AtualizarStatus.DONE, aplicados=aplicados, ja_presentes=ja_presentes
+    )
 
 
 def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
-    """Retoma um cherry-pick pendente resolvido manualmente (checkpoint
-    resumivel, §8). E uma invocacao nova do CLI - sem contexto em memoria de
-    quais commits do lote ja foram aplicados antes do conflito, por isso usa
-    LockStore.reconstruir (varre base..branch de verdade) pra recompor o lock
-    inteiro antes de continuar o lote.
+    """Retoma um cherry-pick resolvido manualmente (checkpoint resumivel, §8).
+
+    Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
+    foram aplicados. Nao precisa reconstruir nada a mao: o `atualizar` abaixo
+    chama `verificar`, que reprojeta o estado a partir do git de verdade.
     """
     deps.git.use_worktree(versao)
     _, ok = deps.git.pending_cherry_pick()
@@ -108,19 +121,6 @@ def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
         raise MotorError("nenhum cherry-pick pendente pra continuar")
 
     deps.git.continue_cherry_pick()
-
-    lock_store = LockStore(git=deps.git, lock_dir=deps.lock_dir)
-    anterior = lock_store.ler(versao)
-
-    # O lote (§5) so escreve o lock no fim de um lote bem-sucedido - se o
-    # conflito que trouxe a gente aqui aconteceu no meio de um lote, os
-    # commits anteriores a ele ja foram cherry-picked pra branch mas ainda nao
-    # estao no lock. reconstruir varre base..branch de verdade (git) e
-    # recupera todos eles de uma vez, em vez de registrar so o commit que
-    # acabou de ser resolvido.
-    lock, _ = lock_store.reconstruir(versao, anterior.base, versao, anterior)
-    lock_store.escrever(versao, lock)
-
     return atualizar(deps, versao)
 
 
