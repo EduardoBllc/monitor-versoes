@@ -103,3 +103,23 @@ def test_rejeita_item_sem_numero_de_chamado():
 
     with pytest.raises(MotorError, match="sem numero de chamado"):
         _fonte(handler).fetch("13.34.0")
+
+
+def test_repr_nao_vaza_senha_nem_jwt():
+    """--debug sobe o logging para DEBUG: qualquer repr desta dataclass (dump
+    de deps, repr de excecao) imprimiria a credencial e o JWT em claro."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/ws/token/":
+            return httpx.Response(200, json={"access": "jwt-secreto"})
+        return httpx.Response(200, json=[])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler),
+                          base_url="http://testserver")
+    fonte = TickioRest(base_url="http://testserver", usuario="u",
+                       senha="senha-secreta", sistema_id=1, client=client)
+    fonte.fetch("13.34.0")
+
+    # os dois valores estao no objeto — sem isto o teste passaria por vazio
+    assert (fonte.senha, fonte._access) == ("senha-secreta", "jwt-secreto")
+    assert "senha-secreta" not in repr(fonte)
+    assert "jwt-secreto" not in repr(fonte)

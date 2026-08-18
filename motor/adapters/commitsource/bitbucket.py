@@ -43,8 +43,10 @@ def parse_workspace_repo(url: str) -> tuple[str, str]:
 
 @dataclass
 class BitbucketPRCommitSource:
-    token: str
-    email: str
+    # repr=False: token e email formam o Basic auth — um repr desta dataclass
+    # (com --debug, ou no repr de uma excecao) vazaria a credencial inteira.
+    token: str = field(repr=False)
+    email: str = field(repr=False)
     workspace: str
     repo: str
     git: GitRepo

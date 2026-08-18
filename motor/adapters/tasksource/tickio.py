@@ -22,10 +22,12 @@ _ROTA_CHAMADOS = "/api/v1/ws/versoes/chamados/"
 class TickioRest:
     base_url: str
     usuario: str
-    senha: str
+    # repr=False na senha e no JWT: com --debug o logging sobe para DEBUG, e um
+    # dump do dataclass (deps, repr de excecao) imprimiria credencial em claro.
+    senha: str = field(repr=False)
     sistema_id: int
     client: httpx.Client | None = None
-    _access: str = field(default="", init=False)
+    _access: str = field(default="", init=False, repr=False)
 
     def fetch(self, versao: str) -> list[str]:
         cliente = self.client if self.client is not None else httpx.Client()

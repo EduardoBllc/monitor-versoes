@@ -137,3 +137,14 @@ def test_chamado_sem_pr_correspondente_e_omitido():
     resultado = fonte.resolve(["255514"])
 
     assert resultado == {}, "chamado sem PR correspondente nao deveria aparecer no resultado"
+
+
+def test_repr_nao_vaza_credencial():
+    """token e email formam o Basic auth: um repr desta dataclass (com --debug,
+    ou no repr de uma excecao) vazaria a credencial inteira."""
+    fonte = _fonte(_handler_pr([], {}), _git_com_master("c1"))
+
+    # os valores estao no objeto — sem isto o teste passaria por vazio
+    assert (fonte.token, fonte.email) == ("tok123", "dev@x.com")
+    assert "tok123" not in repr(fonte)
+    assert "dev@x.com" not in repr(fonte)
