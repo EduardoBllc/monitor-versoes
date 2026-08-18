@@ -76,6 +76,29 @@ class Exclusion:
 
 
 @dataclass(frozen=True)
+class Atribuicao:
+    chamado: str = ""
+    marcada: str = ""  # versao para a qual o Tickio marcou
+    estado: str = "pendente"  # pendente | aplicado
+    commits: list[str] = field(default_factory=list)  # hashes de origem
+
+
+@dataclass(frozen=True)
+class VersaoInfo:
+    numero: str = ""
+    tipo: VersionType = VersionType.FECHADA
+    base_ref: str = ""
+    base_commit: str = ""
+    liberada_em: datetime.datetime | None = None
+
+
+@dataclass(frozen=True)
+class RepoInfo:
+    nome: str = ""  # canonico, nunca o alias
+    tickio_sistema_id: int = 0
+
+
+@dataclass(frozen=True)
 class Lock:
     versao: str = ""
     tipo: VersionType = VersionType.FECHADA

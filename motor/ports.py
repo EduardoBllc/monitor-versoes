@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from motor.domain.types import CommitRef
+from motor.domain.types import Atribuicao, CommitRef, Exclusion, RepoInfo, VersaoInfo
 
 
 class CherryPickOutcome(IntEnum):
@@ -157,4 +158,47 @@ class GitRepo(Protocol):
         self, branch: str, path: str, content: bytes, mensagem_commit: str
     ) -> None:
         """Escreve arquivo em branch."""
+        ...
+
+
+class EstadoRepo(Protocol):
+    """Estado persistente. Projecao materializada para versao em construcao;
+    registro unico e imutavel para versao liberada.
+    """
+
+    def resolver_repo(self, basename: str) -> RepoInfo:
+        """Resolve nome ou alias para o repo canonico. MotorError se
+        desconhecido — nunca cria linha sozinho, senao um clone com nome
+        diferente fragmenta o estado."""
+        ...
+
+    def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
+        """Upsert da versao operada. Nao toca `liberada_em`."""
+        ...
+
+    def marcar_liberadas(
+        self, repo: str, liberadas: dict[str, datetime.datetime]
+    ) -> None:
+        """Grava a data de liberacao das versoes que ganharam tag. Ignora
+        versao ausente do estado e nao reescreve data ja gravada."""
+        ...
+
+    def versao(self, repo: str, numero: str) -> VersaoInfo | None:
+        """A versao como esta no estado. A `base` daqui e a autoritativa —
+        recomputar BaseResolver a cada run faria a base de uma X.0.0 seguir o
+        tip atual do master em vez do ponto onde a branch foi cortada."""
+        ...
+
+    def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]: ...
+
+    def substituir_atribuicoes(
+        self, repo: str, versao: str, novas: list[Atribuicao]
+    ) -> None:
+        """Apaga e reinsere. MotorError se a versao ja estiver liberada."""
+        ...
+
+    def exclusoes(self, repo: str) -> list[Exclusion]: ...
+
+    def sem_entrega(self, repo: str) -> dict[str, str]:
+        """chamado -> motivo."""
         ...
