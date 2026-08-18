@@ -1,4 +1,4 @@
-"""Porte de internal/engine/criar.go."""
+"""Composicao de uma versao nova: branch, VERSAO e registro no estado."""
 
 from __future__ import annotations
 
@@ -12,7 +12,12 @@ from motor.services.publication_gate import PublicationGate
 
 
 def criar(deps: Deps, versao: str) -> AtualizarResult:
-    """Monta uma versao do zero (spec §5). Branch nova e nao publicada."""
+    """Monta uma versao do zero (spec §5). Branch nova e nao publicada.
+
+    So cria: recriar do zero e responsabilidade do chamador, que precisa remover
+    a worktree e a branch antes de chamar de novo — `worktree_add` recusa branch
+    existente, entao um retry apos lote BLOCKED cai aqui, nao no atualizar.
+    """
     # A trava e a base saem do ref store local (`git tag -l`,
     # `list_version_branches`): sem buscar primeiro, uma versao liberada em
     # outra maquina passaria pela trava e ganharia branch nova aqui.

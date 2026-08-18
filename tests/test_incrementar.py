@@ -38,15 +38,24 @@ DOIS = UM | {
 
 
 class _GitQueTagueiaNoFetch(FakeGit):
-    """FakeGit em que a tag da 13.7.0 so existe DEPOIS do fetch.
+    """FakeGit em que a tag da 13.7.0 so existe DEPOIS do fetch, e em que ler
+    tag antes de buscar e erro de programacao, nao resultado False.
 
     Espelha o git de verdade: `fetch` e o unico ponto em que a tag criada em
-    outra maquina entra no ref store local.
+    outra maquina entra no ref store local. O `tag_exists` explode em vez de
+    responder para a ordem ser assertada diretamente — inferir a ordem pela
+    mensagem do erro que sobra depois deixaria o pin refem do texto de outro
+    modulo.
     """
 
     def fetch(self, remote: str) -> None:
         super().fetch(remote)
         self.tags["13.7.0"] = True
+
+    def tag_exists(self, tag: str) -> bool:
+        if not self.fetched:
+            raise AssertionError(f"tag_exists({tag!r}) antes de qualquer fetch")
+        return super().tag_exists(tag)
 
 
 def _git(classe=FakeGit) -> FakeGit:
@@ -212,6 +221,35 @@ def test_atualizar_continue_preserva_os_commits_do_lote_anterior():
     ], "o commit aplicado antes do conflito nao pode se perder do estado"
 
 
+def test_atualizar_continue_recusa_versao_com_tag():
+    """A versao ganhou tag enquanto o conflito estava aberto.
+
+    O --continue e ponto de entrada do CLI por si (`motor atualizar --continue`)
+    e commita o pick ANTES de delegar pro atualizar. Sem a recusa aqui, o commit
+    entraria na branch de uma versao congelada e so depois o run morreria
+    pedindo pra remarcar a tarefa.
+    """
+    g = _git()
+    g.conflict_on["a0"] = True
+    estado = _estado()
+    deps = _deps(g, estado, ["255514"], UM)
+    atualizar(deps, "13.7.0")
+    tip = g.branches["13.7.0"]
+
+    g.tags["13.7.0"] = True  # liberada em outra maquina, conflito ainda aberto
+
+    with pytest.raises(MotorError, match="ja liberada"):
+        atualizar_continue(deps, "13.7.0")
+
+    assert g.branches["13.7.0"] == tip, (
+        "nao pode commitar o pick resolvido numa versao congelada"
+    )
+    assert g.pending_cherry_pick() == ("a0", True), (
+        "o cherry-pick pendente continua intacto para o --abort"
+    )
+    assert g.removed_worktrees == []
+
+
 def test_atualizar_recusa_versao_com_tag():
     git = FakeGit(branches={"13.34.0": "b1"}, tags={"13.34.0": True})
     estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
@@ -225,10 +263,11 @@ def test_atualizar_recusa_versao_com_tag():
 def test_atualizar_busca_antes_de_ler_a_tag():
     """A 13.7.0 foi liberada em outra maquina: a tag so aparece no fetch.
 
-    Pina a ORDEM, nao so o comportamento. Lendo a tag antes de buscar, a recusa
-    nao dispara: o run entra no verificar, que congela a versao, e o erro que
-    sobra fala de gravacao em versao imutavel — nao de tarefa a remarcar para a
-    proxima versao, que e a orientacao que o operador precisa.
+    Pina a ORDEM, nao so o comportamento: o fake levanta AssertionError se a tag
+    for lida antes do fetch, entao a ordem errada quebra o teste na hora, sem
+    depender da mensagem do erro que sobraria mais adiante. Com a leitura antes
+    da busca, a recusa nao dispararia e o run seguiria mexendo numa versao que
+    ja saiu.
     """
     g = _git(classe=_GitQueTagueiaNoFetch)
     estado = _estado()

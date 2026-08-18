@@ -32,17 +32,15 @@ class AtualizarResult:
     ja_presentes: int = 0
 
 
-def atualizar(deps: Deps, versao: str) -> AtualizarResult:
-    """Aplica os commits faltantes por commit-date asc (spec §5).
+def _recusar_se_liberada(deps: Deps, versao: str) -> None:
+    """Trava de escrita em versao liberada, na entrada de todo ponto que mexe na
+    branch (`atualizar` e `atualizar_continue`, os dois expostos pelo CLI).
 
-    Versao com tag e recusada: o alvo dela congelou na liberacao, e alteracao
-    na branch nao reflete no que a tag aponta. Esquecimento vai para a proxima
-    versao (spec §2).
+    O fetch vem antes da leitura, nao depois: `tag_exists` le o ref store local,
+    e a tag de uma versao liberada em outra maquina so entra aqui pelo fetch. Sem
+    ele a recusa seria decidida em cima de refs velhas e o motor mexeria numa
+    versao que ja saiu.
     """
-    # Antes de ler a tag, nao depois: `tag_exists` le o ref store local, e a
-    # tag de uma versao liberada em outra maquina so entra aqui pelo fetch. Sem
-    # ele a recusa abaixo seria decidida em cima de refs velhas e o motor
-    # tentaria mexer numa versao que ja saiu.
     deps.git.fetch("origin")
 
     if PublicationGate(git=deps.git).liberada(versao):
@@ -50,6 +48,16 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
             f"versao {versao} ja liberada (tem tag) - remarque a tarefa "
             "para a proxima versao em construcao"
         )
+
+
+def atualizar(deps: Deps, versao: str) -> AtualizarResult:
+    """Aplica os commits faltantes por commit-date asc (spec §5).
+
+    Versao com tag e recusada: o alvo dela congelou na liberacao, e alteracao
+    na branch nao reflete no que a tag aponta. Esquecimento vai para a proxima
+    versao (spec §2).
+    """
+    _recusar_se_liberada(deps, versao)
 
     status = verificar(deps, versao)
 
@@ -114,7 +122,14 @@ def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
     Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
     foram aplicados. Nao precisa reconstruir nada a mao: o `atualizar` abaixo
     chama `verificar`, que reprojeta o estado a partir do git de verdade.
+
+    A recusa por tag e reavaliada aqui, antes do `continue_cherry_pick`: se a
+    versao foi liberada enquanto o conflito estava aberto, deixar o pick entrar
+    poria um commit na branch de uma versao congelada — a recusa do `atualizar`
+    la embaixo chegaria tarde.
     """
+    _recusar_se_liberada(deps, versao)
+
     deps.git.use_worktree(versao)
     _, ok = deps.git.pending_cherry_pick()
     if not ok:
