@@ -1,0 +1,115 @@
+"""TickioRest: fonte de tarefas do Tickio.
+
+Autentica por credencial a cada processo em vez de usar um access token colado
+no .env — o CLI vive segundos, entao re-autenticar sai mais barato que refazer
+o .env toda vez que o JWT expira. O refresh token nao e usado pelo mesmo
+motivo: ele existe para processo longo que nao quer reter credencial.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import httpx
+
+from motor.errors import MotorError
+
+_ROTA_TOKEN = "/api/v1/ws/token/"
+_ROTA_CHAMADOS = "/api/v1/ws/versoes/chamados/"
+
+
+@dataclass
+class TickioRest:
+    base_url: str
+    usuario: str
+    senha: str
+    sistema_id: int
+    client: httpx.Client | None = None
+    _access: str = field(default="", init=False)
+
+    def fetch(self, versao: str) -> list[str]:
+        cliente = self.client if self.client is not None else httpx.Client()
+        token = self._autenticar(cliente)
+
+        try:
+            resp = cliente.get(
+                f"{self.base_url}{_ROTA_CHAMADOS}",
+                params={"sistema": self.sistema_id, "versao": versao},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError as e:
+            raise MotorError(f"buscando chamados da versao {versao} no Tickio: {e}") from e
+
+        if resp.status_code != 200:
+            raise MotorError(
+                f"Tickio respondeu {resp.status_code} ao listar a versao {versao}: {resp.text}"
+            )
+
+        try:
+            corpo = resp.json()
+        except ValueError as e:
+            raise MotorError(f"decodificando resposta do Tickio: {e}") from e
+
+        return _extrair_chamados(corpo)
+
+    def _autenticar(self, cliente: httpx.Client) -> str:
+        if self._access:
+            return self._access
+        try:
+            resp = cliente.post(
+                f"{self.base_url}{_ROTA_TOKEN}",
+                json={"username": self.usuario, "password": self.senha},
+            )
+        except httpx.HTTPError as e:
+            raise MotorError(f"autenticando no Tickio: {e}") from e
+
+        if resp.status_code != 200:
+            raise MotorError(
+                f"autenticando no Tickio: respondeu {resp.status_code}: {resp.text}"
+            )
+
+        try:
+            corpo = resp.json()
+        except ValueError as e:
+            raise MotorError(f"autenticando no Tickio: decodificando resposta: {e}") from e
+
+        access = (corpo or {}).get("access", "")
+        if not access:
+            raise MotorError("autenticando no Tickio: resposta sem campo 'access'")
+        self._access = access
+        return access
+
+
+def _extrair_chamados(corpo) -> list[str]:
+    """Le a lista de chamados do corpo da resposta.
+
+    PENDENTE: o formato real ainda nao foi visto. Aceita as tres formas
+    plausiveis (lista de numeros, lista de objetos com `chamado`, ou envelope
+    paginado com `results`); quando a resposta real chegar, so esta funcao
+    muda.
+
+    Um dict sem `results` (ou qualquer outra forma nao reconhecida) nao cai
+    para lista vazia: isso pareceria "nenhum chamado nesta versao", que e
+    indistinguivel de um resultado vazio legitimo. Em vez disso, levanta
+    MotorError nomeando o que voltou.
+    """
+    if isinstance(corpo, dict):
+        if "results" not in corpo:
+            raise MotorError(f"resposta do Tickio em formato inesperado: {corpo!r}")
+        itens = corpo["results"]
+    else:
+        itens = corpo
+
+    if not isinstance(itens, list):
+        raise MotorError(f"resposta do Tickio em formato inesperado: {type(corpo)}")
+
+    chamados: list[str] = []
+    for item in itens:
+        if isinstance(item, dict):
+            valor = item.get("chamado") or item.get("numero")
+        else:
+            valor = item
+        if valor is None:
+            raise MotorError(f"item sem numero de chamado na resposta do Tickio: {item!r}")
+        chamados.append(str(valor))
+    return chamados
