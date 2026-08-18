@@ -11,15 +11,22 @@ import logging
 import os
 import sys
 import time
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
 
+from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
-from motor.domain.types import VersionStatus
+from motor.adapters.tasksource.tickio import TickioRest
+from motor.config import database_url
+from motor.domain.types import RepoInfo, VersionStatus
 from motor.errors import MotorError
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
@@ -32,6 +39,7 @@ from motor.engine.atualizar import (
 )
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
+from motor.ports import TaskSource
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -45,9 +53,12 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
     comum.add_argument("--bitbucket-token", dest="bitbucket_token", default=os.environ.get("BITBUCKET_TOKEN", ""), help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR")
     comum.add_argument("--bitbucket-email", dest="bitbucket_email", default=os.environ.get("BITBUCKET_EMAIL", ""), help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)")
-    comum.add_argument("--task-source", dest="fonte_flag", default="manual",
-                       choices=["manual"],
-                       help="fonte das tasks (tickio volta na integracao)")
+    # No parser pai, nao no 'criar': todos os comandos montam a fonte de tasks
+    # (o Deps e um so), e uma flag exclusiva do 'criar' viraria AttributeError
+    # nos outros.
+    comum.add_argument("--task-source", dest="fonte_flag", default="tickio",
+                       choices=["tickio", "manual"],
+                       help="fonte das tasks (default: tickio)")
     comum.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
 
     parser = argparse.ArgumentParser(prog="motor")
@@ -62,7 +73,8 @@ def _build_parser() -> argparse.ArgumentParser:
     grupo.add_argument("--continue", dest="continuar", action="store_true", help="retoma apos resolver conflito")
     grupo.add_argument("--abort", dest="abortar", action="store_true", help="aborta o incremento em andamento")
 
-    sub.add_parser("reconstruir-lock", parents=[comum], help="regenera o lock a partir do git")
+    sub.add_parser("reconstruir-estado", parents=[comum],
+                   help="regenera as atribuicoes a partir do git")
 
     return parser
 
@@ -113,9 +125,12 @@ def imprimir_status(s: VersionStatus) -> None:
     print(f"verde: {s.verde}")
     print(f"tasks novas: {s.tasks_novas}")
     print(f"tasks removidas: {s.tasks_removidas}")
+    if s.tasks_ambiguas:
+        print(f"tasks marcadas em mais de uma versao: {s.tasks_ambiguas}")
+        print("  (dado inconsistente no Tickio - corrija a marcacao)")
     if s.tasks_sem_commits:
         print(f"tasks sem commits: {s.tasks_sem_commits}")
-        print("  (nenhum commit/PR achado - adicione ao lock em tasks_sem_entrega se for proposital)")
+        print("  (nenhum commit/PR achado - registre em sem_entrega se for proposital)")
     if not s.estado_integro:
         print(f"estado: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
         for hash_ in s.commits_sumidos:
@@ -142,6 +157,60 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
     print("concluido")
 
 
+@contextmanager
+def _abrir_sessao():
+    """Ciclo de vida do banco: uma engine e uma sessao por comando.
+
+    O CLI e um processo de segundos, entao nao ha o que reaproveitar de um pool
+    — a engine nasce aqui, e descartada no fim e a sessao fecha com o `with`.
+    Nada disso vive em nivel de modulo: a suite roda sem banco, e uma sessao
+    montada no import (ou na construcao do parser) exigiria banco de pe so
+    para rodar `--help`.
+    """
+    engine = create_engine(database_url())
+    try:
+        with Session(engine) as sessao:
+            yield sessao
+    finally:
+        engine.dispose()
+
+
+def _montar_task_source(args: argparse.Namespace, info: RepoInfo) -> TaskSource:
+    """A fonte de tasks depende do repo: o sistema_id do Tickio sai da linha
+    `repo` do banco, lida antes daqui via EstadoRepo.resolver_repo."""
+    if args.fonte_flag == "tickio":
+        return TickioRest(
+            base_url=os.environ.get("TICKIO_BASE_URL", ""),
+            usuario=os.environ.get("TICKIO_USER", ""),
+            senha=os.environ.get("TICKIO_PASSWORD", ""),
+            sistema_id=info.tickio_sistema_id,
+        )
+    return ManualList(caminho=args.lista_manual)
+
+
+def _despachar(args: argparse.Namespace, deps: Deps) -> None:
+    inicio = time.monotonic()
+    if args.comando == "verificar":
+        imprimir_status(verificar(deps, args.versao))
+    elif args.comando == "criar":
+        imprimir_atualizacao(criar(deps, args.versao))
+    elif args.comando == "atualizar":
+        if args.abortar:
+            atualizar_abort(deps, args.versao)
+            print("abortado")
+        elif args.continuar:
+            imprimir_atualizacao(atualizar_continue(deps, args.versao))
+        else:
+            imprimir_atualizacao(atualizar(deps, args.versao))
+    else:  # reconstruir-estado (unico comando restante; argparse ja validou)
+        resultado = reconstruir_estado(deps, args.versao)
+        print(f"status: {resultado.status.name}, orfaos: {len(resultado.orfaos)}")
+        for hash_ in resultado.orfaos:
+            print(f"  - {hash_[:8]} (sem ch<num> na mensagem)")
+    logging.debug("comando '%s' concluido em %.3fs", args.comando,
+                  time.monotonic() - inicio)
+
+
 def main(argv: list[str] | None = None) -> None:
     if load_dotenv:
         load_dotenv()
@@ -155,49 +224,32 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s" if args.debug else "%(levelname)s: %(message)s",
     )
 
+    # Antes de abrir o banco: erro de flag nao depende de conexao, e conectar
+    # primeiro esconderia a flag errada atras de um "banco inacessivel".
+    if args.fonte_flag == "manual" and not args.lista_manual:
+        print("--lista e obrigatorio quando --task-source=manual", file=sys.stderr)
+        sys.exit(1)
+
     repo = _resolver_repo(args.repo)
 
     try:
         git_repo = new_git_subprocess(repo)
 
-        # --task-source/--lista sao compartilhados por todos os comandos (nenhum
-        # tem fonte de tasks propria ainda; tickio volta na Task 12).
-        if not args.lista_manual:
-            print("--lista e obrigatorio (unica fonte de tasks disponivel e --task-source=manual)", file=sys.stderr)
-            sys.exit(1)
-        tasks = ManualList(caminho=args.lista_manual)
+        with _abrir_sessao() as sessao:
+            estado = PostgresEstado(sessao=sessao)
+            # O estado vem antes da fonte de tasks: o nome canonico do repo e o
+            # tickio_sistema_id saem da linha `repo` (aceita nome ou alias).
+            info = estado.resolver_repo(os.path.basename(repo))
 
-        motor_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        target_repo_name = os.path.basename(repo)
-        lock_dir = os.path.join(motor_root, "locks", target_repo_name)
-
-        deps = Deps(
-            git=git_repo,
-            tasks=tasks,
-            lock_dir=lock_dir,
-            bitbucket_token=getattr(args, "bitbucket_token", ""),
-            bitbucket_email=getattr(args, "bitbucket_email", ""),
-        )
-
-        inicio = time.monotonic()
-        if args.comando == "verificar":
-            status = verificar(deps, args.versao)
-            imprimir_status(status)
-        elif args.comando == "criar":
-            resultado = criar(deps, args.versao)
-            imprimir_atualizacao(resultado)
-        elif args.comando == "atualizar":
-            if args.abortar:
-                atualizar_abort(deps, args.versao)
-                print("abortado")
-            elif args.continuar:
-                imprimir_atualizacao(atualizar_continue(deps, args.versao))
-            else:
-                imprimir_atualizacao(atualizar(deps, args.versao))
-        else:  # reconstruir-lock (unico comando restante; argparse ja validou)
-            resultado = reconstruir_estado(deps, args.versao)
-            print(f"status: {resultado.status}, orfaos: {len(resultado.orfaos)}")
-        logging.debug("comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio)
+            deps = Deps(
+                git=git_repo,
+                tasks=_montar_task_source(args, info),
+                estado=estado,
+                repo=info.nome,
+                bitbucket_token=getattr(args, "bitbucket_token", ""),
+                bitbucket_email=getattr(args, "bitbucket_email", ""),
+            )
+            _despachar(args, deps)
     except MotorError as e:
         logging.error(str(e))
         sys.exit(1)
