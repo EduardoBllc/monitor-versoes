@@ -17,7 +17,7 @@
 Uma ferramenta com três operações sobre versões do VendaBem Web:
 
 1. **`criar`** — cria uma versão do zero a partir da base correta.
-2. **`verificar`** — diz se a versão está com **todos** os commits que deveria (read-only).
+1. **`verificar`** — diz se a versão está com **todos** os commits que deveria (read-only).
 2. **`atualizar`** — aplica os commits que faltam, lidando com conflitos.
 
 (Existe uma quarta operação, `reconstruir-estado` — de **recuperação**, não do fluxo
@@ -332,7 +332,7 @@ X.Y.Z (Z>0)  → X.Y.(Z-1) se existir, senão X.Y.0    (específica de cliente)
    continua "unmerged" até um `git add` explícito — sem essa config, o "resolveu
    automaticamente → `--continue`" do §5 não dispara sozinho.
 2. **Nunca auto-resolve** heurísticamente — em conflito novo, para e entrega o controle.
-3. **Checkpoint resumível** — a worktree fica no estado do conflito; `--continue` retoma,
+2. **Checkpoint resumível** — a worktree fica no estado do conflito; `--continue` retoma,
    `--abort` restaura.
 3. **Worktree isolada** — sua árvore de trabalho principal nunca é tocada.
 
@@ -682,27 +682,19 @@ primeira busca e não na construção (§10). As que faltavam:
 
 ### Dívida conhecida
 
-Em ordem de risco, não de esforço. A primeira fica sobre a resolução de base, que
-é a computação mais load-bearing da ferramenta: `versao.base_commit` é
-resolvido **uma vez**, na primeira gravação, e todo julgamento de presença posterior
-é feito contra ele. Base errada envenena o oráculo pela vida inteira da versão.
+Em ordem de risco, não de esforço.
 
-1. **A precedência dos candidatos do `BaseResolver` não tem teste.** A lista é
-   `[<ref local>, refs/remotes/origin/<ref>]` quando não há tag — local primeiro,
-   deliberadamente. Inverter passa a suíte inteira. E `git fetch` não fast-forwarda
-   head local, então local e ref de rastreamento **rotineiramente discordam** para
-   uma versão-base, e as duas ordens gravam SHAs diferentes de forma permanente.
-2. **O `status_versao` do retorno `BLOCKED` do `atualizar` não tem teste.** Apagar a
+1. **O `status_versao` do retorno `BLOCKED` do `atualizar` não tem teste.** Apagar a
    linha passa a suíte. É justamente o caminho onde o operador mais precisa das
    seções vermelhas: o run parou no meio.
-3. **O pin do guard de rede depende do `.env`.** A guarda em si
+2. **O pin do guard de rede depende do `.env`.** A guarda em si
    (`tests/conftest.py`, `_sem_dotenv_dentro_do_main`) é real; o teste dela só
    discrimina numa máquina que tenha `.env`. Em clone novo ou CI, apagar a guarda é
    invisível.
-4. **`sessao_postgres` dá `TRUNCATE` só no setup, nunca no teardown.** Toda rodada
+3. **`sessao_postgres` dá `TRUNCATE` só no setup, nunca no teardown.** Toda rodada
    de integração deixa as linhas do último teste, então "o banco está com zero
    linhas" só é verdade porque alguém truncou à mão. Já custou uma investigação.
-5. **`InterfaceError` cai no ramo genérico** `erro do banco: …` em vez do
+4. **`InterfaceError` cai no ramo genérico** `erro do banco: …` em vez do
    `banco inacessivel … docker compose up -d`. A tradução acontece (não vaza
    traceback), só escolhe a mensagem menos útil.
 
