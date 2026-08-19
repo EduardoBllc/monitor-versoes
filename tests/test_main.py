@@ -320,13 +320,24 @@ def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
 def test_main_nao_repovoa_variavel_que_o_teste_apagou(bordas, tmp_path, monkeypatch,
                                                       caplog):
     """Pina a guarda estrutural do "sem rede" (fixture _sem_dotenv_dentro_do_main
-    no conftest): sem ela, o load_dotenv() de dentro do main() traz de volta do
-    .env de verdade toda variavel que o teste apagou — foi assim que um teste de
-    credencial ausente saiu para o host real do Tickio na Task 12.
+    no conftest): sem ela, o load_dotenv() de dentro do main() traz de volta toda
+    variavel que o teste apagou — foi assim que um teste de credencial ausente
+    saiu para o host real do Tickio na Task 12.
 
-    Apaga TICKIO_USER (vazia no .env) de proposito: se a guarda cair, este teste
-    falha na ultima assercao sem tentar rede nenhuma.
     """
+    # Pin estrutural, nao comportamental: `load_dotenv()` procura o .env a partir
+    # do arquivo que a chama, nao da CWD, entao nao da para plantar um .env de
+    # teste e observar o efeito. E `main()` faz `if load_dotenv: load_dotenv()`,
+    # logo "a guarda esta instalada" E o contrato inteiro. Antes a assercao era
+    # so comportamental e ficava vazia em maquina sem .env — em clone novo ou CI
+    # a guarda podia ser apagada sem nada ficar vermelho, que e exatamente a
+    # classe de falha que ela existe para fechar.
+    assert cli.load_dotenv is None, (
+        "a fixture _sem_dotenv_dentro_do_main nao desligou o load_dotenv() do "
+        "main(): variavel apagada por um teste volta do .env de verdade e o run "
+        "sai para a rede"
+    )
+
     monkeypatch.delenv("TICKIO_USER", raising=False)
 
     with pytest.raises(SystemExit) as saida:

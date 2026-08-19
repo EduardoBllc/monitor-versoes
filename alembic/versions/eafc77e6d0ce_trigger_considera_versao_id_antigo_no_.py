@@ -42,12 +42,28 @@ def upgrade() -> None:
     """)
     # liberada_em vem da data do commit da tag, que carrega fuso: coluna
     # naive descartava o offset silenciosamente.
-    op.alter_column("versao", "liberada_em", type_=sa.DateTime(timezone=True))
+    #
+    # postgresql_using explicito porque o cast implicito timestamp->timestamptz
+    # resolve o instante no TimeZone da SESSAO de quem roda a migracao: a mesma
+    # linha viraria instantes diferentes dependendo da maquina. Editar esta
+    # revisao ja aplicada foi aceitavel porque as tres revisoes deste redesenho
+    # sao o schema inicial dele e nao houve dado para migrar (spec §8).
+    op.alter_column(
+        "versao",
+        "liberada_em",
+        type_=sa.DateTime(timezone=True),
+        postgresql_using="liberada_em at time zone 'UTC'",
+    )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.alter_column("versao", "liberada_em", type_=sa.DateTime(timezone=False))
+    op.alter_column(
+        "versao",
+        "liberada_em",
+        type_=sa.DateTime(timezone=False),
+        postgresql_using="liberada_em at time zone 'UTC'",
+    )
     op.execute("""
         create or replace function trava_versao_liberada() returns trigger as $$
         declare vid int;

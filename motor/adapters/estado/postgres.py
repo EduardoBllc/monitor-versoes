@@ -7,12 +7,15 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from sqlalchemy import delete, select
-from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from motor.adapters.estado import models
 from motor.domain.types import Atribuicao, Exclusion, RepoInfo, VersaoInfo, VersionType
 from motor.errors import MotorError
+
+# Levantado pela trigger trava_versao_liberada; ver a migracao que a define.
+ERRCODE_VERSAO_CONGELADA = "MV001"
 
 _TIPO_PARA_TEXTO = {
     VersionType.FECHADA: "fechada",
@@ -248,13 +251,34 @@ class PostgresEstado:
             self._traduzir_erro(e)
 
     def _traduzir_erro(self, e: DBAPIError) -> NoReturn:
+        """Decide a mensagem pelo SQLSTATE, nao pelo tipo nem pelo texto.
+
+        Antes ramificava por `isinstance(e, OperationalError)`, que e mais largo
+        do que a mensagem promete: psycopg mapeia deadlock (40P01) e statement
+        timeout (57014) para OperationalError tambem, e os dois saiam como
+        "banco inacessivel ... docker compose up -d" — banco que respondeu, e a
+        resposta foi um erro de execucao.
+
+        E identificava o congelamento por `"imutavel" in str(e.orig)`, o que
+        acoplava o adapter a um texto que vive nas migracoes: reescrever a
+        mensagem da trigger quebrava esta traducao em silencio. Agora a trigger
+        levanta com `errcode = 'MV001'` e o match e no codigo.
+
+        Sem SQLSTATE = o servidor nunca respondeu (recusa de conexao, conexao
+        morta no meio do comando). E o unico caso que "suba o container" ajuda.
+        """
         self.sessao.rollback()
-        if isinstance(e, OperationalError):
-            raise MotorError(
-                f"banco inacessivel: {e.orig}. Suba com: docker compose up -d"
-            ) from e
-        if "imutavel" in str(e.orig):
+        sqlstate = getattr(e.orig, "sqlstate", None)
+        if sqlstate == ERRCODE_VERSAO_CONGELADA or (
+            # fallback para banco que ainda nao rodou a migracao do errcode
+            sqlstate is not None
+            and "imutavel" in str(e.orig)
+        ):
             raise MotorError(
                 "versao liberada e imutavel — remarque a tarefa para a proxima versao"
+            ) from e
+        if sqlstate is None:
+            raise MotorError(
+                f"banco inacessivel: {e.orig}. Suba com: docker compose up -d"
             ) from e
         raise MotorError(f"erro do banco: {e.orig}") from e

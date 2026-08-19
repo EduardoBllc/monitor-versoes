@@ -8,6 +8,7 @@ motivo: ele existe para processo longo que nao quer reter credencial.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 
 import httpx
@@ -47,29 +48,36 @@ class TickioRest:
         ]:
             raise MotorError(f"faltando no .env: {', '.join(faltando)}")
 
-        cliente = self.client if self.client is not None else httpx.Client()
-        token = self._autenticar(cliente)
+        # Fecha so o que criamos: cliente injetado pertence a quem injetou.
+        with contextlib.ExitStack() as pilha:
+            cliente = self.client
+            if cliente is None:
+                cliente = pilha.enter_context(httpx.Client())
+            token = self._autenticar(cliente)
 
-        try:
-            resp = cliente.get(
-                f"{self.base_url}{_ROTA_CHAMADOS}",
-                params={"sistema": self.sistema_id, "versao": versao},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        except httpx.HTTPError as e:
-            raise MotorError(f"buscando chamados da versao {versao} no Tickio: {e}") from e
+            try:
+                resp = cliente.get(
+                    f"{self.base_url}{_ROTA_CHAMADOS}",
+                    params={"sistema": self.sistema_id, "versao": versao},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            except httpx.HTTPError as e:
+                raise MotorError(
+                    f"buscando chamados da versao {versao} no Tickio: {e}"
+                ) from e
 
-        if resp.status_code != 200:
-            raise MotorError(
-                f"Tickio respondeu {resp.status_code} ao listar a versao {versao}: {resp.text}"
-            )
+            if resp.status_code != 200:
+                raise MotorError(
+                    f"Tickio respondeu {resp.status_code} ao listar a versao {versao}: "
+                    f"{resp.text}"
+                )
 
-        try:
-            corpo = resp.json()
-        except ValueError as e:
-            raise MotorError(f"decodificando resposta do Tickio: {e}") from e
+            try:
+                corpo = resp.json()
+            except ValueError as e:
+                raise MotorError(f"decodificando resposta do Tickio: {e}") from e
 
-        return _extrair_chamados(corpo)
+            return _extrair_chamados(corpo)
 
     def _autenticar(self, cliente: httpx.Client) -> str:
         if self._access:

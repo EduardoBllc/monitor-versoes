@@ -11,8 +11,19 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.exc import InterfaceError, OperationalError
 
-from motor.adapters.estado.postgres import PostgresEstado
+from motor.adapters.estado.postgres import (
+    ERRCODE_VERSAO_CONGELADA,
+    PostgresEstado,
+)
 from motor.errors import MotorError
+
+
+class _OrigComSqlstate(Exception):
+    """psycopg poe sqlstate na excecao original; o adapter ramifica por ele."""
+
+    def __init__(self, mensagem: str, sqlstate: str) -> None:
+        super().__init__(mensagem)
+        self.sqlstate = sqlstate
 
 
 class _SessaoQueFalha:
@@ -58,3 +69,52 @@ def test_banco_fora_do_ar_continua_com_a_dica_do_compose():
         PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
 
     assert "docker compose up -d" in str(e.value)
+
+
+def test_conexao_morta_ganha_a_dica_do_compose():
+    """Sem sqlstate = o servidor nunca respondeu, e o unico caso em que "suba o
+    container" ajuda. InterfaceError cai aqui, nao no ramo genERico.
+    """
+    sessao = _SessaoQueFalha(
+        InterfaceError("select 1", None, Exception("connection already closed"))
+    )
+
+    with pytest.raises(MotorError, match="docker compose up -d"):
+        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+
+
+def test_deadlock_nao_e_reportado_como_banco_inacessivel():
+    """psycopg mapeia deadlock (40P01) e statement timeout (57014) para
+    OperationalError tambem. Ramificar por tipo mandava os dois para "banco
+    inacessivel ... docker compose up -d" — banco que respondeu, e a resposta foi
+    erro de execucao. Mandar o operador subir container que ja esta de pe.
+    """
+    sessao = _SessaoQueFalha(
+        OperationalError("update ...", None, _OrigComSqlstate("deadlock detected", "40P01"))
+    )
+
+    with pytest.raises(MotorError) as e:
+        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+
+    assert "deadlock detected" in str(e.value)
+    assert "docker compose" not in str(e.value), (
+        f"mensagem = {str(e.value)!r}; deadlock nao e banco fora do ar"
+    )
+
+
+def test_congelamento_identificado_pelo_errcode_nao_pelo_texto():
+    """A trigger levanta com errcode MV001. Antes o adapter procurava
+    "imutavel" no texto, entao reescrever a mensagem da trigger — que vive numa
+    migracao, outro arquivo — quebrava esta traducao em silencio.
+    """
+    sessao = _SessaoQueFalha(
+        OperationalError(
+            "insert ...",
+            None,
+            # texto deliberadamente SEM "imutavel": so o errcode identifica
+            _OrigComSqlstate("versao travada (versao_id=3)", ERRCODE_VERSAO_CONGELADA),
+        )
+    )
+
+    with pytest.raises(MotorError, match="remarque a tarefa para a proxima versao"):
+        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")

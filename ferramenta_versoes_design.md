@@ -682,30 +682,37 @@ primeira busca e não na construção (§10). As que faltavam:
 
 ### Dívida conhecida
 
-Em ordem de risco, não de esforço.
+Vazia. Os doze itens que estavam aqui foram fechados; ficam listados abaixo com
+onde a correção mora, porque saber que algo *já* foi decidido é tão útil quanto
+saber que falta.
 
-1. **O `status_versao` do retorno `BLOCKED` do `atualizar` não tem teste.** Apagar a
-   linha passa a suíte. É justamente o caminho onde o operador mais precisa das
-   seções vermelhas: o run parou no meio.
-2. **O pin do guard de rede depende do `.env`.** A guarda em si
-   (`tests/conftest.py`, `_sem_dotenv_dentro_do_main`) é real; o teste dela só
-   discrimina numa máquina que tenha `.env`. Em clone novo ou CI, apagar a guarda é
-   invisível.
-3. **`sessao_postgres` dá `TRUNCATE` só no setup, nunca no teardown.** Toda rodada
-   de integração deixa as linhas do último teste, então "o banco está com zero
-   linhas" só é verdade porque alguém truncou à mão. Já custou uma investigação.
-4. **`InterfaceError` cai no ramo genérico** `erro do banco: …` em vez do
-   `banco inacessivel … docker compose up -d`. A tradução acontece (não vaza
-   traceback), só escolhe a mensagem menos útil.
+- `status_versao` do retorno `BLOCKED` sem teste → asserção em
+  `test_atualizar_para_em_conflito`.
+- Pin do guard de rede vazio em máquina sem `.env` → virou pin **estrutural**
+  (`cli.load_dotenv is None`). `load_dotenv()` procura o `.env` a partir do
+  arquivo que a chama, não da CWD, então não dá para plantar um `.env` de teste e
+  observar o efeito — e como `main()` faz `if load_dotenv: load_dotenv()`, "a
+  guarda está instalada" é o contrato inteiro.
+- `sessao_postgres` truncava só no setup → trunca também no teardown.
+- `InterfaceError` no ramo genérico, `OperationalError` mais largo que a mensagem,
+  e `"imutavel" in str(e.orig)` → os três eram o mesmo defeito: ramificar por tipo
+  e por texto. `_traduzir_erro` agora ramifica por **SQLSTATE**. Sem SQLSTATE = o
+  servidor nunca respondeu, o único caso em que "suba o container" ajuda; deadlock
+  (40P01) e statement timeout (57014) caem no genérico; o congelamento é
+  identificado por `errcode = 'MV001'`, que a trigger passa a levantar
+  (`c31ffb4de7a1`), com fallback no texto para banco que ainda não migrou.
+- `uq_versao_repo_id` nomeando por uma coluna uma constraint de duas → renomeada
+  para `uq_versao_repo_id_numero`, com nome explícito no model.
+- `tipo` e `estado` texto livre → `ck_versao_tipo` e `ck_atribuicao_estado`. Valor
+  digitado errado via `psql` agora falha no `insert`, não como `KeyError` na
+  leitura, longe da causa.
+- `httpx.Client()` nunca fechado → `contextlib.ExitStack` nos dois adapters, que
+  fecha só o cliente que o adapter criou; cliente injetado pertence a quem injetou.
+- Conversão `timestamp ↔ timestamptz` dependendo do `TimeZone` da sessão →
+  `postgresql_using="liberada_em at time zone 'UTC'"` nas duas direções.
+- `%aI` onde a data de liberação quer `%cI` → `commit_meta` passou a `%cI`. As
+  varreduras de range seguem em `%aI` porque `ordenar_por_data` quer a ordem de
+  autoria; `commit_meta` é o único caminho que alimenta `liberada_em`.
 
-Menores, sem risco de dado: o `OperationalError` do adapter é mais largo que a
-mensagem dele (deadlock e statement timeout também imprimem "banco inacessivel"); o
-`"imutavel" in str(e.orig)` acopla o adapter a uma string que vive em dois arquivos
-de migração, sem referência cruzada; `uq_versao_repo_id` nomeia por uma coluna uma
-constraint de duas; `tipo` e `estado` são texto livre, com os valores legais só em
-comentário, num schema cuja razão de existir é ser consultado via `psql`; o
-`httpx.Client()` criado quando `client=None` nunca é fechado; a conversão
-`timestamp ↔ timestamptz` das migrações depende do `TimeZone` da sessão de quem
-roda; e o adapter git usa `%aI` (data do autor) onde a data de liberação
-discutivelmente quer `%cI` — não trocar globalmente, porque o `ordenar_por_data`
-quer a do autor.
+Resta uma pendência, não dívida: o corpo de `GET /api/v1/ws/versoes/chamados/`
+**nunca foi observado** (§10). Só uma chamada real ao Tickio fecha essa.

@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     MetaData,
+    CheckConstraint,
     UniqueConstraint,
     text,
 )
@@ -57,12 +58,19 @@ class RepoAlias(Base):
 
 class Versao(Base):
     __tablename__ = "versao"
-    __table_args__ = (UniqueConstraint("repo_id", "numero"),)
+    __table_args__ = (
+        # nome explicito: a convencao gera uq_versao_repo_id, que le como se
+        # repo_id sozinho fosse unico — e um repo tem muitas versoes.
+        UniqueConstraint("repo_id", "numero", name="uq_versao_repo_id_numero"),
+        CheckConstraint(
+            "tipo in ('fechada', 'ajustada', 'cliente')", name="ck_versao_tipo"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"))
     numero: Mapped[str]  # '13.34.0'
-    tipo: Mapped[str]  # fechada | ajustada | cliente
+    tipo: Mapped[str]  # ck_versao_tipo
     base_ref: Mapped[str]
     base_commit: Mapped[str]
     # null = em construcao. Preenchida com a data do commit apontado pela tag.
@@ -84,7 +92,7 @@ class Atribuicao(Base):
     versao_id: Mapped[int] = mapped_column(ForeignKey("versao.id"), primary_key=True)
     chamado: Mapped[str] = mapped_column(primary_key=True)
     marcada: Mapped[str]  # versao para a qual o Tickio marcou
-    estado: Mapped[str]  # pendente | aplicado
+    estado: Mapped[str]  # ck_atribuicao_estado
 
 
 class AtribuicaoCommit(Base):

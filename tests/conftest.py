@@ -26,10 +26,22 @@ def _sem_dotenv_dentro_do_main(monkeypatch):
     monkeypatch.setattr(cli, "load_dotenv", None)
 
 
+_TRUNCATE_TUDO = (
+    "truncate atribuicao_commit, atribuicao, versao, exclusao, "
+    "sem_entrega, repo_alias, repo restart identity cascade"
+)
+
+
 @pytest.fixture
 def sessao_postgres():
     """Sessao contra o Postgres real. Pula quando o banco nao esta configurado
-    ou nao responde (container parado) — a suite tem que rodar sem banco."""
+    ou nao responde (container parado) — a suite tem que rodar sem banco.
+
+    Limpa no setup E no teardown. Só no setup, cada teste comecava limpo mas a
+    rodada inteira deixava as linhas do ultimo teste para tras, entao "o banco
+    esta com zero linhas" so era verdade se alguem truncasse a mao — e uma vez
+    custou investigar linhas residuais que ninguem sabia de onde vinham.
+    """
     if not os.environ.get("DATABASE_HOST"):
         pytest.skip("DATABASE_HOST ausente — banco nao configurado")
 
@@ -39,21 +51,22 @@ def sessao_postgres():
 
     from motor.config import database_url
 
+    def _limpar(engine) -> None:
+        with engine.connect() as conn:
+            conn.execute(text(_TRUNCATE_TUDO))
+            conn.commit()
+
     engine = create_engine(database_url())
     try:
-        with engine.connect() as conn:
-            conn.execute(
-                text(
-                    "truncate atribuicao_commit, atribuicao, versao, exclusao, "
-                    "sem_entrega, repo_alias, repo restart identity cascade"
-                )
-            )
-            conn.commit()
+        _limpar(engine)
     except OperationalError:
         engine.dispose()
         pytest.skip("Postgres inalcancavel — suba com: docker compose up -d")
 
     fabrica = sessionmaker(engine)
-    with fabrica() as sessao:
-        yield sessao
-    engine.dispose()
+    try:
+        with fabrica() as sessao:
+            yield sessao
+        _limpar(engine)
+    finally:
+        engine.dispose()

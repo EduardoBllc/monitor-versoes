@@ -169,6 +169,16 @@ def test_atualizar_para_em_conflito():
     assert [a.estado for a in estado.atribuicoes("r", "13.7.0")] == ["pendente"], (
         "lote bloqueado nao pode marcar a atribuicao como aplicada"
     )
+    # O retorno BLOCKED tem de carregar o status do verificar, igual ao DONE:
+    # e justamente aqui que o operador mais precisa das secoes vermelhas, porque
+    # o run parou no meio e ele vai decidir entre --continue e --abortar.
+    assert resultado.status_versao is not None, (
+        "status_versao ausente no retorno BLOCKED — imprimir_atualizacao nao tem "
+        "o que mostrar e o operador decide no escuro"
+    )
+    assert resultado.status_versao.faltantes, (
+        "status_versao do BLOCKED veio vazio; quer o status que o verificar calculou"
+    )
 
 
 def test_atualizar_abort_remove_worktree():

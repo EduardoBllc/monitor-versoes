@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import datetime
 import re
+import contextlib
 from dataclasses import dataclass, field
 
 import httpx
@@ -69,7 +70,6 @@ class BitbucketPRCommitSource:
         return resultado
 
     def _commits_do_chamado(self, chamado: str) -> list[CommitRef]:
-        client = self.client if self.client is not None else httpx.Client()
         base = self.base_url or _BASE_URL_PADRAO
         termo = "ch" + chamado
 
@@ -82,21 +82,26 @@ class BitbucketPRCommitSource:
 
         vistos: set[str] = set()
         commits: list[CommitRef] = []
-        for pr in self._paginar(client, prs_url, params):
-            if not self._pr_casa(pr, termo):
-                continue
-            pr_id = pr.get("id")
-            commits_url = f"{prs_url}/{pr_id}/commits"
-            for c in self._paginar(client, commits_url, None):
-                h = c.get("hash", "")
-                if not h or h in vistos:
+        # Fecha so o que criamos: cliente injetado pertence a quem injetou.
+        with contextlib.ExitStack() as pilha:
+            client = self.client
+            if client is None:
+                client = pilha.enter_context(httpx.Client())
+            for pr in self._paginar(client, prs_url, params):
+                if not self._pr_casa(pr, termo):
                     continue
-                if len(c.get("parents") or []) > 1:
-                    continue  # merge commit: cherry-pick -x nao aceita sem -m; conteudo ja vem pelos pais individuais
-                if not self.git.is_ancestor(h, self.master_ref):
-                    continue  # so o que ja esta na master
-                vistos.add(h)
-                commits.append(self._para_commit_ref(c, chamado))
+                pr_id = pr.get("id")
+                commits_url = f"{prs_url}/{pr_id}/commits"
+                for c in self._paginar(client, commits_url, None):
+                    h = c.get("hash", "")
+                    if not h or h in vistos:
+                        continue
+                    if len(c.get("parents") or []) > 1:
+                        continue  # merge commit: cherry-pick -x nao aceita sem -m; conteudo ja vem pelos pais individuais
+                    if not self.git.is_ancestor(h, self.master_ref):
+                        continue  # so o que ja esta na master
+                    vistos.add(h)
+                    commits.append(self._para_commit_ref(c, chamado))
         commits.sort(key=lambda c: c.commit_date)
         return commits
 

@@ -161,11 +161,17 @@ class GitSubprocess:
         return _parse_log(out)
 
     def commit_meta(self, hash: str) -> CommitRef:
+        # %cI (data do COMMITTER), nao %aI como nas varreduras de range: o unico
+        # consumidor de commit_date daqui e a data de liberacao (a tag aponta um
+        # commit, e "quando essa versao saiu" e quando o commit entrou nesta
+        # branch). Num cherry-pick a data do autor e a da escrita original, que
+        # pode ser de meses antes. As varreduras seguem em %aI porque
+        # ordenar_por_data quer a ordem de autoria.
         out = self._output(
             self.repo_path,
             "show",
             "-s",
-            f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B",
+            f"--format=%H{SEPARADOR_CAMPO}%cI{SEPARADOR_CAMPO}%B",
             hash,
         )
         campos = out.split(SEPARADOR_CAMPO, 2)
