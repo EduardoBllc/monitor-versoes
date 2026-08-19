@@ -2,7 +2,10 @@
 
 import datetime
 
+import pytest
+
 from motor.adapters.git.fake import FakeGit
+from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
 
 
@@ -115,3 +118,24 @@ def test_fake_list_version_branches_respeita_tag_false():
     )
     assert git.list_version_branches() == ["13.33.0", "13.34.0"]
     assert git.list_version_tags() == ["13.33.0"]
+
+
+def test_fake_list_version_branches_inclui_ref_de_rastreamento():
+    """Espelha o adapter real: `git fetch origin` cria refs/remotes/origin/X e
+    NENHUM head local, entao uma versao aberta e empurrada de outra maquina so
+    aparece pela ref de rastreamento. Fake diferente do real esconde bug.
+    """
+    git = FakeGit(branches={"13.34.0": "aaa"}, remote_refs={"13.35.0": "bbb"})
+    assert git.list_version_branches() == ["13.34.0", "13.35.0"]
+
+
+def test_fake_nome_puro_nao_resolve_ref_de_rastreamento():
+    """Tambem como o git: `rev-parse X` olha refs/heads e refs/tags, nunca
+    refs/remotes/<remoto>/X. Um fake que resolvesse o nome puro esconderia o
+    erro que o BaseResolver tem de contornar.
+    """
+    git = FakeGit(remote_refs={"13.35.0": "bbb"})
+
+    with pytest.raises(MotorError):
+        git.resolve_ref("13.35.0")
+    assert git.resolve_ref("refs/remotes/origin/13.35.0") == "bbb"

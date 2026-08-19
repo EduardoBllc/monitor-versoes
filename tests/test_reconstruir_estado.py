@@ -70,22 +70,27 @@ def test_commit_sem_chamado_vira_orfao():
 
 
 class _GitQueRevelaBaseNoFetch(FakeGit):
-    """FakeGit em que a base 13.33.0 so entra no ref store local no fetch —
-    como no git de verdade, onde uma branch cortada em outra maquina so
-    aparece apos buscar.
+    """FakeGit em que a base 13.33.0 so entra no ref store local no fetch, e
+    entra da forma que o git de verdade a faz entrar: como
+    `refs/remotes/origin/13.33.0`, sem head local nenhum e sem tag (branch
+    recem-cortada em outra maquina ainda nao foi liberada).
+
+    A versao anterior deste double chamava `set_branch`, ou seja, modelava o
+    fetch criando head local — o que o git nao faz. O teste passava por causa
+    da mentira do fake.
     """
 
     def fetch(self, remote: str) -> None:
         super().fetch(remote)
-        self.set_branch("13.33.0", "base")
-        self.tags["13.33.0"] = True
+        self.remote_refs["13.33.0"] = "base"
 
 
 def test_reconstruir_estado_busca_antes_de_resolver_a_base():
     """Pina a ORDEM: 13.34.0 nunca foi registrada, entao a base sai do
     BaseResolver, que le list_version_branches/tag_exists do ref store local.
-    Sem buscar primeiro, 13.33.0 nao apareceria e o BaseResolver estouraria
-    (ou, pior, uma base errada seria gravada de forma definitiva).
+    Sem buscar primeiro, nem a ref de rastreamento de 13.33.0 existiria e o
+    BaseResolver estouraria (ou, pior, uma base errada seria gravada de forma
+    definitiva).
     """
     git = _GitQueRevelaBaseNoFetch()
     git.add_commit("base", "", "raiz", D)

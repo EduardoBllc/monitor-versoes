@@ -16,6 +16,8 @@ from motor.errors import MotorError
 from motor.ports import CherryPickOutcome, MergePrediction
 
 _PADRAO_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
+# refs/remotes/<remoto>/<nome> — igual ao adapter real, o remoto e arbitrario.
+_PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/[^/]+/")
 
 
 @dataclass
@@ -31,6 +33,12 @@ class FakeCommit:
 class FakeGit:
     commits: dict[str, FakeCommit] = field(default_factory=dict)
     branches: dict[str, str] = field(default_factory=dict)
+    # refs/remotes/<remoto>/<nome> -> hash: o que o `git fetch` cria para uma
+    # branch que existe no remoto e nao tem head local. Separado de `branches`
+    # de proposito — no git de verdade o nome puro NAO resolve para uma ref de
+    # rastreamento (rev-parse olha refs/heads e refs/tags, nunca
+    # refs/remotes/<remoto>/X), e um fake que resolvesse esconderia o bug.
+    remote_refs: dict[str, str] = field(default_factory=dict)
     tags: dict[str, bool] = field(default_factory=dict)
     remotes: dict[str, bool] = field(default_factory=dict)
     remote_urls: dict[str, str] = field(default_factory=dict)
@@ -138,6 +146,12 @@ class FakeGit:
         return self.file_changes.get(hash, frozenset())
 
     def resolve_ref(self, ref: str) -> str:
+        if (m := _PREFIXO_REF_REMOTA.match(ref)) is not None:
+            # So a ref qualificada resolve, como no git de verdade.
+            remota = self.remote_refs.get(ref[m.end():])
+            if remota is None:
+                raise MotorError(f"ref {ref} nao encontrada")
+            return remota
         nome = ref.removeprefix("refs/tags/").removeprefix("refs/heads/")
         if nome in self.branches:
             return self.branches[nome]
@@ -233,11 +247,13 @@ class FakeGit:
         self.fetched.append(remote)
 
     def list_version_branches(self) -> list[str]:
-        # Espelha o adapter real: heads UNIAO tags, filtrado por X.Y.Z. Sem o
-        # filtro, 'master' entra no conjunto e versoes_abertas estoura em
-        # chave("master") — o fake nao pode ser mais permissivo que o real.
+        # Espelha o adapter real: heads UNIAO tags UNIAO refs de rastreamento,
+        # filtrado por X.Y.Z. Sem o filtro, 'master' entra no conjunto e
+        # versoes_abertas estoura em chave("master") — o fake nao pode ser mais
+        # permissivo (nem simplesmente diferente) do que o real.
         nomes = set(self.branches.keys())
         nomes.update(t for t, existe in self.tags.items() if existe)
+        nomes.update(self.remote_refs.keys())
         return sorted(n for n in nomes if _PADRAO_VERSAO.match(n))
 
     def list_version_tags(self) -> list[str]:

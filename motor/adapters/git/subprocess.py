@@ -37,6 +37,8 @@ def _cronometrar(*args: str):
 
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
 _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
+# refs/remotes/<remoto>/<nome> — o nome do remoto e arbitrario, nao so "origin".
+_PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/[^/]+/")
 _PADRAO_VERSAO_GIT = re.compile(r"git version (\d+)\.(\d+)")
 
 
@@ -211,7 +213,15 @@ class GitSubprocess:
         return frozenset(l for l in out.split("\n") if l != "")
 
     def resolve_ref(self, ref: str) -> str:
-        return self._output(self.repo_path, "rev-parse", ref)
+        # ^{commit} descasca tag anotada: as tags de release deste projeto sao
+        # anotadas, e `rev-parse refs/tags/X` devolve o SHA do OBJETO DE TAG,
+        # nao do commit. Sem descascar, BaseResolver gravaria esse SHA em
+        # versao.base_commit (coluna de auditoria que entao nao nomeia commit
+        # nenhum: `git show` mostra a tag e o join com
+        # atribuicao_commit.hash_origem nao acha nada) e commit_meta devolveria
+        # "tag X\nTagger: ...". No-op para branch, tag leve e hash cru — X^{commit}
+        # nao muda nada quando X ja resolve para um commit.
+        return self._output(self.repo_path, "rev-parse", f"{ref}^{{commit}}")
 
     def use_worktree(self, branch: str) -> None:
         """Se a worktree ja existe em disco, so usa. Senao, tenta adotar uma
@@ -336,27 +346,38 @@ class GitSubprocess:
         # ainda nao apagada), o short-name fica ambiguo entre refs/heads/X e
         # refs/tags/X e o git devolve "heads/X"/"tags/X" em vez de "X", o que
         # faz a versao sumir do padrao \d+\.\d+\.\d+. Inclui refs/tags/ pra
-        # tambem enxergar versoes fechadas cuja branch ja foi apagada.
+        # tambem enxergar versoes fechadas cuja branch ja foi apagada, e
+        # refs/remotes/ pelo mesmo motivo do outro lado da ausencia: `git
+        # fetch origin` cria refs/remotes/origin/X e NENHUM head local, entao
+        # uma versao aberta e empurrada de outra maquina so aparece por ai —
+        # sem isso `versoes_abertas` seria uma visao local do conjunto aberto e
+        # `fontes_de_alvo` omitiria essa versao em silencio (spec §2).
+        # `versoes_abertas = todas - tags` continua excluindo as liberadas.
+        # Preco aceito: refs/remotes/origin/X velho de branch apagada e nunca
+        # liberada le como aberta ate alguem rodar `git fetch --prune`.
         out = self._output(
             self.repo_path,
             "for-each-ref",
             "--format=%(refname)",
             "refs/heads/",
             "refs/tags/",
+            "refs/remotes/",
         )
         if out == "":
             return []
+        # set: a mesma versao aparece como head local E ref de rastreamento.
         nomes = set()
         for linha in out.split("\n"):
-            nome = linha.removeprefix("refs/heads/").removeprefix("refs/tags/")
+            nome = _PREFIXO_REF_REMOTA.sub("", linha)
+            nome = nome.removeprefix("refs/heads/").removeprefix("refs/tags/")
             if _PADRAO_BRANCH_VERSAO.match(nome):
                 nomes.add(nome)
         return sorted(nomes)
 
     def list_version_tags(self) -> list[str]:
         # So refs/tags/ — diferente de list_version_branches, que inclui heads
-        # tambem de proposito (para inferir_base achar versao fechada cuja
-        # branch ja foi apagada).
+        # e refs/remotes tambem de proposito (para inferir_base achar versao
+        # fechada cuja branch ja foi apagada, e versao aberta em outra maquina).
         out = self._output(
             self.repo_path, "for-each-ref", "--format=%(refname)", "refs/tags/"
         )

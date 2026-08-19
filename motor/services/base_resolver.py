@@ -20,9 +20,22 @@ class BaseResolver:
         # ref pode existir como branch E tag (versao fechada cuja branch nao
         # foi apagada) - nome puro fica ambiguo pro git. Tag e o estado
         # publicado e definitivo, entao desempata pra ela quando presente.
-        ref_qualificado = f"refs/tags/{ref}" if self.git.tag_exists(ref) else ref
-        try:
-            commit = self.git.resolve_ref(ref_qualificado)
-        except Exception as e:
-            raise MotorError(f"resolvendo ref {ref_qualificado}: {e}") from e
-        return BaseRef(ref=ref, commit=commit)
+        #
+        # Sem tag, duas tentativas: o nome puro (head local) e, so depois, a ref
+        # de rastreamento. `list_version_branches` enxerga refs/remotes/, entao
+        # uma base cortada em outra maquina e escolhida por `inferir_base` — mas
+        # `git rev-parse X` nunca consulta refs/remotes/<remoto>/X, e sem esta
+        # segunda tentativa a base correta viraria erro (antes de enxergar
+        # refs/remotes/ o efeito era pior: uma base mais antiga entrava calada e
+        # ficava definitiva em versao.base_commit).
+        if self.git.tag_exists(ref):
+            candidatos = [f"refs/tags/{ref}"]
+        else:
+            candidatos = [ref, f"refs/remotes/origin/{ref}"]
+        ultimo: Exception | None = None
+        for candidato in candidatos:
+            try:
+                return BaseRef(ref=ref, commit=self.git.resolve_ref(candidato))
+            except Exception as e:
+                ultimo = e
+        raise MotorError(f"resolvendo ref {ref}: {ultimo}") from ultimo

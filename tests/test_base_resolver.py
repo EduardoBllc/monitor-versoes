@@ -15,3 +15,18 @@ def test_base_resolver_resolve():
     base = resolver.resolve("13.7.0")
 
     assert base.ref == "13.6.0" and base.commit == "hash136", f"base = {base!r}, quer ref=13.6.0 commit=hash136"
+
+
+def test_base_resolver_usa_a_ref_de_rastreamento_quando_nao_ha_head_local():
+    """Base cortada em outra maquina: chega no fetch como
+    refs/remotes/origin/13.6.0, sem head local e sem tag.
+    `list_version_branches` ja a enxerga (por isso `inferir_base` a escolhe),
+    mas `git rev-parse 13.6.0` nunca consulta refs/remotes/<remoto>/X — sem a
+    segunda tentativa a base correta viraria erro.
+    """
+    g = FakeGit(remote_refs={"13.6.0": "hash136"})
+    g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc))
+
+    base = BaseResolver(git=g).resolve("13.7.0")
+
+    assert (base.ref, base.commit) == ("13.6.0", "hash136")

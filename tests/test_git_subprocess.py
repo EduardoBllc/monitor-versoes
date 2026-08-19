@@ -11,6 +11,7 @@ import subprocess
 import pytest
 
 from motor.adapters.git.subprocess import new_git_subprocess
+from motor.domain.version import versoes_abertas
 from motor.ports import CherryPickOutcome
 
 
@@ -161,6 +162,77 @@ def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
 
     assert "13.13.0" in versoes, f"branch com tag homonima sumiu da lista: {versoes!r}"
     assert "13.12.0" in versoes, f"versao so-com-tag sumiu da lista: {versoes!r}"
+
+
+def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(tmp_path):
+    """`git fetch origin` cria refs/remotes/origin/X e NENHUM head local (tag
+    chega por tag-following, branch nao). Sem refs/remotes/ na varredura, uma
+    versao aberta e empurrada de outra maquina fica invisivel mesmo depois do
+    fetch: `versoes_abertas` viraria uma visao local do conjunto aberto e
+    `fontes_de_alvo` omitiria essa versao em silencio (spec §2).
+    """
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    _run_git(str(origem), "init", "-b", "master")
+    _config_identidade_local(str(origem))
+    (origem / "arquivo.txt").write_text("v1\n")
+    _run_git(str(origem), "add", "arquivo.txt")
+    _run_git(str(origem), "commit", "-m", "base")
+    _run_git(str(origem), "branch", "13.35.0")
+
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _run_git(str(clone), "init", "-b", "master")
+    _config_identidade_local(str(clone))
+    _run_git(str(clone), "remote", "add", "origin", str(origem))
+
+    g = new_git_subprocess(str(clone))
+    g.fetch("origin")
+
+    # A premissa do teste, nao um detalhe: se o fetch criasse head local o
+    # teste passaria sem provar nada sobre refs/remotes/.
+    refs = subprocess.run(
+        ["git", "for-each-ref", "--format=%(refname)"],
+        cwd=str(clone),
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "refs/heads/13.35.0" not in refs, f"o fetch criou head local: {refs!r}"
+    assert "refs/remotes/origin/13.35.0" in refs, f"refs apos o fetch: {refs!r}"
+
+    assert "13.35.0" in g.list_version_branches()
+    assert versoes_abertas(g.list_version_branches(), g.list_version_tags()) == [
+        "13.35.0"
+    ]
+
+
+def test_git_subprocess_resolve_ref_descasca_tag_anotada(tmp_path):
+    """As tags de release deste projeto sao anotadas: `rev-parse refs/tags/X`
+    devolve o SHA do OBJETO DE TAG, nao do commit. Sem descascar, o
+    BaseResolver gravaria esse SHA em versao.base_commit — coluna de auditoria
+    que entao nao nomeia commit nenhum — e commit_meta devolveria
+    "tag X\\nTagger: ...".
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "tag", "-a", "13.34.0", "-m", "release 13.34.0")
+
+    g = new_git_subprocess(repo_dir)
+    commit_de_master = g.resolve_ref("master")
+
+    # Sem isto o teste seria vacuo com tag leve, em que os dois SHAs coincidem.
+    sha_do_objeto_de_tag = subprocess.run(
+        ["git", "rev-parse", "refs/tags/13.34.0"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert sha_do_objeto_de_tag != commit_de_master, "tag nao ficou anotada"
+
+    assert g.resolve_ref("refs/tags/13.34.0") == commit_de_master
+    # e o que sai serve como commit de verdade (e o que BaseResolver grava)
+    meta = g.commit_meta(g.resolve_ref("refs/tags/13.34.0"))
+    assert meta.hash_origem == commit_de_master
+    assert "Tagger" not in meta.msg
 
 
 def test_git_subprocess_worktree_cherry_pick_e_arquivo(tmp_path):
