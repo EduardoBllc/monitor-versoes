@@ -123,10 +123,11 @@ def _imprimir_commits_por_task(
             print(f"    - {c.hash_origem[:8]} {primeira_linha_msg}{tag}".rstrip())
 
 
-def imprimir_status(s: VersionStatus) -> None:
-    print(f"verde: {s.verde}")
-    print(f"tasks novas: {s.tasks_novas}")
-    print(f"tasks removidas: {s.tasks_removidas}")
+def _imprimir_alertas(s: VersionStatus) -> None:
+    """As secoes vermelhas do status. Vive separada porque o `atualizar` tambem
+    tem de imprimi-las: sao computadas, derrubam o verde e antes nao chegavam a
+    lugar nenhum no caminho do atualizar.
+    """
     if s.tasks_ambiguas:
         print(f"tasks marcadas em mais de uma versao: {s.tasks_ambiguas}")
         print("  (dado inconsistente no Tickio - corrija a marcacao)")
@@ -137,7 +138,27 @@ def imprimir_status(s: VersionStatus) -> None:
         print(f"estado: divergente do git ({len(s.commits_sumidos)} commits sumidos)")
         for hash_ in s.commits_sumidos:
             print(f"  - {hash_[:8]}")
-    else:
+
+
+def imprimir_status(s: VersionStatus) -> None:
+    if s.liberada_em is not None:
+        # Snapshot de versao liberada (spec §4): nada foi recalculado, e sem
+        # dizer isso a saida seria indistinguivel de uma versao verde em
+        # construcao. Os chamados vem primeiro porque este e o unico lugar em
+        # que se le o que so o banco registra.
+        print(
+            f"versao liberada em {s.liberada_em:%Y-%m-%d %H:%M} - "
+            "snapshot congelado, nao recalculado"
+        )
+        print(f"chamados ({len(s.chamados)}): {', '.join(s.chamados)}".rstrip())
+        print(f"verde: {s.verde}")
+        return
+
+    print(f"verde: {s.verde}")
+    print(f"tasks novas: {s.tasks_novas}")
+    print(f"tasks removidas: {s.tasks_removidas}")
+    _imprimir_alertas(s)
+    if s.estado_integro:
         print("estado: integro")
     conflitantes = {c.hash_origem for c in s.conflitantes}
     suspeitos = {c.hash_origem for c in s.suspeitos_conteudo}
@@ -151,6 +172,11 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
         print("nenhum cherry-pick (branch ja atualizada)")
     if r.ja_presentes:
         print(f"{r.ja_presentes} commits ja presentes no historico (ignorados)")
+
+    # Antes do "concluido": o lote e empurrado mesmo sem verde, mas o operador
+    # tem de ficar sabendo do que o verificar viu.
+    if r.status_versao is not None:
+        _imprimir_alertas(r.status_versao)
 
     if r.status == AtualizarStatus.BLOCKED:
         print(f"BLOQUEADO em {r.blocked_commit[:8]}, arquivos: {r.arquivos_conflito}")

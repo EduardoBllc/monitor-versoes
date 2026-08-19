@@ -79,7 +79,7 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
 
     info = deps.estado.versao(deps.repo, versao)
     if info is not None and info.liberada_em is not None:
-        return _snapshot_congelado(deps, versao)
+        return _snapshot_congelado(deps, versao, info.liberada_em)
 
     deps.git.use_worktree(versao)
     if deps.git.remote_branch_exists("origin", versao):
@@ -170,12 +170,21 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
     return status
 
 
-def _snapshot_congelado(deps: Deps, versao: str) -> VersionStatus:
+def _snapshot_congelado(
+    deps: Deps, versao: str, liberada_em: datetime.datetime
+) -> VersionStatus:
     """Versao liberada nao recalcula: o alvo dela congelou na tag. Se algo
     ficou de fora, a tarefa e remarcada para a proxima versao (spec §2).
+
+    Carrega a data de liberacao e os chamados: esta e a unica superficie de
+    leitura do que so o banco registra, e sem elas o snapshot sai identico ao
+    de uma versao verde em construcao (inclusive "verde: True" quando esta
+    vazio, porque all([]) e True).
     """
     anteriores = deps.estado.atribuicoes(deps.repo, versao)
     return VersionStatus(
         verde=all(a.estado == "aplicado" for a in anteriores),
         estado_integro=True,
+        liberada_em=liberada_em,
+        chamados=sorted(a.chamado for a in anteriores),
     )

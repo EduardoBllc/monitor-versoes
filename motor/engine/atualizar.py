@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
 from motor.domain.commits import ordenar_por_data
-from motor.domain.types import CommitRef
+from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
@@ -30,6 +30,15 @@ class AtualizarResult:
     aplicados: list[CommitRef] = field(default_factory=list)
     # commits que ja estavam no historico (ancestrais, sem cherry-pick a fazer)
     ja_presentes: int = 0
+    # o VersionStatus do verificar que abriu o lote. O lote e empurrado mesmo
+    # quando ele nao esta verde (todo commit vem de status.faltantes, nada
+    # ilegitimo embarca, e travar em tasks_sem_commits emperraria o fluxo toda
+    # vez que um chamado nao tem codigo), mas as secoes vermelhas tem de chegar
+    # ao terminal: sem isso tasks_ambiguas, tasks_sem_commits e commits_sumidos
+    # eram calculados e descartados. commits_sumidos e o pior — significa
+    # historico reescrito debaixo de um commit ja aplicado, e o verificar ja
+    # sobrescreveu a linha de estado que guardava a evidencia.
+    status_versao: VersionStatus | None = None
 
 
 def _recusar_se_liberada(deps: Deps, versao: str) -> None:
@@ -91,6 +100,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
                 arquivos_conflito=paths,
                 aplicados=aplicados,
                 ja_presentes=ja_presentes,
+                status_versao=status,
             )
         aplicados.append(c)
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
@@ -112,7 +122,10 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     # esta na branch e no remoto. use_worktree recria sob demanda.
     deps.git.worktree_remove(versao)
     return AtualizarResult(
-        status=AtualizarStatus.DONE, aplicados=aplicados, ja_presentes=ja_presentes
+        status=AtualizarStatus.DONE,
+        aplicados=aplicados,
+        ja_presentes=ja_presentes,
+        status_versao=status,
     )
 
 

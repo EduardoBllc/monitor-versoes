@@ -123,6 +123,11 @@ def test_atualizar_nao_marca_como_aplicada_tarefa_sem_commit():
         ("255514", "aplicado"),
         ("999999", "pendente"),
     ]
+    # e o resultado carrega o VersionStatus que o verificar computou: 999999
+    # derruba o verde e o lote e empurrado de todo jeito, entao o unico jeito de
+    # o operador ficar sabendo e o resultado levar essa secao ate o terminal.
+    assert resultado.status_versao is not None
+    assert resultado.status_versao.tasks_sem_commits == ["999999"]
 
 
 def test_atualizar_bloqueia_com_suspeita_de_conteudo():

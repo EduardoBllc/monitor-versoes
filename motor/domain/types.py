@@ -112,3 +112,10 @@ class VersionStatus:
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)
     suspeitos_conteudo: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes com match de mensagem+arquivos no alvo (provavel cherry-pick manual com conteudo divergente) - so alerta, nao conta como presente
     tasks_sem_commits: list[str] = field(default_factory=list)  # tarefa no Tickio sem nenhum commit achado e nao reconhecida em sem_entrega
+    # Preenchidos so no snapshot de versao liberada (spec §4): sem eles a saida
+    # e byte-a-byte igual a de uma versao verde em construcao — nada de data,
+    # nada de chamados — e um snapshot vazio imprime "verde: True" porque
+    # all([]) e True. O operador nao conseguia distinguir "fez o trabalho" de
+    # "recusou-se a recalcular".
+    liberada_em: datetime.datetime | None = None
+    chamados: list[str] = field(default_factory=list)  # chamados do snapshot congelado

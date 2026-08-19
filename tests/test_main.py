@@ -16,10 +16,17 @@ from dataclasses import dataclass
 import pytest
 
 import motor.__main__ as cli
-from motor.__main__ import _build_parser, _resolver_repo, imprimir_status, main
+from motor.__main__ import (
+    _build_parser,
+    _resolver_repo,
+    imprimir_atualizacao,
+    imprimir_status,
+    main,
+)
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo, VersionStatus
+from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 
@@ -86,6 +93,54 @@ def test_imprimir_status_aponta_sem_entrega_no_banco(capsys):
     saida = capsys.readouterr().out
     assert "sem_entrega" in saida
     assert "lock" not in saida  # sem_entrega vive no banco, nao num lock
+
+
+def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
+    """Spec §4: "se W liberada: imprime snapshot do banco e sai". Sem cabecalho
+    e sem chamados a saida sai byte-a-byte igual a de uma versao verde em
+    construcao — e um snapshot vazio ainda diria "verde: True", porque all([])
+    e True. Esta e a unica superficie de leitura do que so o banco registra.
+    """
+    imprimir_status(VersionStatus(
+        verde=True,
+        estado_integro=True,
+        liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
+        chamados=["255514", "256308"],
+    ))
+
+    saida = capsys.readouterr().out
+    assert "liberada em 2026-08-07 14:22" in saida
+    assert "snapshot congelado, nao recalculado" in saida
+    assert "255514, 256308" in saida
+    # nao imprime secao que nao foi recalculada: seria mentira dizer "faltantes"
+    assert "faltantes" not in saida
+
+
+def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
+    """O lote e empurrado mesmo sem verde (todo commit sai de status.faltantes
+    depois de filtrar_excluidos, e travar em tasks_sem_commits emperraria o
+    fluxo toda vez que um chamado nao tem codigo), mas tasks_ambiguas,
+    tasks_sem_commits e commits_sumidos eram calculados e descartados: o run
+    imprimia "concluido" e nada mais. commits_sumidos e o pior — historico
+    reescrito debaixo de um commit ja aplicado, e o verificar ja sobrescreveu a
+    linha de estado que guardava a evidencia.
+    """
+    imprimir_atualizacao(AtualizarResult(
+        status=AtualizarStatus.DONE,
+        status_versao=VersionStatus(
+            estado_integro=False,
+            tasks_ambiguas=["123456"],
+            tasks_sem_commits=["999111"],
+            commits_sumidos=["deadbeefcafe"],
+        ),
+    ))
+
+    saida = capsys.readouterr().out
+    assert "123456" in saida and "mais de uma versao" in saida
+    assert "999111" in saida and "sem_entrega" in saida
+    assert "deadbeef" in saida and "commits sumidos" in saida
+    # o push aconteceu: o defeito nunca foi o push, era o operador nao saber
+    assert "concluido" in saida
 
 
 # -- main() ponta a ponta -----------------------------------------------------
@@ -262,10 +317,30 @@ def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
     assert "Traceback" in caplog.text
 
 
+def test_main_nao_repovoa_variavel_que_o_teste_apagou(bordas, tmp_path, monkeypatch,
+                                                      caplog):
+    """Pina a guarda estrutural do "sem rede" (fixture _sem_dotenv_dentro_do_main
+    no conftest): sem ela, o load_dotenv() de dentro do main() traz de volta do
+    .env de verdade toda variavel que o teste apagou — foi assim que um teste de
+    credencial ausente saiu para o host real do Tickio na Task 12.
+
+    Apaga TICKIO_USER (vazia no .env) de proposito: se a guarda cair, este teste
+    falha na ultima assercao sem tentar rede nenhuma.
+    """
+    monkeypatch.delenv("TICKIO_USER", raising=False)
+
+    with pytest.raises(SystemExit) as saida:
+        main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    assert saida.value.code == 1
+    assert "faltando no .env: TICKIO_USER" in caplog.text
+    assert "TICKIO_USER" not in os.environ, "load_dotenv() rodou dentro do main()"
+
+
 def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(bordas, tmp_path, monkeypatch,
                                                        caplog):
-    # vazio, nao removido: main() chama load_dotenv(), que repovoaria a variavel
-    # a partir do .env do worktree — e o teste sairia para a rede.
+    # vazio e nao delenv: a variavel ausente e o outro teste; aqui o que importa
+    # e a mensagem nomear a variavel.
     monkeypatch.setenv("TICKIO_BASE_URL", "")
 
     with pytest.raises(SystemExit) as saida:
@@ -289,7 +364,8 @@ def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
     TICKIO_PASSWORD (vazios no .env.example) travaria justamente o comando que
     se usa quando algo ja esta quebrado.
     """
-    # "" e nao delenv: main() chama load_dotenv(), que repovoaria do .env.
+    # "" e nao delenv: o que se testa aqui e credencial vazia, o caso do
+    # .env.example — nao a variavel ausente.
     for var in ("TICKIO_USER", "TICKIO_PASSWORD"):
         monkeypatch.setenv(var, "")
 

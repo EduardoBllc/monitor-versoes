@@ -8,6 +8,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+@pytest.fixture(autouse=True)
+def _sem_dotenv_dentro_do_main(monkeypatch):
+    """Guarda estrutural do "sem rede": desliga o load_dotenv() do main().
+
+    Sem ela, `main()` repovoa o ambiente a cada invocacao e toda variavel que um
+    teste apagou com `monkeypatch.delenv` volta do .env de verdade — foi assim
+    que um teste de credencial ausente saiu para o host real do Tickio na Task
+    12. A disciplina de autor (usar `setenv("")` em vez de `delenv`) nao e
+    guarda: ela vale ate o proximo teste escrito sem lembrar dela.
+
+    Nao muda nada de fato: o `load_dotenv()` de nivel de modulo acima ja povoou
+    o ambiente no momento da coleta.
+    """
+    import motor.__main__ as cli
+
+    monkeypatch.setattr(cli, "load_dotenv", None)
+
+
 @pytest.fixture
 def sessao_postgres():
     """Sessao contra o Postgres real. Pula quando o banco nao esta configurado

@@ -90,6 +90,12 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
     # devolve o snapshot congelado, nao recalcula
     assert status.verde is True
     assert status.tasks_novas == []
+    # e o snapshot carrega o que so o banco registra (spec §4): sem a data e os
+    # chamados a saida sai byte-a-byte igual a de uma versao verde em
+    # construcao, e um snapshot vazio imprime "verde: True" porque all([]) e
+    # True — o operador nao distingue "fez o trabalho" de "nao recalculou".
+    assert status.liberada_em == estado.versao("r", "13.34.0").liberada_em
+    assert status.chamados == ["123456"]
 
 
 def test_verificar_nao_grava_em_versao_liberada():
