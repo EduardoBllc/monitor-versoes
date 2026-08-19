@@ -634,3 +634,86 @@ e — como todo efeito passa por porta — o domínio é testável com
   versão já liberada) do que o custo de mais uma chamada de rede.
 - **Sem trigger na tabela `versao`** — limitação conhecida, não abstração deliberada por
   simplicidade; ver §6.
+
+## 15. Onde o código divergiu da spec, e o que ficou em aberto
+
+Duas listas que existem para o próximo leitor não gastar tempo achando que encontrou
+um bug. A primeira é código que **contradiz de propósito** a spec do redesenho
+(`docs/superpowers/specs/2026-08-07-redesenho-tickio-design.md`); a segunda é
+dívida conhecida.
+
+### Divergências deliberadas — o código está certo, a spec é que precisa de emenda
+
+As que já estão explicadas na seção que as governa não repetem aqui: trigger
+checando `old` **e** `new` (§6), ausência de trigger em `versao` (§6), pré-checagem
+de `liberada_em` no adapter em vez de confiar só na trigger (§6), `fetch` antes de
+toda leitura de ref (§5), recusa de `atualizar` em versão com tag inclusive via
+`--continue` (§5), credencial em vez de token (§10), validação das `TICKIO_*` na
+primeira busca e não na construção (§10). As que faltavam:
+
+- **`EstadoRepo` tem oito métodos, não os cinco da spec §4**, e o
+  `sincronizar_versoes` de lá virou `registrar_versao` + `marcar_liberadas` +
+  `versao` + `resolver_repo`. A assinatura única obrigaria a resolver `base` de toda
+  versão aberta a cada comando; só a versão operada precisa, e ela é resolvida uma
+  vez, na primeira gravação. A própria spec §4 também exige que o *engine*, não o
+  adapter, calcule as datas de liberação a partir da tag — o que não cabe num
+  método só.
+- **`compose.yml` monta o volume em `/var/lib/postgresql`, não em
+  `/var/lib/postgresql/data` como a spec §5 escreve.** No `postgres:18-alpine` o
+  `PGDATA` é `/var/lib/postgresql/18/docker`; seguir a spec ao pé da letra montaria
+  um diretório vazio irmão do PGDATA e **perderia os dados na recriação do
+  volume**. Aqui a spec está simplesmente errada.
+- **`resolve_ref` descasca a tag com `^{commit}`.** As tags de release deste repo
+  são **anotadas**, então `rev-parse refs/tags/X` devolve o SHA do *objeto de tag*,
+  não do commit. Sem descascar, `versao.base_commit` — coluna de auditoria — guarda
+  algo que não é commit, `git show <base_commit>` mostra uma tag, e qualquer join
+  contra `atribuicao_commit.hash_origem` não casa. `X^{commit}` é no-op quando `X`
+  já é commit, então vale igual para branch, tag leve e hash cru.
+- **Atribuição `pendente` não conta como commit sumido** (§9). Só atribuição já
+  `aplicado` pode ter commit que desapareceu. Confundir "ainda não aplicado" com
+  "foi aplicado e sumiu" fazia toda versão nova imprimir `estado: divergente do
+  git` entre o `verificar` e o `atualizar` — veredito certo, diagnóstico errado.
+
+### Dívida conhecida
+
+Em ordem de risco, não de esforço. As duas primeiras ficam sobre a resolução de
+base, que é a computação mais load-bearing da ferramenta: `versao.base_commit` é
+resolvido **uma vez**, na primeira gravação, e todo julgamento de presença posterior
+é feito contra ele. Base errada envenena o oráculo pela vida inteira da versão.
+
+1. **A precedência dos candidatos do `BaseResolver` não tem teste.** A lista é
+   `[<ref local>, refs/remotes/origin/<ref>]` quando não há tag — local primeiro,
+   deliberadamente. Inverter passa a suíte inteira. E `git fetch` não fast-forwarda
+   head local, então local e ref de rastreamento **rotineiramente discordam** para
+   uma versão-base, e as duas ordens gravam SHAs diferentes de forma permanente.
+2. **O scanner e o resolvedor discordam sobre o remote.** `list_version_branches`
+   aceita qualquer remote (`refs/remotes/<qualquer>/`); o `BaseResolver` só cai para
+   `origin`. Com um segundo remote configurado, uma base visível só nele é
+   *selecionada* pelo `inferir_base` e depois falha a resolver — erro limpo, mas
+   desconcertante. Consertar escaneando `refs/remotes/origin/` alinha os dois e
+   encolhe a superfície de ref velha ao mesmo tempo.
+3. **O `status_versao` do retorno `BLOCKED` do `atualizar` não tem teste.** Apagar a
+   linha passa a suíte. É justamente o caminho onde o operador mais precisa das
+   seções vermelhas: o run parou no meio.
+4. **O pin do guard de rede depende do `.env`.** A guarda em si
+   (`tests/conftest.py`, `_sem_dotenv_dentro_do_main`) é real; o teste dela só
+   discrimina numa máquina que tenha `.env`. Em clone novo ou CI, apagar a guarda é
+   invisível.
+5. **`sessao_postgres` dá `TRUNCATE` só no setup, nunca no teardown.** Toda rodada
+   de integração deixa as linhas do último teste, então "o banco está com zero
+   linhas" só é verdade porque alguém truncou à mão. Já custou uma investigação.
+6. **`InterfaceError` cai no ramo genérico** `erro do banco: …` em vez do
+   `banco inacessivel … docker compose up -d`. A tradução acontece (não vaza
+   traceback), só escolhe a mensagem menos útil.
+
+Menores, sem risco de dado: o `OperationalError` do adapter é mais largo que a
+mensagem dele (deadlock e statement timeout também imprimem "banco inacessivel"); o
+`"imutavel" in str(e.orig)` acopla o adapter a uma string que vive em dois arquivos
+de migração, sem referência cruzada; `uq_versao_repo_id` nomeia por uma coluna uma
+constraint de duas; `tipo` e `estado` são texto livre, com os valores legais só em
+comentário, num schema cuja razão de existir é ser consultado via `psql`; o
+`httpx.Client()` criado quando `client=None` nunca é fechado; a conversão
+`timestamp ↔ timestamptz` das migrações depende do `TimeZone` da sessão de quem
+roda; e o adapter git usa `%aI` (data do autor) onde a data de liberação
+discutivelmente quer `%cI` — não trocar globalmente, porque o `ordenar_por_data`
+quer a do autor.

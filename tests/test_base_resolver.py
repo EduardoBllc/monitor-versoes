@@ -30,3 +30,27 @@ def test_base_resolver_usa_a_ref_de_rastreamento_quando_nao_ha_head_local():
     base = BaseResolver(git=g).resolve("13.7.0")
 
     assert (base.ref, base.commit) == ("13.6.0", "hash136")
+
+
+def test_base_resolver_prefere_o_head_local_a_ref_de_rastreamento():
+    """A ordem dos candidatos e load-bearing e permanente.
+
+    `git fetch` nao fast-forwarda head local, entao local e ref de rastreamento
+    ROTINEIRAMENTE discordam para uma versao-base. A base resolvida aqui e
+    gravada uma vez em `versao.base_commit` e todo julgamento de presenca
+    posterior e feito contra ela: inverter esta ordem grava outro SHA e envenena
+    o oraculo pela vida inteira da versao, sem nada ficar vermelho.
+    """
+    g = FakeGit(
+        branches={"13.6.0": "local136"},
+        remote_refs={"13.6.0": "remoto136"},
+    )
+    for h in ("local136", "remoto136"):
+        g.add_commit(h, "", f"base 13.6.0 em {h}", datetime.datetime.now(datetime.timezone.utc))
+
+    base = BaseResolver(git=g).resolve("13.7.0")
+
+    assert base.commit == "local136", (
+        f"base.commit = {base.commit!r}; o head local tem de vencer a ref de "
+        "rastreamento — ver a ordem de `candidatos` em base_resolver.py"
+    )
