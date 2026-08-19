@@ -18,7 +18,7 @@ Uma ferramenta com três operações sobre versões do VendaBem Web:
 
 1. **`criar`** — cria uma versão do zero a partir da base correta.
 2. **`verificar`** — diz se a versão está com **todos** os commits que deveria (read-only).
-3. **`atualizar`** — aplica os commits que faltam, lidando com conflitos.
+2. **`atualizar`** — aplica os commits que faltam, lidando com conflitos.
 
 (Existe uma quarta operação, `reconstruir-estado` — de **recuperação**, não do fluxo
 principal; regenera o estado (Postgres) a partir do git quando ele é apagado ou corrompido.
@@ -168,9 +168,15 @@ invisível e o run sobrescreveria o snapshot de uma versão que já saiu. As qua
 O fetch resolve os dois casos, mas por caminhos diferentes: **tag** chega como
 `refs/tags/X` (tag-following), então `tag_exists` a vê; **branch** chega como
 `refs/remotes/origin/X` e o fetch **nunca** cria head local, então `list_version_branches`
-lista `refs/heads/` ∪ `refs/tags/` ∪ `refs/remotes/` — só com `refs/heads/` uma versão
-aberta em outra máquina continuaria invisível depois do fetch, `versoes_abertas` seria uma
-visão local do conjunto aberto e `fontes_de_alvo` omitiria essa versão em silêncio (§2).
+lista `refs/heads/` ∪ `refs/tags/` ∪ `refs/remotes/origin/` — só com `refs/heads/` uma
+versão aberta em outra máquina continuaria invisível depois do fetch, `versoes_abertas` seria
+uma visão local do conjunto aberto e `fontes_de_alvo` omitiria essa versão em silêncio (§2).
+
+`origin` e não qualquer remoto, de propósito: é o único que o motor usa (todo entry point faz
+`fetch("origin")`, e `push`/`pull`/`remote_branch_exists` passam o literal), e é o único que o
+`BaseResolver` tenta. Aceitar qualquer remoto punha no conjunto aberto uma versão que a
+resolução de base depois não resolve — versão fantasma no alvo e erro desconcertante na base.
+
 Custo aceito: um `refs/remotes/origin/X` velho, de branch apagada e nunca liberada, lê como
 aberta até alguém rodar `git fetch --prune`.
 
@@ -328,7 +334,7 @@ X.Y.Z (Z>0)  → X.Y.(Z-1) se existir, senão X.Y.0    (específica de cliente)
 2. **Nunca auto-resolve** heurísticamente — em conflito novo, para e entrega o controle.
 3. **Checkpoint resumível** — a worktree fica no estado do conflito; `--continue` retoma,
    `--abort` restaura.
-4. **Worktree isolada** — sua árvore de trabalho principal nunca é tocada.
+3. **Worktree isolada** — sua árvore de trabalho principal nunca é tocada.
 
 ## 9. Reconciliação quando as 3 fontes divergem
 
@@ -676,8 +682,8 @@ primeira busca e não na construção (§10). As que faltavam:
 
 ### Dívida conhecida
 
-Em ordem de risco, não de esforço. As duas primeiras ficam sobre a resolução de
-base, que é a computação mais load-bearing da ferramenta: `versao.base_commit` é
+Em ordem de risco, não de esforço. A primeira fica sobre a resolução de base, que
+é a computação mais load-bearing da ferramenta: `versao.base_commit` é
 resolvido **uma vez**, na primeira gravação, e todo julgamento de presença posterior
 é feito contra ele. Base errada envenena o oráculo pela vida inteira da versão.
 
@@ -686,23 +692,17 @@ resolvido **uma vez**, na primeira gravação, e todo julgamento de presença po
    deliberadamente. Inverter passa a suíte inteira. E `git fetch` não fast-forwarda
    head local, então local e ref de rastreamento **rotineiramente discordam** para
    uma versão-base, e as duas ordens gravam SHAs diferentes de forma permanente.
-2. **O scanner e o resolvedor discordam sobre o remote.** `list_version_branches`
-   aceita qualquer remote (`refs/remotes/<qualquer>/`); o `BaseResolver` só cai para
-   `origin`. Com um segundo remote configurado, uma base visível só nele é
-   *selecionada* pelo `inferir_base` e depois falha a resolver — erro limpo, mas
-   desconcertante. Consertar escaneando `refs/remotes/origin/` alinha os dois e
-   encolhe a superfície de ref velha ao mesmo tempo.
-3. **O `status_versao` do retorno `BLOCKED` do `atualizar` não tem teste.** Apagar a
+2. **O `status_versao` do retorno `BLOCKED` do `atualizar` não tem teste.** Apagar a
    linha passa a suíte. É justamente o caminho onde o operador mais precisa das
    seções vermelhas: o run parou no meio.
-4. **O pin do guard de rede depende do `.env`.** A guarda em si
+3. **O pin do guard de rede depende do `.env`.** A guarda em si
    (`tests/conftest.py`, `_sem_dotenv_dentro_do_main`) é real; o teste dela só
    discrimina numa máquina que tenha `.env`. Em clone novo ou CI, apagar a guarda é
    invisível.
-5. **`sessao_postgres` dá `TRUNCATE` só no setup, nunca no teardown.** Toda rodada
+4. **`sessao_postgres` dá `TRUNCATE` só no setup, nunca no teardown.** Toda rodada
    de integração deixa as linhas do último teste, então "o banco está com zero
    linhas" só é verdade porque alguém truncou à mão. Já custou uma investigação.
-6. **`InterfaceError` cai no ramo genérico** `erro do banco: …` em vez do
+5. **`InterfaceError` cai no ramo genérico** `erro do banco: …` em vez do
    `banco inacessivel … docker compose up -d`. A tradução acontece (não vaza
    traceback), só escolhe a mensagem menos útil.
 

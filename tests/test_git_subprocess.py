@@ -381,3 +381,50 @@ def test_git_subprocess_cherry_pick_x_rerere_auto_resolvido(tmp_path):
     assert pendente, "esperava cherry-pick pendente apos rerere auto-resolver"
 
     g.continue_cherry_pick()
+
+
+def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_path):
+    """A varredura e o BaseResolver tem de concordar sobre QUAL remoto conta.
+
+    A varredura le refs/remotes/origin/ e o BaseResolver so tenta
+    refs/remotes/origin/<ref>. Se a varredura aceitasse qualquer remoto, uma
+    versao visivel so num segundo remoto (upstream, fork, espelho) entraria no
+    conjunto aberto, o `inferir_base` a escolheria como base e ela falharia a
+    resolver — erro limpo, mas desconcertante, e uma versao fantasma no alvo.
+    """
+    def _repo_com_branch(caminho, branch=None):
+        caminho.mkdir()
+        _run_git(str(caminho), "init", "-b", "master")
+        _config_identidade_local(str(caminho))
+        (caminho / "arquivo.txt").write_text("v1\n")
+        _run_git(str(caminho), "add", "arquivo.txt")
+        _run_git(str(caminho), "commit", "-m", "base")
+        if branch:
+            _run_git(str(caminho), "branch", branch)
+
+    _repo_com_branch(tmp_path / "origem", "13.35.0")
+    _repo_com_branch(tmp_path / "outro", "13.99.0")
+
+    clone = tmp_path / "clone"
+    _repo_com_branch(clone)
+    _run_git(str(clone), "remote", "add", "origin", str(tmp_path / "origem"))
+    _run_git(str(clone), "remote", "add", "upstream", str(tmp_path / "outro"))
+
+    g = new_git_subprocess(str(clone))
+    g.fetch("origin")
+    _run_git(str(clone), "fetch", "upstream")
+
+    refs = subprocess.run(
+        ["git", "for-each-ref", "--format=%(refname)"],
+        cwd=str(clone),
+        capture_output=True,
+        text=True,
+    ).stdout
+    # premissa: as duas refs existem, so em remotos diferentes
+    assert "refs/remotes/origin/13.35.0" in refs, f"refs: {refs!r}"
+    assert "refs/remotes/upstream/13.99.0" in refs, f"refs: {refs!r}"
+
+    assert g.list_version_branches() == ["13.35.0"], (
+        f"list_version_branches() = {g.list_version_branches()!r}; 13.99.0 vive so "
+        "em refs/remotes/upstream/ e o BaseResolver nunca a resolveria"
+    )

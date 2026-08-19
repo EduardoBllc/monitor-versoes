@@ -17,7 +17,7 @@ from motor.ports import CherryPickOutcome, MergePrediction
 
 _PADRAO_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 # refs/remotes/<remoto>/<nome> — igual ao adapter real, o remoto e arbitrario.
-_PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/[^/]+/")
+_PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 
 
 @dataclass

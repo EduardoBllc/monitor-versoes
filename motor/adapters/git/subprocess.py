@@ -37,8 +37,11 @@ def _cronometrar(*args: str):
 
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
 _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
-# refs/remotes/<remoto>/<nome> — o nome do remoto e arbitrario, nao so "origin".
-_PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/[^/]+/")
+# So refs/remotes/origin/: e o unico remoto que o motor usa (todo entry point
+# faz fetch("origin"), e push/pull/remote_branch_exists passam o literal).
+# Aceitar qualquer remoto aqui punha no conjunto aberto uma versao que o
+# BaseResolver depois nao resolve — ele so tenta refs/remotes/origin/.
+_PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 _PADRAO_VERSAO_GIT = re.compile(r"git version (\d+)\.(\d+)")
 
 
@@ -347,7 +350,7 @@ class GitSubprocess:
         # refs/tags/X e o git devolve "heads/X"/"tags/X" em vez de "X", o que
         # faz a versao sumir do padrao \d+\.\d+\.\d+. Inclui refs/tags/ pra
         # tambem enxergar versoes fechadas cuja branch ja foi apagada, e
-        # refs/remotes/ pelo mesmo motivo do outro lado da ausencia: `git
+        # refs/remotes/origin/ pelo mesmo motivo do outro lado da ausencia: `git
         # fetch origin` cria refs/remotes/origin/X e NENHUM head local, entao
         # uma versao aberta e empurrada de outra maquina so aparece por ai —
         # sem isso `versoes_abertas` seria uma visao local do conjunto aberto e
@@ -361,7 +364,7 @@ class GitSubprocess:
             "--format=%(refname)",
             "refs/heads/",
             "refs/tags/",
-            "refs/remotes/",
+            "refs/remotes/origin/",
         )
         if out == "":
             return []
