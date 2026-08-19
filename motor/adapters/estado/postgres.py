@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from sqlalchemy import delete, select
-from sqlalchemy.exc import DatabaseError, OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
 from motor.adapters.estado import models
@@ -167,7 +167,7 @@ class PostgresEstado:
                         )
                     )
             self.sessao.commit()
-        except DatabaseError as e:
+        except DBAPIError as e:
             self._traduzir_erro(e)
 
     def exclusoes(self, repo: str) -> list[Exclusion]:
@@ -217,13 +217,13 @@ class PostgresEstado:
         um OperationalError crua antes de chegar perto de um commit."""
         try:
             return self.sessao.scalar(stmt)
-        except DatabaseError as e:
+        except DBAPIError as e:
             self._traduzir_erro(e)
 
     def _scalars(self, stmt):
         try:
             return self.sessao.scalars(stmt)
-        except DatabaseError as e:
+        except DBAPIError as e:
             self._traduzir_erro(e)
 
     def _versao_id(self, repo: str, numero: str) -> int | None:
@@ -233,15 +233,21 @@ class PostgresEstado:
     def _commit(self) -> None:
         """Traduz erro do banco em MotorError.
 
-        A trigger de congelamento chega aqui como DatabaseError; deixa-la subir
+        A trigger de congelamento chega aqui como DBAPIError; deixa-la subir
         crua imprimiria traceback de psycopg em vez de mensagem util.
+
+        DBAPIError e nao DatabaseError: InterfaceError (conexao que morreu no
+        meio do comando) e irmao de DatabaseError, nao filho — com o catch mais
+        estreito ele escapava como "Erro interno fatal (bug)" com traceback de
+        psycopg, que e justamente a confusao operador-vs-bug que o motor
+        promete nao fazer.
         """
         try:
             self.sessao.commit()
-        except DatabaseError as e:
+        except DBAPIError as e:
             self._traduzir_erro(e)
 
-    def _traduzir_erro(self, e: DatabaseError) -> NoReturn:
+    def _traduzir_erro(self, e: DBAPIError) -> NoReturn:
         self.sessao.rollback()
         if isinstance(e, OperationalError):
             raise MotorError(
