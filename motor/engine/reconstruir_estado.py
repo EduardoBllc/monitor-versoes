@@ -5,10 +5,16 @@ PENDING_JUDGMENT e valor de retorno, quem pergunta ao humano e o front-end.
 Nao recupera exclusoes nem sem_entrega — julgamento humano so vive no banco.
 
 Numa versao ja congelada (liberada_em preenchida) a trigger recusa a escrita.
-Recuperar o snapshot de uma versao liberada exige apagar a linha primeiro:
-  delete from versao where repo_id = ... and numero = '13.34.0';
+Recuperar o snapshot de uma versao liberada exige levantar o congelamento:
+  update versao set liberada_em = null where repo_id = ... and numero = '13.34.0';
 Depois rode reconstruir-estado e so entao verificar, que reobserva a tag e
 congela de novo. A ordem importa: verificar antes congelaria o estado vazio.
+
+Nao e `delete from versao`: a FK fk_atribuicao_versao_id_versao nao tem
+ondelete, entao o delete e recusado exatamente quando a versao tem atribuicao
+— o caso em que se quer reconstruir — e apagar os filhos primeiro bate na
+trigger de congelamento. Zerar liberada_em tambem preserva a base gravada, e o
+reconstruir_estado abaixo pula a re-resolucao dela.
 """
 
 from __future__ import annotations
@@ -38,10 +44,12 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
     # Antes de ler qualquer ref, nao depois: a base de uma versao nunca
     # registrada sai do ref store local (list_version_branches, tag_exists em
     # BaseResolver) e o commits_in_range abaixo le o tip local da branch alvo.
-    # Sem buscar primeiro, uma base recem-cortada em outra maquina nao
-    # apareceria - e como registrar_versao so grava na primeira chamada, a
-    # base errada ficaria definitiva - ou a varredura ignoraria cherry-picks
-    # ja empurrados para a branch por outra maquina.
+    # Sem buscar primeiro, uma base recem-cortada em outra maquina nao teria
+    # nem ref de rastreamento aqui (o fetch e o unico ponto que cria
+    # refs/remotes/origin/X; head local o fetch nunca cria) - e como
+    # registrar_versao so grava na primeira chamada, a base errada ficaria
+    # definitiva - ou a varredura ignoraria cherry-picks ja empurrados para a
+    # branch por outra maquina.
     deps.git.fetch("origin")
 
     info = deps.estado.versao(deps.repo, versao)

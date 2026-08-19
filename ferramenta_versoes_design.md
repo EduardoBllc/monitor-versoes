@@ -99,7 +99,17 @@ forem perdidas, o comando `reconstruir-estado` (era `reconstruir-lock`) regenera
 | `exclusao`, `sem_entrega`      | **não recuperáveis** — julgamento humano, só existe no banco. `reconstruir-estado` retorna `PENDING_JUDGMENT{orfaos}` para commit sem `ch<num>` na mensagem (mesmo padrão de `Blocked` do `atualizar`, §14); quem pergunta ao humano é o front-end, não o motor |
 
 Numa versão já liberada a trigger de congelamento (§6) recusa a escrita — recuperar o
-snapshot dela exige apagar a linha em `versao` antes de rodar `reconstruir-estado`.
+snapshot dela exige levantar o congelamento antes de rodar `reconstruir-estado`:
+
+```sql
+update versao set liberada_em = null where repo_id = … and numero = '13.34.0';
+```
+
+**Não é `delete from versao`:** a FK `fk_atribuicao_versao_id_versao` foi declarada sem
+`ondelete`, então o `delete` é recusado justamente quando a versão tem linhas em
+`atribuicao` — o caso em que se quer reconstruir — e apagar os filhos primeiro bate na
+trigger de congelamento. Zerar `liberada_em` também preserva a base já gravada, e
+`reconstruir-estado` pula a re-resolução dela.
 
 `motor/services/lock_store.py` e o tipo `Lock` do domínio não existem mais — a leitura e a
 escrita do estado passam direto pela porta `EstadoRepo` (§14).
@@ -154,6 +164,15 @@ Núcleo compartilhado: `alvo()` (§4) + `presente()` (§2) + `worktree isolada` 
 o ref store **local**; sem buscar primeiro, uma versão liberada em outra máquina fica
 invisível e o run sobrescreveria o snapshot de uma versão que já saiu. As quatro operações
 (`verificar`, `atualizar`, `criar`, `reconstruir-estado`) fazem esse fetch como primeiro passo.
+
+O fetch resolve os dois casos, mas por caminhos diferentes: **tag** chega como
+`refs/tags/X` (tag-following), então `tag_exists` a vê; **branch** chega como
+`refs/remotes/origin/X` e o fetch **nunca** cria head local, então `list_version_branches`
+lista `refs/heads/` ∪ `refs/tags/` ∪ `refs/remotes/` — só com `refs/heads/` uma versão
+aberta em outra máquina continuaria invisível depois do fetch, `versoes_abertas` seria uma
+visão local do conjunto aberto e `fontes_de_alvo` omitiria essa versão em silêncio (§2).
+Custo aceito: um `refs/remotes/origin/X` velho, de branch apagada e nunca liberada, lê como
+aberta até alguém rodar `git fetch --prune`.
 
 ### `verificar X.Y.Z` (read-only)
 
@@ -284,8 +303,9 @@ recusa que garante o invariante é a do adapter.
 **Não existe trigger na tabela `versao` em si — limitação conhecida, não um buraco.**
 `UPDATE versao SET liberada_em = NULL` levanta o congelamento e os triggers filhos ficam
 inertes. Isso foi deixado assim de propósito: zerar uma coluna chamada `liberada_em` não é
-acidente, é a via de escape para o operador que sabe o que está fazendo (ex.: apagar a linha
-para rodar `reconstruir-estado` de novo sobre uma versão liberada, §3); e uma trigger em
+acidente, é a via de escape para o operador que sabe o que está fazendo (ex.: zerar
+`liberada_em` para rodar `reconstruir-estado` de novo sobre uma versão liberada, §3 — e é a
+via, não uma entre duas: `delete from versao` é recusado pela FK de `atribuicao`); e uma trigger em
 `versao` correria o risco de travar o próprio upsert que `registrar_versao` faz. Quem lê esta
 seção deve saber que o invariante de imutabilidade é forte um degrau apenas: as tabelas
 `atribuicao`/`atribuicao_commit` são protegidas, a tabela `versao` que as trava não é.
