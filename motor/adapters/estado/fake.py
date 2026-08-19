@@ -33,6 +33,7 @@ class FakeEstado:
         # Idempotente e nao-destrutivo: base e liberada_em so entram na
         # primeira gravacao. A base e o ponto onde a branch foi cortada, nao
         # algo a recomputar.
+        self._exigir_repo(repo)
         if (repo, info.numero) in self.versoes:
             return
         self.versoes[(repo, info.numero)] = info
@@ -40,6 +41,7 @@ class FakeEstado:
     def marcar_liberadas(
         self, repo: str, liberadas: dict[str, datetime.datetime]
     ) -> None:
+        self._exigir_repo(repo)
         for numero, quando in liberadas.items():
             atual = self.versoes.get((repo, numero))
             if atual is None or atual.liberada_em is not None:
@@ -53,12 +55,31 @@ class FakeEstado:
             )
 
     def versao(self, repo: str, numero: str) -> VersaoInfo | None:
+        self._exigir_repo(repo)
         return self.versoes.get((repo, numero))
 
     def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]:
-        # Ordenado por chamado: o adapter real usa ORDER BY, o dict aqui
-        # devolveria ordem de insercao por acidente se nao normalizasse.
-        return sorted(self._atribuicoes.get((repo, versao), []), key=lambda a: a.chamado)
+        self._exigir_repo(repo)
+        # Ordenado por chamado e por hash dentro de cada chamado: o adapter real
+        # usa ORDER BY nas duas dimensoes. O dict aqui devolveria ordem de
+        # insercao por acidente se nao normalizasse.
+        #
+        # Reconstroi cada Atribuicao em vez de devolver a armazenada: `commits`
+        # e list mutavel dentro de uma dataclass frozen, entao devolver a
+        # instancia guardada compartilharia a lista por referencia e o chamador
+        # poderia corromper o estado do fake. O Postgres materializa linha nova
+        # a cada query e nunca tem esse problema.
+        return [
+            Atribuicao(
+                chamado=a.chamado,
+                marcada=a.marcada,
+                estado=a.estado,
+                commits=sorted(a.commits),
+            )
+            for a in sorted(
+                self._atribuicoes.get((repo, versao), []), key=lambda a: a.chamado
+            )
+        ]
 
     def substituir_atribuicoes(
         self, repo: str, versao: str, novas: list[Atribuicao]
@@ -68,13 +89,29 @@ class FakeEstado:
         # existe em producao.
         atual = self.versao(repo, versao)
         if atual is None:
-            raise MotorError(f"versao {versao} nao registrada")
+            raise MotorError(f"versao {versao} nao registrada no estado")
         if atual.liberada_em is not None:
             raise MotorError(f"versao {versao} liberada e imutavel")
         self._atribuicoes[(repo, versao)] = list(novas)
 
     def exclusoes(self, repo: str) -> list[Exclusion]:
+        self._exigir_repo(repo)
         return list(self._exclusoes.get(repo, []))
 
     def sem_entrega(self, repo: str) -> dict[str, str]:
+        self._exigir_repo(repo)
         return dict(self._sem_entrega.get(repo, {}))
+
+    # -- internos --------------------------------------------------------
+
+    def _exigir_repo(self, repo: str) -> None:
+        """Recusa repo desconhecido, como o PostgresEstado._repo_id faz.
+
+        Sem isto o fake era mais permissivo que o banco: devolvia None/[]/{} ou
+        gravava versao pendurada num repo inexistente, onde o adapter real
+        levanta. Fake mais leniente que o real e o modo de falha que este
+        projeto pagou tres vezes — a suite fica verde num caminho que quebra em
+        producao. Toma o nome canonico, nao alias: o `resolver_repo` ja traduziu.
+        """
+        if repo not in self.repos:
+            raise MotorError(f"repo '{repo}' nao encontrado no estado")
