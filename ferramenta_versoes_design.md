@@ -191,7 +191,8 @@ Reporta os arquivos que conflitariam **antes** de aplicar.
 
 ```
 fetch origin; recusa se X.Y.Z tem tag (liberada, §6)  # antes de tocar branch ou worktree
-faltam ordenados por commit-date asc, agrupados por task
+faltam ordenados por commit-date asc (sem agrupar por task — commits de tasks diferentes
+intercalam se suas datas intercalarem)
 para cada commit em faltam:
   git cherry-pick -x <commit>
   se conflito:
@@ -419,9 +420,10 @@ prática os números tendem a coincidir); isso não muda com o redesenho.
 Nada é compartilhado entre repos exceto o **motor** e a **fonte Tickio** (o servidor — cada
 repo consulta seu próprio `sistema_id`):
 
-- O estado mora no Postgres, particionado por `repo_id` em toda tabela (`versao`,
-  `atribuicao`, `exclusao`, `sem_entrega`) — era por-branch no lock antigo, agora é por-linha
-  no banco.
+- O estado mora no Postgres, escopado por repo em toda tabela: `versao` e `exclusao`/
+  `sem_entrega` têm `repo_id` direto; `atribuicao`/`atribuicao_commit` chegam ao repo
+  transitivamente por `versao_id` (não têm `repo_id` próprio) — era por-branch no lock antigo,
+  agora é por-linha no banco.
 - `git rerere` (resoluções de conflito) é **por repo** (cada repo é um checkout distinto).
 - Worktrees isoladas são **por repo**.
 - **`repo.nome` é resolvido pelo basename do `--repo`**, com `repo_alias` cobrindo nomes
@@ -462,8 +464,9 @@ daemon. Contém tudo que é correção: resolução do alvo com distribuição e
 §4), oráculo `presente()` (§2), estado em Postgres (§3) + `reconstruir-estado`, as 3 operações
 (§5), predição `merge-tree` (§5), `rerere` e worktree isolada (§8), inferência de base (§7),
 travas de publicação e congelamento (§6). Suíte de testes cobre tudo isso sem git nem rede
-reais (`FakeGit`, `FakeEstado`, `FakeTaskSource`), com um único teste
-`@pytest.mark.integracao` isolado para a trigger de congelamento.
+reais (`FakeGit`, `FakeEstado`, `FakeTaskSource`); a suíte de integração em
+`tests/test_estado_postgres.py` (dez testes, `pytestmark = pytest.mark.integracao` no módulo
+inteiro) cobre o mesmo `EstadoRepo` contra Postgres real, incluindo a trigger de congelamento.
 
 **Etapa 2 — Daemon localhost, só visualização (read-only).** *Ainda não implementada.*
 Servidor em `127.0.0.1` que mostra o `verificar` de forma visual: cruzamento 3-vias
