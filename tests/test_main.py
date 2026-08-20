@@ -25,7 +25,7 @@ from motor.__main__ import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.domain.types import RepoInfo, VersaoInfo, VersionStatus, VersionType
+from motor.domain.types import Atribuicao, RepoInfo, VersaoInfo, VersionStatus, VersionType
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
@@ -66,10 +66,10 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
     assert ambientes == [arquivo]
 
 
-def test_help_descreve_as_duas_acoes_da_tui():
+def test_help_descreve_as_acoes_da_tui():
     ajuda = " ".join(_build_parser().format_help().split())
 
-    assert "verificacao e atualizacao" in ajuda
+    assert "consulta, verificacao e atualizacao" in ajuda
 
 
 @pytest.mark.parametrize(("argv", "arquivo"), [
@@ -364,6 +364,36 @@ def test_reconstruir_estado_ponta_a_ponta(bordas, tmp_path, capsys):
     saida = capsys.readouterr().out
     assert "status: PENDING_JUDGMENT, orfaos: 1" in saida
     assert "p1" in saida and "sem ch<num> na mensagem" in saida
+
+
+def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, capsys):
+    git, estado = bordas
+    git.add_commit("c0ffee123456", "a0", "Título " + "longo " * 30 + "\ncorpo oculto", D)
+    estado.registrar_versao(
+        "vendabemweb",
+        VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA),
+    )
+    estado.substituir_atribuicoes(
+        "vendabemweb",
+        "13.34.0",
+        [
+            Atribuicao(
+                chamado="123456",
+                marcada="13.34.0",
+                estado="aplicado",
+                commits=["c0ffee123456", "deadbeefcafe"],
+            )
+        ],
+    )
+
+    main(["consulta", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    saida = capsys.readouterr().out
+    assert "123456" in saida and "APLICADO" in saida
+    assert "c0ffee12" in saida and "…" in saida
+    assert "corpo oculto" not in saida
+    assert "deadbeef" in saida and "mensagem indisponível" in saida
+    assert git.fetched == []
 
 
 def test_criar_ponta_a_ponta(bordas, tmp_path, capsys):

@@ -14,13 +14,14 @@
 
 ## 1. Objetivo
 
-Uma ferramenta com três operações sobre versões do VendaBem Web:
+Uma ferramenta com quatro operações sobre versões do VendaBem Web:
 
 1. **`criar`** — cria uma versão do zero a partir da base correta.
-1. **`verificar`** — diz se a versão está com **todos** os commits que deveria (read-only).
-2. **`atualizar`** — aplica os commits que faltam, lidando com conflitos.
+2. **`consulta`** — mostra o snapshot salvo de chamados e commits sem recalcular.
+3. **`verificar`** — diz se a versão está com **todos** os commits que deveria (read-only).
+4. **`atualizar`** — aplica os commits que faltam, lidando com conflitos.
 
-(Existe uma quarta operação, `reconstruir-estado` — de **recuperação**, não do fluxo
+(Existe uma quinta operação, `reconstruir-estado` — de **recuperação**, não do fluxo
 principal; regenera o estado (Postgres) a partir do git quando ele é apagado ou corrompido.
 Ver §3, §14.)
 
@@ -30,7 +31,7 @@ Cada versão é uma **branch**; ao liberar, o HEAD recebe uma **tag** git homôn
 
 ## 2. O oráculo de presença: 3 fontes de verdade
 
-A pergunta central das três operações é _"o commit X já está nesta versão?"_. Como
+A pergunta central das operações de manutenção é _"o commit X já está nesta versão?"_. Como
 cherry-pick troca o hash, ela é respondida cruzando três fontes:
 
 | Fonte                  | Representa                                           | Onde vive                                 | Muda quando                                                                      |
@@ -494,7 +495,7 @@ o estado (§3, §14). Protocolos do `typing` mapeiam direto pras portas do §14 
 
 **Etapa 1 — Motor. Concluída.**
 Núcleo chamável (`motor/`) + um CLI fino (`uv run motor`). Contém tudo que é correção: resolução do alvo com distribuição entre versões (Tickio,
-§4), oráculo `presente()` (§2), estado em Postgres (§3) + `reconstruir-estado`, as 3 operações
+§4), oráculo `presente()` (§2), estado em Postgres (§3) + `reconstruir-estado`, as operações
 (§5), predição `merge-tree` (§5), `rerere` e worktree isolada (§8), inferência de base (§7),
 travas de publicação e congelamento (§6). Suíte de testes cobre tudo isso sem git nem rede
 reais (`FakeGit`, `FakeEstado`, `FakeTaskSource`); a suíte de integração em
@@ -507,6 +508,8 @@ o mesmo `compose.yml`, mas `COMPOSE_PROJECT_NAME`, porta, banco, usuário e volu
 Antes de qualquer `TRUNCATE`, a fixture recusa valores que não sejam exatamente os do banco
 de desenvolvimento.
 
+A leitura direta do snapshot é `uv run motor consulta 13.34.0 --repo vendabemweb`.
+
 Repos são cadastrados sem SQL direto:
 
 ```
@@ -514,9 +517,10 @@ uv run motor repo adicionar vendabemweb --tickio-sistema-id 7
 uv run motor --env production repo adicionar vendabemweb --tickio-sistema-id 7
 ```
 
-**Etapa 2 — TUI de `verificar` e `atualizar`. Concluída.**
+**Etapa 2 — TUI de `consulta`, `verificar` e `atualizar`. Concluída.**
 `uv run motor tui` abre o contexto **repo / versão** e mantém as ações **Verificar** e
-**Atualizar** visíveis. Atualizar só é habilitado depois que a verificação encontra commits
+**Atualizar** visíveis. Ao selecionar uma versão, a consulta mostra automaticamente o snapshot
+salvo, agrupado por chamado, sem recalcular nem auditar. Atualizar só é habilitado depois que a verificação encontra commits
 faltantes em uma versão aberta. A opção explícita **Auditar tag agora** aparece somente para
 versão liberada e pede o recálculo contra a tag, sem alterar o snapshot. Banco, rede e Git só
 são abertos pelos callbacks executados nos workers da interface. Em produção, a invocação é
@@ -538,7 +542,7 @@ catedral de interfaces.
                         │  chamam a API de Operações
       ┌─────────────────┴────────────────────────────┐
       │             OPERAÇÕES (use-cases)             │
-      │   criar · verificar · atualizar ·             │
+      │   criar · consulta · verificar · atualizar ·  │
       │   reconstruir_estado                          │
       ├────────────────────────────────────────────────┤
       │             SERVIÇOS DE NÚCLEO                 │
@@ -623,8 +627,11 @@ toca git, rede ou banco.
   em memória entre invocações do CLI.
 
 **Operações (API do motor, consumida pelos front-ends).** O CLI consome a API e expõe
-`criar` · `verificar` · `atualizar` · `reconstruir_estado`; a TUI atual consome
-`verificar` e `atualizar`.
+`criar` · `consulta` · `verificar` · `atualizar` · `reconstruir_estado`; a TUI atual consome
+`consulta`, `verificar` e `atualizar`.
+
+- `consulta` = lê as atribuições salvas e enriquece os hashes com o título do commit no Git
+  local; não faz fetch, não consulta o Tickio, não cria worktree e não escreve no estado.
 
 - `verificar` = fetch + congela tags novas + TargetResolver + PresenceOracle + reconciliação +
   `predict_merge` → `VersionStatus`; devolve o snapshot do banco sem recalcular se a versão já

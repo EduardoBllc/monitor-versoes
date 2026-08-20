@@ -13,8 +13,9 @@ from rich.table import Table
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Button, Checkbox, Footer, Header, Select, Static
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.widgets import Button, Checkbox, Footer, Header, OptionList, Select, Static
+from textual.widgets.option_list import Option
 
 from motor.__main__ import _abrir_sessao
 from motor.adapters.estado.postgres import PostgresEstado
@@ -24,6 +25,7 @@ from motor.__main__ import _agrupar_por_task
 from motor.domain.types import VersionStatus
 from motor.domain.version import chave
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
+from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
@@ -50,6 +52,7 @@ RepoLoader = Callable[[], list[RepoOption]]
 VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
+ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 
 
 class MotorTUI(App[None]):
@@ -66,8 +69,15 @@ class MotorTUI(App[None]):
     #versao { width: 1fr; max-width: 30; }
     #verificar, #atualizar { width: 18; margin-left: 1; }
     #auditar { display: none; height: auto; margin: 0 1; }
+    #conteudo { height: 1fr; }
     #resultado-scroll { height: 1fr; padding: 1 2; }
     #resultado { width: 1fr; }
+    #consulta-painel { display: none; height: 1fr; padding: 1 2; }
+    #consulta-resumo { height: auto; padding-bottom: 1; color: $text-muted; }
+    #consulta-corpo { height: 1fr; }
+    #consulta-chamados { width: 34; height: 1fr; border-right: tall $primary; }
+    #consulta-detalhe-scroll { width: 1fr; height: 1fr; padding-left: 2; }
+    #consulta-detalhe { width: 1fr; }
     """
 
     def __init__(
@@ -76,12 +86,14 @@ class MotorTUI(App[None]):
         carregar_versoes: VersionLoader,
         executar: VerifyRunner,
         atualizar_repo: UpdateRunner | None = None,
+        consultar_versao: ConsultaRunner | None = None,
     ) -> None:
         super().__init__()
         self._carregar_repos = carregar_repos
         self._carregar_versoes = carregar_versoes
         self._executar = executar
         self._atualizar = atualizar_repo
+        self._consultar = consultar_versao
         self._repo: RepoOption | None = None
         self._versao: VersionOption | None = None
         self._ocupado = False
@@ -89,6 +101,7 @@ class MotorTUI(App[None]):
         self._tem_versoes = False
         self._geracao_versoes = 0
         self._pode_atualizar = False
+        self._chamados_consultados: list[ChamadoConsultado] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -101,20 +114,34 @@ class MotorTUI(App[None]):
             yield Checkbox("Auditar tag agora", id="auditar")
             yield Button("Verificar", id="verificar", variant="primary", disabled=True)
             yield Button("Atualizar", id="atualizar", disabled=True)
-        with VerticalScroll(id="resultado-scroll"):
-            yield Static("Selecione um repositório.", id="resultado")
+        with Container(id="conteudo"):
+            with VerticalScroll(id="resultado-scroll"):
+                yield Static("Selecione um repositório.", id="resultado")
+            with Vertical(id="consulta-painel"):
+                yield Static(id="consulta-resumo")
+                with Horizontal(id="consulta-corpo"):
+                    yield OptionList(id="consulta-chamados", compact=True)
+                    with VerticalScroll(id="consulta-detalhe-scroll"):
+                        yield Static(id="consulta-detalhe")
         yield Footer()
 
     def on_mount(self) -> None:
         self.carregar_repos_worker()
 
+    def _exibir_resultado(self, conteudo: object) -> Static:
+        self.query_one("#consulta-painel").display = False
+        self.query_one("#resultado-scroll").display = True
+        resultado = self.query_one("#resultado", Static)
+        resultado.update(conteudo)
+        return resultado
+
     def _erro(self, mensagem: str) -> None:
-        self.query_one("#resultado", Static).update(
+        self._exibir_resultado(
             Panel(mensagem, title="Erro", style="bold red")
         )
 
     def _mostrar_resultado(self, status: VersionStatus, auditado: bool) -> None:
-        self.query_one("#resultado", Static).update(
+        self._exibir_resultado(
             renderizar_status(status, auditado=auditado)
         )
         self._pode_atualizar = bool(
@@ -135,10 +162,61 @@ class MotorTUI(App[None]):
         )
 
     def _mostrar_atualizacao(self, resultado: AtualizarResult) -> None:
-        self.query_one("#resultado", Static).update(
-            renderizar_atualizacao(resultado)
-        )
+        self._exibir_resultado(renderizar_atualizacao(resultado))
         self._resetar_atualizacao()
+
+    def _mostrar_consulta(self, chamados: list[ChamadoConsultado]) -> None:
+        self._chamados_consultados = chamados
+        lista = self.query_one("#consulta-chamados", OptionList)
+        lista.clear_options()
+        if not chamados:
+            self._exibir_resultado(
+                Text("Nenhum chamado registrado para esta versão.", style="dim")
+            )
+            return
+
+        total_commits = sum(len(chamado.commits) for chamado in chamados)
+        numero = self._versao.numero if self._versao else ""
+        self.query_one("#consulta-resumo", Static).update(
+            Text.assemble(
+                (numero, "bold"),
+                (f"  ·  {len(chamados)} chamados", "dim"),
+                (f"  ·  {total_commits} commits", "dim"),
+                ("  ·  snapshot salvo", "green"),
+            )
+        )
+        lista.add_options(
+            [
+                Option(
+                    Text.assemble(
+                        (f"#{chamado.chamado}", "bold"),
+                        (f"  {len(chamado.commits)}", "dim"),
+                        (
+                            f"  ● {chamado.estado}",
+                            "green" if chamado.estado == "aplicado" else "yellow",
+                        ),
+                    ),
+                    id=str(indice),
+                )
+                for indice, chamado in enumerate(chamados)
+            ]
+        )
+        self.query_one("#resultado-scroll").display = False
+        self.query_one("#consulta-painel").display = True
+        lista.highlighted = 0
+        self._mostrar_detalhe_consulta(0)
+        lista.focus()
+
+    def _mostrar_detalhe_consulta(self, indice: int) -> None:
+        self.query_one("#consulta-detalhe", Static).update(
+            renderizar_chamado(self._chamados_consultados[indice])
+        )
+
+    def on_option_list_option_highlighted(
+        self, evento: OptionList.OptionHighlighted
+    ) -> None:
+        if evento.option_list.id == "consulta-chamados":
+            self._mostrar_detalhe_consulta(evento.option_index)
 
     def _resetar_atualizacao(self) -> None:
         self._pode_atualizar = False
@@ -196,6 +274,7 @@ class MotorTUI(App[None]):
                 for opcao in opcoes
             ]
         )
+        select.query_one(OptionList).disable_option_at_index(0)
         self._tem_repos = bool(opcoes)
         self._bloquear(False)
         if opcoes and not any(opcao.disponivel for opcao in opcoes):
@@ -225,7 +304,7 @@ class MotorTUI(App[None]):
             self._erro("checkout local não encontrado")
             self._bloquear(False)
             return
-        self.query_one("#resultado", Static).update(
+        self._exibir_resultado(
             f"Carregando versões de {self._repo.nome}…"
         )
         self._bloquear(True)
@@ -253,9 +332,10 @@ class MotorTUI(App[None]):
             return
         select = self.query_one("#versao", Select)
         select.set_options([(opcao.numero, opcao) for opcao in opcoes])
+        select.query_one(OptionList).disable_option_at_index(0)
         self._tem_versoes = bool(opcoes)
         self._bloquear(False)
-        self.query_one("#resultado", Static).update("Selecione uma versão.")
+        self._exibir_resultado("Selecione uma versão.")
         if not opcoes:
             self._erro("nenhuma branch ou tag X.Y.Z encontrada")
 
@@ -265,8 +345,15 @@ class MotorTUI(App[None]):
         auditoria = self.query_one("#auditar", Checkbox)
         auditoria.value = False
         auditoria.display = bool(self._versao and self._versao.liberada)
-        if self._versao is not None:
-            self.query_one("#resultado", Static).update(
+        if self._versao is not None and self._repo is not None and self._consultar:
+            resultado = self._exibir_resultado(
+                f"Consultando {self._repo.nome} {self._versao.numero}…"
+            )
+            resultado.loading = True
+            self._bloquear(True)
+            self.consultar_worker(self._repo, self._versao)
+        elif self._versao is not None:
+            self._exibir_resultado(
                 f"Pronto para verificar {self._repo.nome} {self._versao.numero}."
             )
         if not self._ocupado:
@@ -290,8 +377,9 @@ class MotorTUI(App[None]):
         if self._repo is None or self._versao is None:
             return
         self._resetar_atualizacao()
-        resultado = self.query_one("#resultado", Static)
-        resultado.update(f"Verificando {self._repo.nome} {self._versao.numero}…")
+        resultado = self._exibir_resultado(
+            f"Verificando {self._repo.nome} {self._versao.numero}…"
+        )
         resultado.loading = True
         self._bloquear(True)
         self.executar_worker(
@@ -318,6 +406,17 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._falha, erro)
         else:
             self.call_from_thread(self._mostrar_resultado, status, auditar)
+        finally:
+            self.call_from_thread(self._bloquear, False)
+
+    @work(thread=True, exclusive=True, group="consulta")
+    def consultar_worker(self, repo: RepoOption, versao: VersionOption) -> None:
+        try:
+            chamados = self._consultar(repo, versao.numero) if self._consultar else []
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro)
+        else:
+            self.call_from_thread(self._mostrar_consulta, chamados)
         finally:
             self.call_from_thread(self._bloquear, False)
 
@@ -427,12 +526,18 @@ def _atualizar_repo(repo: RepoOption, versao: str) -> AtualizarResult:
         return atualizar(_deps_do_repo(repo, sessao), versao)
 
 
+def _consultar_repo(repo: RepoOption, versao: str) -> list[ChamadoConsultado]:
+    with _abrir_sessao() as sessao:
+        return consultar(_deps_do_repo(repo, sessao), versao)
+
+
 def run_tui() -> None:
     MotorTUI(
         _repos_do_ambiente,
         _versoes_do_repo,
         _verificar_repo,
         _atualizar_repo,
+        _consultar_repo,
     ).run()
 
 
@@ -470,9 +575,6 @@ def _commits_agrupados(commits: list, estados: dict[str, str]) -> Group | None:
     for chamado, itens in _agrupar_por_task(commits).items():
         quantidade = len(itens)
         tabela = Table(
-            "Commit",
-            "Mensagem",
-            "Estado",
             title=f"#{chamado} · {quantidade} commit{'s' if quantidade != 1 else ''}",
             title_justify="left",
             expand=True,
@@ -480,6 +582,9 @@ def _commits_agrupados(commits: list, estados: dict[str, str]) -> Group | None:
             show_edge=False,
             pad_edge=False,
         )
+        tabela.add_column("Commit", width=8, no_wrap=True)
+        tabela.add_column("Mensagem", ratio=1, no_wrap=True, overflow="ellipsis")
+        tabela.add_column("Estado", width=24, no_wrap=True)
         for commit in itens:
             tabela.add_row(
                 commit.hash_origem[:8],
@@ -488,6 +593,32 @@ def _commits_agrupados(commits: list, estados: dict[str, str]) -> Group | None:
             )
         tabelas.append(tabela)
     return Group(*tabelas)
+
+
+def renderizar_chamado(chamado: ChamadoConsultado) -> Group:
+    quantidade = len(chamado.commits)
+    cabecalho = Text.assemble(
+        (f"#{chamado.chamado}", "bold"),
+        (f"  ·  {quantidade} commit{'s' if quantidade != 1 else ''}", "dim"),
+        (f"  ·  {chamado.estado.upper()}", "bold green"),
+    )
+    if not chamado.commits:
+        return Group(cabecalho, Text("Nenhum commit registrado.", style="dim"))
+
+    tabela = Table(
+        expand=True,
+        box=box.SIMPLE_HEAD,
+        show_edge=False,
+        pad_edge=False,
+    )
+    tabela.add_column("Commit", width=8, no_wrap=True)
+    tabela.add_column("Título", ratio=1, no_wrap=True, overflow="ellipsis")
+    for commit in chamado.commits:
+        tabela.add_row(
+            commit.hash_origem[:8],
+            commit.msg.splitlines()[0] if commit.msg else "mensagem indisponível",
+        )
+    return Group(cabecalho, tabela)
 
 
 def _faltantes(status: VersionStatus) -> Group | None:

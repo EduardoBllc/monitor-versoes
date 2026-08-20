@@ -5,11 +5,12 @@ from pathlib import Path
 from threading import Event
 
 from rich.console import Console
-from textual.widgets import Button, Checkbox, Select, Static
+from textual.widgets import Button, Checkbox, OptionList, Select, Static
 
 from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
+from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError
 import motor.tui as tui
 from motor.tui import (
@@ -380,6 +381,103 @@ def test_app_seleciona_repo_tag_e_executa_auditoria():
             assert "VERDE" in _texto(
                 app.query_one("#resultado", Static).content
             )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_pula_placeholders_dos_selects():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+
+            repos = app.query_one("#repo", Select)
+            await pilot.click("#repo")
+            await pilot.press("home", "enter")
+            assert repos.selection == repo
+
+            await app.workers.wait_for_complete()
+            versoes = app.query_one("#versao", Select)
+            await pilot.click("#versao")
+            await pilot.press("home", "enter")
+            assert versoes.selection == versao
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_consulta_snapshot_ao_selecionar_versao():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    consultas: list[tuple[RepoOption, str]] = []
+
+    def consultar_runner(opcao: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        consultas.append((opcao, numero))
+        return [
+            ChamadoConsultado(
+                chamado="255514",
+                estado="aplicado",
+                commits=[
+                    CommitRef(
+                        hash_origem="deadbeefcafe",
+                        chamado="255514",
+                        msg="Título " + "muito longo " * 20 + "\ncorpo oculto",
+                    )
+                ],
+            ),
+            ChamadoConsultado(
+                chamado="256308",
+                estado="pendente",
+                commits=[
+                    CommitRef(
+                        hash_origem="c0ffee123456",
+                        chamado="256308",
+                        msg="Corrige pedido",
+                    )
+                ],
+            ),
+        ]
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(),
+            consultar_versao=consultar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            assert consultas == [(repo, "14.0.0")]
+            assert app.query_one("#consulta-painel").display
+            assert not app.query_one("#resultado-scroll").display
+
+            lista = app.query_one("#consulta-chamados", OptionList)
+            detalhe = app.query_one("#consulta-detalhe", Static)
+            assert lista.option_count == 2
+            assert lista.highlighted == 0
+            texto = _texto(detalhe.content)
+            assert "255514" in texto and "APLICADO" in texto
+            assert "deadbeef" in texto and "…" in texto
+            assert "256308" not in texto and "corpo oculto" not in texto
+
+            lista.highlighted = 1
+            await pilot.pause()
+            texto = _texto(detalhe.content)
+            assert "256308" in texto and "PENDENTE" in texto
+            assert "c0ffee12" in texto and "255514" not in texto
 
     asyncio.run(executar_fluxo())
 

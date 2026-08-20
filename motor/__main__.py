@@ -10,6 +10,7 @@ import argparse
 import logging
 import os
 import sys
+import textwrap
 import time
 from contextlib import contextmanager
 
@@ -29,6 +30,7 @@ from motor.config import database_url
 from motor.domain.types import RepoInfo, VersionStatus
 from motor.errors import MotorError
 from motor.engine.criar import criar
+from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.atualizar import (
     AtualizarResult,
@@ -117,9 +119,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("reconstruir-estado", parents=[comum],
                    help="regenera as atribuicoes a partir do git")
+    sub.add_parser(
+        "consulta",
+        parents=[comum],
+        help="mostra os chamados e commits salvos para a versao",
+    )
 
     sub.add_parser(
-        "tui", help="abre a interface interativa de verificacao e atualizacao"
+        "tui",
+        help="abre a interface interativa de consulta, verificacao e atualizacao",
     )
 
     p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
@@ -244,6 +252,20 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
     print("concluido")
 
 
+def imprimir_consulta(chamados: list[ChamadoConsultado]) -> None:
+    if not chamados:
+        print("nenhum chamado registrado para esta versao")
+        return
+    for chamado in chamados:
+        print(f"{chamado.chamado} [{chamado.estado.upper()}]")
+        if not chamado.commits:
+            print("  (sem commits registrados)")
+        for commit in chamado.commits:
+            titulo = commit.msg.splitlines()[0] if commit.msg else "mensagem indisponível"
+            titulo = textwrap.shorten(titulo, width=100, placeholder="…")
+            print(f"  - {commit.hash_origem[:8]} {titulo}")
+
+
 @contextmanager
 def _abrir_sessao():
     """Ciclo de vida do banco: uma engine e uma sessao por comando.
@@ -295,6 +317,8 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
             imprimir_atualizacao(atualizar_continue(deps, args.versao))
         else:
             imprimir_atualizacao(atualizar(deps, args.versao))
+    elif args.comando == "consulta":
+        imprimir_consulta(consultar(deps, args.versao))
     else:  # reconstruir-estado (unico comando restante; argparse ja validou)
         resultado = reconstruir_estado(deps, args.versao)
         print(f"status: {resultado.status.name}, orfaos: {len(resultado.orfaos)}")
