@@ -600,7 +600,10 @@ def renderizar_chamado(chamado: ChamadoConsultado) -> Group:
     cabecalho = Text.assemble(
         (f"#{chamado.chamado}", "bold"),
         (f"  ·  {quantidade} commit{'s' if quantidade != 1 else ''}", "dim"),
-        (f"  ·  {chamado.estado.upper()}", "bold green"),
+        (
+            f"  ·  {chamado.estado.upper()}",
+            "bold green" if chamado.estado == "aplicado" else "bold yellow",
+        ),
     )
     if not chamado.commits:
         return Group(cabecalho, Text("Nenhum commit registrado.", style="dim"))
