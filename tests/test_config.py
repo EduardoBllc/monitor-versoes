@@ -51,3 +51,17 @@ def test_database_url_recusa_porta_nao_numerica(monkeypatch):
     with pytest.raises(MotorError) as erro:
         database_url()
     assert "DATABASE_PORT" in str(erro.value)
+
+
+def test_sessao_postgres_recusa_banco_de_producao(monkeypatch, request):
+    import sqlalchemy
+
+    _ambiente(monkeypatch, COMPLETO)
+
+    def nao_conectar(*args, **kwargs):
+        raise AssertionError("fixture tentou conectar no banco de producao")
+
+    monkeypatch.setattr(sqlalchemy, "create_engine", nao_conectar)
+
+    with pytest.raises(pytest.fail.Exception, match="development"):
+        request.getfixturevalue("sessao_postgres")

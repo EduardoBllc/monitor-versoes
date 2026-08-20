@@ -493,6 +493,10 @@ travas de publicação e congelamento (§6). Suíte de testes cobre tudo isso se
 reais (`FakeGit`, `FakeEstado`, `FakeTaskSource`); a suíte de integração em
 `tests/test_estado_postgres.py` (dez testes, `pytestmark = pytest.mark.integracao` no módulo
 inteiro) cobre o mesmo `EstadoRepo` contra Postgres real, incluindo a trigger de congelamento.
+Produção carrega `.env`; desenvolvimento e a suíte carregam `.env.development`. Os dois usam
+o mesmo `compose.yml`, mas `COMPOSE_PROJECT_NAME`, porta, banco, usuário e volume diferentes.
+Antes de qualquer `TRUNCATE`, a fixture recusa valores que não sejam exatamente os do banco
+de desenvolvimento.
 
 **Etapa 2 — Daemon localhost, só visualização (read-only).** *Ainda não implementada.*
 Servidor em `127.0.0.1` que mostra o `verificar` de forma visual: cruzamento 3-vias
