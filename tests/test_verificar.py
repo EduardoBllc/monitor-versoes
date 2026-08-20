@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime
 
+import pytest
+
 from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
@@ -9,6 +11,7 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
+from motor.errors import MotorError
 from motor.ports import MergePrediction
 
 D = datetime.datetime(2026, 1, 1)
@@ -33,6 +36,15 @@ class _GitQueTagueiaNoFetch(FakeGit):
     def fetch(self, remote: str) -> None:
         super().fetch(remote)
         self.tags["13.34.0"] = True
+
+
+class _GitComTagAntesDaBranch(FakeGit):
+    """A tag ficou em m0, mas a branch avancou depois da liberacao."""
+
+    def resolve_ref(self, ref: str) -> str:
+        if ref == "refs/tags/13.34.0":
+            return "m0"
+        return super().resolve_ref(ref)
 
 
 def _git(tags: dict[str, bool] | None = None, classe=FakeGit) -> FakeGit:
@@ -110,6 +122,68 @@ def test_verificar_nao_grava_em_versao_liberada():
 
     # a trava do fake nao disparou => nao tentou escrever
     assert estado.atribuicoes("r", "13.34.0") == []
+
+
+def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
+    git = _git(tags={"13.34.0": True}, classe=_GitComTagAntesDaBranch)
+    # A branch recebeu a0 depois da tag. Auditar a branch daria falso-verde;
+    # o artefato liberado na tag ainda nao contem esse commit.
+    git.set_branch("13.34.0", "a0")
+    estado = _estado_com_repo()
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
+    estado.marcar_liberadas("r", {"13.34.0": D})
+    tasks = FakeTaskSource(chamados={"13.34.0": ["123123"]})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
+
+    status = verificar(
+        _deps(git, tasks, commits, estado), "13.34.0", auditar=True
+    )
+
+    assert [c.hash_origem for c in status.faltantes] == ["a0"]
+    assert estado.atribuicoes("r", "13.34.0") == []
+    assert git.pulled == []
+    assert git.removed_worktrees == []
+
+
+def test_auditar_recusa_versao_ainda_aberta():
+    git = _git()
+    estado = _estado_com_repo()
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
+
+    with pytest.raises(MotorError, match="liberada"):
+        verificar(
+            _deps(git, FakeTaskSource(), FakeCommitSource(), estado),
+            "13.34.0",
+            auditar=True,
+        )
 
 
 def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():

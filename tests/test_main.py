@@ -25,7 +25,7 @@ from motor.__main__ import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.domain.types import RepoInfo, VersionStatus
+from motor.domain.types import RepoInfo, VersaoInfo, VersionStatus, VersionType
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
@@ -246,6 +246,36 @@ def test_verificar_ponta_a_ponta_com_lista_manual(bordas, tmp_path, capsys):
     # e o verificar rodou de ponta a ponta em cima deles.
     assert "a0" in saida
     assert git.fetched == ["origin"]
+
+
+def test_verificar_auditar_exibe_faltantes_de_versao_liberada(
+    bordas, tmp_path, capsys
+):
+    git, estado = bordas
+    git.tags["13.34.0"] = True
+    estado.registrar_versao(
+        "vendabemweb",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
+    estado.marcar_liberadas("vendabemweb", {"13.34.0": D})
+    lista = tmp_path / "lista.txt"
+    lista.write_text("123456\n", encoding="utf-8")
+
+    main([
+        "verificar", "13.34.0", "--repo", _repo_dir(tmp_path),
+        "--task-source", "manual", "--lista", str(lista), "--auditar",
+    ])
+
+    saida = capsys.readouterr().out
+    assert "auditoria da tag 13.34.0" in saida
+    assert "faltantes" in saida and "a0" in saida
+    assert estado.atribuicoes("vendabemweb", "13.34.0") == []
+    assert git.removed_worktrees == []
 
 
 def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):

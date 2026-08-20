@@ -187,6 +187,7 @@ fetch origin                                          # antes de ler qualquer re
 abertas = versoes_abertas(branches, tags)
 congela toda versão com tag nova (liberada_em = data do commit da tag, não now())
 se X.Y.Z já liberada: devolve o snapshot gravado no banco, não recalcula nada (§6)
+se --auditar: usa a tag como alvo e pula toda escrita no estado/worktree
 
 tgt      = alvo(X.Y.Z, abertas)                       # §4, união das versões-fonte
 anterior = estado.atribuicoes(repo, X.Y.Z)            # lido ANTES de sobrescrever
@@ -201,7 +202,14 @@ relatorio:
   faltantes:        N commits, quais, quais conflitam
   → status VERDE só se Tickio == estado == git (e sem tasks_ambiguas)
 
-estado.substituir_atribuicoes(repo, X.Y.Z, novas)     # sobrescreve por último
+estado.substituir_atribuicoes(repo, X.Y.Z, novas)     # sobrescreve por último;
+                                                       # não roda com --auditar
+```
+
+Para recalcular uma versão liberada sem descongelar seu snapshot:
+
+```
+uv run motor verificar X.Y.Z --repo <repo> --auditar
 ```
 
 Predição de conflito **sem tocar a working tree**:

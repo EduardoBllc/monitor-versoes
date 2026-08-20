@@ -99,7 +99,14 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="ambiente (default: development)")
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
 
-    sub.add_parser("verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)")
+    p_verificar = sub.add_parser(
+        "verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)"
+    )
+    p_verificar.add_argument(
+        "--auditar",
+        action="store_true",
+        help="recalcula uma versao liberada contra a tag, sem alterar o snapshot",
+    )
 
     sub.add_parser("criar", parents=[comum], help="cria a branch da versao a partir das tasks")
 
@@ -264,7 +271,10 @@ def _montar_task_source(args: argparse.Namespace, info: RepoInfo) -> TaskSource:
 def _despachar(args: argparse.Namespace, deps: Deps) -> None:
     inicio = time.monotonic()
     if args.comando == "verificar":
-        imprimir_status(verificar(deps, args.versao))
+        status = verificar(deps, args.versao, auditar=args.auditar)
+        if args.auditar:
+            print(f"auditoria da tag {args.versao} (snapshot nao alterado)")
+        imprimir_status(status)
     elif args.comando == "criar":
         imprimir_atualizacao(criar(deps, args.versao))
     elif args.comando == "atualizar":

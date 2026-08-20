@@ -17,6 +17,7 @@ from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconcilia
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import chave, inferir_tipo, versoes_abertas
 from motor.engine.deps import Deps
+from motor.errors import MotorError
 from motor.ports import CommitSource
 from motor.services.base_resolver import BaseResolver
 from motor.services.presence_oracle import PresenceOracle
@@ -44,13 +45,16 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
 
 
 def verificar(
-    deps: Deps, versao: str, *, manter_worktree: bool = False
+    deps: Deps,
+    versao: str,
+    *,
+    manter_worktree: bool = False,
+    auditar: bool = False,
 ) -> VersionStatus:
     """Cruza Tickio x estado x git e devolve o VersionStatus.
 
-    Versao com tag e congelada: devolve o snapshot do banco sem recalcular
-    nada. Nao muta dados do usuario — so avanca a branch local ate o que ja
-    esta publicado, para nao cruzar contra estado desatualizado.
+    Por padrao, versao com tag devolve o snapshot congelado. Com ``auditar``,
+    recalcula contra a tag sem alterar o snapshot nem criar worktree.
     """
     inicio = time.monotonic()
 
@@ -66,26 +70,35 @@ def verificar(
     tags = deps.git.list_version_tags()
     abertas = versoes_abertas(todas, tags)
 
-    # Congela o que ganhou tag desde o ultimo run. A data e a do commit
-    # apontado pela tag, nao a de agora: senao registraria quando o comando
-    # rodou, nao quando a versao foi liberada.
-    liberadas: dict[str, datetime.datetime] = {}
-    for numero in tags:
-        conhecida = deps.estado.versao(deps.repo, numero)
-        # Versao que o motor nunca operou nao tem snapshot a proteger.
-        if conhecida is not None and conhecida.liberada_em is None:
-            meta = deps.git.commit_meta(deps.git.resolve_ref(f"refs/tags/{numero}"))
-            liberadas[numero] = meta.commit_date
-    if liberadas:
-        deps.estado.marcar_liberadas(deps.repo, liberadas)
+    if auditar:
+        info = deps.estado.versao(deps.repo, versao)
+        if versao not in tags:
+            raise MotorError("--auditar exige uma versao liberada")
+        if info is None:
+            raise MotorError("--auditar exige uma versao registrada no estado")
+        ref_alvo = deps.git.resolve_ref(f"refs/tags/{versao}")
+    else:
+        # Congela o que ganhou tag desde o ultimo run. A data e a do commit
+        # apontado pela tag, nao a de agora: senao registraria quando o comando
+        # rodou, nao quando a versao foi liberada.
+        liberadas: dict[str, datetime.datetime] = {}
+        for numero in tags:
+            conhecida = deps.estado.versao(deps.repo, numero)
+            # Versao que o motor nunca operou nao tem snapshot a proteger.
+            if conhecida is not None and conhecida.liberada_em is None:
+                meta = deps.git.commit_meta(deps.git.resolve_ref(f"refs/tags/{numero}"))
+                liberadas[numero] = meta.commit_date
+        if liberadas:
+            deps.estado.marcar_liberadas(deps.repo, liberadas)
 
-    info = deps.estado.versao(deps.repo, versao)
-    if info is not None and info.liberada_em is not None:
-        return _snapshot_congelado(deps, versao, info.liberada_em)
+        info = deps.estado.versao(deps.repo, versao)
+        if info is not None and info.liberada_em is not None:
+            return _snapshot_congelado(deps, versao, info.liberada_em)
 
-    deps.git.use_worktree(versao)
-    if deps.git.remote_branch_exists("origin", versao):
-        deps.git.pull_branch("origin", versao)
+        deps.git.use_worktree(versao)
+        if deps.git.remote_branch_exists("origin", versao):
+            deps.git.pull_branch("origin", versao)
+        ref_alvo = versao
 
     if info is None:
         # Primeira vez que o motor ve esta versao: resolve e grava a base.
@@ -129,21 +142,21 @@ def verificar(
             todos_os_hashes.setdefault(h, CommitRef(hash_origem=h))
 
     oracle = PresenceOracle(git=deps.git)
-    tip = deps.git.resolve_ref(versao)
+    tip = deps.git.resolve_ref(ref_alvo)
 
     t = time.monotonic()
     presentes: dict[str, Presence] = {}
     conflitantes: list[CommitRef] = []
     suspeitos_conteudo: list[CommitRef] = []
     for hash_, c in todos_os_hashes.items():
-        p = oracle.presente(hash_, base_commit, versao)
+        p = oracle.presente(hash_, base_commit, ref_alvo)
         presentes[hash_] = p
         # predict_merge e a suspeita por conteudo so fazem sentido para commit
         # que e candidato real de cherry-pick (lado alvo): conflitantes e
         # suspeitos_conteudo sao subconjunto de faltantes (VersionStatus),
         # nunca de commit que so o estado conhecia e sumiu do git.
         if p == Presence.AUSENTE and hash_ in candidatos_conflito:
-            if oracle.suspeita_por_conteudo(hash_, base_commit, versao) is not None:
+            if oracle.suspeita_por_conteudo(hash_, base_commit, ref_alvo) is not None:
                 suspeitos_conteudo.append(c)
             meta = deps.git.commit_meta(hash_)
             pred = deps.git.predict_merge(meta.parent, tip, hash_)
@@ -164,11 +177,12 @@ def verificar(
         suspeitos_conteudo,
     )
 
-    deps.estado.substituir_atribuicoes(
-        deps.repo, versao, atribuicoes_de(alvo, presentes)
-    )
+    if not auditar:
+        deps.estado.substituir_atribuicoes(
+            deps.repo, versao, atribuicoes_de(alvo, presentes)
+        )
 
-    if not manter_worktree:
+    if not manter_worktree and not auditar:
         deps.git.worktree_remove(versao)
     logger.debug("verificar total: %.3fs", time.monotonic() - inicio)
     return status
