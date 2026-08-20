@@ -59,6 +59,9 @@ CLAUDE.md
 # Documentos do plugin superpowers do Claude
 docs/superpowers/*
 
+# Sessões visuais locais do brainstorming
+.superpowers/
+
 # Arquivos 
 VERSAO
 .worktrees/
