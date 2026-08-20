@@ -62,7 +62,7 @@ class MotorTUI(App[None]):
     #barra { height: auto; padding: 1; align-vertical: middle; }
     .rotulo { width: auto; height: auto; padding: 1 1 0 0; color: $text-muted; }
     #separador { width: 3; height: auto; padding-top: 1; color: $text-muted; text-align: center; }
-    #repo { width: 2fr; max-width: 64; }
+    #repo { width: 2fr; max-width: 30; }
     #versao { width: 1fr; max-width: 30; }
     #verificar, #atualizar { width: 18; margin-left: 1; }
     #auditar { display: none; height: auto; margin: 0 1; }
