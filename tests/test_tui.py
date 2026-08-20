@@ -86,6 +86,19 @@ def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
     ]
 
 
+def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch):
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    _checkout(tmp_path, "alpha")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PROJECTS_DIR", raising=False)
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+
+    assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=None)]
+
+
 class GitCatalogoFake:
     def __init__(self):
         self.fetched: list[str] = []
@@ -230,6 +243,20 @@ def test_renderizar_snapshot_liberado_explica_que_esta_congelado():
     assert "255514" in texto and "256308" in texto
 
 
+def test_renderizar_snapshot_liberado_preserva_saude_nao_verde():
+    status = VersionStatus(
+        verde=False,
+        estado_integro=True,
+        liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
+    )
+
+    texto = _texto(renderizar_status(status))
+
+    assert "REQUER ATENÇÃO" in texto
+    assert "SNAPSHOT CONGELADO" in texto
+    assert "Chamados:" not in texto
+
+
 def test_renderizar_auditoria_nomeia_recalculo_sem_alterar_snapshot():
     texto = _texto(
         renderizar_status(VersionStatus(verde=True, estado_integro=True), auditado=True)
@@ -272,6 +299,81 @@ def test_app_seleciona_repo_tag_e_executa_auditoria():
             assert "VERDE" in _texto(
                 app.query_one("#resultado", Static).content
             )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_troca_versao_limpa_resultado_anterior():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao_a = VersionOption(numero="14.0.0", liberada=False)
+    versao_b = VersionOption(numero="14.0.1", liberada=False)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao_a, versao_b],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=True, estado_integro=True
+            ),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao_a
+            await pilot.pause()
+            await pilot.click("#executar")
+            await app.workers.wait_for_complete()
+            assert "VERDE" in _texto(app.query_one("#resultado", Static).content)
+
+            app.query_one("#versao", Select).value = versao_b
+            await pilot.pause()
+
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "VERDE" not in texto
+            assert "14.0.1" in texto
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_troca_repo_limpa_erro_anterior():
+    repo_a = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    repo_b = RepoOption(nome="beta", caminho="/projetos/beta")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    liberar_b = Event()
+
+    def carregar_versoes(repo: RepoOption) -> list[VersionOption]:
+        if repo == repo_b:
+            liberar_b.wait(timeout=2)
+        return [versao]
+
+    def falhar(repo, numero, auditar):
+        raise MotorError("falha anterior")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(lambda: [repo_a, repo_b], carregar_versoes, falhar)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo_a
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#executar")
+            await app.workers.wait_for_complete()
+            assert "falha anterior" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+            app.query_one("#repo", Select).value = repo_b
+            await pilot.pause()
+
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "falha anterior" not in texto
+            assert "Carregando versões de beta" in texto
+            liberar_b.set()
+            await app.workers.wait_for_complete()
 
     asyncio.run(executar_fluxo())
 
@@ -392,10 +494,12 @@ def test_app_descarta_versoes_obsoletas_sem_liberar_repo_atual():
             versoes = app.query_one("#versao", Select)
             assert versoes.disabled
             assert app.query_one("#repo", Select).disabled
-            assert versao_a not in versoes._legal_values
 
             liberar_b.set()
             await app.workers.wait_for_complete()
+            versoes.value = versao_b
+            await pilot.pause()
+            assert versoes.selection == versao_b
 
     asyncio.run(executar_fluxo())
 

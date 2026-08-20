@@ -41,8 +41,18 @@ def test_task_source_default_e_tickio():
     assert args.fonte_flag == "tickio"
 
 
-def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch):
+@pytest.mark.parametrize(("argv", "arquivo"), [
+    (["tui"], ".env.development"),
+    (["--env", "production", "tui"], ".env"),
+])
+def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
     chamadas: list[str] = []
+    ambientes: list[str] = []
+    monkeypatch.setattr(
+        cli,
+        "load_dotenv",
+        lambda caminho, **opcoes: ambientes.append(os.path.basename(caminho)),
+    )
     monkeypatch.setattr(cli, "_iniciar_tui", lambda: chamadas.append("tui"))
     monkeypatch.setattr(
         cli,
@@ -50,9 +60,10 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch):
         lambda: pytest.fail("o CLI nao deve abrir banco antes da TUI"),
     )
 
-    main(["tui"])
+    main(argv)
 
     assert chamadas == ["tui"]
+    assert ambientes == [arquivo]
 
 
 @pytest.mark.parametrize(("argv", "arquivo"), [

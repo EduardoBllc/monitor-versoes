@@ -21,6 +21,7 @@ from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.__main__ import _agrupar_por_task
 from motor.domain.types import VersionStatus
+from motor.domain.version import chave
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
@@ -173,6 +174,9 @@ class MotorTUI(App[None]):
             self._erro("checkout local não encontrado")
             self._bloquear(False)
             return
+        self.query_one("#resultado", Static).update(
+            f"Carregando versões de {self._repo.nome}…"
+        )
         self._bloquear(True)
         self.carregar_versoes_worker(self._repo, self._geracao_versoes)
 
@@ -208,6 +212,10 @@ class MotorTUI(App[None]):
         auditoria = self.query_one("#auditar", Checkbox)
         auditoria.value = False
         auditoria.display = bool(self._versao and self._versao.liberada)
+        if self._versao is not None:
+            self.query_one("#resultado", Static).update(
+                f"Pronto para verificar {self._repo.nome} {self._versao.numero}."
+            )
         if not self._ocupado:
             self._bloquear(False)
 
@@ -239,6 +247,8 @@ class MotorTUI(App[None]):
 
 def descobrir_repos(estado: EstadoRepo, projects_dir: str) -> list[RepoOption]:
     repos = estado.listar_repos()
+    if not projects_dir:
+        return [RepoOption(nome=repo.nome, caminho=None) for repo in repos]
     canonicos = {repo.nome: repo for repo in repos}
     encontrados: dict[str, Path] = {}
     raiz = Path(projects_dir)
@@ -271,16 +281,11 @@ def descobrir_repos(estado: EstadoRepo, projects_dir: str) -> list[RepoOption]:
     ]
 
 
-def _chave_versao(numero: str) -> tuple[int, int, int]:
-    major, minor, patch = numero.split(".")
-    return int(major), int(minor), int(patch)
-
-
 def descobrir_versoes(git: GitRepo) -> list[VersionOption]:
     git.fetch("origin")
     tags = set(git.list_version_tags())
     numeros = sorted(
-        set(git.list_version_branches()), key=_chave_versao, reverse=True
+        set(git.list_version_branches()), key=chave, reverse=True
     )
     return [VersionOption(numero, numero in tags) for numero in numeros]
 
@@ -376,15 +381,17 @@ def _faltantes(status: VersionStatus) -> Table | None:
 
 
 def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
-    if status.liberada_em is not None and not auditado:
-        return Group(
-            Panel("SNAPSHOT CONGELADO", style="bold green"),
-            Text(f"Liberada em {status.liberada_em:%Y-%m-%d %H:%M}"),
-            Text(f"Chamados: {', '.join(status.chamados)}"),
-        )
-
     partes: list = []
-    if auditado:
+    if status.liberada_em is not None and not auditado:
+        partes.extend(
+            [
+                Text("SNAPSHOT CONGELADO — não recalculado", style="bold cyan"),
+                Text(f"Liberada em {status.liberada_em:%Y-%m-%d %H:%M}"),
+            ]
+        )
+        if status.chamados:
+            partes.append(Text(f"Chamados: {', '.join(status.chamados)}"))
+    elif auditado:
         partes.append(Text("AUDITORIA DA TAG — snapshot não alterado", style="bold cyan"))
     titulo = "VERDE" if status.verde else "REQUER ATENÇÃO"
     estilo = "bold green" if status.verde else "bold red"

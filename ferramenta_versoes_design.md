@@ -518,7 +518,7 @@ uv run motor --env production repo adicionar vendabemweb --tickio-sistema-id 7
 `uv run motor tui` abre uma barra **repo · Verificar · versão**. A opção explícita
 **Auditar tag agora** aparece somente para versão liberada e pede o recálculo contra a tag,
 sem alterar o snapshot. Banco, rede e Git só são abertos pelos callbacks executados nos
-workers da interface.
+workers da interface. Em produção, a invocação é `uv run motor --env production tui`.
 
 **Daemon localhost. Adiado.** Só entra no escopo se surgir requisito de interface web ou de
 execução persistente; até lá, CLI e TUI cobrem a operação de verificação sem servidor local.
@@ -595,7 +595,7 @@ toca git, rede ou banco.
   máquina fica invisível; sem o segundo, não haveria como observar que uma versão ganhou tag.
 - **`EstadoRepo` — porta nova.** Substitui o antigo `LockStore` (que era módulo fino sobre
   `GitRepo`, nunca uma porta própria) porque o estado agora mora num sistema externo de
-  verdade (Postgres), não num arquivo dentro do próprio git: `resolver_repo`,
+  verdade (Postgres), não num arquivo dentro do próprio git: `resolver_repo`, `listar_repos`,
   `registrar_versao`, `marcar_liberadas`, `versao`, `atribuicoes`, `substituir_atribuicoes`,
   `exclusoes`, `sem_entrega`. Adapters: `PostgresEstado` (traduz modelo SQLAlchemy ↔ dataclass
   do domínio na fronteira — o domínio nunca importa `sqlalchemy`) e `FakeEstado` (dict em
