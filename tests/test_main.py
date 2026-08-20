@@ -66,6 +66,12 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
     assert ambientes == [arquivo]
 
 
+def test_help_descreve_as_duas_acoes_da_tui():
+    ajuda = " ".join(_build_parser().format_help().split())
+
+    assert "verificacao e atualizacao" in ajuda
+
+
 @pytest.mark.parametrize(("argv", "arquivo"), [
     (["--help"], ".env.development"),
     (["--env", "production", "--help"], ".env"),

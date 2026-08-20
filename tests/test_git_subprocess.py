@@ -10,8 +10,9 @@ import subprocess
 
 import pytest
 
-from motor.adapters.git.subprocess import new_git_subprocess
+from motor.adapters.git.subprocess import GitSubprocess, new_git_subprocess
 from motor.domain.version import versoes_abertas
+from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
 
 
@@ -63,6 +64,27 @@ def test_git_subprocess_remote_url(tmp_path):
     g = new_git_subprocess(repo_dir)
 
     assert g.remote_url("origin") == "git@bitbucket.org:acme/monitor.git"
+
+
+def test_git_subprocess_erro_nao_expoe_credencial_da_url(tmp_path, monkeypatch):
+    def falhar(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args,
+            128,
+            "",
+            "fatal: Authentication failed for "
+            "'https://usuario:token-secreto@bitbucket.org/acme/monitor.git'",
+        )
+
+    monkeypatch.setattr(subprocess, "run", falhar)
+
+    with pytest.raises(MotorError) as erro:
+        GitSubprocess(str(tmp_path)).push_branch("origin", "13.34.0")
+
+    mensagem = str(erro.value)
+    assert "bitbucket.org/acme/monitor.git" in mensagem
+    assert "token-secreto" not in mensagem
+    assert "usuario" not in mensagem
 
 
 def test_git_subprocess_write_file_noop_quando_conteudo_igual(tmp_path):

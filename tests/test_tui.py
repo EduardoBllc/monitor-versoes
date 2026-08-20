@@ -9,6 +9,7 @@ from textual.widgets import Button, Checkbox, Select, Static
 
 from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
+from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.errors import MotorError
 import motor.tui as tui
 from motor.tui import (
@@ -190,11 +191,54 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     assert "dev@example.com" not in texto
 
 
+def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
+    checkout = _checkout(tmp_path, "alpha")
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    capturado: dict[str, object] = {}
+    esperado = AtualizarResult(status=AtualizarStatus.DONE)
+
+    class TickioSpy:
+        def __init__(self, base_url, usuario, senha, sistema_id):
+            self.sistema_id = sistema_id
+
+    def atualizar_spy(deps, versao):
+        capturado.update(
+            repo=deps.repo,
+            versao=versao,
+            tickio_sistema_id=deps.tasks.sistema_id,
+        )
+        return esperado
+
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(tui, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(tui, "TickioRest", TickioSpy)
+    monkeypatch.setattr(tui, "atualizar", atualizar_spy)
+
+    resultado = tui._atualizar_repo(
+        RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0"
+    )
+
+    assert resultado is esperado
+    assert capturado == {
+        "repo": "alpha",
+        "versao": "14.0.0",
+        "tickio_sistema_id": 7,
+    }
+
+
 def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
     commit = CommitRef(
         hash_origem="deadbeefcafe",
         chamado="255514",
         msg="Ajusta pagamento\ncorpo",
+    )
+    outro_commit = CommitRef(
+        hash_origem="c0ffee123456",
+        chamado="255514",
+        msg="Ajusta revisão",
     )
     status = VersionStatus(
         verde=False,
@@ -203,7 +247,7 @@ def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
         estado_integro=False,
         tasks_ambiguas=["300000"],
         commits_sumidos=["badc0ffee000"],
-        faltantes=[commit],
+        faltantes=[commit, outro_commit],
         conflitantes=[commit],
         suspeitos_conteudo=[commit],
         tasks_sem_commits=["400000"],
@@ -212,13 +256,12 @@ def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
     texto = _texto(renderizar_status(status))
 
     for esperado in (
-        "REQUER ATENÇÃO",
-        "Tasks novas 1",
-        "Tasks removidas 1",
-        "Faltantes 1",
-        "Conflitos 1",
-        "255514",
+        "Pendências encontradas",
+        "Escopo",
+        "Git",
+        "#255514",
         "deadbeef",
+        "c0ffee12",
         "CONFLITANTE",
         "SUSPEITO",
         "300000",
@@ -226,6 +269,10 @@ def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
         "badc0ffe",
     ):
         assert esperado in texto
+    assert texto.count("#255514") == 1
+    assert "REQUER ATENÇÃO" not in texto
+    assert "Tasks novas" not in texto
+    assert "Tasks removidas" not in texto
 
 
 def test_renderizar_snapshot_liberado_explica_que_esta_congelado():
@@ -252,7 +299,7 @@ def test_renderizar_snapshot_liberado_preserva_saude_nao_verde():
 
     texto = _texto(renderizar_status(status))
 
-    assert "REQUER ATENÇÃO" in texto
+    assert "Pendências encontradas" in texto
     assert "SNAPSHOT CONGELADO" in texto
     assert "Chamados:" not in texto
 
@@ -264,6 +311,40 @@ def test_renderizar_auditoria_nomeia_recalculo_sem_alterar_snapshot():
 
     assert "AUDITORIA DA TAG" in texto
     assert "snapshot não alterado" in texto
+
+
+def test_renderizar_atualizacao_agrupa_commits_aplicados_por_chamado():
+    aplicados = [
+        CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro"),
+        CommitRef(hash_origem="c0ffee123456", chamado="255514", msg="Segundo"),
+    ]
+
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(status=AtualizarStatus.DONE, aplicados=aplicados)
+        )
+    )
+
+    assert "Atualização concluída" in texto
+    assert texto.count("#255514") == 1
+    assert "deadbeef" in texto and "c0ffee12" in texto
+
+
+def test_renderizar_atualizacao_bloqueada_orienta_continuacao():
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(
+                status=AtualizarStatus.BLOCKED,
+                blocked_commit="deadbeefcafe",
+                arquivos_conflito=["motor/tui.py", "tests/test_tui.py"],
+            )
+        )
+    )
+
+    assert "Atualização bloqueada" in texto
+    assert "deadbeef" in texto
+    assert "motor/tui.py" in texto and "tests/test_tui.py" in texto
+    assert "--continue" in texto
 
 
 def test_app_seleciona_repo_tag_e_executa_auditoria():
@@ -291,14 +372,119 @@ def test_app_seleciona_repo_tag_e_executa_auditoria():
             assert app.query_one("#auditar", Checkbox).display
             assert not app.query_one("#auditar", Checkbox).value
             app.query_one("#auditar", Checkbox).value = True
-            assert not app.query_one("#executar", Button).disabled
-            await pilot.click("#executar")
+            assert not app.query_one("#verificar", Button).disabled
+            await pilot.click("#verificar")
             await app.workers.wait_for_complete()
 
             assert chamadas == [(repo, "14.0.0", True)]
             assert "VERDE" in _texto(
                 app.query_one("#resultado", Static).content
             )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_mantem_verificar_e_atualizar_visiveis_e_atualiza_pendencias():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    commits = [
+        CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro"),
+        CommitRef(hash_origem="c0ffee123456", chamado="255514", msg="Segundo"),
+    ]
+    atualizacoes: list[tuple[RepoOption, str]] = []
+
+    def atualizar_runner(opcao: RepoOption, numero: str) -> AtualizarResult:
+        atualizacoes.append((opcao, numero))
+        return AtualizarResult(status=AtualizarStatus.DONE, aplicados=commits)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False,
+                estado_integro=True,
+                faltantes=commits,
+            ),
+            atualizar_repo=atualizar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+
+            verificar = app.query_one("#verificar", Button)
+            atualizar_botao = app.query_one("#atualizar", Button)
+            assert not verificar.disabled
+            assert atualizar_botao.disabled
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+
+            assert not atualizar_botao.disabled
+            assert "2" in _texto(atualizar_botao.label)
+            assert atualizar_botao.variant == "warning"
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            assert atualizacoes == [(repo, "14.0.0")]
+            assert "Atualização concluída" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+            assert atualizar_botao.disabled
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_rechecagem_falha_revoga_atualizacao_anterior():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514")
+    verificacoes = 0
+
+    def verificar_runner(repo, versao, auditar):
+        nonlocal verificacoes
+        verificacoes += 1
+        if verificacoes == 2:
+            raise MotorError("rechecagem falhou")
+        return VersionStatus(
+            verde=False,
+            estado_integro=True,
+            faltantes=[commit],
+        )
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            lambda: [repo],
+            lambda opcao: [versao],
+            verificar_runner,
+            lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            assert not app.query_one("#atualizar", Button).disabled
+
+            await pilot.pause()
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            assert verificacoes == 2
+
+            assert "rechecagem falhou" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+            assert app.query_one("#atualizar", Button).disabled
 
     asyncio.run(executar_fluxo())
 
@@ -323,7 +509,7 @@ def test_app_troca_versao_limpa_resultado_anterior():
             await app.workers.wait_for_complete()
             app.query_one("#versao", Select).value = versao_a
             await pilot.pause()
-            await pilot.click("#executar")
+            await pilot.click("#verificar")
             await app.workers.wait_for_complete()
             assert "VERDE" in _texto(app.query_one("#resultado", Static).content)
 
@@ -360,7 +546,7 @@ def test_app_troca_repo_limpa_erro_anterior():
             await app.workers.wait_for_complete()
             app.query_one("#versao", Select).value = versao
             await pilot.pause()
-            await pilot.click("#executar")
+            await pilot.click("#verificar")
             await app.workers.wait_for_complete()
             assert "falha anterior" in _texto(
                 app.query_one("#resultado", Static).content
@@ -432,10 +618,10 @@ def test_app_nao_inicia_execucoes_concorrentes():
             await app.workers.wait_for_complete()
             app.query_one("#versao", Select).value = versao
             await pilot.pause()
-            await pilot.click("#executar")
+            await pilot.click("#verificar")
             assert await asyncio.to_thread(iniciou.wait, 1)
-            assert app.query_one("#executar", Button).disabled
-            await pilot.click("#executar")
+            assert app.query_one("#verificar", Button).disabled
+            await pilot.click("#verificar")
             liberar.set()
             await app.workers.wait_for_complete()
 
@@ -522,7 +708,8 @@ def test_app_mantem_repo_sem_checkout_visivel_mas_inexecutavel():
             await pilot.pause()
 
             assert app.query_one("#versao", Select).disabled
-            assert app.query_one("#executar", Button).disabled
+            assert app.query_one("#verificar", Button).disabled
+            assert app.query_one("#atualizar", Button).disabled
             assert "checkout local não encontrado" in _texto(
                 app.query_one("#resultado", Static).content
             )

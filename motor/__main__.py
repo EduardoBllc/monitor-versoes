@@ -118,7 +118,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("reconstruir-estado", parents=[comum],
                    help="regenera as atribuicoes a partir do git")
 
-    sub.add_parser("tui", help="abre a interface interativa de verificacao")
+    sub.add_parser(
+        "tui", help="abre a interface interativa de verificacao e atualizacao"
+    )
 
     p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
     acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True,

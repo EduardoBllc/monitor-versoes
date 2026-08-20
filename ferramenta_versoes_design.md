@@ -514,14 +514,16 @@ uv run motor repo adicionar vendabemweb --tickio-sistema-id 7
 uv run motor --env production repo adicionar vendabemweb --tickio-sistema-id 7
 ```
 
-**Etapa 2 — TUI de `verificar`. Concluída.**
-`uv run motor tui` abre uma barra **repo · Verificar · versão**. A opção explícita
-**Auditar tag agora** aparece somente para versão liberada e pede o recálculo contra a tag,
-sem alterar o snapshot. Banco, rede e Git só são abertos pelos callbacks executados nos
-workers da interface. Em produção, a invocação é `uv run motor --env production tui`.
+**Etapa 2 — TUI de `verificar` e `atualizar`. Concluída.**
+`uv run motor tui` abre o contexto **repo / versão** e mantém as ações **Verificar** e
+**Atualizar** visíveis. Atualizar só é habilitado depois que a verificação encontra commits
+faltantes em uma versão aberta. A opção explícita **Auditar tag agora** aparece somente para
+versão liberada e pede o recálculo contra a tag, sem alterar o snapshot. Banco, rede e Git só
+são abertos pelos callbacks executados nos workers da interface. Em produção, a invocação é
+`uv run motor --env production tui`.
 
 **Daemon localhost. Adiado.** Só entra no escopo se surgir requisito de interface web ou de
-execução persistente; até lá, CLI e TUI cobrem a operação de verificação sem servidor local.
+execução persistente; até lá, CLI e TUI cobrem o fluxo operacional sem servidor local.
 
 ## 14. Arquitetura do motor
 
@@ -621,8 +623,8 @@ toca git, rede ou banco.
   em memória entre invocações do CLI.
 
 **Operações (API do motor, consumida pelos front-ends).** O CLI consome a API e expõe
-`criar` · `verificar` · `atualizar` · `reconstruir_estado`; a TUI atual consome apenas
-`verificar`.
+`criar` · `verificar` · `atualizar` · `reconstruir_estado`; a TUI atual consome
+`verificar` e `atualizar`.
 
 - `verificar` = fetch + congela tags novas + TargetResolver + PresenceOracle + reconciliação +
   `predict_merge` → `VersionStatus`; devolve o snapshot do banco sem recalcular se a versão já

@@ -43,6 +43,11 @@ _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 # BaseResolver depois nao resolve — ele so tenta refs/remotes/origin/.
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 _PADRAO_VERSAO_GIT = re.compile(r"git version (\d+)\.(\d+)")
+_CREDENCIAL_EM_URL = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
+
+
+def _saida_git_publica(saida: str) -> str:
+    return _CREDENCIAL_EM_URL.sub(r"\1[credenciais]@", saida)
 
 
 def _checar_versao_git() -> None:
@@ -105,7 +110,7 @@ class GitSubprocess:
         with _cronometrar(*args):
             proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
         if proc.returncode != 0:
-            saida = (proc.stdout or "") + (proc.stderr or "")
+            saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
             raise MotorError(f"git {' '.join(args)}: exit status {proc.returncode}: {saida}")
 
     def _output(self, dir_: str, *args: str) -> str:
@@ -113,7 +118,8 @@ class GitSubprocess:
             proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
         if proc.returncode != 0:
             raise MotorError(
-                f"git {' '.join(args)}: exit status {proc.returncode}: {proc.stderr}"
+                f"git {' '.join(args)}: exit status {proc.returncode}: "
+                f"{_saida_git_publica(proc.stderr)}"
             )
         return proc.stdout.strip()
 
@@ -135,7 +141,8 @@ class GitSubprocess:
         if proc.returncode == 1:
             return False
         raise MotorError(
-            f"git merge-base --is-ancestor: exit status {proc.returncode}: {proc.stderr}"
+            "git merge-base --is-ancestor: exit status "
+            f"{proc.returncode}: {_saida_git_publica(proc.stderr)}"
         )
 
     def search_commits(self, padroes: list[str], refs: str) -> list[CommitRef]:
@@ -208,7 +215,8 @@ class GitSubprocess:
             raise MotorError(f"git show {hash}: exit status {show_ret}")
         if patch.returncode != 0:
             raise MotorError(
-                f"git patch-id --stable: exit status {patch.returncode}: {patch.stderr}"
+                "git patch-id --stable: exit status "
+                f"{patch.returncode}: {_saida_git_publica(patch.stderr)}"
             )
         campos = patch.stdout.split()
         if not campos:
@@ -259,7 +267,7 @@ class GitSubprocess:
         _, pendente = self.pending_cherry_pick()
         if pendente:
             return CherryPickOutcome.CONFLITO
-        saida = (proc.stdout or "") + (proc.stderr or "")
+        saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
         raise MotorError(
             f"git cherry-pick -x {hash}: exit status {proc.returncode}: {saida}"
         )
@@ -293,7 +301,7 @@ class GitSubprocess:
                 env=env,
             )
         if proc.returncode != 0:
-            saida = (proc.stdout or "") + (proc.stderr or "")
+            saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
             raise MotorError(f"git cherry-pick --continue: exit status {proc.returncode}: {saida}")
 
     def abort_cherry_pick(self) -> None:
@@ -314,7 +322,7 @@ class GitSubprocess:
                 arquivos_conflito=[],
                 arvore_resultante=proc.stdout.strip(),
             )
-        saida = (proc.stdout or "") + (proc.stderr or "")
+        saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
         if proc.returncode == 1:
             return MergePrediction(conflita=True, arquivos_conflito=_parse_conflict_files(saida))
         raise MotorError(
@@ -410,7 +418,7 @@ class GitSubprocess:
         if proc.returncode != 0:
             raise MotorError(
                 f"git show {branch}:{path}: exit status {proc.returncode}: "
-                f"{proc.stderr.decode(errors='replace')}"
+                f"{_saida_git_publica(proc.stderr.decode(errors='replace'))}"
             )
         return proc.stdout
 

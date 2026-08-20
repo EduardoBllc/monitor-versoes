@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from rich import box
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
@@ -22,6 +23,7 @@ from motor.adapters.tasksource.tickio import TickioRest
 from motor.__main__ import _agrupar_por_task
 from motor.domain.types import VersionStatus
 from motor.domain.version import chave
+from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
@@ -47,14 +49,22 @@ class VersionOption:
 RepoLoader = Callable[[], list[RepoOption]]
 VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
+UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
 
 
 class MotorTUI(App[None]):
-    BINDINGS = [("q", "quit", "Sair")]
+    BINDINGS = [
+        ("q", "quit", "Sair"),
+        ("v", "verificar", "Verificar"),
+        ("u", "atualizar", "Atualizar"),
+    ]
     CSS = """
-    #barra { height: auto; padding: 1; }
-    #repo, #versao { width: 1fr; }
-    #acao { width: 18; padding: 1 2; border: round $panel; }
+    #barra { height: auto; padding: 1; align-vertical: middle; }
+    .rotulo { width: auto; height: auto; padding: 1 1 0 0; color: $text-muted; }
+    #separador { width: 3; height: auto; padding-top: 1; color: $text-muted; text-align: center; }
+    #repo { width: 2fr; max-width: 64; }
+    #versao { width: 1fr; max-width: 30; }
+    #verificar, #atualizar { width: 18; margin-left: 1; }
     #auditar { display: none; height: auto; margin: 0 1; }
     #resultado-scroll { height: 1fr; padding: 1 2; }
     #resultado { width: 1fr; }
@@ -65,26 +75,32 @@ class MotorTUI(App[None]):
         carregar_repos: RepoLoader,
         carregar_versoes: VersionLoader,
         executar: VerifyRunner,
+        atualizar_repo: UpdateRunner | None = None,
     ) -> None:
         super().__init__()
         self._carregar_repos = carregar_repos
         self._carregar_versoes = carregar_versoes
         self._executar = executar
+        self._atualizar = atualizar_repo
         self._repo: RepoOption | None = None
         self._versao: VersionOption | None = None
         self._ocupado = False
         self._tem_repos = False
         self._tem_versoes = False
         self._geracao_versoes = 0
+        self._pode_atualizar = False
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="barra"):
+            yield Static("repo", classes="rotulo")
             yield Select([], prompt="Repo", id="repo", disabled=True)
-            yield Static("Verificar", id="acao")
+            yield Static("/", id="separador")
+            yield Static("versão", classes="rotulo")
             yield Select([], prompt="Versão", id="versao", disabled=True)
             yield Checkbox("Auditar tag agora", id="auditar")
-            yield Button("Executar", id="executar", variant="primary", disabled=True)
+            yield Button("Verificar", id="verificar", variant="primary", disabled=True)
+            yield Button("Atualizar", id="atualizar", disabled=True)
         with VerticalScroll(id="resultado-scroll"):
             yield Static("Selecione um repositório.", id="resultado")
         yield Footer()
@@ -101,6 +117,35 @@ class MotorTUI(App[None]):
         self.query_one("#resultado", Static).update(
             renderizar_status(status, auditado=auditado)
         )
+        self._pode_atualizar = bool(
+            self._atualizar
+            and self._versao
+            and not self._versao.liberada
+            and status.faltantes
+        )
+        atualizar_botao = self.query_one("#atualizar", Button)
+        atualizar_botao.label = (
+            f"Atualizar · {len(status.faltantes)}"
+            if self._pode_atualizar
+            else "Atualizar"
+        )
+        atualizar_botao.variant = "warning" if self._pode_atualizar else "default"
+        self.query_one("#verificar", Button).variant = (
+            "default" if self._pode_atualizar else "primary"
+        )
+
+    def _mostrar_atualizacao(self, resultado: AtualizarResult) -> None:
+        self.query_one("#resultado", Static).update(
+            renderizar_atualizacao(resultado)
+        )
+        self._resetar_atualizacao()
+
+    def _resetar_atualizacao(self) -> None:
+        self._pode_atualizar = False
+        botao = self.query_one("#atualizar", Button)
+        botao.label = "Atualizar"
+        botao.variant = "default"
+        self.query_one("#verificar", Button).variant = "primary"
 
     def _falha(self, erro: Exception) -> None:
         if isinstance(erro, MotorError):
@@ -117,8 +162,11 @@ class MotorTUI(App[None]):
         self.query_one("#repo", Select).disabled = ocupado or not self._tem_repos
         self.query_one("#versao", Select).disabled = ocupado or not self._tem_versoes
         self.query_one("#auditar", Checkbox).disabled = ocupado
-        self.query_one("#executar", Button).disabled = (
+        self.query_one("#verificar", Button).disabled = (
             ocupado or self._repo is None or self._versao is None
+        )
+        self.query_one("#atualizar", Button).disabled = (
+            ocupado or not self._pode_atualizar
         )
 
     @work(thread=True, exclusive=True, group="repos")
@@ -162,6 +210,7 @@ class MotorTUI(App[None]):
         self._versao = None
         self._tem_versoes = False
         self._geracao_versoes += 1
+        self._resetar_atualizacao()
         versoes = self.query_one("#versao", Select)
         versoes.set_options([])
         versoes.value = Select.NULL
@@ -209,6 +258,7 @@ class MotorTUI(App[None]):
 
     def _selecionar_versao(self, valor: object) -> None:
         self._versao = valor if isinstance(valor, VersionOption) else None
+        self._resetar_atualizacao()
         auditoria = self.query_one("#auditar", Checkbox)
         auditoria.value = False
         auditoria.display = bool(self._versao and self._versao.liberada)
@@ -220,16 +270,37 @@ class MotorTUI(App[None]):
             self._bloquear(False)
 
     def on_button_pressed(self, evento: Button.Pressed) -> None:
-        if evento.button.id != "executar" or self._ocupado:
+        if evento.button.id == "verificar":
+            self._iniciar_verificacao()
+        elif evento.button.id == "atualizar":
+            self._iniciar_atualizacao()
+
+    def action_verificar(self) -> None:
+        self._iniciar_verificacao()
+
+    def action_atualizar(self) -> None:
+        self._iniciar_atualizacao()
+
+    def _iniciar_verificacao(self) -> None:
+        if self._ocupado:
             return
         if self._repo is None or self._versao is None:
             return
+        self._resetar_atualizacao()
         self._bloquear(True)
         self.executar_worker(
             self._repo,
             self._versao,
             self.query_one("#auditar", Checkbox).value,
         )
+
+    def _iniciar_atualizacao(self) -> None:
+        if self._ocupado or not self._pode_atualizar or self._atualizar is None:
+            return
+        if self._repo is None or self._versao is None:
+            return
+        self._bloquear(True)
+        self.atualizar_worker(self._repo, self._versao)
 
     @work(thread=True, exclusive=True, group="executar")
     def executar_worker(
@@ -241,6 +312,18 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._falha, erro)
         else:
             self.call_from_thread(self._mostrar_resultado, status, auditar)
+        finally:
+            self.call_from_thread(self._bloquear, False)
+
+    @work(thread=True, exclusive=True, group="executar")
+    def atualizar_worker(self, repo: RepoOption, versao: VersionOption) -> None:
+        try:
+            resultado = self._atualizar(repo, versao.numero) if self._atualizar else None
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro)
+        else:
+            if resultado is not None:
+                self.call_from_thread(self._mostrar_atualizacao, resultado)
         finally:
             self.call_from_thread(self._bloquear, False)
 
@@ -303,81 +386,158 @@ def _versoes_do_repo(repo: RepoOption) -> list[VersionOption]:
     return descobrir_versoes(new_git_subprocess(repo.caminho))
 
 
-def _verificar_repo(
-    repo: RepoOption, versao: str, auditar: bool
-) -> VersionStatus:
+def _deps_do_repo(repo: RepoOption, sessao: object) -> Deps:
     if repo.caminho is None:
         raise MotorError("checkout local não encontrado")
     git = new_git_subprocess(repo.caminho)
+    estado = PostgresEstado(sessao=sessao)
+    info = estado.resolver_repo(os.path.basename(repo.caminho))
+    tasks = TickioRest(
+        base_url=os.environ.get("TICKIO_BASE_URL", ""),
+        usuario=os.environ.get("TICKIO_USER", ""),
+        senha=os.environ.get("TICKIO_PASSWORD", ""),
+        sistema_id=info.tickio_sistema_id,
+    )
+    return Deps(
+        git=git,
+        tasks=tasks,
+        estado=estado,
+        repo=info.nome,
+        bitbucket_token=os.environ.get("BITBUCKET_TOKEN", ""),
+        bitbucket_email=os.environ.get("BITBUCKET_EMAIL", ""),
+    )
+
+
+def _verificar_repo(
+    repo: RepoOption, versao: str, auditar: bool
+) -> VersionStatus:
     with _abrir_sessao() as sessao:
-        estado = PostgresEstado(sessao=sessao)
-        info = estado.resolver_repo(os.path.basename(repo.caminho))
-        tasks = TickioRest(
-            base_url=os.environ.get("TICKIO_BASE_URL", ""),
-            usuario=os.environ.get("TICKIO_USER", ""),
-            senha=os.environ.get("TICKIO_PASSWORD", ""),
-            sistema_id=info.tickio_sistema_id,
-        )
-        deps = Deps(
-            git=git,
-            tasks=tasks,
-            estado=estado,
-            repo=info.nome,
-            bitbucket_token=os.environ.get("BITBUCKET_TOKEN", ""),
-            bitbucket_email=os.environ.get("BITBUCKET_EMAIL", ""),
-        )
+        deps = _deps_do_repo(repo, sessao)
         return verificar(deps, versao, auditar=auditar)
 
 
+def _atualizar_repo(repo: RepoOption, versao: str) -> AtualizarResult:
+    with _abrir_sessao() as sessao:
+        return atualizar(_deps_do_repo(repo, sessao), versao)
+
+
 def run_tui() -> None:
-    MotorTUI(_repos_do_ambiente, _versoes_do_repo, _verificar_repo).run()
+    MotorTUI(
+        _repos_do_ambiente,
+        _versoes_do_repo,
+        _verificar_repo,
+        _atualizar_repo,
+    ).run()
 
 
-def _resumo(status: VersionStatus) -> Table:
-    tabela = Table.grid(expand=True)
-    for _ in range(4):
-        tabela.add_column(ratio=1)
-    tabela.add_row(
-        f"Tasks novas {len(status.tasks_novas)}",
-        f"Tasks removidas {len(status.tasks_removidas)}",
-        f"Faltantes {len(status.faltantes)}",
-        f"Conflitos {len(status.conflitantes)}",
+def _resumo(status: VersionStatus) -> Text:
+    return Text.assemble(
+        ("Escopo ", "dim"),
+        (f"+{len(status.tasks_novas)} −{len(status.tasks_removidas)}", "bold"),
+        ("  ·  Git ", "dim"),
+        (f"{len(status.faltantes)} faltantes", "bold"),
+        (" · ", "dim"),
+        (f"{len(status.conflitantes)} conflitos", "bold"),
+        ("  ·  Sem commits ", "dim"),
+        (f"{len(status.tasks_sem_commits)} chamados", "bold"),
     )
-    return tabela
 
 
 def _alertas(status: VersionStatus) -> Text | None:
     linhas: list[str] = []
     if status.tasks_ambiguas:
-        linhas.append(f"Tasks em mais de uma versão: {', '.join(status.tasks_ambiguas)}")
+        linhas.append(
+            f"Chamados em mais de uma versão: {', '.join(status.tasks_ambiguas)}"
+        )
     if status.tasks_sem_commits:
-        linhas.append(f"Tasks sem commits: {', '.join(status.tasks_sem_commits)}")
+        linhas.append(f"Chamados sem commits: {', '.join(status.tasks_sem_commits)}")
     if not status.estado_integro:
         hashes = ", ".join(hash_[:8] for hash_ in status.commits_sumidos)
         linhas.append(f"Estado divergente do git: {hashes}")
     return Text("\n".join(linhas), style="bold yellow") if linhas else None
 
 
-def _faltantes(status: VersionStatus) -> Table | None:
+def _commits_agrupados(commits: list, estados: dict[str, str]) -> Group | None:
+    if not commits:
+        return None
+    tabelas: list[Table] = []
+    for chamado, itens in _agrupar_por_task(commits).items():
+        quantidade = len(itens)
+        tabela = Table(
+            "Commit",
+            "Mensagem",
+            "Estado",
+            title=f"#{chamado} · {quantidade} commit{'s' if quantidade != 1 else ''}",
+            title_justify="left",
+            expand=True,
+            box=box.SIMPLE_HEAD,
+            show_edge=False,
+            pad_edge=False,
+        )
+        for commit in itens:
+            tabela.add_row(
+                commit.hash_origem[:8],
+                commit.msg.splitlines()[0] if commit.msg else "",
+                estados.get(commit.hash_origem, ""),
+            )
+        tabelas.append(tabela)
+    return Group(*tabelas)
+
+
+def _faltantes(status: VersionStatus) -> Group | None:
     if not status.faltantes:
         return None
     conflitos = {commit.hash_origem for commit in status.conflitantes}
     suspeitos = {commit.hash_origem for commit in status.suspeitos_conteudo}
-    tabela = Table("Chamado", "Commit", "Mensagem", "Estado", expand=True)
-    for chamado, commits in _agrupar_por_task(status.faltantes).items():
-        for commit in commits:
-            badges: list[str] = []
-            if commit.hash_origem in conflitos:
-                badges.append("CONFLITANTE")
-            if commit.hash_origem in suspeitos:
-                badges.append("SUSPEITO")
-            tabela.add_row(
-                chamado,
-                commit.hash_origem[:8],
-                commit.msg.splitlines()[0] if commit.msg else "",
-                " · ".join(badges) or "FALTANTE",
+    estados: dict[str, str] = {}
+    for commit in status.faltantes:
+        badges: list[str] = []
+        if commit.hash_origem in conflitos:
+            badges.append("CONFLITANTE")
+        if commit.hash_origem in suspeitos:
+            badges.append("SUSPEITO")
+        estados[commit.hash_origem] = " · ".join(badges) or "FALTANTE"
+    return _commits_agrupados(status.faltantes, estados)
+
+
+def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
+    bloqueada = resultado.status == AtualizarStatus.BLOCKED
+    partes: list = [
+        Text(
+            "● Atualização bloqueada" if bloqueada else "● Atualização concluída",
+            style="bold red" if bloqueada else "bold green",
+        )
+    ]
+    aplicados = _commits_agrupados(
+        resultado.aplicados,
+        {commit.hash_origem: "APLICADO" for commit in resultado.aplicados},
+    )
+    if aplicados is not None:
+        partes.append(aplicados)
+    elif not bloqueada:
+        partes.append(Text("Branch já estava atualizada.", style="dim"))
+    if resultado.ja_presentes:
+        partes.append(
+            Text(
+                f"{resultado.ja_presentes} commits já presentes no histórico.",
+                style="dim",
             )
-    return tabela
+        )
+    if bloqueada:
+        partes.append(Text(f"Commit: {resultado.blocked_commit[:8]}"))
+        partes.append(Text("Arquivos em conflito:"))
+        partes.extend(Text(f"  {caminho}") for caminho in resultado.arquivos_conflito)
+        partes.append(
+            Text(
+                "Resolva os arquivos e continue pela CLI com --continue.",
+                style="bold yellow",
+            )
+        )
+    if resultado.status_versao is not None:
+        alertas = _alertas(resultado.status_versao)
+        if alertas is not None:
+            partes.append(alertas)
+    return Group(*partes)
 
 
 def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
@@ -393,9 +553,9 @@ def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
             partes.append(Text(f"Chamados: {', '.join(status.chamados)}"))
     elif auditado:
         partes.append(Text("AUDITORIA DA TAG — snapshot não alterado", style="bold cyan"))
-    titulo = "VERDE" if status.verde else "REQUER ATENÇÃO"
-    estilo = "bold green" if status.verde else "bold red"
-    partes.extend([Panel(titulo, style=estilo), _resumo(status)])
+    titulo = "VERDE" if status.verde else "● Pendências encontradas"
+    estilo = "bold green" if status.verde else "bold yellow"
+    partes.extend([Text(titulo, style=estilo), _resumo(status)])
     alertas = _alertas(status)
     faltantes = _faltantes(status)
     if alertas is not None:
