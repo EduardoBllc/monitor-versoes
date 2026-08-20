@@ -41,6 +41,28 @@ def test_task_source_default_e_tickio():
     assert args.fonte_flag == "tickio"
 
 
+@pytest.mark.parametrize(("argv", "arquivo"), [
+    (["--help"], ".env.development"),
+    (["--env", "production", "--help"], ".env"),
+])
+def test_main_carrega_o_ambiente_escolhido_antes_do_parser(
+    monkeypatch, argv, arquivo
+):
+    chamadas = []
+
+    def carregar(caminho=None, **opcoes):
+        nome = os.path.basename(caminho) if caminho else None
+        chamadas.append((nome, opcoes))
+
+    monkeypatch.setattr(cli, "load_dotenv", carregar)
+
+    with pytest.raises(SystemExit) as saida:
+        main(argv)
+
+    assert saida.value.code == 0
+    assert chamadas == [(arquivo, {"override": True})]
+
+
 def test_fonte_de_tasks_disponivel_em_todos_os_subcomandos():
     # --task-source/--lista vivem no parser pai 'comum': se ficassem so no
     # 'criar', os outros comandos leriam args.lista_manual inexistente —

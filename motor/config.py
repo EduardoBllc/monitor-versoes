@@ -1,4 +1,4 @@
-"""Configuracao lida do ambiente (.env carregado pelo __main__)."""
+"""Configuracao lida do ambiente selecionado pelo CLI."""
 
 from __future__ import annotations
 

@@ -485,7 +485,7 @@ o estado (§3, §14). Protocolos do `typing` mapeiam direto pras portas do §14 
 `CommitSource`, `GitRepo`, `EstadoRepo`); `argparse` é o CLI fino do §5.
 
 **Etapa 1 — Motor. Concluída.**
-Núcleo chamável (`motor/`) + um CLI fino (`python -m motor`) para exercê-lo antes de existir
+Núcleo chamável (`motor/`) + um CLI fino (`uv run motor`) para exercê-lo antes de existir
 daemon. Contém tudo que é correção: resolução do alvo com distribuição entre versões (Tickio,
 §4), oráculo `presente()` (§2), estado em Postgres (§3) + `reconstruir-estado`, as 3 operações
 (§5), predição `merge-tree` (§5), `rerere` e worktree isolada (§8), inferência de base (§7),
@@ -493,7 +493,9 @@ travas de publicação e congelamento (§6). Suíte de testes cobre tudo isso se
 reais (`FakeGit`, `FakeEstado`, `FakeTaskSource`); a suíte de integração em
 `tests/test_estado_postgres.py` (dez testes, `pytestmark = pytest.mark.integracao` no módulo
 inteiro) cobre o mesmo `EstadoRepo` contra Postgres real, incluindo a trigger de congelamento.
-Produção carrega `.env`; desenvolvimento e a suíte carregam `.env.development`. Os dois usam
+O CLI usa desenvolvimento por padrão (`uv run motor verificar ...`); produção exige
+`uv run motor --env production verificar ...`. Produção carrega `.env`; desenvolvimento e
+a suíte carregam `.env.development`. Os dois usam
 o mesmo `compose.yml`, mas `COMPOSE_PROJECT_NAME`, porta, banco, usuário e volume diferentes.
 Antes de qualquer `TRUNCATE`, a fixture recusa valores que não sejam exatamente os do banco
 de desenvolvimento.

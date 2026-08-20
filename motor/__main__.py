@@ -41,6 +41,22 @@ from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.ports import TaskSource
 
+_ARQUIVOS_AMBIENTE = {
+    "development": ".env.development",
+    "production": ".env",
+}
+
+
+def _carregar_ambiente(argv: list[str]) -> None:
+    seletor = argparse.ArgumentParser(add_help=False)
+    seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
+                         default="development")
+    ambiente = seletor.parse_known_args(argv)[0].env
+    if load_dotenv:
+        raiz = os.path.dirname(os.path.dirname(__file__))
+        load_dotenv(os.path.join(raiz, _ARQUIVOS_AMBIENTE[ambiente]),
+                    override=True)
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """Um subparser por comando: `motor -h` lista os comandos e
@@ -62,6 +78,9 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
 
     parser = argparse.ArgumentParser(prog="motor")
+    parser.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
+                        default="development",
+                        help="ambiente (default: development)")
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
 
     sub.add_parser("verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)")
@@ -243,10 +262,8 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    if load_dotenv:
-        load_dotenv()
-
     argv = list(sys.argv[1:] if argv is None else argv)
+    _carregar_ambiente(argv)
 
     args = _build_parser().parse_args(argv)
 
