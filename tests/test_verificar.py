@@ -47,6 +47,15 @@ class _GitComTagAntesDaBranch(FakeGit):
         return super().resolve_ref(ref)
 
 
+class _GitComPrevisaoEncadeada(FakeGit):
+    def predict_merge(self, parent: str, branch_tip: str, commit: str):
+        return MergePrediction(
+            conflita=commit == "a1" and branch_tip != "arvore-a0",
+            arquivos_conflito=[],
+            arvore_resultante=f"arvore-{commit}",
+        )
+
+
 def _git(tags: dict[str, bool] | None = None, classe=FakeGit) -> FakeGit:
     """Grafo: m0 e a raiz; a0 e um commit que so existe no master.
 
@@ -221,6 +230,49 @@ def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
     assert status.commits_sumidos == ["sumido"]
     assert status.estado_integro is False
     assert [c.hash_origem for c in status.conflitantes] == ["a0"]
+
+
+def test_verificar_prediz_conflitos_na_ordem_do_cherry_pick():
+    git = _git(classe=_GitComPrevisaoEncadeada)
+    git.add_commit("a1", "a0", "ch123123 beta", D + datetime.timedelta(seconds=1))
+    git.set_branch("master", "a1")
+    git.set_branch("origin/master", "a1")
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                ),
+                CommitRef(
+                    hash_origem="a1",
+                    parent="a0",
+                    chamado="123123",
+                    commit_date=D + datetime.timedelta(seconds=1),
+                    msg="ch123123 beta",
+                ),
+            ]
+        }
+    )
+    estado = _estado_com_repo()
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.faltantes] == ["a0", "a1"]
+    assert status.conflitantes == []
 
 
 def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():

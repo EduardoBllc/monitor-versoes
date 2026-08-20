@@ -309,7 +309,11 @@ class GitSubprocess:
                 text=True,
             )
         if proc.returncode == 0:
-            return MergePrediction(conflita=False, arquivos_conflito=[])
+            return MergePrediction(
+                conflita=False,
+                arquivos_conflito=[],
+                arvore_resultante=proc.stdout.strip(),
+            )
         saida = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode == 1:
             return MergePrediction(conflita=True, arquivos_conflito=_parse_conflict_files(saida))

@@ -13,6 +13,7 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
+from motor.domain.commits import ordenar_por_data
 from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import chave, inferir_tipo, versoes_abertas
@@ -142,11 +143,8 @@ def verificar(
             todos_os_hashes.setdefault(h, CommitRef(hash_origem=h))
 
     oracle = PresenceOracle(git=deps.git)
-    tip = deps.git.resolve_ref(ref_alvo)
-
     t = time.monotonic()
     presentes: dict[str, Presence] = {}
-    conflitantes: list[CommitRef] = []
     suspeitos_conteudo: list[CommitRef] = []
     for hash_, c in todos_os_hashes.items():
         p = oracle.presente(hash_, base_commit, ref_alvo)
@@ -158,10 +156,24 @@ def verificar(
         if p == Presence.AUSENTE and hash_ in candidatos_conflito:
             if oracle.suspeita_por_conteudo(hash_, base_commit, ref_alvo) is not None:
                 suspeitos_conteudo.append(c)
-            meta = deps.git.commit_meta(hash_)
-            pred = deps.git.predict_merge(meta.parent, tip, hash_)
-            if pred.conflita:
-                conflitantes.append(c)
+
+    # Simula o mesmo lote ordenado que `atualizar` executa. Usar sempre o tip
+    # original faz um commit dependente parecer modify/delete quando o pai
+    # tambem esta faltando, embora o pai seja aplicado antes dele.
+    tip = deps.git.resolve_ref(ref_alvo)
+    candidatos = ordenar_por_data(
+        [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito]
+    )
+    conflitantes: list[CommitRef] = []
+    for c in candidatos:
+        if presentes[c.hash_origem] != Presence.AUSENTE:
+            continue
+        meta = deps.git.commit_meta(c.hash_origem)
+        pred = deps.git.predict_merge(meta.parent, tip, c.hash_origem)
+        if pred.conflita:
+            conflitantes.append(c)
+            break
+        tip = pred.arvore_resultante
     logger.debug(
         "oraculo de presenca: %.3fs (%d commits)",
         time.monotonic() - t,

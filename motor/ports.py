@@ -19,10 +19,11 @@ class CherryPickOutcome(IntEnum):
 
 @dataclass(frozen=True)
 class MergePrediction:
-    """Previsão de merge."""
+    """Previsão de merge; se limpa, traz a árvore que alimenta o próximo."""
 
     conflita: bool
     arquivos_conflito: list[str]
+    arvore_resultante: str = ""
 
 
 class TaskSource(Protocol):

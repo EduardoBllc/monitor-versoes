@@ -383,6 +383,39 @@ def test_git_subprocess_cherry_pick_x_rerere_auto_resolvido(tmp_path):
     g.continue_cherry_pick()
 
 
+def test_git_subprocess_predict_merge_encadeia_commits_dependentes(tmp_path):
+    """O segundo commit modifica uma linha criada pelo primeiro.
+
+    Aplicado sozinho contra a base, ele conflita por modify/delete; aplicado
+    sobre a arvore prevista do primeiro, deve ser limpo como o cherry-pick real.
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("base\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+    g = new_git_subprocess(dir_)
+    base = g.resolve_ref("master")
+
+    (tmp_path / "arquivo.txt").write_text("base\nprimeira\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "primeiro")
+    primeiro = g.resolve_ref("master")
+
+    (tmp_path / "arquivo.txt").write_text("base\nsegunda\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "segundo")
+    segundo = g.resolve_ref("master")
+
+    assert g.predict_merge(primeiro, base, segundo).conflita
+
+    primeira = g.predict_merge(base, base, primeiro)
+    arvore = primeira.arvore_resultante
+    assert arvore, "previsao limpa precisa devolver a arvore para o proximo commit"
+    assert not g.predict_merge(primeiro, arvore, segundo).conflita
+
+
 def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_path):
     """A varredura e o BaseResolver tem de concordar sobre QUAL remoto conta.
 

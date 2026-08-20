@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from motor.domain.types import CommitRef
 from motor.errors import MotorError
@@ -208,7 +208,12 @@ class FakeGit:
         self._conflicted = []
 
     def predict_merge(self, parent: str, branch_tip: str, commit: str) -> MergePrediction:
-        return self.merge_predictions.get(commit, MergePrediction(conflita=False, arquivos_conflito=[]))
+        pred = self.merge_predictions.get(
+            commit, MergePrediction(conflita=False, arquivos_conflito=[])
+        )
+        if not pred.conflita and not pred.arvore_resultante:
+            return replace(pred, arvore_resultante=f"arvore-{commit}")
+        return pred
 
     def worktree_add(self, branch: str, base: str) -> None:
         if branch in self.branches:
