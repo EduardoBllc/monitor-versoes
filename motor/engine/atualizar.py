@@ -68,7 +68,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     """
     _recusar_se_liberada(deps, versao)
 
-    status = verificar(deps, versao)
+    status = verificar(deps, versao, manter_worktree=True)
 
     if status.suspeitos_conteudo:
         hashes = ", ".join(c.hash_origem[:8] for c in status.suspeitos_conteudo)

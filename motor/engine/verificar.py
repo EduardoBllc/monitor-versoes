@@ -43,7 +43,9 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
     return ChainCommitSource(sources=[pr, grep])
 
 
-def verificar(deps: Deps, versao: str) -> VersionStatus:
+def verificar(
+    deps: Deps, versao: str, *, manter_worktree: bool = False
+) -> VersionStatus:
     """Cruza Tickio x estado x git e devolve o VersionStatus.
 
     Versao com tag e congelada: devolve o snapshot do banco sem recalcular
@@ -166,6 +168,8 @@ def verificar(deps: Deps, versao: str) -> VersionStatus:
         deps.repo, versao, atribuicoes_de(alvo, presentes)
     )
 
+    if not manter_worktree:
+        deps.git.worktree_remove(versao)
     logger.debug("verificar total: %.3fs", time.monotonic() - inicio)
     return status
 

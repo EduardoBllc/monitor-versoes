@@ -71,6 +71,7 @@ def test_verificar_une_tarefas_das_versoes_abertas_menores():
     assert git.fetched == ["origin"]
     # sem branch remota nao ha o que puxar
     assert git.pulled == []
+    assert git.removed_worktrees == ["14.0.0"]
 
 
 def test_verificar_congela_versao_quando_a_tag_aparece():
