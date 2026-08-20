@@ -39,6 +39,21 @@ def test_aceita_lista_crua_de_numeros():
     assert _fonte(handler).fetch("13.34.0") == ["123456", "999111"]
 
 
+def test_aceita_envelope_real_do_tickio():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/ws/token/":
+            return httpx.Response(200, json={"access": "tok"})
+        return httpx.Response(200, json={
+            "sistema_id": 1,
+            "sistema": "VB Web",
+            "versao": "15.0.0",
+            "total": 2,
+            "chamados": [243353, 249991],
+        })
+
+    assert _fonte(handler).fetch("15.0.0") == ["243353", "249991"]
+
+
 def test_aceita_envelope_paginado():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/ws/token/":
@@ -83,9 +98,7 @@ def test_erro_na_listagem_vira_motorerror():
 
 
 def test_rejeita_corpo_em_formato_desconhecido():
-    """Um dict sem 'results' nao deve virar lista vazia silenciosa: um corpo
-    nao reconhecido tem que gritar, nao parecer 'nenhum chamado nesta versao'.
-    """
+    """Um dict sem lista conhecida nao deve virar lista vazia silenciosa."""
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/ws/token/":
             return httpx.Response(200, json={"access": "tok"})

@@ -110,20 +110,19 @@ class TickioRest:
 def _extrair_chamados(corpo) -> list[str]:
     """Le a lista de chamados do corpo da resposta.
 
-    PENDENTE: o formato real ainda nao foi visto. Aceita as tres formas
-    plausiveis (lista de numeros, lista de objetos com `chamado`, ou envelope
-    paginado com `results`); quando a resposta real chegar, so esta funcao
-    muda.
+    O Tickio responde um envelope com `chamados`; as formas antigas continuam
+    aceitas para compatibilidade.
 
-    Um dict sem `results` (ou qualquer outra forma nao reconhecida) nao cai
-    para lista vazia: isso pareceria "nenhum chamado nesta versao", que e
-    indistinguivel de um resultado vazio legitimo. Em vez disso, levanta
-    MotorError nomeando o que voltou.
+    Uma forma nao reconhecida nao cai para lista vazia: isso pareceria "nenhum
+    chamado nesta versao", indistinguivel de um resultado vazio legitimo.
     """
     if isinstance(corpo, dict):
-        if "results" not in corpo:
+        if "chamados" in corpo:
+            itens = corpo["chamados"]
+        elif "results" in corpo:
+            itens = corpo["results"]
+        else:
             raise MotorError(f"resposta do Tickio em formato inesperado: {corpo!r}")
-        itens = corpo["results"]
     else:
         itens = corpo
 

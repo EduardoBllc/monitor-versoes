@@ -69,9 +69,10 @@ def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
 
 
 def fontes_de_alvo(alvo: str, abertas: list[str]) -> list[str]:
-    """Versoes cujas tarefas caem no alvo: toda aberta <= alvo, alvo incluso.
+    """Versoes cujas tarefas caem no alvo: abertas entre 13.0.0 e o alvo.
 
     E a regra de distribuicao vista pelo lado da versao (spec §2).
     """
+    corte = chave("13.0.0")
     k = chave(alvo)
-    return [v for v in abertas if chave(v) <= k]
+    return [v for v in abertas if corte <= chave(v) <= k]

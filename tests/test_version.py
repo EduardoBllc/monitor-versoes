@@ -99,3 +99,10 @@ def test_fontes_de_alvo_inclui_o_proprio_alvo_quando_ainda_nao_tem_branch():
         "14.0.0",
         "14.1.0",
     ]
+
+
+def test_fontes_de_alvo_ignora_versoes_anteriores_ao_corte():
+    assert fontes_de_alvo("13.34.0", ["5.2.0", "13.0.0", "13.34.0"]) == [
+        "13.0.0",
+        "13.34.0",
+    ]
