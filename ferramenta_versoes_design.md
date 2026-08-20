@@ -8,7 +8,7 @@
 
 > Status: **implementado** (`motor/`, suíte verde). Decisões travadas: oráculo = manifesto +
 > trailer; versão liberada é imutável — `atualizar` passa a ser recusado nela, não só o
-> rebuild (§6); formato = motor + daemon localhost em etapas (§13); stack = **Python**.
+> rebuild (§6); front-ends = CLI + TUI (§13); daemon adiado; stack = **Python**.
 > Complementa `VERSOES.md` (o fluxo manual atual). Quem cria a tag é o processo de release
 > (mecanismo ainda não definido) — a ferramenta apenas **lê** a tag existente (§6).
 
@@ -385,7 +385,7 @@ acertar:**
   chegam a usar a fonte de tasks.
 - **Convenção de mensagem (decidido)** — grep casa só `ch<num>`. O `VB-<num>` do ClickUp saiu
   junto com o `custom_id`: identidade da tarefa é hoje só o número do chamado.
-- **Formato do tool (decidido)** — motor + daemon localhost, em etapas. Ver §13.
+- **Formato do tool (decidido)** — motor com front-ends CLI e TUI; daemon adiado. Ver §13.
 - **Pendência única, restrita ao parsing:** o corpo de resposta de
   `GET /api/v1/ws/versoes/chamados/` **nunca foi observado**. `_extrair_chamados`
   (`motor/adapters/tasksource/tickio.py`) tolera três formas plausíveis — lista de números,
@@ -493,8 +493,7 @@ o estado (§3, §14). Protocolos do `typing` mapeiam direto pras portas do §14 
 `CommitSource`, `GitRepo`, `EstadoRepo`); `argparse` é o CLI fino do §5.
 
 **Etapa 1 — Motor. Concluída.**
-Núcleo chamável (`motor/`) + um CLI fino (`uv run motor`) para exercê-lo antes de existir
-daemon. Contém tudo que é correção: resolução do alvo com distribuição entre versões (Tickio,
+Núcleo chamável (`motor/`) + um CLI fino (`uv run motor`). Contém tudo que é correção: resolução do alvo com distribuição entre versões (Tickio,
 §4), oráculo `presente()` (§2), estado em Postgres (§3) + `reconstruir-estado`, as 3 operações
 (§5), predição `merge-tree` (§5), `rerere` e worktree isolada (§8), inferência de base (§7),
 travas de publicação e congelamento (§6). Suíte de testes cobre tudo isso sem git nem rede
@@ -515,16 +514,14 @@ uv run motor repo adicionar vendabemweb --tickio-sistema-id 7
 uv run motor --env production repo adicionar vendabemweb --tickio-sistema-id 7
 ```
 
-**Etapa 2 — Daemon localhost, só visualização (read-only).** *Ainda não implementada.*
-Servidor em `127.0.0.1` que mostra o `verificar` de forma visual: cruzamento 3-vias
-(Tickio × estado × git), commits faltantes, quais conflitam, **os dois repos lado a lado**.
-Nenhuma mutação. Mesmo read-only, bind restrito a `127.0.0.1` + token por requisição
-(defesa contra CSRF de aba maliciosa — o footgun clássico de web local que executa comando).
+**Etapa 2 — TUI de `verificar`. Concluída.**
+`uv run motor tui` abre uma barra **repo · Verificar · versão**. A opção explícita
+**Auditar tag agora** aparece somente para versão liberada e pede o recálculo contra a tag,
+sem alterar o snapshot. Banco, rede e Git só são abertos pelos callbacks executados nos
+workers da interface.
 
-**Etapa 3 — Execução das rotinas pelo daemon.** *Ainda não implementada.*
-`criar` / `atualizar` disparados pela UI. Orquestração de conflito: detecta → mostra o diff
-→ "resolva no editor e clique Continuar" (a **edição** do merge fica no editor, não no
-navegador; §8). Postura de segurança completa: CSRF token por ação, `127.0.0.1` apenas.
+**Daemon localhost. Adiado.** Só entra no escopo se surgir requisito de interface web ou de
+execução persistente; até lá, CLI e TUI cobrem a operação de verificação sem servidor local.
 
 ## 14. Arquitetura do motor
 
@@ -535,7 +532,7 @@ catedral de interfaces.
 
 ```
                  front-ends (FORA do motor)
-                 CLI  ·  daemon localhost (futuro, §13)
+                 CLI  ·  TUI
                         │  chamam a API de Operações
       ┌─────────────────┴────────────────────────────┐
       │             OPERAÇÕES (use-cases)             │

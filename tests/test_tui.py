@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import datetime
 from pathlib import Path
 from threading import Event
@@ -9,6 +10,7 @@ from textual.widgets import Button, Checkbox, Select, Static
 from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.errors import MotorError
+import motor.tui as tui
 from motor.tui import (
     MotorTUI,
     RepoOption,
@@ -70,6 +72,20 @@ def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
     assert [opcao.caminho for opcao in opcoes] == [None, None, None]
 
 
+def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    checkout = _checkout(tmp_path, "alpha")
+    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+
+    assert tui._repos_do_ambiente() == [
+        RepoOption(nome="alpha", caminho=str(checkout))
+    ]
+
+
 class GitCatalogoFake:
     def __init__(self):
         self.fetched: list[str] = []
@@ -93,6 +109,72 @@ def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_tag():
         VersionOption(numero="13.9.0", liberada=True),
     ]
     assert git.fetched == ["origin"]
+
+
+def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
+    git = GitCatalogoFake()
+    caminhos: list[str] = []
+    monkeypatch.setattr(
+        tui,
+        "new_git_subprocess",
+        lambda caminho: caminhos.append(caminho) or git,
+    )
+
+    resultado = tui._versoes_do_repo(
+        RepoOption(nome="alpha", caminho="/projetos/alpha")
+    )
+
+    assert caminhos == ["/projetos/alpha"]
+    assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
+
+
+def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
+    tmp_path, monkeypatch
+):
+    checkout = _checkout(tmp_path, "alpha")
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    capturado: dict[str, object] = {}
+
+    class TickioSpy:
+        def __init__(self, base_url, usuario, senha, sistema_id):
+            self.sistema_id = sistema_id
+
+    def verificar_spy(deps, versao, auditar=False):
+        capturado.update(
+            repo=deps.repo,
+            versao=versao,
+            auditar=auditar,
+            tickio_sistema_id=deps.tasks.sistema_id,
+            bitbucket_token=deps.bitbucket_token,
+            bitbucket_email=deps.bitbucket_email,
+        )
+        return VersionStatus(verde=True, estado_integro=True)
+
+    monkeypatch.setenv("BITBUCKET_TOKEN", "tok-secreto")
+    monkeypatch.setenv("BITBUCKET_EMAIL", "dev@example.com")
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(tui, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(tui, "TickioRest", TickioSpy)
+    monkeypatch.setattr(tui, "verificar", verificar_spy)
+
+    status = tui._verificar_repo(
+        RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0", True
+    )
+
+    assert capturado == {
+        "repo": "alpha",
+        "versao": "14.0.0",
+        "auditar": True,
+        "tickio_sistema_id": 7,
+        "bitbucket_token": "tok-secreto",
+        "bitbucket_email": "dev@example.com",
+    }
+    texto = _texto(renderizar_status(status))
+    assert "tok-secreto" not in texto
+    assert "dev@example.com" not in texto
 
 
 def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():

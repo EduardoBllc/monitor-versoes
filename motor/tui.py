@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,8 +15,14 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Button, Checkbox, Footer, Header, Select, Static
 
+from motor.__main__ import _abrir_sessao
+from motor.adapters.estado.postgres import PostgresEstado
+from motor.adapters.git.subprocess import new_git_subprocess
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.__main__ import _agrupar_por_task
 from motor.domain.types import VersionStatus
+from motor.engine.deps import Deps
+from motor.engine.verificar import verificar
 from motor.errors import MotorError
 from motor.ports import EstadoRepo, GitRepo
 
@@ -276,6 +283,49 @@ def descobrir_versoes(git: GitRepo) -> list[VersionOption]:
         set(git.list_version_branches()), key=_chave_versao, reverse=True
     )
     return [VersionOption(numero, numero in tags) for numero in numeros]
+
+
+def _repos_do_ambiente() -> list[RepoOption]:
+    with _abrir_sessao() as sessao:
+        return descobrir_repos(
+            PostgresEstado(sessao=sessao), os.environ.get("PROJECTS_DIR", "")
+        )
+
+
+def _versoes_do_repo(repo: RepoOption) -> list[VersionOption]:
+    if repo.caminho is None:
+        return []
+    return descobrir_versoes(new_git_subprocess(repo.caminho))
+
+
+def _verificar_repo(
+    repo: RepoOption, versao: str, auditar: bool
+) -> VersionStatus:
+    if repo.caminho is None:
+        raise MotorError("checkout local não encontrado")
+    git = new_git_subprocess(repo.caminho)
+    with _abrir_sessao() as sessao:
+        estado = PostgresEstado(sessao=sessao)
+        info = estado.resolver_repo(os.path.basename(repo.caminho))
+        tasks = TickioRest(
+            base_url=os.environ.get("TICKIO_BASE_URL", ""),
+            usuario=os.environ.get("TICKIO_USER", ""),
+            senha=os.environ.get("TICKIO_PASSWORD", ""),
+            sistema_id=info.tickio_sistema_id,
+        )
+        deps = Deps(
+            git=git,
+            tasks=tasks,
+            estado=estado,
+            repo=info.nome,
+            bitbucket_token=os.environ.get("BITBUCKET_TOKEN", ""),
+            bitbucket_email=os.environ.get("BITBUCKET_EMAIL", ""),
+        )
+        return verificar(deps, versao, auditar=auditar)
+
+
+def run_tui() -> None:
+    MotorTUI(_repos_do_ambiente, _versoes_do_repo, _verificar_repo).run()
 
 
 def _resumo(status: VersionStatus) -> Table:
