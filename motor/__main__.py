@@ -118,6 +118,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("reconstruir-estado", parents=[comum],
                    help="regenera as atribuicoes a partir do git")
 
+    sub.add_parser("tui", help="abre a interface interativa de verificacao")
+
     p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
     acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True,
                                        metavar="acao")
@@ -126,6 +128,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_adicionar.add_argument("--tickio-sistema-id", required=True, type=_tickio_sistema_id)
 
     return parser
+
+
+def _iniciar_tui() -> None:
+    from motor.tui import run_tui
+
+    run_tui()
 
 
 def _resolver_repo(valor: str) -> str:
@@ -312,6 +320,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
+        if args.comando == "tui":
+            _iniciar_tui()
+            return
+
         if args.comando == "repo":
             with _abrir_sessao() as sessao:
                 PostgresEstado(sessao=sessao).registrar_repo(

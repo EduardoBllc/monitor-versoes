@@ -1,0 +1,530 @@
+import asyncio
+import contextlib
+import datetime
+from pathlib import Path
+from threading import Event
+
+from rich.console import Console
+from textual.widgets import Button, Checkbox, Select, Static
+
+from motor.adapters.estado.fake import FakeEstado
+from motor.domain.types import CommitRef, RepoInfo, VersionStatus
+from motor.errors import MotorError
+import motor.tui as tui
+from motor.tui import (
+    MotorTUI,
+    RepoOption,
+    VersionOption,
+    descobrir_repos,
+    descobrir_versoes,
+    renderizar_status,
+)
+
+
+def _texto(renderable) -> str:
+    console = Console(record=True, width=120, color_system=None)
+    console.print(renderable)
+    return console.export_text()
+
+
+def _checkout(raiz: Path, nome: str) -> Path:
+    caminho = raiz / nome
+    caminho.mkdir()
+    (caminho / ".git").touch()
+    return caminho
+
+
+def _estado() -> FakeEstado:
+    return FakeEstado(
+        repos={
+            "alpha": RepoInfo(nome="alpha", tickio_sistema_id=1),
+            "beta": RepoInfo(nome="beta", tickio_sistema_id=2),
+            "gamma": RepoInfo(nome="gamma", tickio_sistema_id=3),
+        },
+        aliases={"beta-local": "beta"},
+    )
+
+
+def test_descobrir_repos_prefere_canonico_depois_alias_e_mantem_ausente(tmp_path):
+    alpha = _checkout(tmp_path, "alpha")
+    _checkout(tmp_path, "beta-local")
+    beta = _checkout(tmp_path, "beta")
+    _checkout(tmp_path, "nao-cadastrado")
+
+    assert descobrir_repos(_estado(), str(tmp_path)) == [
+        RepoOption(nome="alpha", caminho=str(alpha)),
+        RepoOption(nome="beta", caminho=str(beta)),
+        RepoOption(nome="gamma", caminho=None),
+    ]
+
+
+def test_descobrir_repos_usa_alias_quando_canonico_nao_existe(tmp_path):
+    alias = _checkout(tmp_path, "beta-local")
+
+    opcoes = descobrir_repos(_estado(), str(tmp_path))
+
+    assert opcoes[1] == RepoOption(nome="beta", caminho=str(alias))
+
+
+def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
+    opcoes = descobrir_repos(_estado(), str(tmp_path / "ausente"))
+
+    assert [opcao.caminho for opcao in opcoes] == [None, None, None]
+
+
+def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    checkout = _checkout(tmp_path, "alpha")
+    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+
+    assert tui._repos_do_ambiente() == [
+        RepoOption(nome="alpha", caminho=str(checkout))
+    ]
+
+
+def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch):
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    _checkout(tmp_path, "alpha")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PROJECTS_DIR", raising=False)
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+
+    assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=None)]
+
+
+class GitCatalogoFake:
+    def __init__(self):
+        self.fetched: list[str] = []
+
+    def fetch(self, remote: str) -> None:
+        self.fetched.append(remote)
+
+    def list_version_branches(self) -> list[str]:
+        return ["13.9.0", "14.0.0", "13.10.0", "13.9.0"]
+
+    def list_version_tags(self) -> list[str]:
+        return ["13.9.0"]
+
+
+def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_tag():
+    git = GitCatalogoFake()
+
+    assert descobrir_versoes(git) == [
+        VersionOption(numero="14.0.0", liberada=False),
+        VersionOption(numero="13.10.0", liberada=False),
+        VersionOption(numero="13.9.0", liberada=True),
+    ]
+    assert git.fetched == ["origin"]
+
+
+def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
+    git = GitCatalogoFake()
+    caminhos: list[str] = []
+    monkeypatch.setattr(
+        tui,
+        "new_git_subprocess",
+        lambda caminho: caminhos.append(caminho) or git,
+    )
+
+    resultado = tui._versoes_do_repo(
+        RepoOption(nome="alpha", caminho="/projetos/alpha")
+    )
+
+    assert caminhos == ["/projetos/alpha"]
+    assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
+
+
+def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
+    tmp_path, monkeypatch
+):
+    checkout = _checkout(tmp_path, "alpha")
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
+    )
+    capturado: dict[str, object] = {}
+
+    class TickioSpy:
+        def __init__(self, base_url, usuario, senha, sistema_id):
+            self.sistema_id = sistema_id
+
+    def verificar_spy(deps, versao, auditar=False):
+        capturado.update(
+            repo=deps.repo,
+            versao=versao,
+            auditar=auditar,
+            tickio_sistema_id=deps.tasks.sistema_id,
+            bitbucket_token=deps.bitbucket_token,
+            bitbucket_email=deps.bitbucket_email,
+        )
+        return VersionStatus(verde=True, estado_integro=True)
+
+    monkeypatch.setenv("BITBUCKET_TOKEN", "tok-secreto")
+    monkeypatch.setenv("BITBUCKET_EMAIL", "dev@example.com")
+    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(tui, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(tui, "TickioRest", TickioSpy)
+    monkeypatch.setattr(tui, "verificar", verificar_spy)
+
+    status = tui._verificar_repo(
+        RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0", True
+    )
+
+    assert capturado == {
+        "repo": "alpha",
+        "versao": "14.0.0",
+        "auditar": True,
+        "tickio_sistema_id": 7,
+        "bitbucket_token": "tok-secreto",
+        "bitbucket_email": "dev@example.com",
+    }
+    texto = _texto(renderizar_status(status))
+    assert "tok-secreto" not in texto
+    assert "dev@example.com" not in texto
+
+
+def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
+    commit = CommitRef(
+        hash_origem="deadbeefcafe",
+        chamado="255514",
+        msg="Ajusta pagamento\ncorpo",
+    )
+    status = VersionStatus(
+        verde=False,
+        tasks_novas=["255514"],
+        tasks_removidas=["200000"],
+        estado_integro=False,
+        tasks_ambiguas=["300000"],
+        commits_sumidos=["badc0ffee000"],
+        faltantes=[commit],
+        conflitantes=[commit],
+        suspeitos_conteudo=[commit],
+        tasks_sem_commits=["400000"],
+    )
+
+    texto = _texto(renderizar_status(status))
+
+    for esperado in (
+        "REQUER ATENÇÃO",
+        "Tasks novas 1",
+        "Tasks removidas 1",
+        "Faltantes 1",
+        "Conflitos 1",
+        "255514",
+        "deadbeef",
+        "CONFLITANTE",
+        "SUSPEITO",
+        "300000",
+        "400000",
+        "badc0ffe",
+    ):
+        assert esperado in texto
+
+
+def test_renderizar_snapshot_liberado_explica_que_esta_congelado():
+    status = VersionStatus(
+        verde=True,
+        estado_integro=True,
+        liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
+        chamados=["255514", "256308"],
+    )
+
+    texto = _texto(renderizar_status(status))
+
+    assert "SNAPSHOT CONGELADO" in texto
+    assert "2026-08-07 14:22" in texto
+    assert "255514" in texto and "256308" in texto
+
+
+def test_renderizar_snapshot_liberado_preserva_saude_nao_verde():
+    status = VersionStatus(
+        verde=False,
+        estado_integro=True,
+        liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
+    )
+
+    texto = _texto(renderizar_status(status))
+
+    assert "REQUER ATENÇÃO" in texto
+    assert "SNAPSHOT CONGELADO" in texto
+    assert "Chamados:" not in texto
+
+
+def test_renderizar_auditoria_nomeia_recalculo_sem_alterar_snapshot():
+    texto = _texto(
+        renderizar_status(VersionStatus(verde=True, estado_integro=True), auditado=True)
+    )
+
+    assert "AUDITORIA DA TAG" in texto
+    assert "snapshot não alterado" in texto
+
+
+def test_app_seleciona_repo_tag_e_executa_auditoria():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=True)
+    chamadas: list[tuple[RepoOption, str, bool]] = []
+
+    def executar(opcao: RepoOption, numero: str, auditar: bool) -> VersionStatus:
+        chamadas.append((opcao, numero, auditar))
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo, RepoOption(nome="beta", caminho=None)],
+            carregar_versoes=lambda opcao: [versao],
+            executar=executar,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            assert app.query_one("#auditar", Checkbox).display
+            assert not app.query_one("#auditar", Checkbox).value
+            app.query_one("#auditar", Checkbox).value = True
+            assert not app.query_one("#executar", Button).disabled
+            await pilot.click("#executar")
+            await app.workers.wait_for_complete()
+
+            assert chamadas == [(repo, "14.0.0", True)]
+            assert "VERDE" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_troca_versao_limpa_resultado_anterior():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao_a = VersionOption(numero="14.0.0", liberada=False)
+    versao_b = VersionOption(numero="14.0.1", liberada=False)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao_a, versao_b],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=True, estado_integro=True
+            ),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao_a
+            await pilot.pause()
+            await pilot.click("#executar")
+            await app.workers.wait_for_complete()
+            assert "VERDE" in _texto(app.query_one("#resultado", Static).content)
+
+            app.query_one("#versao", Select).value = versao_b
+            await pilot.pause()
+
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "VERDE" not in texto
+            assert "14.0.1" in texto
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_troca_repo_limpa_erro_anterior():
+    repo_a = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    repo_b = RepoOption(nome="beta", caminho="/projetos/beta")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    liberar_b = Event()
+
+    def carregar_versoes(repo: RepoOption) -> list[VersionOption]:
+        if repo == repo_b:
+            liberar_b.wait(timeout=2)
+        return [versao]
+
+    def falhar(repo, numero, auditar):
+        raise MotorError("falha anterior")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(lambda: [repo_a, repo_b], carregar_versoes, falhar)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo_a
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#executar")
+            await app.workers.wait_for_complete()
+            assert "falha anterior" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+            app.query_one("#repo", Select).value = repo_b
+            await pilot.pause()
+
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "falha anterior" not in texto
+            assert "Carregando versões de beta" in texto
+            liberar_b.set()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_exibe_motor_error_sem_traceback():
+    def falhar():
+        raise MotorError("banco inacessível")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(falhar, lambda repo: [], lambda repo, versao, auditar: None)
+        async with app.run_test(size=(120, 36)):
+            await app.workers.wait_for_complete()
+            assert "banco inacessível" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_esconde_erro_interno_e_registra_traceback(caplog):
+    def falhar():
+        raise RuntimeError("bug secreto")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(falhar, lambda repo: [], lambda repo, versao, auditar: None)
+        async with app.run_test(size=(120, 36)):
+            await app.workers.wait_for_complete()
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "Erro interno fatal" in texto
+            assert "bug secreto" not in texto
+
+    asyncio.run(executar_fluxo())
+    assert "Erro interno fatal na TUI" in caplog.text
+    assert "Traceback" in caplog.text
+
+
+def test_app_nao_inicia_execucoes_concorrentes():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    iniciou = Event()
+    liberar = Event()
+    chamadas: list[str] = []
+
+    def executar(opcao, numero, auditar):
+        chamadas.append(numero)
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(lambda: [repo], lambda opcao: [versao], executar)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#executar")
+            assert await asyncio.to_thread(iniciou.wait, 1)
+            assert app.query_one("#executar", Button).disabled
+            await pilot.click("#executar")
+            liberar.set()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+    assert chamadas == ["14.0.0"]
+
+
+def test_app_descarta_versoes_obsoletas_sem_liberar_repo_atual():
+    repo_a = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    repo_b = RepoOption(nome="beta", caminho="/projetos/beta")
+    versao_anterior = VersionOption(numero="12.0.0", liberada=False)
+    versao_a = VersionOption(numero="13.0.0", liberada=False)
+    versao_b = VersionOption(numero="14.0.0", liberada=False)
+    iniciou_a = Event()
+    liberar_a = Event()
+    iniciou_b = Event()
+    liberar_b = Event()
+    cargas_b = 0
+
+    def carregar_versoes(repo: RepoOption) -> list[VersionOption]:
+        nonlocal cargas_b
+        if repo == repo_a:
+            iniciou_a.set()
+            liberar_a.wait(timeout=2)
+            return [versao_a]
+        cargas_b += 1
+        if cargas_b == 1:
+            return [versao_anterior]
+        iniciou_b.set()
+        liberar_b.wait(timeout=2)
+        return [versao_b]
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo_a, repo_b],
+            carregar_versoes=carregar_versoes,
+            executar=lambda repo, versao, auditar: None,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo_b
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao_anterior
+            await pilot.pause()
+
+            app.query_one("#repo", Select).value = repo_a
+            await pilot.pause()
+            assert await asyncio.to_thread(iniciou_a.wait, 1)
+            app.query_one("#repo", Select).value = repo_b
+            await pilot.pause()
+            assert await asyncio.to_thread(iniciou_b.wait, 1)
+
+            liberar_a.set()
+            await pilot.pause()
+            versoes = app.query_one("#versao", Select)
+            assert versoes.disabled
+            assert app.query_one("#repo", Select).disabled
+
+            liberar_b.set()
+            await app.workers.wait_for_complete()
+            versoes.value = versao_b
+            await pilot.pause()
+            assert versoes.selection == versao_b
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_mantem_repo_sem_checkout_visivel_mas_inexecutavel():
+    repo = RepoOption(nome="beta", caminho=None)
+
+    def nao_deve_rodar(*args):
+        raise AssertionError("repo indisponivel nao pode chamar uma borda")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=nao_deve_rodar,
+            executar=nao_deve_rodar,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+
+            assert app.query_one("#versao", Select).disabled
+            assert app.query_one("#executar", Button).disabled
+            assert "checkout local não encontrado" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())

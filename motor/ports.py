@@ -177,6 +177,10 @@ class EstadoRepo(Protocol):
         diferente fragmenta o estado."""
         ...
 
+    def listar_repos(self) -> list[RepoInfo]:
+        """Repos canonicos cadastrados, em ordem de nome; aliases nao entram."""
+        ...
+
     def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
         """Upsert da versao operada. Nao toca `liberada_em`."""
         ...

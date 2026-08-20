@@ -36,6 +36,9 @@ class FakeEstado:
             )
         return info
 
+    def listar_repos(self) -> list[RepoInfo]:
+        return [self.repos[nome] for nome in sorted(self.repos)]
+
     def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
         # Idempotente e nao-destrutivo: base e liberada_em so entram na
         # primeira gravacao. A base e o ponto onde a branch foi cortada, nao

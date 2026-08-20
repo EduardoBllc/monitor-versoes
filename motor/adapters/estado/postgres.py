@@ -62,6 +62,12 @@ class PostgresEstado:
             )
         return RepoInfo(nome=linha.nome, tickio_sistema_id=linha.tickio_sistema_id)
 
+    def listar_repos(self) -> list[RepoInfo]:
+        return [
+            RepoInfo(nome=linha.nome, tickio_sistema_id=linha.tickio_sistema_id)
+            for linha in self._scalars(select(models.Repo).order_by(models.Repo.nome))
+        ]
+
     def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
         # Idempotente e nao-destrutivo: a base e o ponto onde a branch foi
         # cortada, gravado uma vez. Reescreve-la faria a base de uma X.0.0

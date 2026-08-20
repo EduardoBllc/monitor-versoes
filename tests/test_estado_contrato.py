@@ -114,6 +114,17 @@ def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
     assert estado.resolver_repo(ALIAS).nome == REPO
 
 
+def test_listar_repos_devolve_canonicos_em_ordem_sem_alias(estado):
+    estado.registrar_repo("zzz", 99)
+    estado.registrar_repo("aaa", 11)
+
+    assert estado.listar_repos() == [
+        RepoInfo(nome="aaa", tickio_sistema_id=11),
+        RepoInfo(nome=REPO, tickio_sistema_id=SISTEMA_ID),
+        RepoInfo(nome="zzz", tickio_sistema_id=99),
+    ]
+
+
 @pytest.mark.parametrize(
     "chamada",
     [
