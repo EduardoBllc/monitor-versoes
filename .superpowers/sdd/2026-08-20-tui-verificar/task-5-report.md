@@ -30,6 +30,22 @@
 - `rtk uv run motor --help` — inclui `tui` e preserva os comandos existentes.
 - `rtk git diff --check` — sem saída, exit code 0.
 
+## Fix round 2/5 — escopo da TUI
+
+### Mudança
+
+- A API do motor agora explicita que o CLI expõe as quatro operações e que a TUI atual usa somente `verificar`.
+
+### Arquivos
+
+- `ferramenta_versoes_design.md`
+- `.superpowers/sdd/2026-08-20-tui-verificar/task-5-report.md`
+
+### Verificação
+
+- Testes não aplicáveis: alteração exclusiva de prosa humana; nenhum teste change-detector foi adicionado.
+- `rtk git diff --check` — sem saída, exit code 0.
+
 ## Auto-revisão
 
 - Correção: o retorno de `main()` para `tui` precede toda abertura de sessão; checkout ausente continua recusado pela composição.

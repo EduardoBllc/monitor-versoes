@@ -620,8 +620,8 @@ toca git, rede ou banco.
   `atualizar --continue` reconstrói tudo a partir do git e do estado a cada chamada, sem nada
   em memória entre invocações do CLI.
 
-**Operações (API que CLI e TUI chamam).** `criar` · `verificar` · `atualizar` ·
-`reconstruir_estado`.
+**Operações (API do motor).** O CLI expõe `criar` · `verificar` · `atualizar` ·
+`reconstruir_estado`; a TUI atual consome apenas `verificar`.
 
 - `verificar` = fetch + congela tags novas + TargetResolver + PresenceOracle + reconciliação +
   `predict_merge` → `VersionStatus`; devolve o snapshot do banco sem recalcular se a versão já
