@@ -159,6 +159,8 @@ class MotorTUI(App[None]):
 
     def _bloquear(self, ocupado: bool) -> None:
         self._ocupado = ocupado
+        if not ocupado:
+            self.query_one("#resultado", Static).loading = False
         self.query_one("#repo", Select).disabled = ocupado or not self._tem_repos
         self.query_one("#versao", Select).disabled = ocupado or not self._tem_versoes
         self.query_one("#auditar", Checkbox).disabled = ocupado
@@ -253,6 +255,7 @@ class MotorTUI(App[None]):
         select.set_options([(opcao.numero, opcao) for opcao in opcoes])
         self._tem_versoes = bool(opcoes)
         self._bloquear(False)
+        self.query_one("#resultado", Static).update("Selecione uma versão.")
         if not opcoes:
             self._erro("nenhuma branch ou tag X.Y.Z encontrada")
 
@@ -287,6 +290,9 @@ class MotorTUI(App[None]):
         if self._repo is None or self._versao is None:
             return
         self._resetar_atualizacao()
+        resultado = self.query_one("#resultado", Static)
+        resultado.update(f"Verificando {self._repo.nome} {self._versao.numero}…")
+        resultado.loading = True
         self._bloquear(True)
         self.executar_worker(
             self._repo,

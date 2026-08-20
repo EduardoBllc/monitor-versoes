@@ -523,6 +523,30 @@ def test_app_troca_versao_limpa_resultado_anterior():
     asyncio.run(executar_fluxo())
 
 
+def test_app_substitui_carregamento_apos_listar_versoes():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=True, estado_integro=True
+            ),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert texto.strip() == "Selecione uma versão."
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_troca_repo_limpa_erro_anterior():
     repo_a = RepoOption(nome="alpha", caminho="/projetos/alpha")
     repo_b = RepoOption(nome="beta", caminho="/projetos/beta")
@@ -594,6 +618,40 @@ def test_app_esconde_erro_interno_e_registra_traceback(caplog):
     asyncio.run(executar_fluxo())
     assert "Erro interno fatal na TUI" in caplog.text
     assert "Traceback" in caplog.text
+
+
+def test_app_exibe_loading_apenas_durante_verificacao():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    iniciou = Event()
+    liberar = Event()
+
+    def executar(opcao, numero, auditar):
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(lambda: [repo], lambda opcao: [versao], executar)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#verificar")
+            assert await asyncio.to_thread(iniciou.wait, 1)
+
+            resultado = app.query_one("#resultado", Static)
+            assert resultado.loading
+            assert "Verificando alpha 14.0.0" in _texto(resultado.content)
+
+            liberar.set()
+            await app.workers.wait_for_complete()
+            assert not resultado.loading
+
+    asyncio.run(executar_fluxo())
 
 
 def test_app_nao_inicia_execucoes_concorrentes():
