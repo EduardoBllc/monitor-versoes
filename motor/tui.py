@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,6 +9,10 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from textual import work
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, VerticalScroll
+from textual.widgets import Button, Checkbox, Footer, Header, Select, Static
 
 from motor.__main__ import _agrupar_por_task
 from motor.domain.types import VersionStatus
@@ -28,6 +34,188 @@ class RepoOption:
 class VersionOption:
     numero: str
     liberada: bool
+
+
+RepoLoader = Callable[[], list[RepoOption]]
+VersionLoader = Callable[[RepoOption], list[VersionOption]]
+VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
+
+
+class MotorTUI(App[None]):
+    BINDINGS = [("q", "quit", "Sair")]
+    CSS = """
+    #barra { height: auto; padding: 1; }
+    #repo, #versao { width: 1fr; }
+    #acao { width: 18; padding: 1 2; border: round $panel; }
+    #auditar { display: none; height: auto; margin: 0 1; }
+    #resultado-scroll { height: 1fr; padding: 1 2; }
+    #resultado { width: 1fr; }
+    """
+
+    def __init__(
+        self,
+        carregar_repos: RepoLoader,
+        carregar_versoes: VersionLoader,
+        executar: VerifyRunner,
+    ) -> None:
+        super().__init__()
+        self._carregar_repos = carregar_repos
+        self._carregar_versoes = carregar_versoes
+        self._executar = executar
+        self._repo: RepoOption | None = None
+        self._versao: VersionOption | None = None
+        self._ocupado = False
+        self._tem_repos = False
+        self._tem_versoes = False
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Horizontal(id="barra"):
+            yield Select([], prompt="Repo", id="repo", disabled=True)
+            yield Static("Verificar", id="acao")
+            yield Select([], prompt="Versão", id="versao", disabled=True)
+            yield Checkbox("Auditar tag agora", id="auditar")
+            yield Button("Executar", id="executar", variant="primary", disabled=True)
+        with VerticalScroll(id="resultado-scroll"):
+            yield Static("Selecione um repositório.", id="resultado")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.carregar_repos_worker()
+
+    def _erro(self, mensagem: str) -> None:
+        self.query_one("#resultado", Static).update(
+            Panel(mensagem, title="Erro", style="bold red")
+        )
+
+    def _mostrar_resultado(self, status: VersionStatus, auditado: bool) -> None:
+        self.query_one("#resultado", Static).update(
+            renderizar_status(status, auditado=auditado)
+        )
+
+    def _falha(self, erro: Exception) -> None:
+        if isinstance(erro, MotorError):
+            self._erro(str(erro))
+            return
+        logging.error(
+            "Erro interno fatal na TUI",
+            exc_info=(type(erro), erro, erro.__traceback__),
+        )
+        self._erro("Erro interno fatal")
+
+    def _bloquear(self, ocupado: bool) -> None:
+        self._ocupado = ocupado
+        self.query_one("#repo", Select).disabled = ocupado or not self._tem_repos
+        self.query_one("#versao", Select).disabled = ocupado or not self._tem_versoes
+        self.query_one("#auditar", Checkbox).disabled = ocupado
+        self.query_one("#executar", Button).disabled = (
+            ocupado or self._repo is None or self._versao is None
+        )
+
+    @work(thread=True, exclusive=True, group="repos")
+    def carregar_repos_worker(self) -> None:
+        try:
+            opcoes = self._carregar_repos()
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro)
+            return
+        self.call_from_thread(self._mostrar_repos, opcoes)
+
+    def _mostrar_repos(self, opcoes: list[RepoOption]) -> None:
+        select = self.query_one("#repo", Select)
+        select.set_options(
+            [
+                (
+                    Text(
+                        opcao.nome
+                        if opcao.disponivel
+                        else f"{opcao.nome} — checkout local não encontrado",
+                        style="" if opcao.disponivel else "dim",
+                    ),
+                    opcao,
+                )
+                for opcao in opcoes
+            ]
+        )
+        self._tem_repos = bool(opcoes)
+        self._bloquear(False)
+        if opcoes and not any(opcao.disponivel for opcao in opcoes):
+            self._erro("nenhum checkout local encontrado; confira PROJECTS_DIR")
+
+    def on_select_changed(self, evento: Select.Changed) -> None:
+        if evento.select.id == "repo":
+            self._selecionar_repo(evento.value)
+        elif evento.select.id == "versao":
+            self._selecionar_versao(evento.value)
+
+    def _selecionar_repo(self, valor: object) -> None:
+        self._repo = valor if isinstance(valor, RepoOption) else None
+        self._versao = None
+        self._tem_versoes = False
+        versoes = self.query_one("#versao", Select)
+        versoes.set_options([])
+        versoes.value = Select.NULL
+        versoes.disabled = True
+        self.query_one("#auditar", Checkbox).display = False
+        if self._repo is None:
+            self._bloquear(False)
+            return
+        if not self._repo.disponivel:
+            self._erro("checkout local não encontrado")
+            self._bloquear(False)
+            return
+        self._bloquear(True)
+        self.carregar_versoes_worker(self._repo)
+
+    @work(thread=True, exclusive=True, group="versoes")
+    def carregar_versoes_worker(self, repo: RepoOption) -> None:
+        try:
+            opcoes = self._carregar_versoes(repo)
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro)
+            self.call_from_thread(self._bloquear, False)
+            return
+        self.call_from_thread(self._mostrar_versoes, opcoes)
+
+    def _mostrar_versoes(self, opcoes: list[VersionOption]) -> None:
+        select = self.query_one("#versao", Select)
+        select.set_options([(opcao.numero, opcao) for opcao in opcoes])
+        self._tem_versoes = bool(opcoes)
+        self._bloquear(False)
+        if not opcoes:
+            self._erro("nenhuma branch ou tag X.Y.Z encontrada")
+
+    def _selecionar_versao(self, valor: object) -> None:
+        self._versao = valor if isinstance(valor, VersionOption) else None
+        auditoria = self.query_one("#auditar", Checkbox)
+        auditoria.value = False
+        auditoria.display = bool(self._versao and self._versao.liberada)
+        self._bloquear(False)
+
+    def on_button_pressed(self, evento: Button.Pressed) -> None:
+        if evento.button.id != "executar" or self._ocupado:
+            return
+        if self._repo is None or self._versao is None:
+            return
+        self._bloquear(True)
+        self.executar_worker(
+            self._repo,
+            self._versao,
+            self.query_one("#auditar", Checkbox).value,
+        )
+
+    @work(thread=True, exclusive=True, group="executar")
+    def executar_worker(
+        self, repo: RepoOption, versao: VersionOption, auditar: bool
+    ) -> None:
+        try:
+            status = self._executar(repo, versao.numero, auditar)
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro)
+        else:
+            self.call_from_thread(self._mostrar_resultado, status, auditar)
+        finally:
+            self.call_from_thread(self._bloquear, False)
 
 
 def descobrir_repos(estado: EstadoRepo, projects_dir: str) -> list[RepoOption]:

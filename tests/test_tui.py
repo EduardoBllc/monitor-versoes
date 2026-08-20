@@ -1,11 +1,16 @@
+import asyncio
 import datetime
 from pathlib import Path
+from threading import Event
 
 from rich.console import Console
+from textual.widgets import Button, Checkbox, Select, Static
 
 from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
+from motor.errors import MotorError
 from motor.tui import (
+    MotorTUI,
     RepoOption,
     VersionOption,
     descobrir_repos,
@@ -150,3 +155,131 @@ def test_renderizar_auditoria_nomeia_recalculo_sem_alterar_snapshot():
 
     assert "AUDITORIA DA TAG" in texto
     assert "snapshot não alterado" in texto
+
+
+def test_app_seleciona_repo_tag_e_executa_auditoria():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=True)
+    chamadas: list[tuple[RepoOption, str, bool]] = []
+
+    def executar(opcao: RepoOption, numero: str, auditar: bool) -> VersionStatus:
+        chamadas.append((opcao, numero, auditar))
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo, RepoOption(nome="beta", caminho=None)],
+            carregar_versoes=lambda opcao: [versao],
+            executar=executar,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            assert app.query_one("#auditar", Checkbox).display
+            assert not app.query_one("#auditar", Checkbox).value
+            app.query_one("#auditar", Checkbox).value = True
+            assert not app.query_one("#executar", Button).disabled
+            await pilot.click("#executar")
+            await app.workers.wait_for_complete()
+
+            assert chamadas == [(repo, "14.0.0", True)]
+            assert "VERDE" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_exibe_motor_error_sem_traceback():
+    def falhar():
+        raise MotorError("banco inacessível")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(falhar, lambda repo: [], lambda repo, versao, auditar: None)
+        async with app.run_test(size=(120, 36)):
+            await app.workers.wait_for_complete()
+            assert "banco inacessível" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_esconde_erro_interno_e_registra_traceback(caplog):
+    def falhar():
+        raise RuntimeError("bug secreto")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(falhar, lambda repo: [], lambda repo, versao, auditar: None)
+        async with app.run_test(size=(120, 36)):
+            await app.workers.wait_for_complete()
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "Erro interno fatal" in texto
+            assert "bug secreto" not in texto
+
+    asyncio.run(executar_fluxo())
+    assert "Erro interno fatal na TUI" in caplog.text
+    assert "Traceback" in caplog.text
+
+
+def test_app_nao_inicia_execucoes_concorrentes():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    iniciou = Event()
+    liberar = Event()
+    chamadas: list[str] = []
+
+    def executar(opcao, numero, auditar):
+        chamadas.append(numero)
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(lambda: [repo], lambda opcao: [versao], executar)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#executar")
+            assert await asyncio.to_thread(iniciou.wait, 1)
+            assert app.query_one("#executar", Button).disabled
+            await pilot.click("#executar")
+            liberar.set()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+    assert chamadas == ["14.0.0"]
+
+
+def test_app_mantem_repo_sem_checkout_visivel_mas_inexecutavel():
+    repo = RepoOption(nome="beta", caminho=None)
+
+    def nao_deve_rodar(*args):
+        raise AssertionError("repo indisponivel nao pode chamar uma borda")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=nao_deve_rodar,
+            executar=nao_deve_rodar,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+
+            assert app.query_one("#versao", Select).disabled
+            assert app.query_one("#executar", Button).disabled
+            assert "checkout local não encontrado" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
