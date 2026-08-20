@@ -166,6 +166,10 @@ class EstadoRepo(Protocol):
     registro unico e imutavel para versao liberada.
     """
 
+    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
+        """Cadastra um repo canonico. MotorError se nome ou alias ja existir."""
+        ...
+
     def resolver_repo(self, basename: str) -> RepoInfo:
         """Resolve nome ou alias para o repo canonico. MotorError se
         desconhecido — nunca cria linha sozinho, senao um clone com nome

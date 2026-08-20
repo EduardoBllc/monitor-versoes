@@ -29,6 +29,21 @@ _TEXTO_PARA_TIPO = {v: k for k, v in _TIPO_PARA_TEXTO.items()}
 class PostgresEstado:
     sessao: Session
 
+    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
+        existente = self._scalar(
+            select(models.Repo).where(models.Repo.nome == nome)
+        )
+        if existente is None:
+            existente = self._scalar(
+                select(models.RepoAlias).where(models.RepoAlias.nome == nome)
+            )
+        if existente is not None:
+            raise MotorError(f"repo '{nome}' ja cadastrado")
+        self.sessao.add(
+            models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id)
+        )
+        self._commit()
+
     def resolver_repo(self, basename: str) -> RepoInfo:
         linha = self._scalar(select(models.Repo).where(models.Repo.nome == basename))
         if linha is None:
@@ -42,8 +57,8 @@ class PostgresEstado:
         if linha is None:
             raise MotorError(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  insert into repo (nome, tickio_sistema_id) "
-                f"values ('{basename}', <id do sistema no tickio>);"
+                f"  uv run motor repo adicionar '{basename}' "
+                f"--tickio-sistema-id <id>"
             )
         return RepoInfo(nome=linha.nome, tickio_sistema_id=linha.tickio_sistema_id)
 

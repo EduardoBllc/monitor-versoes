@@ -500,6 +500,13 @@ o mesmo `compose.yml`, mas `COMPOSE_PROJECT_NAME`, porta, banco, usuário e volu
 Antes de qualquer `TRUNCATE`, a fixture recusa valores que não sejam exatamente os do banco
 de desenvolvimento.
 
+Repos são cadastrados sem SQL direto:
+
+```
+uv run motor repo adicionar vendabemweb --tickio-sistema-id 7
+uv run motor --env production repo adicionar vendabemweb --tickio-sistema-id 7
+```
+
 **Etapa 2 — Daemon localhost, só visualização (read-only).** *Ainda não implementada.*
 Servidor em `127.0.0.1` que mostra o `verificar` de forma visual: cruzamento 3-vias
 (Tickio × estado × git), commits faltantes, quais conflitam, **os dois repos lado a lado**.

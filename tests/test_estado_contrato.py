@@ -86,11 +86,32 @@ def test_resolver_repo_por_nome_e_por_alias(estado):
     assert estado.resolver_repo(ALIAS).nome == REPO
 
 
-def test_resolver_repo_desconhecido_traz_o_insert_pronto(estado):
+def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
     with pytest.raises(MotorError, match="desconhecido") as e:
         estado.resolver_repo("nao-existe")
-    # a mensagem e a unica ajuda que o operador tem no meio de um run que falhou
-    assert "insert into repo" in str(e.value)
+    assert "motor repo adicionar" in str(e.value)
+
+
+def test_registrar_repo_o_torna_resolvivel(estado):
+    estado.registrar_repo("novo-repo", 23)
+
+    assert estado.resolver_repo("novo-repo") == RepoInfo(
+        nome="novo-repo", tickio_sistema_id=23
+    )
+
+
+def test_registrar_repo_recusa_nome_duplicado(estado):
+    with pytest.raises(MotorError, match="ja cadastrado"):
+        estado.registrar_repo(REPO, 99)
+
+    assert estado.resolver_repo(REPO).tickio_sistema_id == SISTEMA_ID
+
+
+def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
+    with pytest.raises(MotorError, match="ja cadastrado"):
+        estado.registrar_repo(ALIAS, 99)
+
+    assert estado.resolver_repo(ALIAS).nome == REPO
 
 
 @pytest.mark.parametrize(

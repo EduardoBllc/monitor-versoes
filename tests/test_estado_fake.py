@@ -29,8 +29,8 @@ def test_resolver_repo_por_nome_e_por_alias():
     assert estado.resolver_repo("vb2").nome == "vb2web"
 
 
-def test_resolver_repo_desconhecido_e_erro_com_o_insert_pronto():
-    with pytest.raises(MotorError, match="insert into repo"):
+def test_resolver_repo_desconhecido_indica_comando_de_cadastro():
+    with pytest.raises(MotorError, match="motor repo adicionar"):
         FakeEstado().resolver_repo("desconhecido")
 
 

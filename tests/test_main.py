@@ -87,6 +87,31 @@ def test_comando_desconhecido_sai_com_erro():
     assert saida.value.code != 0
 
 
+def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
+    estado = FakeEstado()
+    monkeypatch.setattr(cli, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
+
+    main(["repo", "adicionar", "backend", "--tickio-sistema-id", "42"])
+
+    assert estado.resolver_repo("backend") == RepoInfo(
+        nome="backend", tickio_sistema_id=42
+    )
+    assert capsys.readouterr().out == "repo 'backend' adicionado\n"
+
+
+@pytest.mark.parametrize(("argumentos", "mensagem"), [
+    (["pasta/backend", "--tickio-sistema-id", "42"], "nome simples"),
+    (["backend", "--tickio-sistema-id", "0"], "inteiro positivo"),
+])
+def test_repo_adicionar_recusa_argumentos_invalidos(argumentos, mensagem, capsys):
+    with pytest.raises(SystemExit) as saida:
+        _build_parser().parse_args(["repo", "adicionar", *argumentos])
+
+    assert saida.value.code != 0
+    assert mensagem in capsys.readouterr().err
+
+
 def test_nao_existe_flag_de_token_do_tickio():
     # autenticacao e por TICKIO_USER/TICKIO_PASSWORD do ambiente: token colado
     # no .env teria de ser refeito a cada expiracao do JWT.

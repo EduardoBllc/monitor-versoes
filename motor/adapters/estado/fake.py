@@ -18,14 +18,21 @@ class FakeEstado:
     _exclusoes: dict[str, list[Exclusion]] = field(default_factory=dict)
     _sem_entrega: dict[str, dict[str, str]] = field(default_factory=dict)
 
+    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
+        if nome in self.repos or nome in self.aliases:
+            raise MotorError(f"repo '{nome}' ja cadastrado")
+        self.repos[nome] = RepoInfo(
+            nome=nome, tickio_sistema_id=tickio_sistema_id
+        )
+
     def resolver_repo(self, basename: str) -> RepoInfo:
         nome = self.aliases.get(basename, basename)
         info = self.repos.get(nome)
         if info is None:
             raise MotorError(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  insert into repo (nome, tickio_sistema_id) "
-                f"values ('{basename}', <id do sistema no tickio>);"
+                f"  uv run motor repo adicionar '{basename}' "
+                f"--tickio-sistema-id <id>"
             )
         return info
 

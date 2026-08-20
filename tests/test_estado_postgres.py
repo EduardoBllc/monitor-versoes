@@ -46,7 +46,7 @@ def test_resolver_repo_por_alias(sessao_postgres):
 
 def test_resolver_repo_desconhecido(sessao_postgres):
     estado = PostgresEstado(sessao=sessao_postgres)
-    with pytest.raises(MotorError, match="insert into repo"):
+    with pytest.raises(MotorError, match="motor repo adicionar"):
         estado.resolver_repo("nunca-visto")
 
 

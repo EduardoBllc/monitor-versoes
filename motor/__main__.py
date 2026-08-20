@@ -47,6 +47,22 @@ _ARQUIVOS_AMBIENTE = {
 }
 
 
+def _nome_repo(valor: str) -> str:
+    if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
+        raise argparse.ArgumentTypeError("use um nome simples, sem caminho")
+    return valor
+
+
+def _tickio_sistema_id(valor: str) -> int:
+    try:
+        numero = int(valor)
+    except ValueError:
+        raise argparse.ArgumentTypeError("deve ser um inteiro positivo") from None
+    if numero <= 0:
+        raise argparse.ArgumentTypeError("deve ser um inteiro positivo")
+    return numero
+
+
 def _carregar_ambiente(argv: list[str]) -> None:
     seletor = argparse.ArgumentParser(add_help=False)
     seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
@@ -94,6 +110,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("reconstruir-estado", parents=[comum],
                    help="regenera as atribuicoes a partir do git")
+
+    p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
+    acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True,
+                                       metavar="acao")
+    p_adicionar = acoes_repo.add_parser("adicionar", help="cadastra um repositorio")
+    p_adicionar.add_argument("nome", type=_nome_repo, help="nome canonico do repo")
+    p_adicionar.add_argument("--tickio-sistema-id", required=True, type=_tickio_sistema_id)
 
     return parser
 
@@ -268,19 +291,26 @@ def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
 
     logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.ERROR,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s" if args.debug else "%(levelname)s: %(message)s",
+        level=logging.DEBUG if getattr(args, "debug", False) else logging.ERROR,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s" if getattr(args, "debug", False) else "%(levelname)s: %(message)s",
     )
 
     # Antes de abrir o banco: erro de flag nao depende de conexao, e conectar
     # primeiro esconderia a flag errada atras de um "banco inacessivel".
-    if args.fonte_flag == "manual" and not args.lista_manual:
+    if getattr(args, "fonte_flag", None) == "manual" and not args.lista_manual:
         print("--lista e obrigatorio quando --task-source=manual", file=sys.stderr)
         sys.exit(1)
 
-    repo = _resolver_repo(args.repo)
-
     try:
+        if args.comando == "repo":
+            with _abrir_sessao() as sessao:
+                PostgresEstado(sessao=sessao).registrar_repo(
+                    args.nome, args.tickio_sistema_id
+                )
+            print(f"repo '{args.nome}' adicionado")
+            return
+
+        repo = _resolver_repo(args.repo)
         git_repo = new_git_subprocess(repo)
 
         with _abrir_sessao() as sessao:
