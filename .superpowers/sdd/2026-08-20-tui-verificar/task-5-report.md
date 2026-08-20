@@ -40,3 +40,19 @@
 ## Preocupações
 
 - Em uso real, `PROJECTS_DIR`, banco e credenciais Tickio continuam requisitos do ambiente; erros são mostrados pela TUI no callback correspondente.
+
+## Fix round 1/5 — consistência do daemon adiado
+
+### Mudança
+
+- Substituídas as três referências restantes a daemon atual por front-ends, `CLI e TUI` e daemon explicitamente futuro.
+
+### Arquivos
+
+- `ferramenta_versoes_design.md`
+- `.superpowers/sdd/2026-08-20-tui-verificar/task-5-report.md`
+
+### Verificação
+
+- Testes não aplicáveis: alteração exclusiva de prosa humana; nenhum teste change-detector foi adicionado.
+- `rtk git diff --check` — sem saída, exit code 0.

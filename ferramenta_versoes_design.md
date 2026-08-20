@@ -483,8 +483,8 @@ repo consulta seu próprio `sistema_id`):
 
 ## 13. Roadmap de implementação
 
-Projeto apartado, multi-projeto (§11). O motor é o núcleo chamável; o daemon é fachada por
-cima — nunca duplica lógica. Segurança/complexidade só entram na etapa que **age** pelo git.
+Projeto apartado, multi-projeto (§11). O motor é o núcleo chamável; seus front-ends nunca
+duplicam lógica. Segurança/complexidade só entram na etapa que **age** pelo git.
 
 **Stack (decidido, revisto): Python.** A escolha original era Go; o motor foi reescrito em
 Python (`motor/`) durante o redesenho Tickio + Postgres. `subprocess` cobre o `GitRepo`
@@ -620,7 +620,7 @@ toca git, rede ou banco.
   `atualizar --continue` reconstrói tudo a partir do git e do estado a cada chamada, sem nada
   em memória entre invocações do CLI.
 
-**Operações (API que CLI e daemon chamam).** `criar` · `verificar` · `atualizar` ·
+**Operações (API que CLI e TUI chamam).** `criar` · `verificar` · `atualizar` ·
 `reconstruir_estado`.
 
 - `verificar` = fetch + congela tags novas + TargetResolver + PresenceOracle + reconciliação +
@@ -641,8 +641,8 @@ toca git, rede ou banco.
 `atualizar` **retorna um valor** — `AtualizarResult` com `status=DONE` ou
 `BLOCKED{commit, arquivos_conflito}`; `reconstruir_estado` segue o mesmo padrão com
 `DONE`/`PENDING_JUDGMENT{orfaos}`. Quem dirige o humano (resolver no editor → `--continue`;
-decidir os órfãos) é o front-end. Por isso **o mesmo núcleo serve CLI e daemon** sem mudança,
-e — como todo efeito passa por porta — o domínio é testável com
+decidir os órfãos) é o front-end. Por isso **o mesmo núcleo serve CLI e TUI** sem mudança; se
+um daemon voltar ao escopo, será apenas outro front-end. Como todo efeito passa por porta, o domínio é testável com
 `FakeGit`/`FakeTaskSource`/`FakeEstado`, sem repo, rede nem banco.
 
 ### Onde deliberadamente NÃO se abstrai
