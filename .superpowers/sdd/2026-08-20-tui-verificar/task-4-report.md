@@ -36,3 +36,22 @@
 ## Preocupações
 
 - Nenhuma conhecida dentro do escopo. A ligação dos callbacks reais à entrada de CLI permanece para a task de integração subsequente.
+
+## Fix round 1/5 — resultados de versões obsoletos
+
+### Mudança
+
+- Cada troca de repositório incrementa uma geração de versões, passada ao worker junto do `RepoOption` esperado.
+- `_mostrar_versoes()` e o caminho de falha descartam retornos cuja geração ou repositório não sejam mais atuais.
+- O evento `Select.Changed(NULL)` disparado ao limpar versões não desbloqueia controles enquanto uma carga está em andamento.
+
+### Teste cobrindo
+
+- `test_app_descarta_versoes_obsoletas_sem_liberar_repo_atual` seleciona uma versão em B, bloqueia A, volta para B e libera A tardiamente. Ele confirma que a versão de A não aparece e que repo/versão seguem bloqueados até B terminar.
+
+### Evidências
+
+- RED: `rtk uv run pytest tests/test_tui.py -k 'descarta_versoes' -q` — `1 failed, 12 deselected`; a versão tardia de A deixava `#versao.disabled == False`.
+- GREEN: mesmo comando — `1 passed, 12 deselected`.
+- TUI: `rtk uv run pytest tests/test_tui.py -q` — `13 passed`.
+- Suíte completa: `rtk uv run pytest -q` — `232 passed, 34 skipped`.

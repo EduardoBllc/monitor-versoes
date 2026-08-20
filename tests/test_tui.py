@@ -259,6 +259,65 @@ def test_app_nao_inicia_execucoes_concorrentes():
     assert chamadas == ["14.0.0"]
 
 
+def test_app_descarta_versoes_obsoletas_sem_liberar_repo_atual():
+    repo_a = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    repo_b = RepoOption(nome="beta", caminho="/projetos/beta")
+    versao_anterior = VersionOption(numero="12.0.0", liberada=False)
+    versao_a = VersionOption(numero="13.0.0", liberada=False)
+    versao_b = VersionOption(numero="14.0.0", liberada=False)
+    iniciou_a = Event()
+    liberar_a = Event()
+    iniciou_b = Event()
+    liberar_b = Event()
+    cargas_b = 0
+
+    def carregar_versoes(repo: RepoOption) -> list[VersionOption]:
+        nonlocal cargas_b
+        if repo == repo_a:
+            iniciou_a.set()
+            liberar_a.wait(timeout=2)
+            return [versao_a]
+        cargas_b += 1
+        if cargas_b == 1:
+            return [versao_anterior]
+        iniciou_b.set()
+        liberar_b.wait(timeout=2)
+        return [versao_b]
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo_a, repo_b],
+            carregar_versoes=carregar_versoes,
+            executar=lambda repo, versao, auditar: None,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo_b
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao_anterior
+            await pilot.pause()
+
+            app.query_one("#repo", Select).value = repo_a
+            await pilot.pause()
+            assert await asyncio.to_thread(iniciou_a.wait, 1)
+            app.query_one("#repo", Select).value = repo_b
+            await pilot.pause()
+            assert await asyncio.to_thread(iniciou_b.wait, 1)
+
+            liberar_a.set()
+            await pilot.pause()
+            versoes = app.query_one("#versao", Select)
+            assert versoes.disabled
+            assert app.query_one("#repo", Select).disabled
+            assert versao_a not in versoes._legal_values
+
+            liberar_b.set()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_mantem_repo_sem_checkout_visivel_mas_inexecutavel():
     repo = RepoOption(nome="beta", caminho=None)
 

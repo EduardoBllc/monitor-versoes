@@ -67,6 +67,7 @@ class MotorTUI(App[None]):
         self._ocupado = False
         self._tem_repos = False
         self._tem_versoes = False
+        self._geracao_versoes = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -152,6 +153,7 @@ class MotorTUI(App[None]):
         self._repo = valor if isinstance(valor, RepoOption) else None
         self._versao = None
         self._tem_versoes = False
+        self._geracao_versoes += 1
         versoes = self.query_one("#versao", Select)
         versoes.set_options([])
         versoes.value = Select.NULL
@@ -165,19 +167,28 @@ class MotorTUI(App[None]):
             self._bloquear(False)
             return
         self._bloquear(True)
-        self.carregar_versoes_worker(self._repo)
+        self.carregar_versoes_worker(self._repo, self._geracao_versoes)
 
     @work(thread=True, exclusive=True, group="versoes")
-    def carregar_versoes_worker(self, repo: RepoOption) -> None:
+    def carregar_versoes_worker(self, repo: RepoOption, geracao: int) -> None:
         try:
             opcoes = self._carregar_versoes(repo)
         except Exception as erro:
-            self.call_from_thread(self._falha, erro)
-            self.call_from_thread(self._bloquear, False)
+            self.call_from_thread(self._falha_versoes, repo, geracao, erro)
             return
-        self.call_from_thread(self._mostrar_versoes, opcoes)
+        self.call_from_thread(self._mostrar_versoes, repo, geracao, opcoes)
 
-    def _mostrar_versoes(self, opcoes: list[VersionOption]) -> None:
+    def _falha_versoes(self, repo: RepoOption, geracao: int, erro: Exception) -> None:
+        if self._repo != repo or self._geracao_versoes != geracao:
+            return
+        self._falha(erro)
+        self._bloquear(False)
+
+    def _mostrar_versoes(
+        self, repo: RepoOption, geracao: int, opcoes: list[VersionOption]
+    ) -> None:
+        if self._repo != repo or self._geracao_versoes != geracao:
+            return
         select = self.query_one("#versao", Select)
         select.set_options([(opcao.numero, opcao) for opcao in opcoes])
         self._tem_versoes = bool(opcoes)
@@ -190,7 +201,8 @@ class MotorTUI(App[None]):
         auditoria = self.query_one("#auditar", Checkbox)
         auditoria.value = False
         auditoria.display = bool(self._versao and self._versao.liberada)
-        self._bloquear(False)
+        if not self._ocupado:
+            self._bloquear(False)
 
     def on_button_pressed(self, evento: Button.Pressed) -> None:
         if evento.button.id != "executar" or self._ocupado:
