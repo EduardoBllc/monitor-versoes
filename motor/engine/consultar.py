@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass, replace
 
 from motor.domain.types import CommitRef
@@ -36,4 +37,18 @@ def consultar(deps: Deps, versao: str) -> list[ChamadoConsultado]:
                 commits=commits,
             )
         )
+    # Mais recente primeiro, pela data do commit de ORIGEM mais novo do chamado.
+    # Nao e a data do cherry-pick: o estado guarda so hash_origem, o commit
+    # espelho na branch da versao nao esta em lugar nenhum. Ordem pratica e
+    # quase a mesma e nao custa varredura de git.
+    #
+    # Chamado sem commit legivel (meta indisponivel, ou lista vazia) cai em
+    # datetime.min e vai para o fim.
+    resultado.sort(key=_mais_recente, reverse=True)
     return resultado
+
+
+def _mais_recente(chamado: ChamadoConsultado) -> datetime.datetime:
+    return max(
+        (c.commit_date for c in chamado.commits), default=datetime.datetime.min
+    )
