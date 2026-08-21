@@ -111,15 +111,16 @@ def montar_commit_source(
     num clone sem `origin` passaria a falhar na montagem.
     """
     grep = GrepCommitSource(git=git, progresso=progresso)
-    if not token:
+    # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
+    if not token or estado is None:
         return grep
     pr = BitbucketPRCommitSource(
         token=token,
         email=email,
         git=git,
         progresso=progresso,
-        # cache de `PR -> commits`: corta o GET de commits das PRs ja vistas.
-        # A busca das PRs do chamado continua rodando a cada verificar.
+        # indice local de PRs + cache de `PR -> commits`: uma varredura
+        # incremental no lugar de uma busca por chamado.
         estado=estado,
         repo_estado=repo,
     )

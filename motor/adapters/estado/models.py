@@ -167,3 +167,37 @@ class PrCommitCache(Base):
     parent: Mapped[str]
     commit_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     msg: Mapped[str]
+
+
+class BitbucketPr(Base):
+    """Indice local das PRs mergeadas — o que substitui uma busca na API por
+    chamado por uma leitura de tabela.
+
+    Titulo e branch entram crus. O casamento e um predicado (`ch<n>` no comeco
+    do titulo ou dentro da branch), nao uma extracao: guardar o chamado ja
+    extraido escolheria uma interpretacao nova e divergiria do adapter em
+    silencio.
+    """
+
+    __tablename__ = "bitbucket_pr"
+
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
+    pr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo: Mapped[str]
+    branch: Mapped[str]
+    updated_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BitbucketVarredura(Base):
+    """Marca d'agua da varredura incremental: ate quando o indice esta completo.
+
+    Ausente = nunca varrido, e a proxima varredura baixa o historico inteiro.
+    Guarda o INICIO da varredura, nao o maior `updated_on` visto: PR mergeada
+    durante a propria varredura pode nao aparecer nela, e so cai na proxima
+    porque o `updated_on` dela e maior que este inicio.
+    """
+
+    __tablename__ = "bitbucket_varredura"
+
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
+    ate: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

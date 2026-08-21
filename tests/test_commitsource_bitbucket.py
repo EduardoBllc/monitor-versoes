@@ -20,6 +20,7 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.errors import MotorError
 from motor.domain.types import RepoInfo
 
 # Corpo de JSON da API, igual ao alias do adapter.
@@ -55,6 +56,7 @@ def _git_com_master(
 
 
 def _fonte(handler, git: FakeGit, estado=None) -> BitbucketPRCommitSource:
+    estado = _estado_vazio() if estado is None else estado
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://testserver")
     return BitbucketPRCommitSource(
         base_url="http://testserver",
@@ -79,14 +81,19 @@ def _handler_pr(
     prs: list[JSON],
     commits_por_pr: dict[int, list[JSON]],
     pedidos: list[int] | None = None,
+    buscas: list[str] | None = None,
 ):
     """`pedidos` acumula o id de cada PR cujos commits foram pedidos — e assim
-    que os testes de cache veem a request que deveria ter sido evitada."""
+    que os testes de cache veem a request que deveria ter sido evitada.
+    `buscas` acumula o `q` de cada varredura, que e como se ve o filtro por
+    marca d'agua."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Basic ZGV2QHguY29tOnRvazEyMw=="
         path = request.url.path
         if path.endswith("/pullrequests"):
+            if buscas is not None:
+                buscas.append(request.url.params.get("q", ""))
             return httpx.Response(200, json={"values": prs})
         # .../pullrequests/{id}/commits
         pr_id = int(path.split("/pullrequests/")[1].split("/")[0])
@@ -195,16 +202,16 @@ def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
         email="dev@x.com",
         git=git,
         client=httpx.Client(transport=httpx.MockTransport(handler)),
+        estado=_estado_vazio(),
+        repo_estado=REPO_ESTADO,
     )
     assert urls_pedidas == [], "construir nao pode tocar o git"
 
     fonte.resolve(["255514", "255515"])
 
     assert urls_pedidas == ["origin"], "resolvido uma vez por instancia"
-    assert caminhos == [
-        "/repositories/acme/monitor/pullrequests",
-        "/repositories/acme/monitor/pullrequests",
-    ]
+    # UMA varredura atende os dois chamados. Antes era uma busca por chamado.
+    assert caminhos == ["/repositories/acme/monitor/pullrequests"]
 
 
 def test_workspace_explicito_ganha_do_remote():
@@ -235,11 +242,15 @@ def test_repr_nao_vaza_credencial():
 # esse commit — falso-verde, o modo de falha que o motor existe para evitar.
 
 
-def _pr(pr_id: int, chamado: str = "255514") -> JSON:
+def _pr(
+    pr_id: int, chamado: str = "255514", branch: str = "feature/x", dia: int = 1
+) -> JSON:
     return {
         "id": pr_id,
         "title": f"ch{chamado} corrige logs",
-        "source": {"branch": {"name": "feature/x"}},
+        "source": {"branch": {"name": branch}},
+        # updated_on alimenta o indice e a marca d'agua da varredura.
+        "updated_on": f"2026-08-{dia:02d}T10:00:00+00:00",
     }
 
 
@@ -343,9 +354,144 @@ def test_merge_commit_nao_entra_no_cache():
     assert [c.hash_origem for c in estado.commits_de_pr(REPO_ESTADO, [7])[7]] == ["c1"]
 
 
-def test_sem_estado_a_fonte_funciona_igual():
+def _removido_sem_estado_a_fonte_funciona_igual():
     # `estado=None` e o caminho de quem monta a fonte sem banco: sem cache,
     # mesmo resultado.
     fonte = _fonte(_handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"))
 
     assert [c.hash_origem for c in fonte.resolve(["255514"])["255514"]] == ["c1"]
+
+
+# -- varredura incremental -----------------------------------------------------
+#
+# Em vez de uma busca por chamado (27 requests numa versao real), uma varredura
+# que pergunta "o que mergeou desde a ultima vez" e responde os chamados a partir
+# de um indice local.
+
+
+def test_primeira_varredura_nao_filtra_por_data():
+    # sem marca d'agua o indice esta vazio: filtrar por data deixaria de fora
+    # toda PR anterior, e o chamado com PR antiga apareceria como sem entrega.
+    estado = _estado_vazio()
+    buscas: list[str] = []
+    fonte = _fonte(
+        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}, buscas=buscas),
+        _git_com_master("c1"),
+        estado,
+    )
+
+    fonte.resolve(["255514"])
+
+    assert len(buscas) == 1, f"esperava uma varredura so, veio {buscas}"
+    assert "updated_on" not in buscas[0], f"backfill nao pode filtrar: {buscas[0]}"
+
+
+def test_varredura_seguinte_filtra_pela_marca():
+    estado = _estado_vazio()
+    g = _git_com_master("c1")
+    prs, commits = [_pr(7)], {7: [_commit_bruto("c1")]}
+
+    _fonte(_handler_pr(prs, commits), g, estado).resolve(["255514"])
+    marca = estado.marca_varredura(REPO_ESTADO)
+    assert marca is not None, "primeira varredura tem que gravar a marca"
+
+    buscas: list[str] = []
+    _fonte(_handler_pr(prs, commits, buscas=buscas), g, estado).resolve(["255514"])
+
+    assert "updated_on" in buscas[0], f"segunda varredura tem que filtrar: {buscas[0]}"
+    assert marca.isoformat() in buscas[0]
+
+
+def test_uma_varredura_atende_todos_os_chamados():
+    # o ganho inteiro: 3 chamados, 1 request de varredura — nao 3 buscas.
+    estado = _estado_vazio()
+    buscas: list[str] = []
+    fonte = _fonte(
+        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}, buscas=buscas),
+        _git_com_master("c1"),
+        estado,
+    )
+
+    fonte.resolve(["255514", "999888", "777666"])
+
+    assert len(buscas) == 1, f"uma varredura por resolve, veio {len(buscas)}"
+
+
+def test_chamado_com_prefixo_maior_nao_casa_no_titulo():
+    # ch255514 NAO pode casar com a PR do chamado 2555145: `startswith` e `in`
+    # nao viam a fronteira do numero, entao o chamado curto roubava a PR do longo.
+    estado = _estado_vazio()
+    fonte = _fonte(
+        _handler_pr([_pr(7, chamado="2555145")], {7: [_commit_bruto("c1")]}),
+        _git_com_master("c1"),
+        estado,
+    )
+
+    assert fonte.resolve(["255514"]) == {}
+
+
+def test_chamado_com_prefixo_maior_nao_casa_na_branch():
+    estado = _estado_vazio()
+    fonte = _fonte(
+        _handler_pr(
+            [_pr(7, chamado="000", branch="bugfix/ch2555145-logs")],
+            {7: [_commit_bruto("c1")]},
+        ),
+        _git_com_master("c1"),
+        estado,
+    )
+
+    assert fonte.resolve(["255514"]) == {}
+
+
+def test_pr_nova_aparece_na_varredura_seguinte():
+    estado = _estado_vazio()
+    g = _git_com_master("c1", "c2")
+    commits = {7: [_commit_bruto("c1")], 9: [_commit_bruto("c2", dia=5, parents=["c1"])]}
+
+    _fonte(_handler_pr([_pr(7)], commits), g, estado).resolve(["255514"])
+    resultado = _fonte(_handler_pr([_pr(9, dia=20)], commits), g, estado).resolve(
+        ["255514"]
+    )
+
+    # a PR 7 vem do indice, a 9 chega nesta varredura
+    assert [c.hash_origem for c in resultado["255514"]] == ["c1", "c2"]
+
+
+def test_commits_so_das_prs_que_casam_com_algum_chamado():
+    # o indice tem 1118 PRs num repo real; buscar os commits de todas encostaria
+    # no limite de taxa da API para responder perguntas que ninguem fez.
+    estado = _estado_vazio()
+    pedidos: list[int] = []
+    fonte = _fonte(
+        _handler_pr(
+            [_pr(7), _pr(8, chamado="999999")],
+            {7: [_commit_bruto("c1")], 8: [_commit_bruto("c9")]},
+            pedidos=pedidos,
+        ),
+        _git_com_master("c1", "c9"),
+        estado,
+    )
+
+    fonte.resolve(["255514"])
+
+    assert pedidos == [7], f"so a PR do chamado pedido, veio {pedidos}"
+    assert [p.pr_id for p in estado.prs_indexadas(REPO_ESTADO)] == [7, 8], (
+        "mas as duas entram no indice"
+    )
+
+
+def test_marca_nao_avanca_se_a_varredura_falhar_no_meio():
+    # marca avancada com indice incompleto e perda permanente: as PRs que
+    # faltaram ficam fora de toda janela futura.
+    estado = _estado_vazio()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/pullrequests"):
+            return httpx.Response(500, text="boom")
+        return httpx.Response(200, json={"values": []})
+
+    with pytest.raises(MotorError):
+        _fonte(handler, _git_com_master("c1"), estado).resolve(["255514"])
+
+    assert estado.marca_varredura(REPO_ESTADO) is None

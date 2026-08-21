@@ -46,10 +46,24 @@ def test_sem_token_a_fonte_e_so_o_grep():
     assert isinstance(fonte, GrepCommitSource)
 
 
+def test_sem_estado_nao_monta_a_fonte_de_pr():
+    # a fonte de PR le o indice local de PRs, que vive no estado. Sem banco ela
+    # nao teria o que ler e devolveria vazio para todo chamado — pior que o grep.
+    fonte = montar_commit_source(FakeGit(), token="tok", email="dev@x.com")
+
+    assert isinstance(fonte, GrepCommitSource)
+
+
 def test_com_token_a_pr_vem_antes_do_grep():
     # ordem = prioridade: a PR e mais confiavel que o grep de mensagem, e o
     # grep fica de fallback para o chamado que nenhuma PR casou.
-    fonte = montar_commit_source(FakeGit(), token="tok", email="dev@x.com")
+    fonte = montar_commit_source(
+        FakeGit(),
+        token="tok",
+        email="dev@x.com",
+        estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
+        repo="r",
+    )
 
     assert isinstance(fonte, ChainCommitSource)
     assert [type(f) for f in fonte.sources] == [

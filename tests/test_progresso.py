@@ -78,11 +78,15 @@ def test_grep_relata_a_varredura_sem_contagem():
     assert _fases(relatos) == [("commits dos chamados no histórico", 0, 0)]
 
 
-def test_bitbucket_conta_os_chamados_um_a_um():
-    """A fonte primaria faz pelo menos um round-trip HTTP por chamado — e a
-    fase mais lenta do verificar, e a unica onde a contagem e conhecida antes.
+def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
+    """A varredura e a unica espera de rede que sobrou — e ela nao tem total
+    conhecido antes, entao vem como fase sem contagem. Os chamados continuam
+    contados: e o que o operador usa para saber quanto falta.
     """
     import httpx
+
+    from motor.adapters.estado.fake import FakeEstado
+    from motor.domain.types import RepoInfo
 
     def sem_prs(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"values": [], "next": ""})
@@ -97,11 +101,14 @@ def test_bitbucket_conta_os_chamados_um_a_um():
         git=FakeGit(),
         client=httpx.Client(transport=httpx.MockTransport(sem_prs)),
         progresso=relatos.append,
+        estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
+        repo_estado="r",
     )
 
     fonte.resolve(["1", "2", "3"])
 
     assert _fases(relatos) == [
+        ("varrendo PRs do Bitbucket", 0, 0),
         ("commits dos chamados no Bitbucket", 1, 3),
         ("commits dos chamados no Bitbucket", 2, 3),
         ("commits dos chamados no Bitbucket", 3, 3),

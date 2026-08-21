@@ -13,6 +13,8 @@ def test_metadata_tem_todas_as_tabelas():
         "exclusao",
         "sem_entrega",
         "pr_commit_cache",
+        "bitbucket_pr",
+        "bitbucket_varredura",
     }
 
 
