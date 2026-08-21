@@ -20,6 +20,7 @@ existe so num dos lados nao e contrato, e uma opiniao.
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -93,7 +94,7 @@ def test_resolver_repo_por_nome_e_por_alias(estado):
 
 
 def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
-    with pytest.raises(NaoEncontrado, match="desconhecido") as e:
+    with pytest.raises(NaoEncontrado) as e:
         estado.resolver_repo("nao-existe")
     assert "motor repo adicionar" in str(e.value)
 
@@ -349,3 +350,15 @@ def test_cache_de_pr_e_por_repo(estado):
 
 def test_commits_de_pr_sem_pr_pedida_nao_consulta_nada(estado):
     assert estado.commits_de_pr(REPO, []) == {}
+
+
+def test_nenhuma_assercao_casa_substring_de_mensagem():
+    """Este arquivo e publicado para adapters de terceiro. O parametro `match`
+    de `pytest.raises` casa o TEXTO da excecao, que aqui e portugues — um
+    adapter correto que levanta a mesma subclasse com mensagem em outro idioma
+    reprovaria. A suite discrimina por tipo, nunca por mensagem; se esse
+    parametro voltar a aparecer aqui, e o mesmo anti-padrao que este arquivo
+    existe para banir.
+    """
+    padrao_do_parametro = "match" + "="
+    assert padrao_do_parametro not in Path(__file__).read_text()

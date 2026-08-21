@@ -28,7 +28,7 @@ from typing import Any
 import httpx
 
 from motor.domain.types import SEM_DATA, CommitRef
-from motor.errors import BackendIndisponivel, RespostaInvalida
+from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -186,7 +186,11 @@ class BitbucketPRCommitSource:
 
     @staticmethod
     def _pr_casa(pr: JSON, termo: str) -> bool:
+        if not isinstance(pr, dict):
+            raise RespostaInvalida(f"PR do Bitbucket em formato inesperado: {pr!r}")
         titulo = pr.get("title") or ""
+        if not isinstance(titulo, str):
+            raise RespostaInvalida(f"title da PR do Bitbucket em formato inesperado: {titulo!r}")
         if titulo.startswith(termo):
             return True
         branch = ((pr.get("source") or {}).get("branch") or {}).get("name") or ""
@@ -196,6 +200,10 @@ class BitbucketPRCommitSource:
     def _para_commit_ref(c: JSON) -> CommitRef:
         """Sem `chamado`: e o que o cache guarda, e o cache e por PR."""
         parents = c.get("parents") or []
+        if parents and not isinstance(parents[0], dict):
+            raise RespostaInvalida(
+                f"parent de commit do Bitbucket em formato inesperado: {parents[0]!r}"
+            )
         parent = parents[0].get("hash", "") if parents else ""
         data_raw = c.get("date", "")
         try:
@@ -216,6 +224,8 @@ class BitbucketPRCommitSource:
         while url:
             try:
                 resp = client.get(url, params=params, headers={"Authorization": self._auth_header()})
+            except httpx.InvalidURL as e:
+                raise ErroDeEntrada(f"URL do Bitbucket invalida: {url!r}: {e}") from e
             except httpx.HTTPError as e:
                 raise BackendIndisponivel(f"chamando Bitbucket {url}: {e}") from e
             if resp.status_code != 200:
@@ -226,6 +236,10 @@ class BitbucketPRCommitSource:
                 corpo = resp.json()
             except ValueError as e:
                 raise RespostaInvalida(f"decodificando resposta do Bitbucket em {url}: {e}") from e
+            if not isinstance(corpo, dict):
+                raise RespostaInvalida(
+                    f"resposta do Bitbucket em formato inesperado em {url}: {corpo!r}"
+                )
             yield from corpo.get("values", [])
             url = corpo.get("next", "")
             params = None  # `next` ja traz a query embutida

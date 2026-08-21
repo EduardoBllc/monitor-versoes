@@ -13,7 +13,7 @@ from motor.ports import GitRepo
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado
 from motor.progresso import Progresso, SlotProgresso
 import motor.montagem as montagem
 import motor.tui as tui
@@ -86,6 +86,26 @@ def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
     opcoes = descobrir_repos(_estado(), str(tmp_path / "ausente"))
 
     assert [opcao.caminho for opcao in opcoes] == [None, None, None]
+
+
+def test_descobrir_repos_ignora_naoencontrado_mesmo_sem_a_palavra_desconhecido(tmp_path):
+    """Ramifica por TIPO (NaoEncontrado), nao por substring 'desconhecido' na
+    mensagem: um adapter de terceiro correto, que levanta NaoEncontrado num
+    idioma diferente, nao pode reprovar aqui.
+    """
+
+    class EstadoQueFalaIngles(FakeEstado):
+        def resolver_repo(self, basename: str, /) -> RepoInfo:
+            raise NaoEncontrado("unknown repo")
+
+    _checkout(tmp_path, "nao-cadastrado")
+    estado = EstadoQueFalaIngles(
+        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=1)}
+    )
+
+    opcoes = descobrir_repos(estado, str(tmp_path))
+
+    assert opcoes == [RepoOption(nome="alpha", caminho=None)]
 
 
 def test_descobrir_repos_relata_o_banco_e_a_varredura(tmp_path):

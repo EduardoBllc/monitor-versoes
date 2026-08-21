@@ -61,6 +61,8 @@ class TickioRest:
                     params={"sistema": self.sistema_id, "versao": versao},
                     headers={"Authorization": f"Bearer {token}"},
                 )
+            except httpx.InvalidURL as e:
+                raise ErroDeEntrada(f"TICKIO_BASE_URL invalido: {e}") from e
             except httpx.HTTPError as e:
                 raise BackendIndisponivel(
                     f"buscando chamados da versao {versao} no Tickio: {e}"
@@ -87,6 +89,8 @@ class TickioRest:
                 f"{self.base_url}{_ROTA_TOKEN}",
                 json={"username": self.usuario, "password": self.senha},
             )
+        except httpx.InvalidURL as e:
+            raise ErroDeEntrada(f"TICKIO_BASE_URL invalido: {e}") from e
         except httpx.HTTPError as e:
             raise BackendIndisponivel(f"autenticando no Tickio: {e}") from e
 

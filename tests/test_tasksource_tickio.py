@@ -152,3 +152,23 @@ def test_variavel_faltando_e_erro_de_entrada_nao_backend():
 
     with pytest.raises(ErroDeEntrada, match="faltando no .env"):
         fonte.fetch("13.34.0")
+
+
+def test_base_url_malformada_ao_autenticar_vira_errodeentrada_nao_invalidurl():
+    """httpx.InvalidURL nao herda de httpx.HTTPError (verificado em 0.28.1) — sem
+    a captura extra, um TICKIO_BASE_URL com porta invalida escapava do
+    `except httpx.HTTPError` como traceback em vez de erro de entrada.
+    """
+    fonte = TickioRest(base_url="http://h:porta", usuario="u", senha="p", sistema_id=1)
+
+    with pytest.raises(ErroDeEntrada, match="TICKIO_BASE_URL"):
+        fonte.fetch("13.34.0")
+
+
+def test_base_url_malformada_ao_buscar_chamados_vira_errodeentrada_nao_invalidurl():
+    """Mesmo defeito no segundo site (busca de chamados, depois de autenticado)."""
+    fonte = TickioRest(base_url="http://h:porta", usuario="u", senha="p", sistema_id=1)
+    fonte._access = "token-ja-obtido"  # pula _autenticar, exercita o GET de chamados
+
+    with pytest.raises(ErroDeEntrada, match="TICKIO_BASE_URL"):
+        fonte.fetch("13.34.0")

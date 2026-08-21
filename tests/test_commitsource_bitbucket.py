@@ -21,6 +21,7 @@ from motor.adapters.commitsource.bitbucket import (
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo
+from motor.errors import ErroDeEntrada, RespostaInvalida
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
@@ -164,6 +165,78 @@ def test_chamado_sem_pr_correspondente_e_omitido():
     resultado = fonte.resolve(["255514"])
 
     assert resultado == {}, "chamado sem PR correspondente nao deveria aparecer no resultado"
+
+
+# -- JSON fora de forma nao pode escapar como AttributeError -----------------
+#
+# O contrato de motor/ports.py promete "MotorError ou subclasse, e nada mais".
+# Antes destes casos estourava AttributeError puro, que sobe como traceback
+# onde antes (com o `except Exception` largo dos services) havia degradacao
+# graciosa.
+
+
+def test_resposta_de_pullrequests_fora_de_forma_vira_respostainvalida():
+    def handler(request: httpx.Request) -> httpx.Response:
+        # servidor respondeu uma lista crua em vez do envelope {"values": [...]}
+        return httpx.Response(200, json=["nao", "e", "um", "objeto"])
+
+    fonte = _fonte(handler, _git_com_master("c1"))
+
+    with pytest.raises(RespostaInvalida):
+        fonte.resolve(["255514"])
+
+
+def test_pr_fora_de_forma_vira_respostainvalida():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"values": ["nao-e-um-dict"]})
+
+    fonte = _fonte(handler, _git_com_master("c1"))
+
+    with pytest.raises(RespostaInvalida):
+        fonte.resolve(["255514"])
+
+
+def test_titulo_de_pr_fora_de_forma_vira_respostainvalida():
+    prs = [{"id": 1, "title": 12345, "source": {"branch": {"name": "feature/x"}}}]
+    fonte = _fonte(_handler_pr(prs, {}), _git_com_master("c1"))
+
+    with pytest.raises(RespostaInvalida):
+        fonte.resolve(["255514"])
+
+
+def test_parent_de_commit_fora_de_forma_vira_respostainvalida():
+    prs = [_pr(7)]
+    commits = {
+        7: [
+            {
+                "hash": "c1",
+                "date": "2024-01-02T10:00:00+00:00",
+                "message": "fix",
+                "parents": ["nao-e-um-dict"],
+            }
+        ]
+    }
+    fonte = _fonte(_handler_pr(prs, commits), _git_com_master("c1"))
+
+    with pytest.raises(RespostaInvalida):
+        fonte.resolve(["255514"])
+
+
+def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
+    """httpx.InvalidURL nao herda de httpx.HTTPError (verificado em 0.28.1) — sem
+    a captura extra isto escapava do `except httpx.HTTPError` como traceback.
+    """
+    fonte = BitbucketPRCommitSource(
+        token="tok",
+        email="dev@x.com",
+        git=_git_com_master("c1"),
+        workspace="acme",
+        repo="monitor",
+        base_url="http://h:porta",
+    )
+
+    with pytest.raises(ErroDeEntrada):
+        fonte.resolve(["255514"])
 
 
 # -- workspace/repo derivados do remote ---------------------------------------

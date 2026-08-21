@@ -17,7 +17,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo
-from motor.errors import ErroDeEntrada, MotorError
+from motor.errors import ErroDeEntrada
 from motor.montagem import (
     montar_commit_source,
     montar_task_source,

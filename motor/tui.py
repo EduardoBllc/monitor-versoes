@@ -739,10 +739,8 @@ def descobrir_repos(
             else:
                 try:
                     info = estado.resolver_repo(caminho.name)
-                except MotorError as erro:
-                    if "desconhecido" in str(erro):
-                        continue
-                    raise
+                except NaoEncontrado:
+                    continue
             atual = encontrados.get(info.nome)
             if atual is None or (
                 caminho.name == info.nome and atual.name != info.nome

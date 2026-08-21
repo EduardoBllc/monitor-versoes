@@ -224,11 +224,11 @@ class EstadoRepo(Protocol):
     """
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
-        """Cadastra um repo canonico. MotorError se nome ou alias ja existir."""
+        """Cadastra um repo canonico. RecusaDeInvariante se nome ou alias ja existir."""
         ...
 
     def resolver_repo(self, basename: str, /) -> RepoInfo:
-        """Resolve nome ou alias para o repo canonico. MotorError se
+        """Resolve nome ou alias para o repo canonico. NaoEncontrado se
         desconhecido — nunca cria linha sozinho, senao um clone com nome
         diferente fragmenta o estado."""
         ...
@@ -259,7 +259,8 @@ class EstadoRepo(Protocol):
     def substituir_atribuicoes(
         self, repo: str, versao: str, novas: list[Atribuicao], /
     ) -> None:
-        """Apaga e reinsere. MotorError se a versao ja estiver liberada."""
+        """Apaga e reinsere. NaoEncontrado se a versao nao existir no estado,
+        RecusaDeInvariante se ja estiver liberada."""
         ...
 
     def exclusoes(self, repo: str, /) -> list[Exclusion]: ...
