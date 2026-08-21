@@ -35,8 +35,12 @@ class TargetResolver:
             )
             try:
                 chamados = self.tasks.fetch(v)
-            except Exception as e:
-                raise MotorError(f"buscando tasks da versao {v}: {e}") from e
+            except MotorError as e:
+                # add_note em vez de embrulhar: o tipo do adapter tem de sobreviver a
+                # esta fronteira, senao BackendIndisponivel chega no chamador como
+                # MotorError puro e a taxonomia nao serve para nada.
+                e.add_note(f"buscando tasks da versao {v}")
+                raise
             for ch in chamados:
                 # `get(ch, v) != v` so acusa quando a versao anterior e OUTRA:
                 # repeticao dentro da mesma fetch e dedup, nao ambiguidade.
@@ -52,8 +56,9 @@ class TargetResolver:
 
         try:
             achados = self.commits.resolve(list(marcada_de))
-        except Exception as e:
-            raise MotorError(f"buscando commits das tasks: {e}") from e
+        except MotorError as e:
+            e.add_note("buscando commits das tasks")
+            raise
 
         return Alvo(
             tasks={

@@ -7,7 +7,7 @@ import pytest
 from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import CommitRef
-from motor.errors import MotorError
+from motor.errors import BackendIndisponivel, MotorError
 from motor.services.target_resolver import TargetResolver
 
 
@@ -88,8 +88,42 @@ def test_resolve_ambiguidade_so_entre_versoes_diferentes(chamados, abertas, espe
 
 
 def test_resolve_propaga_erro_da_fonte_como_motorerror():
-    tasks = FakeTaskSource(err=RuntimeError("timeout"))
+    # A fonte ja levanta MotorError (adapters reclassificados nas tasks 3-6) -
+    # o resolver so agrega contexto via add_note, nao embrulha mais.
+    tasks = FakeTaskSource(err=MotorError("timeout"))
     resolver = TargetResolver(tasks=tasks, commits=FakeCommitSource())
 
-    with pytest.raises(MotorError, match="buscando tasks"):
+    with pytest.raises(MotorError) as capturado:
+        resolver.resolve("13.34.0", ["13.34.0"])
+
+    assert "buscando tasks da versao 13.34.0" in capturado.value.__notes__
+
+
+def test_o_tipo_do_adapter_sobrevive_a_fronteira_do_resolver():
+    """Embrulhar em MotorError puro achatava a subclasse exatamente onde o
+    chamador precisa dela: distinguir "o Tickio esta fora" de "o Tickio
+    respondeu lixo".
+    """
+
+    class _TickioFora:
+        def fetch(self, versao: str, /) -> list[str]:
+            raise BackendIndisponivel("Tickio respondeu 503")
+
+    resolver = TargetResolver(tasks=_TickioFora(), commits=FakeCommitSource())
+
+    with pytest.raises(BackendIndisponivel) as capturado:
+        resolver.resolve("13.34.0", ["13.34.0"])
+
+    # o contexto continua chegando ao operador, agora como nota
+    assert "buscando tasks da versao 13.34.0" in capturado.value.__notes__
+
+
+def test_excecao_fora_do_contrato_propaga_sem_embrulho():
+    class _TickioComBug:
+        def fetch(self, versao: str, /) -> list[str]:
+            raise RuntimeError("bug no adapter")
+
+    resolver = TargetResolver(tasks=_TickioComBug(), commits=FakeCommitSource())
+
+    with pytest.raises(RuntimeError, match="bug no adapter"):
         resolver.resolve("13.34.0", ["13.34.0"])

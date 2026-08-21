@@ -91,8 +91,12 @@ def test_origem_que_sumiu_do_historico_e_ignorada():
 
 
 def test_falha_do_git_vira_erro_limpo():
+    # O git ja levanta MotorError (adapters reclassificados nas tasks 3-6) - a
+    # reconstrucao so agrega contexto via add_note, nao embrulha mais.
     git = _git("ch123456 alfa")
-    git.commits_in_range_err = RuntimeError("git morreu")
+    git.commits_in_range_err = MotorError("git morreu")
 
-    with pytest.raises(MotorError, match="varrendo commits"):
+    with pytest.raises(MotorError) as capturado:
         reconstruir_atribuicoes(git, "base", "13.34.0")
+
+    assert "varrendo commits" in capturado.value.__notes__

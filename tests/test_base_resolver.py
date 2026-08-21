@@ -2,7 +2,10 @@
 
 import datetime
 
+import pytest
+
 from motor.adapters.git.fake import FakeGit
+from motor.errors import NaoEncontrado
 from motor.services.base_resolver import BaseResolver
 
 
@@ -54,3 +57,23 @@ def test_base_resolver_prefere_o_head_local_a_ref_de_rastreamento():
         f"base.commit = {base.commit!r}; o head local tem de vencer a ref de "
         "rastreamento — ver a ordem de `candidatos` em base_resolver.py"
     )
+
+
+def test_ref_que_nao_resolve_em_nenhum_candidato_e_nao_encontrado():
+    """Nao esta propagando erro de porta: as duas tentativas (nome puro e ref de
+    rastreamento) falharam, e isso e um fato novo — "nao achei a base".
+
+    list_version_branches sobrescrita simula uma listagem defasada (a ref
+    apareceu na varredura mas nao existe mais nem como head local nem como
+    ref de rastreamento) - com FakeGit padrao as duas fontes sao sempre
+    consistentes, e o cenario nunca ocorreria.
+    """
+
+    class _GitComListagemDesatualizada(FakeGit):
+        def list_version_branches(self) -> list[str]:
+            return ["13.6.0"]
+
+    git = _GitComListagemDesatualizada()
+
+    with pytest.raises(NaoEncontrado, match="resolvendo ref"):
+        BaseResolver(git=git).resolve("13.7.0")
