@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field, replace
 
 from motor.domain.types import CommitRef
+from motor.domain.version import worktrees_a_remover
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome, MergePrediction
 
@@ -55,6 +56,10 @@ class FakeGit:
     pulled: list[str] = field(default_factory=list)  # espiao de teste: branches que sofreram pull_branch
     fetched: list[str] = field(default_factory=list)  # espiao de teste: remotos que sofreram fetch
     removed_worktrees: list[str] = field(default_factory=list)  # espiao de teste: branches com worktree removida
+    # Worktrees "em disco" por uso recente, mais recente primeiro — o que o
+    # adapter real guarda no arquivo .motor-mru. Serve de `existentes` e de
+    # `mru` ao mesmo tempo: no fake nao ha worktree que o motor nao criou.
+    worktrees_mru: list[str] = field(default_factory=list)
 
     _current_branch: str = ""
     _pending_pick: str = ""
@@ -182,7 +187,14 @@ class FakeGit:
     def use_worktree(self, branch: str) -> None:
         if branch not in self.branches:
             raise MotorError(f"branch {branch} nao existe")
+        self._registrar_uso(branch)
         self._current_branch = branch
+
+    def _registrar_uso(self, branch: str) -> None:
+        """Move a branch para o topo do mru (espelha o `_registrar_uso` real)."""
+        if branch in self.worktrees_mru:
+            self.worktrees_mru.remove(branch)
+        self.worktrees_mru.insert(0, branch)
 
     def cherry_pick_x(self, hash: str) -> CherryPickOutcome:
         origem = self.commits.get(hash)
@@ -248,12 +260,24 @@ class FakeGit:
         if branch in self.branches:
             raise MotorError(f"branch {branch} ja existe")
         self.branches[branch] = self._resolve_ref_local(base)
+        self._registrar_uso(branch)
         self._current_branch = branch
 
-    def worktree_remove(self, branch: str) -> None:
-        # so desanexa a worktree (como o git de verdade) - a branch em si
-        # continua existindo, pra use_worktree poder recria-la sob demanda.
-        self.removed_worktrees.append(branch)
+    def worktree_gc(self, manter: int, atual: str) -> list[str]:
+        # So desanexa as worktrees (como o git de verdade) - as branches em si
+        # continuam existindo, pra use_worktree poder recria-las sob demanda.
+        # Sem as guardas do adapter real (cherry-pick pendente e alteracao
+        # nao commitada): o fake nao tem disco onde isso exista.
+        removidas = worktrees_a_remover(
+            self.worktrees_mru,
+            mru=self.worktrees_mru,
+            manter=manter,
+            atual=atual,
+        )
+        for branch in removidas:
+            self.worktrees_mru.remove(branch)
+        self.removed_worktrees.extend(removidas)
+        return removidas
 
     def tag_exists(self, tag: str) -> bool:
         return self.tags.get(tag, False)

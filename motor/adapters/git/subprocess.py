@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef
+from motor.domain.version import worktrees_a_remover
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome, MergePrediction
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -52,6 +53,12 @@ _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 _PADRAO_VERSAO_GIT = re.compile(r"git version (\d+)\.(\d+)")
 _CREDENCIAL_EM_URL = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
+
+#: Uso recente das worktrees, uma branch por linha, mais recente primeiro.
+#: Fica ao lado das worktrees que descreve — e local por maquina, ao
+#: contrario do estado no Postgres, que e compartilhado: uso registrado la
+#: faria uma maquina evictar worktree de outra.
+_ARQUIVO_MRU = ".motor-mru"
 
 
 #: Quadro de progresso do git: "remote: Counting objects:  25% (1/4)". A parte
@@ -210,10 +217,50 @@ class GitSubprocess:
     progresso: RelatorProgresso = silencioso
     _current_branch: str = field(default="", repr=False)
 
-    def _worktree_dir(self, branch: str) -> str:
+    def _dir_worktrees(self) -> str:
         base = os.path.basename(self.repo_path.rstrip(os.sep))
         parent = os.path.dirname(self.repo_path.rstrip(os.sep))
-        return os.path.join(parent, base + "-worktrees", branch)
+        return os.path.join(parent, base + "-worktrees")
+
+    def _worktree_dir(self, branch: str) -> str:
+        return os.path.join(self._dir_worktrees(), branch)
+
+    def _ler_mru(self) -> list[str]:
+        """Uso recente, mais recente primeiro. Arquivo ausente ou ilegivel vira
+        lista vazia: e cache local, nao estado. Quem cai no fallback so perde a
+        ordem por uso, e `worktrees_a_remover` degrada para semver desc.
+        """
+        try:
+            with open(self._caminho_mru(), encoding="utf-8") as f:
+                return [linha.strip() for linha in f if linha.strip()]
+        except (OSError, UnicodeDecodeError):
+            return []
+
+    def _caminho_mru(self) -> str:
+        return os.path.join(self._dir_worktrees(), _ARQUIVO_MRU)
+
+    def _gravar_mru(self, ordem: list[str]) -> None:
+        """Temp + os.replace: dois `motor` no mesmo repo trocam o arquivo
+        inteiro de uma vez em vez de deixar meia linha escrita. Falha de
+        escrita e engolida — derrubar a operacao do operador por causa de um
+        cache de ordenacao seria pior que perder a ordem.
+        """
+        caminho = self._caminho_mru()
+        temp = f"{caminho}.{os.getpid()}.tmp"
+        try:
+            os.makedirs(os.path.dirname(caminho), exist_ok=True)
+            with open(temp, "w", encoding="utf-8") as f:
+                f.write("".join(f"{v}\n" for v in ordem))
+            os.replace(temp, caminho)
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.unlink(temp)
+
+    def _registrar_uso(self, branch: str) -> None:
+        """Move a branch para o topo do mru. Chamado nos dois momentos "agora
+        estou trabalhando aqui": `use_worktree` e `worktree_add`.
+        """
+        self._gravar_mru([branch, *(v for v in self._ler_mru() if v != branch)])
 
     def _run(self, dir_: str, *args: str) -> None:
         with _cronometrar(*args):
@@ -416,6 +463,7 @@ class GitSubprocess:
                     f"{branch} nao existe pra adotar (rode 'motor criar {branch}' "
                     f"primeiro): {e}"
                 ) from e
+        self._registrar_uso(branch)
         self._current_branch = branch
 
     def cherry_pick_x(self, hash: str) -> CherryPickOutcome:
@@ -442,7 +490,9 @@ class GitSubprocess:
         return out.split("\n")
 
     def pending_cherry_pick(self) -> tuple[str, bool]:
-        dir_ = self._worktree_dir(self._current_branch)
+        return self._pendencia_pick(self._worktree_dir(self._current_branch))
+
+    def _pendencia_pick(self, dir_: str) -> tuple[str, bool]:
         try:
             hash_ = self._output(dir_, "rev-parse", "CHERRY_PICK_HEAD")
         except MotorError:
@@ -532,12 +582,90 @@ class GitSubprocess:
         self._run_progresso(
             self.repo_path, "worktree", "add", "-b", branch, dir_, base
         )
+        self._registrar_uso(branch)
         self._current_branch = branch
 
-    def worktree_remove(self, branch: str) -> None:
-        # --force: descarta cruft nao rastreado (deps instaladas, .env etc) que
-        # bloquearia a remocao - a branch ja esta com tudo commitado e pushado
-        # nesse ponto, nao ha nada de valor no diretorio da worktree em si.
+    def worktree_gc(self, manter: int, atual: str) -> list[str]:
+        """Descarta worktrees de versao alem das `manter` de uso mais recente.
+
+        A politica (quem morre) e do dominio; aqui ficam as duas coisas que so
+        o disco sabe: quais worktrees existem, e quais podem sair sem levar
+        trabalho embora.
+        """
+        existentes = self._worktrees_de_versao()
+        candidatas = worktrees_a_remover(
+            existentes, mru=self._ler_mru(), manter=manter, atual=atual
+        )
+        removidas = [b for b in candidatas if self._descartavel(b)]
+        for branch in removidas:
+            self._worktree_remove(branch)
+        if removidas:
+            # Mantem o arquivo do tamanho do que existe em disco.
+            vivas = set(existentes) - set(removidas)
+            self._gravar_mru([v for v in self._ler_mru() if v in vivas])
+        return removidas
+
+    def _worktrees_de_versao(self) -> list[str]:
+        """Branches X.Y.Z com worktree dentro de `<repo>-worktrees/`, pelo
+        registro do proprio git.
+
+        Filtra por caminho **e** por formato: worktree que o operador criou na
+        mao, ou em cima de branch que nao e versao, nao e nossa para apagar. O
+        proprio repo principal cai fora pelo filtro de caminho, e worktree em
+        detached HEAD nao tem linha `branch`.
+        """
+        # realpath nos dois lados: com um symlink no caminho (o classico
+        # /tmp -> /private/tmp do macOS) o git reporta o caminho resolvido e a
+        # comparacao textual nao casa — o GC viraria no-op silencioso, que e
+        # pior que falhar, porque ninguem descobre.
+        prefixo = os.path.realpath(self._dir_worktrees()) + os.sep
+        encontradas: list[str] = []
+        caminho = ""
+        for linha in self._output(
+            self.repo_path, "worktree", "list", "--porcelain"
+        ).split("\n"):
+            if linha.startswith("worktree "):
+                caminho = os.path.realpath(linha.removeprefix("worktree "))
+            elif linha.startswith("branch refs/heads/"):
+                nome = linha.removeprefix("branch refs/heads/")
+                if caminho.startswith(prefixo) and _PADRAO_BRANCH_VERSAO.match(nome):
+                    encontradas.append(nome)
+        return encontradas
+
+    def _descartavel(self, branch: str) -> bool:
+        """Worktree que pode ser apagada sem perder trabalho.
+
+        Commit nao entra na conta: `worktree remove` desanexa o checkout e a
+        branch continua em refs/heads, entao commit local sobrevive mesmo sem
+        push. O que morre com o diretorio e alteracao nao commitada e resolucao
+        de conflito em andamento — e so isso que as duas guardas cobrem.
+        """
+        dir_ = self._worktree_dir(branch)
+        if not os.path.isdir(dir_):
+            # Diretorio apagado a mao, registro do git orfao. Todo comando de
+            # git aqui morreria no `cwd` inexistente antes de rodar — e nao ha
+            # nada a perder nem a remover. Deixa para o `git worktree prune`.
+            logger.debug("worktree %s sem diretorio, pulando no gc", branch)
+            return False
+        if self._pendencia_pick(dir_)[1]:
+            return False  # checkpoint resumivel de um atualizar BLOCKED (§8)
+        try:
+            # -uno: cruft nao rastreado (deps instaladas, .env) e justamente o
+            # que o --force existe para descartar - nao pode prender a worktree
+            # viva.
+            return self._output(dir_, "status", "--porcelain", "-uno") == ""
+        except MotorError:
+            # Diretorio existe mas o git nao consegue le-lo (metadado de
+            # worktree corrompido). O `worktree_remove` antigo so tocava a
+            # versao do run; o GC olha as outras, entao um registro quebrado
+            # pararia todo comando do motor.
+            logger.debug("worktree %s inacessivel, pulando no gc", branch)
+            return False
+
+    def _worktree_remove(self, branch: str) -> None:
+        # --force: descarta o cruft nao rastreado que bloquearia a remocao. O
+        # `_descartavel` ja garantiu que nao ha alteracao rastreada nem
+        # cherry-pick pendente para levar embora junto.
         self._run(self.repo_path, "worktree", "remove", "--force", self._worktree_dir(branch))
 
     def tag_exists(self, tag: str) -> bool:

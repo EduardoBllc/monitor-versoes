@@ -24,3 +24,8 @@ class Deps:
     # `consulta`, `reconstruir-estado` e `atualizar --abort` nunca resolvem
     # commits — o `verificar` cobra a ausencia quando precisa dela.
     commit_source: CommitSource | None = None
+    # Quantas worktrees de versao ficam em disco depois da operacao. O default 0
+    # e o comportamento historico (checkout descartado a cada run) e mantem os
+    # testes de engine falando de uma worktree so; o default de produto sai de
+    # WORKTREES_MANTIDAS, lido em motor.montagem — o engine nao ve ambiente.
+    worktrees_mantidas: int = 0

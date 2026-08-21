@@ -248,7 +248,7 @@ def verificar(
         )
 
     if not manter_worktree and not auditar:
-        deps.git.worktree_remove(versao)
+        deps.git.worktree_gc(deps.worktrees_mantidas, versao)
     logger.debug("verificar total: %.3fs", time.monotonic() - inicio)
     return status
 

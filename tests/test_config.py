@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from motor.config import database_url
+from motor.config import database_url, worktrees_mantidas
 from motor.errors import MotorError
 
 COMPLETO = {
@@ -65,3 +65,34 @@ def test_sessao_postgres_recusa_banco_de_producao(monkeypatch, request):
 
     with pytest.raises(pytest.fail.Exception, match="development"):
         request.getfixturevalue("sessao_postgres")
+
+
+# -- worktrees mantidas -------------------------------------------------------
+#
+# setenv("") em vez de delenv: e o que um `.env` com a linha vazia produz, e a
+# disciplina do conftest para variavel "ausente" (ver .claude/CLAUDE.md).
+
+
+def test_worktrees_mantidas_default_quando_ausente(monkeypatch):
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "")
+    assert worktrees_mantidas() == 3
+
+
+def test_worktrees_mantidas_le_do_ambiente(monkeypatch):
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "7")
+    assert worktrees_mantidas() == 7
+
+
+def test_worktrees_mantidas_aceita_zero(monkeypatch):
+    # 0 e o comportamento historico (worktree descartada a cada run), nao
+    # "nao configurado" — por isso o default nao pode vir de `or`.
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "0")
+    assert worktrees_mantidas() == 0
+
+
+@pytest.mark.parametrize("valor", ["abc", "-1", "1.5", "3 worktrees"])
+def test_worktrees_mantidas_recusa_valor_invalido(monkeypatch, valor):
+    # Cair no default calado faria o operador achar que configurou.
+    monkeypatch.setenv("WORKTREES_MANTIDAS", valor)
+    with pytest.raises(MotorError, match="WORKTREES_MANTIDAS"):
+        worktrees_mantidas()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from dataclasses import replace
 
 import pytest
 
@@ -298,3 +299,27 @@ def test_atualizar_busca_antes_de_ler_a_tag():
     assert g.removed_worktrees == [] and "13.7.0" not in g.remotes, (
         "recusa antes de qualquer efeito no git"
     )
+
+
+def test_atualizar_preserva_worktree_quando_configurado_para_manter():
+    """Com WORKTREES_MANTIDAS > 0 o checkout sobrevive ao lote: o proximo
+    comando na mesma versao nao paga `worktree add` de novo."""
+    g = _git()
+    deps = replace(_deps(g, _estado(), ["255514"], UM), worktrees_mantidas=2)
+
+    resultado = atualizar(deps, "13.7.0")
+
+    assert resultado.status == AtualizarStatus.DONE
+    assert g.remotes.get("13.7.0") is True, "o push tem de acontecer do mesmo jeito"
+    assert g.removed_worktrees == []
+
+
+def test_atualizar_abort_preserva_worktree_quando_configurado_para_manter():
+    g = _git()
+    g.conflict_on["a0"] = True
+    deps = replace(_deps(g, _estado(), ["255514"], UM), worktrees_mantidas=2)
+    atualizar(deps, "13.7.0")
+
+    atualizar_abort(deps, "13.7.0")
+
+    assert g.removed_worktrees == []

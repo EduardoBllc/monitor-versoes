@@ -76,3 +76,36 @@ def fontes_de_alvo(alvo: str, abertas: list[str]) -> list[str]:
     corte = chave("13.0.0")
     k = chave(alvo)
     return [v for v in abertas if corte <= chave(v) <= k]
+
+
+def worktrees_a_remover(
+    existentes: list[str], *, mru: list[str], manter: int, atual: str
+) -> list[str]:
+    """Worktrees de versao a descartar, para o GC do adapter de git.
+
+    `existentes` sao numeros X.Y.Z — o adapter filtra o que nao for versao
+    antes de chamar, para nunca propor remover worktree que o operador criou
+    na mao. `mru` e a lista de uso recente (mais recente primeiro) lida do
+    arquivo local; nome que nao aparece nela cai atras dos que aparecem, entre
+    si por semver desc. Arquivo ausente ou ilegivel viram `mru=[]`, e a ordem
+    degrada para semver puro.
+
+    `atual` sobrevive sempre que `manter >= 1`: e a worktree que a operacao em
+    curso acabou de usar, e evicta-la faria o proximo run pagar o checkout de
+    novo. Com `manter == 0` nada sobrevive — e o comportamento historico de
+    remover a worktree no fim de cada run.
+    """
+    presentes = set(existentes)
+    # dict.fromkeys: mru repetido (arquivo editado na mao) emitiria o mesmo
+    # nome duas vezes na lista de remocao, e a segunda remocao falharia.
+    conhecidas = list(dict.fromkeys(v for v in mru if v in presentes))
+    desconhecidas = sorted(presentes - set(conhecidas), key=chave, reverse=True)
+    ordem = conhecidas + desconhecidas
+    if manter <= 0:
+        return ordem
+    sobrevivem = {atual} & presentes
+    for v in ordem:
+        if len(sobrevivem) >= manter:
+            break
+        sobrevivem.add(v)
+    return [v for v in ordem if v not in sobrevivem]

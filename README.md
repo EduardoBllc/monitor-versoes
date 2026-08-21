@@ -73,6 +73,20 @@ A descoberta de commits por PR do Bitbucket é opcional: com `BITBUCKET_TOKEN` e
 `BITBUCKET_EMAIL` no ambiente (ou `--bitbucket-token`/`--bitbucket-email`), ela entra como
 fonte primária e o grep em `master` fica como fallback.
 
+## Worktrees mantidas em disco
+
+Levantar a worktree de uma versão é um checkout inteiro — depois do `fetch`, a espera mais
+longa de um comando. `WORKTREES_MANTIDAS` (default **3**) diz quantas ficam em disco depois
+da operação, em `<repo>-worktrees/`: o comando seguinte na mesma versão reusa o diretório em
+vez de refazer o checkout. `WORKTREES_MANTIDAS=0` volta ao comportamento de descartar a cada
+run. Vale para o CLI e para a TUI — as duas leem o mesmo arquivo de ambiente.
+
+A eviction é por **uso mais recente**, registrado em `<repo>-worktrees/.motor-mru`; sem esse
+arquivo, cai para ordem de versão decrescente. Nunca leva trabalho embora: worktree com
+alteração não commitada ou cherry-pick pendente (um `atualizar` bloqueado esperando
+`--continue`) é pulada. Commit local não entra na conta — `git worktree remove` desanexa o
+checkout e a branch continua em `refs/heads`.
+
 ## Testes
 
 ```bash

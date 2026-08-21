@@ -215,7 +215,9 @@ como sumida faria toda versão recém-criada reportar estado divergente entre um
    conhecida é reaplicada no working tree mas o arquivo continua "unmerged" até um `git add`
    explícito, e o "resolveu automaticamente, segue o pick" nunca dispara sozinho.
 2. **Nunca auto-resolve heurísticamente.** Conflito novo para e entrega o controle.
-3. **Checkpoint resumível** — a worktree fica no estado do conflito.
+3. **Checkpoint resumível** — a worktree fica no estado do conflito. O GC de worktrees
+   (`WORKTREES_MANTIDAS`, ver README) nunca a descarta: cherry-pick pendente e alteração
+   não commitada são guardas de remoção.
 4. **Worktree isolada** — a árvore de trabalho principal nunca é tocada.
 
 A predição de conflito não toca a working tree:

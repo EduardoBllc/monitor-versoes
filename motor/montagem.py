@@ -27,7 +27,7 @@ from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
-from motor.config import database_url
+from motor.config import database_url, worktrees_mantidas
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
@@ -162,4 +162,5 @@ def montar_deps(
             progresso=progresso,
         ),
         progresso=progresso,
+        worktrees_mantidas=worktrees_mantidas(),
     )

@@ -136,8 +136,14 @@ class GitRepo(Protocol):
         """Cria worktree."""
         ...
 
-    def worktree_remove(self, branch: str) -> None:
-        """Remove worktree."""
+    def worktree_gc(self, manter: int, atual: str) -> list[str]:
+        """Descarta worktrees de versao alem das `manter` de uso mais recente.
+
+        `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
+        todas, inclusive a `atual`. Devolve as removidas. Nunca leva trabalho
+        embora: worktree com alteracao nao commitada ou cherry-pick pendente e
+        pulada.
+        """
         ...
 
     def tag_exists(self, tag: str) -> bool:
