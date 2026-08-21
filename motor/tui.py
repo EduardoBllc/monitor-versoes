@@ -430,22 +430,20 @@ class MotorTUI(App[None]):
             )
         )
         largura_commits = max(len(str(len(chamado.commits))) for chamado in chamados)
-        lista.add_options(
-            [
+        opcoes: list[Option] = []
+        for indice, chamado in enumerate(chamados):
+            rotulo, cor = rotulo_estado(chamado)
+            opcoes.append(
                 Option(
                     Text.assemble(
                         (f"#{chamado.chamado}", "bold"),
                         (f"  {len(chamado.commits):>{largura_commits}}", "dim"),
-                        (
-                            f"  ● {chamado.estado}",
-                            "green" if chamado.estado == "aplicado" else "yellow",
-                        ),
+                        (f"  ● {rotulo}", cor),
                     ),
                     id=str(indice),
                 )
-                for indice, chamado in enumerate(chamados)
-            ]
-        )
+            )
+        lista.add_options(opcoes)
         self.query_one("#resultado-scroll").display = False
         self.query_one("#consulta-painel").display = True
         lista.highlighted = 0
@@ -905,15 +903,28 @@ def _commits_agrupados(
     return Group(*tabelas)
 
 
+def rotulo_estado(chamado: ChamadoConsultado) -> tuple[str, str]:
+    """Rotulo e cor do estado de um chamado do snapshot.
+
+    O estado gravado so tem dois valores: chamado sem nenhum commit achado cai
+    em "pendente" igual a quem tem commit esperando cherry-pick. O verificar
+    distingue os dois (`VersionStatus.sem_commits`); aqui a lista tem a mesma
+    evidencia na mao — lista de commits vazia — e nao deve mostrar menos.
+    """
+    if chamado.estado == "aplicado":
+        return "aplicado", "green"
+    if not chamado.commits:
+        return "sem commits", "red"
+    return "pendente", "yellow"
+
+
 def renderizar_chamado(chamado: ChamadoConsultado) -> Group:
     quantidade = len(chamado.commits)
+    rotulo, cor = rotulo_estado(chamado)
     cabecalho = Text.assemble(
         (f"#{chamado.chamado}", "bold"),
         (f"  ·  {quantidade} commit{'s' if quantidade != 1 else ''}", "dim"),
-        (
-            f"  ·  {chamado.estado.upper()}",
-            "bold green" if chamado.estado == "aplicado" else "bold yellow",
-        ),
+        (f"  ·  {rotulo.upper()}", f"bold {cor}"),
     )
     if not chamado.commits:
         return Group(cabecalho, Text("Nenhum commit registrado.", style="dim"))

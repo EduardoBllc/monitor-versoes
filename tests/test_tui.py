@@ -24,6 +24,7 @@ from motor.tui import (
     VersionOption,
     descobrir_repos,
     descobrir_versoes,
+    renderizar_chamado,
     renderizar_status,
 )
 
@@ -1537,3 +1538,26 @@ def test_descobrir_versoes_relata_o_fetch():
     descobrir_versoes(cast(GitRepo, GitCatalogoFake()), progresso=relatos.append)
 
     assert [p.fase for p in relatos] == ["buscando refs do origin"]
+
+
+def test_renderizar_chamado_separa_sem_commits_de_pendente():
+    """Estado gravado nao distingue os dois — a lista de commits sim.
+
+    Sem isso, chamado que o verificar acusou em `sem_commits` reaparece no
+    snapshot como "pendente", indistinguivel de quem tem commit esperando
+    cherry-pick.
+    """
+    sem_commits = renderizar_chamado(
+        ChamadoConsultado(chamado="254177", estado="pendente", commits=[])
+    )
+    texto = _texto(sem_commits)
+    assert "SEM COMMITS" in texto and "PENDENTE" not in texto
+
+    com_commit = renderizar_chamado(
+        ChamadoConsultado(
+            chamado="256308",
+            estado="pendente",
+            commits=[CommitRef(hash_origem="c0ffee123456", chamado="256308")],
+        )
+    )
+    assert "PENDENTE" in _texto(com_commit)
