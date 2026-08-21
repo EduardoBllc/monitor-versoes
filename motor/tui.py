@@ -771,7 +771,9 @@ def _versoes_do_repo(
 ) -> list[VersionOption]:
     if repo.caminho is None:
         return []
-    return descobrir_versoes(new_git_subprocess(repo.caminho), progresso=progresso)
+    return descobrir_versoes(
+        new_git_subprocess(repo.caminho, progresso=progresso), progresso=progresso
+    )
 
 
 def _deps_do_repo(

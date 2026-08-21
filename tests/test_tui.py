@@ -144,7 +144,7 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
     git = GitCatalogoFake()
     caminhos: list[str] = []
 
-    def abrir_git(caminho: str) -> GitCatalogoFake:
+    def abrir_git(caminho: str, **_: object) -> GitCatalogoFake:
         caminhos.append(caminho)
         return git
 
@@ -189,7 +189,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     monkeypatch.setenv("BITBUCKET_EMAIL", "dev@example.com")
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
-    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
     monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "verificar", verificar_spy)
 
@@ -232,7 +232,7 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
-    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
     monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "atualizar", atualizar_spy)
 

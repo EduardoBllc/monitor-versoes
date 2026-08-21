@@ -272,7 +272,7 @@ def bordas(monkeypatch):
     for var, valor in (("TICKIO_BASE_URL", "http://tickio.exemplo"),
                        ("TICKIO_USER", "u"), ("TICKIO_PASSWORD", "p")):
         monkeypatch.setenv(var, valor)
-    monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo: git)
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     return git, estado

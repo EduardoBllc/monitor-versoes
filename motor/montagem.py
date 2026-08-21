@@ -141,7 +141,7 @@ def montar_deps(
     Token e email vazios caem no ambiente: e assim que a TUI, que nao tem flag
     nenhuma, liga a fonte de PR do Bitbucket.
     """
-    git = new_git_subprocess(caminho_repo)
+    git = new_git_subprocess(caminho_repo, progresso=progresso)
     estado = PostgresEstado(sessao=sessao)
     # O estado vem antes das fontes: o nome canonico do repo e o
     # tickio_sistema_id saem da linha `repo` (que aceita nome ou alias).

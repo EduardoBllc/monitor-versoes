@@ -10,9 +10,15 @@ import subprocess
 
 import pytest
 
-from motor.adapters.git.subprocess import GitSubprocess, new_git_subprocess
+from motor.adapters.git.subprocess import (
+    GitSubprocess,
+    _progresso_de_quadro,
+    _quadros,
+    new_git_subprocess,
+)
 from motor.domain.version import versoes_abertas
 from motor.errors import MotorError
+from motor.progresso import Progresso
 from motor.ports import CherryPickOutcome
 
 
@@ -184,6 +190,53 @@ def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
 
     assert "13.13.0" in versoes, f"branch com tag homonima sumiu da lista: {versoes!r}"
     assert "13.12.0" in versoes, f"versao so-com-tag sumiu da lista: {versoes!r}"
+
+
+def test_quadros_separa_por_cr_e_traduz_a_fase():
+    """O git separa os quadros de progresso com `\\r`; um `readline` leria o
+    fetch inteiro como uma linha so e o painel nunca sairia do zero.
+    """
+    r, w = os.pipe()
+    os.write(w, b"remote: Counting objects:  25% (1/4)\rremote: Counting objects: 100% (4/4)\n")
+    os.write(w, b"Receiving objects:  50% (3/6)\rFrom /tmp/origem\n")
+    os.close(w)
+
+    quadros = list(_quadros(r))
+    relatos = [p for p in map(_progresso_de_quadro, quadros) if p is not None]
+
+    assert relatos == [
+        Progresso("contando objetos", 1, 4),
+        Progresso("contando objetos", 4, 4),
+        Progresso("recebendo objetos", 3, 6),
+    ], f"quadros lidos: {quadros!r}"
+
+
+def test_git_subprocess_fetch_relata_o_progresso(tmp_path):
+    """O fetch e a espera mais longa do motor — e a unica que o proprio git sabe
+    contar, com `--progress`. Sem isso o painel fica so com o pulso.
+    """
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    _run_git(str(origem), "init", "-b", "master")
+    _config_identidade_local(str(origem))
+    (origem / "arquivo.txt").write_text("v1\n")
+    _run_git(str(origem), "add", "arquivo.txt")
+    _run_git(str(origem), "commit", "-m", "base")
+
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _run_git(str(clone), "init", "-b", "master")
+    _config_identidade_local(str(clone))
+    _run_git(str(clone), "remote", "add", "origin", str(origem))
+
+    relatos: list[Progresso] = []
+    new_git_subprocess(str(clone), progresso=relatos.append).fetch("origin")
+
+    assert relatos, "o fetch nao relatou fase nenhuma"
+    assert all(p.total > 0 for p in relatos), f"fase sem contagem: {relatos!r}"
+    assert all(p.fase == p.fase.lower() for p in relatos), (
+        f"fase nao traduzida: {relatos!r}"
+    )
 
 
 def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(tmp_path):

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from motor.domain.types import CommitRef
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome, MergePrediction
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,46 @@ _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 _PADRAO_VERSAO_GIT = re.compile(r"git version (\d+)\.(\d+)")
 _CREDENCIAL_EM_URL = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
+
+
+#: Quadro de progresso do git: "remote: Counting objects:  25% (1/4)". A parte
+#: "remote: " so aparece no que o outro lado conta.
+_PADRAO_PROGRESSO_GIT = re.compile(r"^(?:remote: )?(.+?):\s+\d+% \((\d+)/(\d+)\)")
+
+#: O git escreve a fase em ingles (e a traduziria pelo locale, dai o LC_ALL=C
+#: em `_run_progresso`). Fase que nao esteja aqui passa como veio.
+_FASES_GIT = {
+    "Enumerating objects": "enumerando objetos",
+    "Counting objects": "contando objetos",
+    "Compressing objects": "comprimindo objetos",
+    "Receiving objects": "recebendo objetos",
+    "Resolving deltas": "resolvendo deltas",
+    "Unpacking objects": "desempacotando objetos",
+    "Writing objects": "escrevendo objetos",
+}
+
+
+def _progresso_de_quadro(quadro: str) -> Progresso | None:
+    m = _PADRAO_PROGRESSO_GIT.match(quadro.strip())
+    if m is None:
+        return None
+    fase = m.group(1)
+    return Progresso(_FASES_GIT.get(fase, fase), int(m.group(2)), int(m.group(3)))
+
+
+def _quadros(fd: int) -> Iterator[str]:
+    """Quadros do stderr do git, que ele separa com `\r` e nao com `\n`.
+
+    `os.read` em vez de iterar o arquivo: devolve o que ja chegou no pipe, e
+    linha nenhuma termina — o progresso so apareceria quando o git acabasse.
+    """
+    resto = ""
+    while pedaco := os.read(fd, 4096):
+        resto += pedaco.decode(errors="replace")
+        *quadros, resto = re.split(r"[\r\n]", resto)
+        yield from quadros
+    if resto:
+        yield resto
 
 
 def _saida_git_publica(saida: str) -> str:
@@ -162,6 +203,10 @@ def _parse_conflict_files(out: str) -> list[str]:
 @dataclass
 class GitSubprocess:
     repo_path: str
+    #: Relator do `fetch`, que e a espera mais longa do motor. Entra por
+    #: construtor e nao pela porta: `ports.py` se declara transcricao de
+    #: `ports.go`, onde progresso nao existe (ver motor/progresso.py).
+    progresso: RelatorProgresso = silencioso
     _current_branch: str = field(default="", repr=False)
 
     def _worktree_dir(self, branch: str) -> str:
@@ -175,6 +220,32 @@ class GitSubprocess:
         if proc.returncode != 0:
             saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
             raise MotorError(f"git {' '.join(args)}: exit status {proc.returncode}: {saida}")
+
+    def _run_progresso(self, dir_: str, *args: str) -> None:
+        """`_run` que relata as fases pelo caminho.
+
+        O git so conta quando lhe pedem `--progress`: o default e contar apenas
+        se o stderr for um TTY, e aqui ele e um pipe.
+        """
+        with _cronometrar(*args):
+            proc = subprocess.Popen(
+                ["git", *args],
+                cwd=dir_,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                env={**os.environ, "LC_ALL": "C"},
+            )
+            assert proc.stderr is not None
+            saida: list[str] = []
+            for quadro in _quadros(proc.stderr.fileno()):
+                saida.append(quadro)
+                relato = _progresso_de_quadro(quadro)
+                if relato is not None:
+                    self.progresso(relato)
+            codigo = proc.wait()
+        if codigo != 0:
+            texto = _saida_git_publica("\n".join(saida))
+            raise MotorError(f"git {' '.join(args)}: exit status {codigo}: {texto}")
 
     def _output(self, dir_: str, *args: str) -> str:
         with _cronometrar(*args):
@@ -483,7 +554,7 @@ class GitSubprocess:
         self._run(self._worktree_dir(branch), "pull", "--ff-only", remote, branch)
 
     def fetch(self, remote: str) -> None:
-        self._run(self.repo_path, "fetch", remote)
+        self._run_progresso(self.repo_path, "fetch", "--progress", remote)
 
     def list_version_branches(self) -> list[str]:
         # %(refname) + strip manual do prefixo, nao %(refname:short): quando
@@ -566,10 +637,12 @@ class GitSubprocess:
         self._run(dir_, "commit", "-m", mensagem_commit)
 
 
-def new_git_subprocess(repo_path: str) -> GitSubprocess:
+def new_git_subprocess(
+    repo_path: str, *, progresso: RelatorProgresso = silencioso
+) -> GitSubprocess:
     """Espelha git.NewGitSubprocess: valida versão e liga rerere aqui."""
     _checar_versao_git()
-    g = GitSubprocess(repo_path=repo_path)
+    g = GitSubprocess(repo_path=repo_path, progresso=progresso)
     g._run(repo_path, "config", "rerere.enabled", "true")
     g._run(repo_path, "config", "rerere.autoUpdate", "true")
     return g
