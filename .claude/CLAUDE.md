@@ -1,6 +1,7 @@
 # monitor-versoes — armadilhas do ambiente
 
-Duas coisas que fazem comandos corretos falharem por motivo que não é o código.
+Coisas que fazem comandos corretos falharem por motivo que não é o código.
+Setup e comandos: `README.md`. Desenho: `docs/design.md`.
 
 ## `uv run` não funciona nesta máquina
 
@@ -11,39 +12,49 @@ código.
 
 ```bash
 ./.venv/bin/python -m pytest        # use isto
-./.venv/bin/python -m alembic upgrade head
 ```
 
 Se o `.venv` não existir: `unset VIRTUAL_ENV; uv sync --all-extras`.
 
-## Testes e o `.env`
+## Desenvolvimento é o padrão do CLI, produção é o padrão de tudo o mais
+
+O CLI usa `.env.development` (porta **5434**) por padrão; produção exige
+`--env production`. O `compose.yml` e o `alembic/env.py` fazem o contrário: leem
+`.env`, ou seja **produção** (porta 5433). `docker compose up -d` sozinho sobe o
+container de produção — não é o banco que a suíte usa.
+
+```bash
+docker compose --env-file .env.development up -d
+set -a; . ./.env.development; set +a; ./.venv/bin/python -m alembic upgrade head
+```
+
+O `set -a` é o que redireciona o Alembic: o `load_dotenv()` dele não sobrescreve
+variável já presente no ambiente.
+
+## Testes e o arquivo de ambiente
 
 A suíte roda sem git, sem rede e sem banco. Exceção: os marcados
-`@pytest.mark.integracao`, que precisam do Postgres do `compose.yml`.
+`@pytest.mark.integracao`, que precisam do Postgres de **desenvolvimento** de pé.
+O `tests/conftest.py` carrega `.env.development` com `override=True` no import —
+o `.env` de produção não participa da suíte.
 
-- Sem `.env` (clone novo, CI) → `DATABASE_HOST` ausente → pulam.
-- Com `.env` e container parado → pulam pela guarda de `OperationalError` no
-  fixture.
-- `env -u DATABASE_HOST` **não** faz pular: o `tests/conftest.py` chama
-  `load_dotenv()` e repõe a variável. Para simular ausência, use `DATABASE_HOST=`
-  vazia.
+- Sem `.env.development` (clone novo, CI) → `DATABASE_HOST` ausente → pulam.
+- Com `.env.development` e container parado → pulam pela guarda de
+  `OperationalError` no fixture.
+- `env -u DATABASE_HOST` **não** faz pular: o `conftest.py` repõe a variável.
+  Para simular ausência, use `DATABASE_HOST=` vazia.
 
 **Nunca use `monkeypatch.delenv` para testar variável ausente em teste que chama
 `main()`.** O `main()` chama `load_dotenv()` a cada invocação, então a variável
-volta do `.env` de verdade e o teste sai para a rede — já aconteceu. Use
+volta do arquivo de ambiente e o teste sai para a rede — já aconteceu. Use
 `monkeypatch.setenv(VAR, "")`. Existe uma guarda autouse no `conftest.py` que
-desliga esse `load_dotenv()`, mas o teste dela só discrimina em máquina com `.env`.
+desliga esse `load_dotenv()`, mas o teste dela só discrimina em máquina com
+`.env`.
 
-## Banco de desenvolvimento
-
-```bash
-docker compose up -d                       # porta 5433, não 5432
-./.venv/bin/python -m alembic upgrade head
-```
-
-O fixture de integração dá `TRUNCATE` nas sete tabelas **no setup**, nunca no
-teardown — toda rodada deixa as linhas do último teste. Se precisar do banco limpo,
-trunque à mão.
+O fixture `sessao_postgres` dá `TRUNCATE` nas sete tabelas **no setup e no
+teardown**, e `_exigir_banco_development` **recusa rodar** contra qualquer banco
+que não seja exatamente o do `.env.development` — sem essa checagem um
+`.env` mal apontado truncaria produção.
 
 ## Ao mexer em `EstadoRepo`
 

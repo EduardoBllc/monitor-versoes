@@ -7,6 +7,9 @@ services:
       POSTGRES_USER: ${DATABASE_USER}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     ports: ["${DATABASE_PORT}:5432"]
+    # /var/lib/postgresql, nao /var/lib/postgresql/data: no postgres:18-alpine o
+    # PGDATA e /var/lib/postgresql/18/docker, entao montar em /data criaria um
+    # diretorio vazio irmao do PGDATA e os dados sumiriam na recriacao do volume.
     volumes: [pgdata:/var/lib/postgresql]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
