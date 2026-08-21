@@ -32,7 +32,7 @@ from motor.domain.types import (
     VersaoInfo,
     VersionType,
 )
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
 
 REPO = "vendabemweb"
 ALIAS = "vbweb"
@@ -93,7 +93,7 @@ def test_resolver_repo_por_nome_e_por_alias(estado):
 
 
 def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
-    with pytest.raises(MotorError, match="desconhecido") as e:
+    with pytest.raises(NaoEncontrado, match="desconhecido") as e:
         estado.resolver_repo("nao-existe")
     assert "motor repo adicionar" in str(e.value)
 
@@ -107,14 +107,14 @@ def test_registrar_repo_o_torna_resolvivel(estado):
 
 
 def test_registrar_repo_recusa_nome_duplicado(estado):
-    with pytest.raises(MotorError, match="ja cadastrado"):
+    with pytest.raises(RecusaDeInvariante):
         estado.registrar_repo(REPO, 99)
 
     assert estado.resolver_repo(REPO).tickio_sistema_id == SISTEMA_ID
 
 
 def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
-    with pytest.raises(MotorError, match="ja cadastrado"):
+    with pytest.raises(RecusaDeInvariante):
         estado.registrar_repo(ALIAS, 99)
 
     assert estado.resolver_repo(ALIAS).nome == REPO
@@ -156,7 +156,7 @@ def test_repo_desconhecido_levanta_em_todo_metodo(estado, chamada):
     # o fake devolvia None/[]/{} ou gravava versao pendurada num repo
     # inexistente; o banco levanta por causa da FK. Silencio de um lado e erro do
     # outro e como um caminho quebrado passa por verde.
-    with pytest.raises(MotorError, match="nao encontrado no estado"):
+    with pytest.raises(NaoEncontrado):
         chamada(estado)
 
 
@@ -209,7 +209,7 @@ def test_marcar_liberadas_nao_reescreve_data_ja_gravada(estado):
 
 def test_substituir_atribuicoes_recusa_versao_nao_registrada(estado):
     # no Postgres seria violacao de FK; o fake tem de recusar igual
-    with pytest.raises(MotorError, match="nao registrada no estado"):
+    with pytest.raises(NaoEncontrado):
         estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="1")])
 
 
@@ -218,7 +218,7 @@ def test_substituir_atribuicoes_recusa_versao_liberada(estado):
     estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="123456")])
     estado.marcar_liberadas(REPO, {"13.34.0": QUANDO})
 
-    with pytest.raises(MotorError, match="imutavel"):
+    with pytest.raises(RecusaDeInvariante):
         estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="999")])
 
     assert [a.chamado for a in estado.atribuicoes(REPO, "13.34.0")] == ["123456"]
@@ -230,7 +230,7 @@ def test_substituir_atribuicoes_recusa_liberada_mesmo_com_snapshot_vazio(estado)
     estado.registrar_versao(REPO, _base())
     estado.marcar_liberadas(REPO, {"13.34.0": QUANDO})
 
-    with pytest.raises(MotorError, match="imutavel"):
+    with pytest.raises(RecusaDeInvariante):
         estado.substituir_atribuicoes(REPO, "13.34.0", [])
 
 

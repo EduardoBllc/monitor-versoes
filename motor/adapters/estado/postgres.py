@@ -20,7 +20,13 @@ from motor.domain.types import (
     VersaoInfo,
     VersionType,
 )
-from motor.errors import MotorError
+from motor.errors import (
+    BackendIndisponivel,
+    MotorError,
+    NaoEncontrado,
+    RecusaDeInvariante,
+    RespostaInvalida,
+)
 
 # Levantado pela trigger trava_versao_liberada; ver a migracao que a define.
 ERRCODE_VERSAO_CONGELADA = "MV001"
@@ -54,7 +60,7 @@ class PostgresEstado:
             is not None
         )
         if ja_cadastrado:
-            raise MotorError(f"repo '{nome}' ja cadastrado")
+            raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
         self.sessao.add(
             models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id)
         )
@@ -71,7 +77,7 @@ class PostgresEstado:
                     select(models.Repo).where(models.Repo.id == alias.repo_id)
                 )
         if linha is None:
-            raise MotorError(
+            raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
                 f"  uv run motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
@@ -122,7 +128,7 @@ class PostgresEstado:
             return None
         tipo = _TEXTO_PARA_TIPO.get(linha.tipo)
         if tipo is None:
-            raise MotorError(
+            raise RespostaInvalida(
                 f"tipo de versao invalido no banco: '{linha.tipo}' "
                 f"(esperado fechada, ajustada ou cliente)"
             )
@@ -164,14 +170,14 @@ class PostgresEstado:
     ) -> None:
         linha = self._versao(self._repo_id(repo), versao)
         if linha is None:
-            raise MotorError(f"versao {versao} nao registrada no estado")
+            raise NaoEncontrado(f"versao {versao} nao registrada no estado")
         # A recusa nao pode depender so da trigger: se a versao ja estiver
         # liberada mas o snapshot atual estiver vazio e `novas` tambem vier
         # vazia, os deletes afetam 0 linhas e nenhum insert dispara a trigger
         # — o commit passaria em silencio. Checa aqui, a trigger fica so como
         # cinto-e-suspensorio para SQL escrito a mao.
         if linha.liberada_em is not None:
-            raise MotorError(f"versao {versao} liberada e imutavel")
+            raise RecusaDeInvariante(f"versao {versao} liberada e imutavel")
         versao_id = linha.id
 
         # As duas deletes sao statements Core enviados na hora (nao esperam
@@ -289,7 +295,7 @@ class PostgresEstado:
     def _repo_id(self, repo: str) -> int:
         linha = self._scalar(select(models.Repo).where(models.Repo.nome == repo))
         if linha is None:
-            raise MotorError(f"repo '{repo}' nao encontrado no estado")
+            raise NaoEncontrado(f"repo '{repo}' nao encontrado no estado")
         return linha.id
 
     def _versao(self, repo_id: int, numero: str) -> models.Versao | None:
@@ -359,11 +365,11 @@ class PostgresEstado:
             sqlstate is not None
             and "imutavel" in str(e.orig)
         ):
-            raise MotorError(
+            raise RecusaDeInvariante(
                 "versao liberada e imutavel — remarque a tarefa para a proxima versao"
             ) from e
         if sqlstate is None:
-            raise MotorError(
+            raise BackendIndisponivel(
                 f"banco inacessivel: {e.orig}. Suba com: docker compose up -d"
             ) from e
         raise MotorError(f"erro do banco: {e.orig}") from e

@@ -6,7 +6,7 @@ import datetime
 from dataclasses import dataclass, field
 
 from motor.domain.types import Atribuicao, CommitRef, Exclusion, RepoInfo, VersaoInfo
-from motor.errors import MotorError
+from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 
 @dataclass
@@ -25,7 +25,7 @@ class FakeEstado:
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         if nome in self.repos or nome in self.aliases:
-            raise MotorError(f"repo '{nome}' ja cadastrado")
+            raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
         self.repos[nome] = RepoInfo(
             nome=nome, tickio_sistema_id=tickio_sistema_id
         )
@@ -34,7 +34,7 @@ class FakeEstado:
         nome = self.aliases.get(basename, basename)
         info = self.repos.get(nome)
         if info is None:
-            raise MotorError(
+            raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
                 f"  uv run motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
@@ -104,9 +104,9 @@ class FakeEstado:
         # existe em producao.
         atual = self.versao(repo, versao)
         if atual is None:
-            raise MotorError(f"versao {versao} nao registrada no estado")
+            raise NaoEncontrado(f"versao {versao} nao registrada no estado")
         if atual.liberada_em is not None:
-            raise MotorError(f"versao {versao} liberada e imutavel")
+            raise RecusaDeInvariante(f"versao {versao} liberada e imutavel")
         self._atribuicoes[(repo, versao)] = list(novas)
 
     def exclusoes(self, repo: str, /) -> list[Exclusion]:
@@ -152,4 +152,4 @@ class FakeEstado:
         producao. Toma o nome canonico, nao alias: o `resolver_repo` ja traduziu.
         """
         if repo not in self.repos:
-            raise MotorError(f"repo '{repo}' nao encontrado no estado")
+            raise NaoEncontrado(f"repo '{repo}' nao encontrado no estado")
