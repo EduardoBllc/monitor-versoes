@@ -13,6 +13,7 @@ import sys
 import textwrap
 import time
 from contextlib import contextmanager
+from typing import TextIO
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -41,6 +42,7 @@ from motor.engine.atualizar import (
 )
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.ports import TaskSource
 
 _ARQUIVOS_AMBIENTE = {
@@ -85,6 +87,8 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument("versao", help="versao alvo no formato X.Y.Z")
     comum.add_argument("--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR")
     comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
+    comum.add_argument("--sem-progresso", dest="sem_progresso", action="store_true",
+                       help="nao mostra a barra de progresso (ligada por default em terminal)")
     comum.add_argument("--bitbucket-token", dest="bitbucket_token", default=os.environ.get("BITBUCKET_TOKEN", ""), help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR")
     comum.add_argument("--bitbucket-email", dest="bitbucket_email", default=os.environ.get("BITBUCKET_EMAIL", ""), help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)")
     # No parser pai, nao no 'criar': todos os comandos montam a fonte de tasks
@@ -283,6 +287,44 @@ def imprimir_consulta(chamados: list[ChamadoConsultado]) -> None:
             print(f"  - {commit.hash_origem[:8]} {titulo}")
 
 
+def _escrever_progresso(progresso: Progresso, saida: TextIO) -> None:
+    r"""Uma linha reescrita no lugar, em stderr.
+
+    stderr e nao stdout porque a saida dos comandos e canalizavel (`motor
+    consulta | grep`) — barra no meio do pipe quebraria quem consome.
+
+    O `\x1b[K` apaga o resto da linha: sem ele, uma fase curta depois de uma
+    longa ("gravando estado" depois de "commits dos chamados no Bitbucket
+    12/48") deixa o rabo da anterior na tela.
+    """
+    contagem = f" {progresso.feito}/{progresso.total}" if progresso.total else ""
+    saida.write(f"\r\x1b[K{progresso.fase}{contagem}")
+    saida.flush()
+
+
+def _relator_do_cli(*, desligado: bool, saida: TextIO | None = None) -> RelatorProgresso:
+    r"""Sem flag para ligar: liga sozinho em terminal, cala em pipe ou arquivo.
+
+    Redirecionado, cada evento viraria uma linha com `\r` cru no log — e nao ha
+    barra para ninguem ver. `--sem-progresso` existe para o caso em que o
+    terminal e interativo mas a barra incomoda (script com `script -q`, CI com
+    TTY alocado).
+    """
+    saida = sys.stderr if saida is None else saida
+    if desligado or not saida.isatty():
+        return silencioso
+    return lambda progresso: _escrever_progresso(progresso, saida)
+
+
+def _limpar_progresso(relator: RelatorProgresso, saida: TextIO | None = None) -> None:
+    """Apaga a linha da barra antes da saida de verdade do comando."""
+    if relator is silencioso:
+        return
+    saida = sys.stderr if saida is None else saida
+    saida.write("\r\x1b[K")
+    saida.flush()
+
+
 @contextmanager
 def _abrir_sessao():
     """Ciclo de vida do banco: uma engine e uma sessao por comando.
@@ -384,6 +426,9 @@ def main(argv: list[str] | None = None) -> None:
             # tickio_sistema_id saem da linha `repo` (aceita nome ou alias).
             info = estado.resolver_repo(os.path.basename(repo))
 
+            relator = _relator_do_cli(
+                desligado=getattr(args, "sem_progresso", False)
+            )
             deps = Deps(
                 git=git_repo,
                 tasks=_montar_task_source(args, info),
@@ -391,8 +436,14 @@ def main(argv: list[str] | None = None) -> None:
                 repo=info.nome,
                 bitbucket_token=getattr(args, "bitbucket_token", ""),
                 bitbucket_email=getattr(args, "bitbucket_email", ""),
+                progresso=relator,
             )
-            _despachar(args, deps)
+            try:
+                _despachar(args, deps)
+            finally:
+                # No finally: erro no meio do comando tambem tem de limpar a
+                # linha, senao a mensagem de erro sai colada na barra.
+                _limpar_progresso(relator)
     except MotorError as e:
         logging.error(str(e))
         sys.exit(1)

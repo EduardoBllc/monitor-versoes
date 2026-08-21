@@ -8,12 +8,14 @@ from motor.domain.types import Alvo, TaskTarget
 from motor.domain.version import fontes_de_alvo
 from motor.errors import MotorError
 from motor.ports import CommitSource, TaskSource
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 
 @dataclass
 class TargetResolver:
     tasks: TaskSource
     commits: CommitSource
+    progresso: RelatorProgresso = silencioso
 
     def resolve(self, alvo: str, abertas: list[str]) -> Alvo:
         """Une as tarefas de toda versao em construcao <= alvo e casa cada uma
@@ -26,7 +28,11 @@ class TargetResolver:
         marcada_de: dict[str, str] = {}
         ambiguas: list[str] = []
 
-        for v in fontes_de_alvo(alvo, abertas):
+        fontes = fontes_de_alvo(alvo, abertas)
+        for indice, v in enumerate(fontes, start=1):
+            self.progresso(
+                Progresso("chamados marcados no Tickio", indice, len(fontes))
+            )
             try:
                 chamados = self.tasks.fetch(v)
             except Exception as e:

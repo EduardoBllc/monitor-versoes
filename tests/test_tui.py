@@ -12,9 +12,11 @@ from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError
+from motor.progresso import Progresso, SlotProgresso
 import motor.tui as tui
 from motor.tui import (
     MotorTUI,
+    PainelProgresso,
     RepoOption,
     VersionOption,
     descobrir_repos,
@@ -1240,3 +1242,120 @@ def test_app_cadastro_digita_a_propria_tecla_de_atalho_no_campo():
             assert app.screen.query_one("#cadastro-nome", Input).value == "nuvem"
 
     asyncio.run(executar_fluxo())
+
+
+def test_app_desenha_a_fase_e_a_contagem_do_motor_no_lugar_do_spinner():
+    """O spinner generico nao diz nada num verificar de 40s. O painel que cobre
+    o resultado passa a mostrar a fase do motor e, quando ela e contavel, a
+    barra de verdade.
+    """
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    slot = SlotProgresso()
+    liberar = Event()
+
+    def executar(opcao: RepoOption, numero: str, auditar: bool) -> VersionStatus:
+        slot.relatar(Progresso("presença dos commits", 3, 8))
+        liberar.wait(5)
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=executar,
+            slot=slot,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#verificar")
+            for _ in range(50):
+                if slot.ultimo is not None:
+                    break
+                await pilot.pause()
+            # chama o pintor direto em vez de esperar o set_interval: prender o
+            # teste no relogio de 10 Hz o deixaria intermitente sem provar nada.
+            app._pintar_progresso()
+            await pilot.pause()
+
+            # O painel de loading e um "cover widget": o Textual o pendura fora
+            # da arvore de nos, entao query_one a partir do app nao o acha.
+            painel = app._painel_progresso
+            assert isinstance(painel, PainelProgresso)
+            assert painel.progresso == Progresso("presença dos commits", 3, 8)
+            # e chegou na tela, nao so no atributo
+            assert "presença dos commits" in _texto(painel.content)
+            assert "3/8" in _texto(painel.content)
+
+            liberar.set()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_volta_para_o_indeterminado_em_fase_sem_contagem():
+    """Fase de I/O (fetch, push) nao sabe quanto falta: barra parada em 0% mente,
+    barra indeterminada nao.
+    """
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    slot = SlotProgresso()
+    liberar = Event()
+
+    def executar(opcao: RepoOption, numero: str, auditar: bool) -> VersionStatus:
+        slot.relatar(Progresso("presença dos commits", 3, 8))
+        liberar.wait(5)
+        slot.relatar(Progresso("gravando estado"))
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=executar,
+            slot=slot,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            await pilot.click("#verificar")
+            for _ in range(50):
+                if slot.ultimo is not None:
+                    break
+                await pilot.pause()
+            app._pintar_progresso()
+            await pilot.pause()
+
+            slot.relatar(Progresso("gravando estado"))
+            app._pintar_progresso()
+            await pilot.pause()
+
+            painel = app._painel_progresso
+            assert painel.progresso == Progresso("gravando estado")
+            # sem contagem na tela: a barra virou pulso
+            assert "3/8" not in _texto(painel.content)
+
+            liberar.set()
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+
+
+def test_descobrir_versoes_relata_o_fetch():
+    """O `fetch` da lista de versoes e a primeira espera longa da TUI: sem
+    relato, trocar de repo parece travamento.
+    """
+    relatos: list[Progresso] = []
+
+    descobrir_versoes(GitCatalogoFake(), progresso=relatos.append)
+
+    assert [p.fase for p in relatos] == ["buscando refs do origin"]

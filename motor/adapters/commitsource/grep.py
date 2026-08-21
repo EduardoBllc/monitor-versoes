@@ -14,17 +14,21 @@ from dataclasses import dataclass, replace
 from motor.domain.commits import match_exato, ordenar_por_data
 from motor.domain.types import CommitRef
 from motor.ports import GitRepo
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 
 @dataclass
 class GrepCommitSource:
     git: GitRepo
     ref: str = "origin/master"
+    progresso: RelatorProgresso = silencioso
 
     def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
         if not chamados:
             return {}
 
+        # Varredura unica: nao ha o que contar, so avisar que comecou.
+        self.progresso(Progresso("commits dos chamados no hist\u00f3rico"))
         candidatos = self.git.search_commits(["ch" + c for c in chamados], self.ref)
 
         resultado: dict[str, list[CommitRef]] = {}

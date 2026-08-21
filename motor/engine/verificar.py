@@ -20,6 +20,7 @@ from motor.domain.version import chave, inferir_tipo, versoes_abertas
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.ports import CommitSource
+from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
 from motor.services.presence_oracle import PresenceOracle
 from motor.services.target_resolver import TargetResolver
@@ -31,7 +32,7 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
     """Grep em master é o fallback sempre disponível. Com token do Bitbucket,
     a PR (merged) vira a fonte primária: ordem = prioridade (§CommitSource).
     """
-    grep = GrepCommitSource(git=deps.git)
+    grep = GrepCommitSource(git=deps.git, progresso=deps.progresso)
     if not deps.bitbucket_token:
         return grep
     workspace, repo = parse_workspace_repo(deps.git.remote_url("origin"))
@@ -41,6 +42,7 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
         workspace=workspace,
         repo=repo,
         git=deps.git,
+        progresso=deps.progresso,
     )
     return ChainCommitSource(sources=[pr, grep])
 
@@ -101,6 +103,8 @@ def verificar(
     """
     inicio = time.monotonic()
 
+    deps.progresso(Progresso("buscando refs do origin"))
+
     # Antes de ler as refs, nao depois: `fetch` e o unico ponto em que tag
     # criada em outra maquina entra. Lendo primeiro, o motor decidiria sobre um
     # ref store velho — a versao liberada la fora apareceria como aberta, com
@@ -125,7 +129,10 @@ def verificar(
         # apontado pela tag, nao a de agora: senao registraria quando o comando
         # rodou, nao quando a versao foi liberada.
         liberadas: dict[str, datetime.datetime] = {}
-        for numero in tags:
+        for indice, numero in enumerate(tags, start=1):
+            deps.progresso(
+                Progresso("conferindo tags liberadas", indice, len(tags))
+            )
             conhecida = deps.estado.versao(deps.repo, numero)
             # Versao que o motor nunca operou nao tem snapshot a proteger.
             if conhecida is not None and conhecida.liberada_em is None:
@@ -138,6 +145,7 @@ def verificar(
         if info is not None and info.liberada_em is not None:
             return _snapshot_congelado(deps, versao, info.liberada_em)
 
+        deps.progresso(Progresso("preparando worktree"))
         deps.git.use_worktree(versao)
         if deps.git.remote_branch_exists("origin", versao):
             deps.git.pull_branch("origin", versao)
@@ -145,6 +153,7 @@ def verificar(
 
     if info is None:
         # Primeira vez que o motor ve esta versao: resolve e grava a base.
+        deps.progresso(Progresso("resolvendo a base da vers\u00e3o"))
         resolvida = BaseResolver(git=deps.git).resolve(versao)
         deps.estado.registrar_versao(
             deps.repo,
@@ -163,7 +172,9 @@ def verificar(
         base_commit = info.base_commit
 
     fonte = deps._commit_source or _montar_commit_source(deps)
-    resolver = TargetResolver(tasks=deps.tasks, commits=fonte)
+    resolver = TargetResolver(
+        tasks=deps.tasks, commits=fonte, progresso=deps.progresso
+    )
     resultado = resolver.resolve(versao, sorted({*abertas, versao}, key=chave))
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
@@ -188,7 +199,10 @@ def verificar(
     t = time.monotonic()
     presentes: dict[str, Presence] = {}
     suspeitos_conteudo: list[CommitRef] = []
-    for hash_, c in todos_os_hashes.items():
+    for indice, (hash_, c) in enumerate(todos_os_hashes.items(), start=1):
+        deps.progresso(
+            Progresso("presen\u00e7a dos commits", indice, len(todos_os_hashes))
+        )
         p = oracle.presente(hash_, base_commit, ref_alvo)
         presentes[hash_] = p
         # predict_merge e a suspeita por conteudo so fazem sentido para commit
@@ -209,7 +223,10 @@ def verificar(
     conflitantes: list[CommitRef] = []
     conflito_causado_por: dict[str, list[str]] = {}
     ja_simulados: set[str] = set()
-    for c in candidatos:
+    for indice, c in enumerate(candidatos, start=1):
+        deps.progresso(
+            Progresso("simulando conflitos", indice, len(candidatos))
+        )
         if presentes[c.hash_origem] != Presence.AUSENTE:
             continue
         meta = deps.git.commit_meta(c.hash_origem)
@@ -247,6 +264,7 @@ def verificar(
     )
 
     if not auditar:
+        deps.progresso(Progresso("gravando estado"))
         deps.estado.substituir_atribuicoes(
             deps.repo, versao, atribuicoes_de(alvo, presentes)
         )

@@ -11,6 +11,7 @@ from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
+from motor.progresso import Progresso
 from motor.services.publication_gate import PublicationGate
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
     ele a recusa seria decidida em cima de refs velhas e o motor mexeria numa
     versao que ja saiu.
     """
+    deps.progresso(Progresso("conferindo se a vers\u00e3o j\u00e1 saiu"))
     deps.git.fetch("origin")
 
     if PublicationGate(git=deps.git).liberada(versao):
@@ -85,7 +87,8 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     aplicados: list[CommitRef] = []
     ja_presentes = len(status.ancestrais)
     t = time.monotonic()
-    for c in faltam:
+    for indice, c in enumerate(faltam, start=1):
+        deps.progresso(Progresso("cherry-pick", indice, len(faltam)))
         outcome = deps.git.cherry_pick_x(c.hash_origem)
         if outcome == CherryPickOutcome.CONFLITO:
             paths = deps.git.conflicted_paths()
@@ -117,6 +120,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
 
     # publica so apos o lote fechar sem conflito (§6, "branch compartilhada") -
     # um lote BLOCKED fica so local ate resolver e rodar de novo.
+    deps.progresso(Progresso("publicando na origin"))
     deps.git.push_branch("origin", versao)
     # a worktree e so um checkout local descartavel - o que importa (commits) ja
     # esta na branch e no remoto. use_worktree recria sob demanda.
@@ -143,6 +147,7 @@ def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
     """
     _recusar_se_liberada(deps, versao)
 
+    deps.progresso(Progresso("retomando o cherry-pick"))
     deps.git.use_worktree(versao)
     _, ok = deps.git.pending_cherry_pick()
     if not ok:

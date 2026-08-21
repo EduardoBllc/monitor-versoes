@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from motor.domain.types import SEM_DATA, CommitRef
 from motor.engine.deps import Deps
 from motor.errors import MotorError
+from motor.progresso import Progresso
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,11 @@ class ChamadoConsultado:
 
 def consultar(deps: Deps, versao: str) -> list[ChamadoConsultado]:
     resultado: list[ChamadoConsultado] = []
-    for atribuicao in deps.estado.atribuicoes(deps.repo, versao):
+    atribuicoes = deps.estado.atribuicoes(deps.repo, versao)
+    for indice, atribuicao in enumerate(atribuicoes, start=1):
+        deps.progresso(
+            Progresso("lendo commits do snapshot", indice, len(atribuicoes))
+        )
         commits: list[CommitRef] = []
         for hash_origem in atribuicao.commits:
             try:

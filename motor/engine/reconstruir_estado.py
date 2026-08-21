@@ -25,6 +25,7 @@ from enum import IntEnum
 from motor.domain.types import VersaoInfo
 from motor.domain.version import inferir_tipo
 from motor.engine.deps import Deps
+from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
 from motor.services.reconstrutor import reconstruir_atribuicoes
 
@@ -50,10 +51,12 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
     # registrar_versao so grava na primeira chamada, a base errada ficaria
     # definitiva - ou a varredura ignoraria cherry-picks ja empurrados para a
     # branch por outra maquina.
+    deps.progresso(Progresso("buscando refs do origin"))
     deps.git.fetch("origin")
 
     info = deps.estado.versao(deps.repo, versao)
     if info is None:
+        deps.progresso(Progresso("resolvendo a base da vers\u00e3o"))
         resolvida = BaseResolver(git=deps.git).resolve(versao)
         deps.estado.registrar_versao(
             deps.repo,
@@ -69,6 +72,9 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
         # Mesma regra do verificar: a base gravada manda.
         base_commit = info.base_commit
 
+    deps.progresso(
+        Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git")
+    )
     atribuicoes, orfaos = reconstruir_atribuicoes(deps.git, base_commit, versao)
     deps.estado.substituir_atribuicoes(deps.repo, versao, atribuicoes)
 

@@ -25,6 +25,7 @@ import httpx
 from motor.domain.types import SEM_DATA, CommitRef
 from motor.errors import MotorError
 from motor.ports import GitRepo
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 
@@ -54,6 +55,7 @@ class BitbucketPRCommitSource:
     base_url: str = ""
     master_ref: str = "master"
     client: httpx.Client | None = None
+    progresso: RelatorProgresso = silencioso
 
     def _auth_header(self) -> str:
         credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
@@ -61,7 +63,13 @@ class BitbucketPRCommitSource:
 
     def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
-        for chamado in chamados:
+        for indice, chamado in enumerate(chamados, start=1):
+            # Relata antes de filtrar: o total e o tamanho do lote pedido, e
+            # uma barra que pula numeros por causa de chamado vazio confunde
+            # mais do que informa.
+            self.progresso(
+                Progresso("commits dos chamados no Bitbucket", indice, len(chamados))
+            )
             if not chamado:  # sem numero nao tem como casar PR
                 continue
             commits = self._commits_do_chamado(chamado)

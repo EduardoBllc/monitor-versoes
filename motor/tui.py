@@ -5,17 +5,20 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from rich import box
 from rich.console import Group
 from rich.panel import Panel
+from rich.progress_bar import ProgressBar as BarraRich
 from rich.table import Table
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Checkbox,
@@ -41,6 +44,7 @@ from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
 from motor.ports import EstadoRepo, GitRepo
+from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
 
 
 @dataclass(frozen=True)
@@ -157,6 +161,61 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
         self.dismiss((nome, sistema_id))
 
 
+def renderizar_progresso(progresso: Progresso, quadro: int = 0) -> Group:
+    """Fase em cima, barra e contagem lado a lado embaixo.
+
+    Fase sem total vira pulso em vez de barra: barra parada em 0% durante um
+    `fetch` de 20s sugere travamento.
+    """
+    linha = Table.grid(padding=(0, 2))
+    if progresso.total:
+        linha.add_row(
+            BarraRich(total=progresso.total, completed=progresso.feito, width=40),
+            Text(f"{progresso.feito}/{progresso.total}", style="dim"),
+        )
+    else:
+        # animation_time anda com o quadro do pintor: o rich desenha o pulso a
+        # partir dele, e fixo o pulso sai congelado — igualzinho a uma barra
+        # travada, que e exatamente o que o pulso existe para desmentir.
+        linha.add_row(BarraRich(pulse=True, width=40, animation_time=quadro / 10))
+    return Group(Text(progresso.fase), Text(""), linha)
+
+
+class PainelProgresso(Static):
+    """Cobre o painel enquanto o comando roda, no lugar do spinner generico.
+
+    Devolvido por `MotorTUI.get_loading_widget`, entao vale para os dois paineis
+    (resultado e lista de chamados) de uma vez — `loading = True` em qualquer
+    widget passa a mostrar isto.
+
+    Desenha tudo num renderable so, sem widgets filhos, e isso e proposital: o
+    Textual pendura o widget de cobertura fora da arvore de nos e o compoe num
+    tick posterior, entao qualquer `query_one` daqui e uma corrida contra o
+    primeiro tick do pintor — que este projeto ja perdeu de forma intermitente.
+    """
+
+    DEFAULT_CSS = """
+    PainelProgresso {
+        width: 100%;
+        height: 100%;
+        content-align: center middle;
+        color: $text-muted;
+    }
+    """
+
+    #: ultimo evento desenhado; e o que os testes leem para nao depender do
+    #: texto renderizado.
+    progresso: Progresso | None = None
+    _quadro: int = 0
+
+    def mostrar(self, progresso: Progresso | None) -> None:
+        if progresso is None:
+            return
+        self.progresso = progresso
+        self._quadro += 1
+        self.update(renderizar_progresso(progresso, self._quadro))
+
+
 class MotorTUI(App[None]):
     BINDINGS = [
         ("q", "quit", "Sair"),
@@ -191,8 +250,13 @@ class MotorTUI(App[None]):
         atualizar_repo: UpdateRunner | None = None,
         consultar_versao: ConsultaRunner | None = None,
         registrar_repo: RepoRegistrar | None = None,
+        slot: SlotProgresso | None = None,
     ) -> None:
         super().__init__()
+        # Compartilhado com os runners (ver run_tui): eles relatam de dentro da
+        # thread do worker, esta classe so amostra na thread principal.
+        self._slot = slot or SlotProgresso()
+        self._painel_progresso: PainelProgresso | None = None
         self._carregar_repos = carregar_repos
         self._carregar_versoes = carregar_versoes
         self._executar = executar
@@ -232,6 +296,20 @@ class MotorTUI(App[None]):
 
     def on_mount(self) -> None:
         self.carregar_repos_worker()
+        # Amostragem a 10 Hz em vez de call_from_thread por evento: o motor
+        # relata uma vez por commit, e cada call_from_thread bloquearia a thread
+        # dele ate o loop desenhar (ver SlotProgresso).
+        self.set_interval(0.1, self._pintar_progresso)
+
+    def get_loading_widget(self) -> Widget:
+        self._painel_progresso = PainelProgresso()
+        return self._painel_progresso
+
+    def _pintar_progresso(self) -> None:
+        painel = self._painel_progresso
+        if painel is None or not painel.is_mounted:
+            return
+        painel.mostrar(self._slot.ultimo)
 
     def _exibir_resultado(self, conteudo: object) -> Static:
         self.query_one("#consulta-painel").display = False
@@ -373,6 +451,11 @@ class MotorTUI(App[None]):
 
     def _bloquear(self, ocupado: bool) -> None:
         self._ocupado = ocupado
+        if ocupado:
+            # Aqui e nao em cada _iniciar_*: todo caminho que dispara worker
+            # passa por este ponto, e sem limpar a fase final do comando
+            # anterior pisca antes da primeira do novo.
+            self._slot.limpar()
         if not ocupado:
             self.query_one("#resultado", Static).loading = False
             self.query_one("#consulta-painel").loading = False
@@ -633,7 +716,10 @@ def descobrir_repos(estado: EstadoRepo, projects_dir: str) -> list[RepoOption]:
     ]
 
 
-def descobrir_versoes(git: GitRepo) -> list[VersionOption]:
+def descobrir_versoes(
+    git: GitRepo, *, progresso: RelatorProgresso = silencioso
+) -> list[VersionOption]:
+    progresso(Progresso("buscando refs do origin"))
     git.fetch("origin")
     tags = set(git.list_version_tags())
     numeros = sorted(
@@ -654,13 +740,17 @@ def _registrar_no_banco(nome: str, sistema_id: int) -> None:
         PostgresEstado(sessao=sessao).registrar_repo(nome, sistema_id)
 
 
-def _versoes_do_repo(repo: RepoOption) -> list[VersionOption]:
+def _versoes_do_repo(
+    repo: RepoOption, *, progresso: RelatorProgresso = silencioso
+) -> list[VersionOption]:
     if repo.caminho is None:
         return []
-    return descobrir_versoes(new_git_subprocess(repo.caminho))
+    return descobrir_versoes(new_git_subprocess(repo.caminho), progresso=progresso)
 
 
-def _deps_do_repo(repo: RepoOption, sessao: object) -> Deps:
+def _deps_do_repo(
+    repo: RepoOption, sessao: object, progresso: RelatorProgresso = silencioso
+) -> Deps:
     if repo.caminho is None:
         raise MotorError("checkout local não encontrado")
     git = new_git_subprocess(repo.caminho)
@@ -679,35 +769,50 @@ def _deps_do_repo(repo: RepoOption, sessao: object) -> Deps:
         repo=info.nome,
         bitbucket_token=os.environ.get("BITBUCKET_TOKEN", ""),
         bitbucket_email=os.environ.get("BITBUCKET_EMAIL", ""),
+        progresso=progresso,
     )
 
 
 def _verificar_repo(
-    repo: RepoOption, versao: str, auditar: bool
+    repo: RepoOption,
+    versao: str,
+    auditar: bool,
+    *,
+    progresso: RelatorProgresso = silencioso,
 ) -> VersionStatus:
     with _abrir_sessao() as sessao:
-        deps = _deps_do_repo(repo, sessao)
+        deps = _deps_do_repo(repo, sessao, progresso)
         return verificar(deps, versao, auditar=auditar)
 
 
-def _atualizar_repo(repo: RepoOption, versao: str) -> AtualizarResult:
+def _atualizar_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> AtualizarResult:
     with _abrir_sessao() as sessao:
-        return atualizar(_deps_do_repo(repo, sessao), versao)
+        return atualizar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
-def _consultar_repo(repo: RepoOption, versao: str) -> list[ChamadoConsultado]:
+def _consultar_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> list[ChamadoConsultado]:
     with _abrir_sessao() as sessao:
-        return consultar(_deps_do_repo(repo, sessao), versao)
+        return consultar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
 def run_tui() -> None:
+    # O relator entra por `partial`, nao na assinatura dos runners que a TUI
+    # chama: assim os aliases (VerifyRunner e companhia) e os doubles dos testes
+    # seguem com a mesma aridade, e quem injeta runner nao precisa saber que
+    # progresso existe.
+    slot = SlotProgresso()
     MotorTUI(
         _repos_do_ambiente,
-        _versoes_do_repo,
-        _verificar_repo,
-        _atualizar_repo,
-        _consultar_repo,
+        partial(_versoes_do_repo, progresso=slot.relatar),
+        partial(_verificar_repo, progresso=slot.relatar),
+        partial(_atualizar_repo, progresso=slot.relatar),
+        partial(_consultar_repo, progresso=slot.relatar),
         _registrar_no_banco,
+        slot=slot,
     ).run()
 
 
