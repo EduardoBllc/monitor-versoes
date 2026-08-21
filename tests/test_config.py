@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from motor.config import database_url, worktrees_mantidas
-from motor.errors import ErroDeEntrada, MotorError
+from motor.errors import ErroDeEntrada
 
 COMPLETO = {
     "DATABASE_HOST": "localhost",
@@ -94,5 +94,6 @@ def test_worktrees_mantidas_aceita_zero(monkeypatch):
 def test_worktrees_mantidas_recusa_valor_invalido(monkeypatch, valor):
     # Cair no default calado faria o operador achar que configurou.
     monkeypatch.setenv("WORKTREES_MANTIDAS", valor)
-    with pytest.raises(MotorError, match="WORKTREES_MANTIDAS"):
+    with pytest.raises(ErroDeEntrada) as erro:
         worktrees_mantidas()
+    assert "WORKTREES_MANTIDAS" in str(erro.value)

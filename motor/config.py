@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from urllib.parse import quote
 
-from motor.errors import ErroDeEntrada, MotorError
+from motor.errors import ErroDeEntrada
 
 _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 
@@ -54,7 +54,7 @@ def worktrees_mantidas() -> int:
     # isdigit recusa "-1", "1.5" e "3 worktrees" de uma vez; int() sozinho
     # aceitaria negativo, que nao tem significado aqui.
     if not valor.isdigit():
-        raise MotorError(
+        raise ErroDeEntrada(
             f"WORKTREES_MANTIDAS invalido: {valor!r} (esperado inteiro >= 0)"
         )
     return int(valor)
