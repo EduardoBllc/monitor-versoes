@@ -23,7 +23,7 @@ class GrepCommitSource:
     ref: str = "origin/master"
     progresso: RelatorProgresso = silencioso
 
-    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         if not chamados:
             return {}
 

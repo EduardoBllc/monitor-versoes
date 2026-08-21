@@ -11,7 +11,7 @@ class FakeTaskSource:
     chamados: dict[str, list[str]] = field(default_factory=dict)
     err: Exception | None = None
 
-    def fetch(self, versao: str) -> list[str]:
+    def fetch(self, versao: str, /) -> list[str]:
         if self.err is not None:
             raise self.err
         return list(self.chamados.get(versao, []))

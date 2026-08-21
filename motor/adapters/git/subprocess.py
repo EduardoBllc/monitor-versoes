@@ -261,10 +261,10 @@ class GitSubprocess:
 
     # -- GitRepo --------------------------------------------------------
 
-    def merge_base(self, a: str, b: str) -> str:
+    def merge_base(self, a: str, b: str, /) -> str:
         return self._output(self.repo_path, "merge-base", a, b)
 
-    def is_ancestor(self, commit: str, branch: str) -> bool:
+    def is_ancestor(self, commit: str, branch: str, /) -> bool:
         with _cronometrar("merge-base", "--is-ancestor", commit, branch):
             proc = subprocess.run(
                 ["git", "merge-base", "--is-ancestor", commit, branch],
@@ -281,7 +281,7 @@ class GitSubprocess:
             f"{proc.returncode}: {_saida_git_publica(proc.stderr)}"
         )
 
-    def search_commits(self, padroes: list[str], refs: str) -> list[CommitRef]:
+    def search_commits(self, padroes: list[str], refs: str, /) -> list[CommitRef]:
         args = [
             "log",
             refs,
@@ -294,7 +294,7 @@ class GitSubprocess:
         out = self._output(self.repo_path, *args)
         return _parse_log(out)
 
-    def commits_in_range(self, from_: str, to: str) -> list[CommitRef]:
+    def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:
         out = self._output(
             self.repo_path,
             "log",
@@ -303,7 +303,7 @@ class GitSubprocess:
         )
         return _parse_log(out)
 
-    def commit_meta(self, hash: str) -> CommitRef:
+    def commit_meta(self, hash: str, /) -> CommitRef:
         # %cI (data do COMMITTER), nao %aI como nas varreduras de range: o unico
         # consumidor de commit_date daqui e a data de liberacao (a tag aponta um
         # commit, e "quando essa versao saiu" e quando o commit entrou nesta
@@ -330,7 +330,7 @@ class GitSubprocess:
             parent = ""
         return CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2], parent=parent)
 
-    def commits_meta(self, hashes: list[str]) -> dict[str, CommitRef]:
+    def commits_meta(self, hashes: list[str], /) -> dict[str, CommitRef]:
         # `--no-walk=unsorted` para nao andar pelos ancestrais e devolver so os
         # hashes pedidos; `--ignore-missing` para um hash que nao existe mais no
         # repo (rebase, gc) nao derrubar o lote inteiro.
@@ -356,7 +356,7 @@ class GitSubprocess:
             encontrados.update(_parse_metas(out))
         return encontrados
 
-    def patch_id(self, hash: str) -> str:
+    def patch_id(self, hash: str, /) -> str:
         with _cronometrar("show", hash, "|", "patch-id"):
             show = subprocess.Popen(
                 ["git", "show", hash], cwd=self.repo_path, stdout=subprocess.PIPE
@@ -385,13 +385,13 @@ class GitSubprocess:
             raise MotorError(f"patch-id vazio para {hash}")
         return campos[0]
 
-    def changed_files(self, hash: str) -> frozenset[str]:
+    def changed_files(self, hash: str, /) -> frozenset[str]:
         out = self._output(
             self.repo_path, "diff-tree", "--no-commit-id", "--name-only", "-r", hash
         )
         return frozenset(l for l in out.split("\n") if l != "")
 
-    def resolve_ref(self, ref: str) -> str:
+    def resolve_ref(self, ref: str, /) -> str:
         # ^{commit} descasca tag anotada: as tags de release deste projeto sao
         # anotadas, e `rev-parse refs/tags/X` devolve o SHA do OBJETO DE TAG,
         # nao do commit. Sem descascar, BaseResolver gravaria esse SHA em
@@ -402,7 +402,7 @@ class GitSubprocess:
         # nao muda nada quando X ja resolve para um commit.
         return self._output(self.repo_path, "rev-parse", f"{ref}^{{commit}}")
 
-    def use_worktree(self, branch: str) -> None:
+    def use_worktree(self, branch: str, /) -> None:
         """Se a worktree ja existe em disco, so usa. Senao, tenta adotar uma
         branch ja existente (local ou remota) - caso de branch de versao
         criada manualmente (ex: Bitbucket) sem passar por `criar`."""
@@ -418,7 +418,7 @@ class GitSubprocess:
                 ) from e
         self._current_branch = branch
 
-    def cherry_pick_x(self, hash: str) -> CherryPickOutcome:
+    def cherry_pick_x(self, hash: str, /) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)
         with _cronometrar("cherry-pick", "-x", hash):
             proc = subprocess.run(
@@ -469,7 +469,7 @@ class GitSubprocess:
     def abort_cherry_pick(self) -> None:
         self._run(self._worktree_dir(self._current_branch), "cherry-pick", "--abort")
 
-    def predict_merge(self, parent: str, branch_tip: str, commit: str) -> MergePrediction:
+    def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
         args = ("merge-tree", "--write-tree", f"--merge-base={parent}", branch_tip, commit)
         with _cronometrar(*args):
             proc = subprocess.run(
@@ -493,7 +493,7 @@ class GitSubprocess:
         )
 
     def culpados_por_linha(
-        self, base: str, parent: str, commit: str, arquivos: list[str]
+        self, base: str, parent: str, commit: str, arquivos: list[str], /
     ) -> dict[str, list[CommitRef]]:
         formato = f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}"
         resultado: dict[str, list[CommitRef]] = {}
@@ -527,36 +527,36 @@ class GitSubprocess:
                 resultado[arquivo] = commits
         return resultado
 
-    def worktree_add(self, branch: str, base: str) -> None:
+    def worktree_add(self, branch: str, base: str, /) -> None:
         dir_ = self._worktree_dir(branch)
         self._run_progresso(
             self.repo_path, "worktree", "add", "-b", branch, dir_, base
         )
         self._current_branch = branch
 
-    def worktree_remove(self, branch: str) -> None:
+    def worktree_remove(self, branch: str, /) -> None:
         # --force: descarta cruft nao rastreado (deps instaladas, .env etc) que
         # bloquearia a remocao - a branch ja esta com tudo commitado e pushado
         # nesse ponto, nao ha nada de valor no diretorio da worktree em si.
         self._run(self.repo_path, "worktree", "remove", "--force", self._worktree_dir(branch))
 
-    def tag_exists(self, tag: str) -> bool:
+    def tag_exists(self, tag: str, /) -> bool:
         out = self._output(self.repo_path, "tag", "-l", tag)
         return out != ""
 
-    def remote_branch_exists(self, remote: str, branch: str) -> bool:
+    def remote_branch_exists(self, remote: str, branch: str, /) -> bool:
         out = self._output(self.repo_path, "ls-remote", "--heads", remote, branch)
         return out != ""
 
-    def remote_url(self, remote: str) -> str:
+    def remote_url(self, remote: str, /) -> str:
         return self._output(self.repo_path, "remote", "get-url", remote)
 
-    def push_branch(self, remote: str, branch: str) -> None:
+    def push_branch(self, remote: str, branch: str, /) -> None:
         self._run_progresso(
             self._worktree_dir(branch), "push", "--progress", "-u", remote, branch
         )
 
-    def pull_branch(self, remote: str, branch: str) -> None:
+    def pull_branch(self, remote: str, branch: str, /) -> None:
         self._run_progresso(
             self._worktree_dir(branch),
             "pull",
@@ -566,7 +566,7 @@ class GitSubprocess:
             branch,
         )
 
-    def fetch(self, remote: str) -> None:
+    def fetch(self, remote: str, /) -> None:
         self._run_progresso(self.repo_path, "fetch", "--progress", remote)
 
     def list_version_branches(self) -> list[str]:
@@ -619,7 +619,7 @@ class GitSubprocess:
                 nomes.add(nome)
         return sorted(nomes)
 
-    def read_file(self, branch: str, path: str) -> bytes:
+    def read_file(self, branch: str, path: str, /) -> bytes:
         proc = subprocess.run(
             ["git", "show", f"{branch}:{path}"], cwd=self.repo_path, capture_output=True
         )
@@ -631,7 +631,7 @@ class GitSubprocess:
         return proc.stdout
 
     def write_file(
-        self, branch: str, path: str, content: bytes, mensagem_commit: str
+        self, branch: str, path: str, content: bytes, mensagem_commit: str, /
     ) -> None:
         dir_ = self._worktree_dir(branch)
         full_path = os.path.join(dir_, path)

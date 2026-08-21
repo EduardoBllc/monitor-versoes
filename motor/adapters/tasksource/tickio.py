@@ -30,7 +30,7 @@ class TickioRest:
     client: httpx.Client | None = None
     _access: str = field(default="", init=False, repr=False)
 
-    def fetch(self, versao: str) -> list[str]:
+    def fetch(self, versao: str, /) -> list[str]:
         # Cobrado no uso, nao na construcao: o CLI monta a fonte de tarefas para
         # todo comando, mas `atualizar --abort` e `reconstruir-estado` nunca
         # buscam nada — e sao justamente os comandos de recuperacao, que nao

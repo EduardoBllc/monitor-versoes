@@ -18,7 +18,7 @@ from motor.ports import CommitSource
 class ChainCommitSource:
     sources: list[CommitSource]  # ordem = prioridade
 
-    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
         pendentes = list(chamados)
         for src in self.sources:

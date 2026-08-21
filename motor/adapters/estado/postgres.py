@@ -41,7 +41,7 @@ _Linha = TypeVar("_Linha")
 class PostgresEstado:
     sessao: Session
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
+    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         # Nome canonico e alias dividem o mesmo espaco de nomes, entao as duas
         # tabelas contam para "ja cadastrado". Sao duas consultas so quando a
         # primeira nao acha nada: o `or` curto-circuita.
@@ -60,7 +60,7 @@ class PostgresEstado:
         )
         self._commit()
 
-    def resolver_repo(self, basename: str) -> RepoInfo:
+    def resolver_repo(self, basename: str, /) -> RepoInfo:
         linha = self._scalar(select(models.Repo).where(models.Repo.nome == basename))
         if linha is None:
             alias = self._scalar(
@@ -84,7 +84,7 @@ class PostgresEstado:
             for linha in self._scalars(select(models.Repo).order_by(models.Repo.nome))
         ]
 
-    def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
+    def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:
         # Idempotente e nao-destrutivo: a base e o ponto onde a branch foi
         # cortada, gravado uma vez. Reescreve-la faria a base de uma X.0.0
         # seguir o tip atual do master.
@@ -104,7 +104,7 @@ class PostgresEstado:
         self._commit()
 
     def marcar_liberadas(
-        self, repo: str, liberadas: dict[str, datetime.datetime]
+        self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         repo_id = self._repo_id(repo)
         for numero, quando in liberadas.items():
@@ -116,7 +116,7 @@ class PostgresEstado:
             linha.liberada_em = quando
         self._commit()
 
-    def versao(self, repo: str, numero: str) -> VersaoInfo | None:
+    def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         linha = self._versao(self._repo_id(repo), numero)
         if linha is None:
             return None
@@ -134,7 +134,7 @@ class PostgresEstado:
             liberada_em=linha.liberada_em,
         )
 
-    def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]:
+    def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]:
         versao_id = self._versao_id(repo, versao)
         if versao_id is None:
             return []
@@ -160,7 +160,7 @@ class PostgresEstado:
         ]
 
     def substituir_atribuicoes(
-        self, repo: str, versao: str, novas: list[Atribuicao]
+        self, repo: str, versao: str, novas: list[Atribuicao], /
     ) -> None:
         linha = self._versao(self._repo_id(repo), versao)
         if linha is None:
@@ -210,7 +210,7 @@ class PostgresEstado:
         except DBAPIError as e:
             self._traduzir_erro(e)
 
-    def exclusoes(self, repo: str) -> list[Exclusion]:
+    def exclusoes(self, repo: str, /) -> list[Exclusion]:
         repo_id = self._repo_id(repo)
         return [
             Exclusion(
@@ -225,7 +225,7 @@ class PostgresEstado:
             )
         ]
 
-    def sem_entrega(self, repo: str) -> dict[str, str]:
+    def sem_entrega(self, repo: str, /) -> dict[str, str]:
         repo_id = self._repo_id(repo)
         return {
             s.chamado: s.motivo
@@ -236,7 +236,7 @@ class PostgresEstado:
             )
         }
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
         repo_id = self._repo_id(repo)
         achados: dict[int, list[CommitRef]] = {}
         for linha in self._scalars(
@@ -264,7 +264,7 @@ class PostgresEstado:
         return achados
 
     def gravar_commits_de_pr(
-        self, repo: str, commits: dict[int, list[CommitRef]]
+        self, repo: str, commits: dict[int, list[CommitRef]], /
     ) -> None:
         repo_id = self._repo_id(repo)
         for pr_id, refs in commits.items():

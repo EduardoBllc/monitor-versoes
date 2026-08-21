@@ -88,7 +88,7 @@ class BitbucketPRCommitSource:
         credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
         return f"Basic {credenciais}"
 
-    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
         for indice, chamado in enumerate(chamados, start=1):
             # Relata antes de filtrar: o total e o tamanho do lote pedido, e

@@ -14,7 +14,7 @@ from motor.errors import MotorError
 class ManualList:
     caminho: str
 
-    def fetch(self, versao: str) -> list[str]:
+    def fetch(self, versao: str, /) -> list[str]:
         try:
             with open(self.caminho, encoding="utf-8") as f:
                 linhas = f.read().splitlines()

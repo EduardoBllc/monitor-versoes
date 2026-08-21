@@ -24,6 +24,8 @@ nossos e rode o checker.
 
 from __future__ import annotations
 
+import pytest
+
 from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource
@@ -56,3 +58,18 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
     codigo morto que ninguem executa nem importa.
     """
     assert [len(_GIT), len(_ESTADO), len(_TASKS), len(_COMMITS)] == [2, 2, 3, 4]
+
+
+def test_porta_nao_aceita_argumento_nomeado() -> None:
+    """Os parametros das portas sao posicionais, de proposito.
+
+    O mypy nao pega renome de parametro num adapter (verificado no sub-projeto
+    A: remover metodo acusa, renomear parametro passa). Como nenhum chamador
+    passa por nome, marcar posicional torna o renome explicitamente permitido —
+    o adapter de terceiro nomeia como quiser — e fecha a lacuna em vez de
+    documenta-la.
+    """
+    fake = FakeGit()
+
+    with pytest.raises(TypeError, match="positional"):
+        fake.is_ancestor(commit="abc", branch="13.34.0")  # type: ignore[call-arg]
