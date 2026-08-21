@@ -26,6 +26,7 @@ from motor.__main__ import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
@@ -115,7 +116,10 @@ def test_fonte_de_tasks_disponivel_em_todos_os_subcomandos():
 
 
 def test_reconstruir_estado_esta_no_parser():
-    acoes = _build_parser()._subparsers._group_actions[0].choices
+    subparsers = _build_parser()._subparsers
+    assert subparsers is not None
+    acoes = subparsers._group_actions[0].choices
+    assert acoes is not None
     assert "reconstruir-estado" in acoes
     assert "reconstruir-lock" not in acoes
 
@@ -337,7 +341,6 @@ def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
     monkeypatch.setenv("TICKIO_BASE_URL", "http://tickio.exemplo")
     monkeypatch.setenv("TICKIO_USER", "u")
     monkeypatch.setenv("TICKIO_PASSWORD", "p")
-    construidos: list = []
 
     @dataclass
     class TickioSpy:
@@ -352,6 +355,7 @@ def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
         def fetch(self, versao: str) -> list[str]:
             return []
 
+    construidos: list[TickioSpy] = []
     monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
 
     # sem --task-source: prova que o default do CLI e tickio
@@ -556,7 +560,7 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     # imprimiria tudo em claro se o adapter nao tivesse repr=False.
     deps = Deps(
         git=_git(),
-        tasks=None,
+        tasks=FakeTaskSource(),
         estado=FakeEstado(),
         repo="r",
         commit_source=montagem.montar_commit_source(

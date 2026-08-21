@@ -143,7 +143,9 @@ def test_marcar_liberadas_nao_reescreve_data(sessao_postgres):
         {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)},
     )
 
-    assert estado.versao("vendabemweb", "13.34.0").liberada_em == primeira
+    gravada = estado.versao("vendabemweb", "13.34.0")
+    assert gravada is not None
+    assert gravada.liberada_em == primeira
 
 
 def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
@@ -160,6 +162,7 @@ def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
     )
 
     gravada = estado.versao("vendabemweb", "13.34.0")
+    assert gravada is not None
     assert gravada.tipo == VersionType.AJUSTADA
     assert gravada.base_ref == "13.33.0"
     assert gravada.base_commit == "aaa111"

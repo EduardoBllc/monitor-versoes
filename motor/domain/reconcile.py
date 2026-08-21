@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 
 from motor.domain.types import (
@@ -79,7 +80,7 @@ def reconciliar(
     sem_entrega: dict[str, str],
     presentes: dict[str, Presence],
     conflitantes: list[CommitRef],
-    suspeitos_conteudo: list[CommitRef] = (),
+    suspeitos_conteudo: Sequence[CommitRef] = (),
     conflito_causado_por: dict[str, list[str]] | None = None,
 ) -> VersionStatus:
     """Produz o VersionStatus. Funcao pura: `presentes`, `conflitantes` e

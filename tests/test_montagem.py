@@ -14,6 +14,7 @@ from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo
 from motor.errors import MotorError
@@ -66,7 +67,9 @@ def test_a_fonte_de_pr_recebe_o_cache_do_estado():
         FakeGit(), token="tok", email="dev@x.com", estado=estado, repo="vbweb"
     )
 
+    assert isinstance(fonte, ChainCommitSource)
     pr = fonte.sources[0]
+    assert isinstance(pr, BitbucketPRCommitSource)
     assert (pr.estado, pr.repo_estado) == (estado, "vbweb")
 
 
@@ -98,6 +101,7 @@ def test_task_source_tickio_nao_cobra_credencial_na_montagem(monkeypatch):
 
     fonte = montar_task_source(7)
 
+    assert isinstance(fonte, TickioRest)
     assert fonte.sistema_id == 7
 
 

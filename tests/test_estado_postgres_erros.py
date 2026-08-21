@@ -8,8 +8,11 @@ roda sem container.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.orm import Session
 
 from motor.adapters.estado.postgres import (
     ERRCODE_VERSAO_CONGELADA,
@@ -33,11 +36,19 @@ class _SessaoQueFalha:
         self.erro = erro
         self.rollbacks = 0
 
-    def scalar(self, stmt):
+    def scalar(self, stmt: object) -> object:
         raise self.erro
 
     def rollback(self) -> None:
         self.rollbacks += 1
+
+
+def _como_sessao(dobro: _SessaoQueFalha) -> Session:
+    """Double deliberadamente parcial: o adapter so chama `scalar` e `rollback`
+    no caminho de erro. Implementar a Session inteira para tres metodos usados
+    seria mais codigo do que o teste inteiro.
+    """
+    return cast(Session, dobro)
 
 
 def test_conexao_morta_no_meio_do_comando_vira_motorerror():
@@ -51,7 +62,7 @@ def test_conexao_morta_no_meio_do_comando_vira_motorerror():
     )
 
     with pytest.raises(MotorError) as e:
-        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
 
     assert "connection already closed" in str(e.value)
     assert sessao.rollbacks == 1
@@ -66,7 +77,7 @@ def test_banco_fora_do_ar_continua_com_a_dica_do_compose():
     )
 
     with pytest.raises(MotorError) as e:
-        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
 
     assert "docker compose up -d" in str(e.value)
 
@@ -80,7 +91,7 @@ def test_conexao_morta_ganha_a_dica_do_compose():
     )
 
     with pytest.raises(MotorError, match="docker compose up -d"):
-        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
 
 
 def test_deadlock_nao_e_reportado_como_banco_inacessivel():
@@ -94,7 +105,7 @@ def test_deadlock_nao_e_reportado_como_banco_inacessivel():
     )
 
     with pytest.raises(MotorError) as e:
-        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
 
     assert "deadlock detected" in str(e.value)
     assert "docker compose" not in str(e.value), (
@@ -117,4 +128,4 @@ def test_congelamento_identificado_pelo_errcode_nao_pelo_texto():
     )
 
     with pytest.raises(MotorError, match="remarque a tarefa para a proxima versao"):
-        PostgresEstado(sessao=sessao).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")

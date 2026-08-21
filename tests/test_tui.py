@@ -2,12 +2,14 @@ import asyncio
 import contextlib
 import datetime
 from pathlib import Path
+from typing import cast
 from threading import Event
 
 from rich.console import Console
 from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 
 from motor.adapters.estado.fake import FakeEstado
+from motor.ports import GitRepo
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
@@ -24,6 +26,15 @@ from motor.tui import (
     descobrir_versoes,
     renderizar_status,
 )
+
+
+def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
+    """Runner de verificacao para teste que nao chega a disparar verificacao.
+
+    Levanta em vez de devolver None: se um dia o fluxo passar por aqui, o teste
+    falha dizendo isso, em vez de seguir com um status vazio.
+    """
+    raise AssertionError("este teste nao deveria executar verificacao")
 
 
 def _texto(renderable) -> str:
@@ -121,7 +132,7 @@ class GitCatalogoFake:
 def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_tag():
     git = GitCatalogoFake()
 
-    assert descobrir_versoes(git) == [
+    assert descobrir_versoes(cast(GitRepo, git)) == [
         VersionOption(numero="14.0.0", liberada=False),
         VersionOption(numero="13.10.0", liberada=False),
         VersionOption(numero="13.9.0", liberada=True),
@@ -132,11 +143,12 @@ def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_tag():
 def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
     git = GitCatalogoFake()
     caminhos: list[str] = []
-    monkeypatch.setattr(
-        tui,
-        "new_git_subprocess",
-        lambda caminho: caminhos.append(caminho) or git,
-    )
+
+    def abrir_git(caminho: str) -> GitCatalogoFake:
+        caminhos.append(caminho)
+        return git
+
+    monkeypatch.setattr(tui, "new_git_subprocess", abrir_git)
 
     resultado = tui._versoes_do_repo(
         RepoOption(nome="alpha", caminho="/projetos/alpha")
@@ -697,7 +709,7 @@ def test_app_exibe_motor_error_sem_traceback():
         raise MotorError("banco inacessível")
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(falhar, lambda repo: [], lambda repo, versao, auditar: None)
+        app = MotorTUI(falhar, lambda repo: [], _nunca_executa)
         async with app.run_test(size=(120, 36)):
             await app.workers.wait_for_complete()
             assert "banco inacessível" in _texto(
@@ -712,7 +724,7 @@ def test_app_esconde_erro_interno_e_registra_traceback(caplog):
         raise RuntimeError("bug secreto")
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(falhar, lambda repo: [], lambda repo, versao, auditar: None)
+        app = MotorTUI(falhar, lambda repo: [], _nunca_executa)
         async with app.run_test(size=(120, 36)):
             await app.workers.wait_for_complete()
             texto = _texto(app.query_one("#resultado", Static).content)
@@ -820,7 +832,7 @@ def test_app_descarta_versoes_obsoletas_sem_liberar_repo_atual():
         app = MotorTUI(
             carregar_repos=lambda: [repo_a, repo_b],
             carregar_versoes=carregar_versoes,
-            executar=lambda repo, versao, auditar: None,
+            executar=_nunca_executa,
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1115,7 +1127,7 @@ def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
             RepoOption(nome=nome, caminho=f"/projetos/{nome}") for nome in repos
         ],
         carregar_versoes=lambda opcao: [],
-        executar=lambda repo, versao, auditar: None,
+        executar=_nunca_executa,
         registrar_repo=registrar,
     )
 
@@ -1151,6 +1163,7 @@ def test_app_cadastra_repo_e_recarrega_lista():
             nomes = [
                 opcao.nome
                 for _, opcao in app.query_one("#repo", Select)._options[1:]
+                if isinstance(opcao, RepoOption)
             ]
             assert nomes == ["alpha", "delta"]
             assert "delta" in _texto(app.query_one("#resultado", Static).content)
@@ -1217,7 +1230,7 @@ def test_app_sem_registrador_ignora_a_tecla_de_cadastro():
         app = MotorTUI(
             carregar_repos=lambda: [RepoOption(nome="alpha", caminho="/p/alpha")],
             carregar_versoes=lambda opcao: [],
-            executar=lambda repo, versao, auditar: None,
+            executar=_nunca_executa,
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1344,6 +1357,7 @@ def test_app_volta_para_o_indeterminado_em_fase_sem_contagem():
             await pilot.pause()
 
             painel = app._painel_progresso
+            assert painel is not None
             assert painel.progresso == Progresso("gravando estado")
             # sem contagem na tela: a barra virou pulso
             assert "3/8" not in _texto(painel.content)
@@ -1360,6 +1374,6 @@ def test_descobrir_versoes_relata_o_fetch():
     """
     relatos: list[Progresso] = []
 
-    descobrir_versoes(GitCatalogoFake(), progresso=relatos.append)
+    descobrir_versoes(cast(GitRepo, GitCatalogoFake()), progresso=relatos.append)
 
     assert [p.fase for p in relatos] == ["buscando refs do origin"]

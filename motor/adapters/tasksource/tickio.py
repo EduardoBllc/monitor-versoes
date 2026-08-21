@@ -100,14 +100,17 @@ class TickioRest:
         except ValueError as e:
             raise MotorError(f"autenticando no Tickio: decodificando resposta: {e}") from e
 
-        access = (corpo or {}).get("access", "")
+        # str() e não cast(): o corpo vem de JSON de terceiro, e um `access`
+        # numerico ou nulo entraria no header Authorization como o repr do
+        # objeto. A checagem de vazio abaixo pega os dois casos.
+        access = str((corpo or {}).get("access", "") or "")
         if not access:
             raise MotorError("autenticando no Tickio: resposta sem campo 'access'")
         self._access = access
         return access
 
 
-def _extrair_chamados(corpo) -> list[str]:
+def _extrair_chamados(corpo: object) -> list[str]:
     """Le a lista de chamados do corpo da resposta.
 
     O Tickio responde um envelope com `chamados`; as formas antigas continuam

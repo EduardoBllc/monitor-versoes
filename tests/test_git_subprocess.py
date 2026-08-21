@@ -16,7 +16,7 @@ from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
 
 
-def _git_env() -> dict:
+def _git_env() -> dict[str, str]:
     env = os.environ.copy()
     env.update(
         {

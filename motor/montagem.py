@@ -14,6 +14,7 @@ Unica excecao deliberada: `resolver_repo`, porque o nome canonico e o
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
@@ -56,7 +57,7 @@ def validar_sistema_id(valor: str) -> int:
 
 
 @contextmanager
-def abrir_sessao():
+def abrir_sessao() -> Iterator[Session]:
     """Ciclo de vida do banco: uma engine e uma sessao por comando.
 
     O CLI e um processo de segundos, entao nao ha o que reaproveitar de um pool

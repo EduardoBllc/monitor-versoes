@@ -9,6 +9,7 @@ lugar de servidor real.
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import httpx
 import pytest
@@ -20,6 +21,9 @@ from motor.adapters.commitsource.bitbucket import (
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo
+
+# Corpo de JSON da API, igual ao alias do adapter.
+JSON = dict[str, Any]
 
 REPO_ESTADO = "monitor"
 
@@ -36,9 +40,11 @@ def test_parse_workspace_repo(url, esperado):
     assert parse_workspace_repo(url) == esperado
 
 
-def _git_com_master(*hashes_na_master: str) -> FakeGit:
+def _git_com_master(
+    *hashes_na_master: str, classe: type[FakeGit] = FakeGit
+) -> FakeGit:
     # encadeia os hashes numa branch master (o primeiro e a raiz).
-    g = FakeGit()
+    g = classe()
     t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
     anterior = ""
     for h in hashes_na_master:
@@ -70,8 +76,8 @@ def _estado_vazio() -> FakeEstado:
 
 
 def _handler_pr(
-    prs: list[dict],
-    commits_por_pr: dict[int, list[dict]],
+    prs: list[JSON],
+    commits_por_pr: dict[int, list[JSON]],
     pedidos: list[int] | None = None,
 ):
     """`pedidos` acumula o id de cada PR cujos commits foram pedidos — e assim
@@ -169,15 +175,14 @@ def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
     continua rodando.
     """
     urls_pedidas: list[str] = []
-    git = _git_com_master("c1")
+
+    class GitQueContaOsRemotes(FakeGit):
+        def remote_url(self, remote: str) -> str:
+            urls_pedidas.append(remote)
+            return super().remote_url(remote)
+
+    git = _git_com_master("c1", classe=GitQueContaOsRemotes)
     git.remote_urls["origin"] = "git@bitbucket.org:acme/monitor.git"
-    remote_url_original = git.remote_url
-
-    def espiar(remote: str) -> str:
-        urls_pedidas.append(remote)
-        return remote_url_original(remote)
-
-    git.remote_url = espiar
     caminhos: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -230,7 +235,7 @@ def test_repr_nao_vaza_credencial():
 # esse commit — falso-verde, o modo de falha que o motor existe para evitar.
 
 
-def _pr(pr_id: int, chamado: str = "255514") -> dict:
+def _pr(pr_id: int, chamado: str = "255514") -> JSON:
     return {
         "id": pr_id,
         "title": f"ch{chamado} corrige logs",
@@ -238,7 +243,9 @@ def _pr(pr_id: int, chamado: str = "255514") -> dict:
     }
 
 
-def _commit_bruto(hash_: str, dia: int = 2, parents: list[str] | None = None) -> dict:
+def _commit_bruto(
+    hash_: str, dia: int = 2, parents: list[str] | None = None
+) -> JSON:
     return {
         "hash": hash_,
         "date": f"2024-01-{dia:02d}T10:00:00+00:00",

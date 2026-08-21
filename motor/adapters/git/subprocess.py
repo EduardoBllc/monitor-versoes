@@ -9,6 +9,7 @@ engine — espelhando onde o Go liga isso.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterator
 import datetime
 import logging
 import os
@@ -28,7 +29,7 @@ SEPARADOR_REGISTRO = "\x1e"
 
 
 @contextlib.contextmanager
-def _cronometrar(*args: str):
+def _cronometrar(*args: str) -> Iterator[None]:
     inicio = time.monotonic()
     try:
         yield

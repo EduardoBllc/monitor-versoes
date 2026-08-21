@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "mypy"]
 
 [project.scripts]
 motor = "motor.__main__:main"
@@ -29,3 +29,27 @@ testpaths = ["tests"]
 markers = [
     "integracao: exige Postgres de pe (pulado sem DATABASE_HOST no ambiente)",
 ]
+
+# O type checker e o que faz "adapter nao cumpre a porta" virar erro em vez de
+# surpresa em runtime: Protocol e estrutural, e a conformidade e verificada nos
+# pontos de atribuicao (motor/montagem.py e tests/test_conformidade.py).
+[tool.mypy]
+python_version = "3.14"
+files = ["motor", "tests"]
+strict = true
+
+# Corpo de funcao de teste sem anotacao e ruido, nao defeito: exigir assinatura
+# em toda funcao `test_*` rende centenas de erros que nao dizem nada. O que
+# importa em `tests/` e o resto do strict — sobretudo argumento de tipo errado
+# na construcao de `Deps` e de dataclass do dominio, que e a classe de erro que
+# este projeto ja deixou passar por quatro tasks.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+
+# textual e dotenv nao publicam stubs completos.
+[[tool.mypy.overrides]]
+module = ["textual.*", "dotenv.*"]
+ignore_missing_imports = true

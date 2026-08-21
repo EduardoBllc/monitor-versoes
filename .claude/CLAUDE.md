@@ -12,9 +12,23 @@ código.
 
 ```bash
 ./.venv/bin/python -m pytest        # use isto
+./.venv/bin/python -m mypy          # idem — le files/strict do pyproject
 ```
 
 Se o `.venv` não existir: `unset VIRTUAL_ENV; uv sync --all-extras`.
+
+## `mypy` faz parte do portão, não é opcional
+
+`motor/` roda em `--strict`; `tests/` roda o strict inteiro menos a exigência de
+assinatura em função de teste. **Sem CI neste repo** — rodar é manual, junto do
+pytest.
+
+O que ele existe para pegar: `Protocol` é estrutural, então adapter que não
+cumpre a porta só aparece no ponto de atribuição.
+`tests/test_conformidade.py` é esse ponto — declara cada adapter (real **e**
+fake) na sua porta. Adapter novo entra lá. Ele pega método faltando e tipo de
+parâmetro ou retorno trocado; **não** pega renome de parâmetro, porque toda
+chamada de porta aqui é posicional.
 
 ## Desenvolvimento é o padrão do CLI, produção é o padrão de tudo o mais
 

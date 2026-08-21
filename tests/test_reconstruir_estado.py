@@ -102,4 +102,6 @@ def test_reconstruir_estado_busca_antes_de_resolver_a_base():
 
     assert git.fetched == ["origin"]
     assert resultado.status == ReconstructStatus.DONE
-    assert estado.versao("r", "13.34.0").base_ref == "13.33.0"
+    gravada = estado.versao("r", "13.34.0")
+    assert gravada is not None
+    assert gravada.base_ref == "13.33.0"

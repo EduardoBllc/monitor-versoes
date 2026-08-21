@@ -58,7 +58,7 @@ class _GitQueTagueiaNoFetch(FakeGit):
         return super().tag_exists(tag)
 
 
-def _git(classe=FakeGit) -> FakeGit:
+def _git(classe: type[FakeGit] = FakeGit) -> FakeGit:
     """Grafo: m0 e a raiz e a base da 13.7.0; a0 e a1 so existem no master.
 
     Com as versoes em m0, a0 e a1 sao faltantes de verdade na 13.7.0 — e o que
@@ -79,7 +79,9 @@ def _estado() -> FakeEstado:
     return FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
 
 
-def _deps(git, estado, chamados: list[str], commits: dict) -> Deps:
+def _deps(
+    git, estado, chamados: list[str], commits: dict[str, list[CommitRef]]
+) -> Deps:
     return Deps(
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": chamados}),

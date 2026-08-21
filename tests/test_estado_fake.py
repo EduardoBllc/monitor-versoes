@@ -79,7 +79,9 @@ def test_marcar_liberadas_nao_reescreve_data_ja_gravada():
     primeira = datetime.datetime(2026, 8, 1)
     estado.marcar_liberadas("r", {"13.34.0": primeira})
     estado.marcar_liberadas("r", {"13.34.0": datetime.datetime(2026, 9, 1)})
-    assert estado.versao("r", "13.34.0").liberada_em == primeira
+    gravada = estado.versao("r", "13.34.0")
+    assert gravada is not None
+    assert gravada.liberada_em == primeira
 
 
 def test_registrar_versao_nao_sobrescreve_a_base_ja_gravada():
@@ -92,4 +94,6 @@ def test_registrar_versao_nao_sobrescreve_a_base_ja_gravada():
         VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
                    base_ref="master", base_commit="OUTRO"),
     )
-    assert estado.versao("r", "14.0.0").base_commit == "aaa"
+    gravada = estado.versao("r", "14.0.0")
+    assert gravada is not None
+    assert gravada.base_commit == "aaa"

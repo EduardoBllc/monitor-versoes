@@ -21,7 +21,9 @@ import base64
 import datetime
 import re
 import contextlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 import httpx
 
@@ -29,6 +31,10 @@ from motor.domain.types import SEM_DATA, CommitRef
 from motor.errors import MotorError
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
+
+# Corpo de JSON da API: dict de chaves str para qualquer coisa. Nao e um dict
+# tipado — a §10 do desenho registra que o contrato ainda nao foi observado.
+JSON = dict[str, Any]
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 
@@ -179,7 +185,7 @@ class BitbucketPRCommitSource:
         self.estado.gravar_commits_de_pr(self.repo_estado, novas)
 
     @staticmethod
-    def _pr_casa(pr: dict, termo: str) -> bool:
+    def _pr_casa(pr: JSON, termo: str) -> bool:
         titulo = pr.get("title") or ""
         if titulo.startswith(termo):
             return True
@@ -187,7 +193,7 @@ class BitbucketPRCommitSource:
         return termo in branch
 
     @staticmethod
-    def _para_commit_ref(c: dict) -> CommitRef:
+    def _para_commit_ref(c: JSON) -> CommitRef:
         """Sem `chamado`: e o que o cache guarda, e o cache e por PR."""
         parents = c.get("parents") or []
         parent = parents[0].get("hash", "") if parents else ""
@@ -203,7 +209,9 @@ class BitbucketPRCommitSource:
             msg=c.get("message", ""),
         )
 
-    def _paginar(self, client: httpx.Client, url: str, params: dict | None):
+    def _paginar(
+        self, client: httpx.Client, url: str, params: JSON | None
+    ) -> Iterator[JSON]:
         """Itera os `values` de uma resposta paginada, seguindo `next`."""
         while url:
             try:

@@ -16,7 +16,7 @@ from motor.domain.types import (
 )
 
 
-def _alvo(**tasks) -> dict:
+def _alvo(**tasks: list[str]) -> dict[str, TaskTarget]:
     return {
         ch: TaskTarget(chamado=ch, marcada="13.34.0",
                        commits=[CommitRef(hash_origem=h, chamado=ch) for h in hashes])

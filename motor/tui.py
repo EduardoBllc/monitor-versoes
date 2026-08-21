@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
 from rich import box
+from rich.console import RenderableType
 from rich.console import Group
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar as BarraRich
@@ -28,12 +31,13 @@ from textual.widgets import (
     Select,
     Static,
 )
+from textual.visual import VisualType
 from textual.widgets.option_list import Option
 
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.domain.commits import agrupar_por_chamado
-from motor.domain.types import VersionStatus
+from motor.domain.types import CommitRef, VersionStatus
 from motor.domain.version import chave
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
 from motor.engine.consultar import ChamadoConsultado, consultar
@@ -93,7 +97,7 @@ class ResultadoModal(ModalScreen[None]):
     }
     """
 
-    def __init__(self, conteudo: object) -> None:
+    def __init__(self, conteudo: VisualType) -> None:
         super().__init__()
         self._conteudo = conteudo
 
@@ -314,14 +318,14 @@ class MotorTUI(App[None]):
             return
         painel.mostrar(self._slot.ultimo)
 
-    def _exibir_resultado(self, conteudo: object) -> Static:
+    def _exibir_resultado(self, conteudo: VisualType) -> Static:
         self.query_one("#consulta-painel").display = False
         self.query_one("#resultado-scroll").display = True
         resultado = self.query_one("#resultado", Static)
         resultado.update(conteudo)
         return resultado
 
-    def _apresentar(self, conteudo: object, *, reconsultar: bool = False) -> None:
+    def _apresentar(self, conteudo: VisualType, *, reconsultar: bool = False) -> None:
         """Com a lista de chamados na tela, resultado e transitorio: vai para um
         modal e ao fechar recarrega a lista, que o verificar/atualizar acabou de
         reescrever no banco. Sem lista, ocupa o painel como antes.
@@ -575,7 +579,7 @@ class MotorTUI(App[None]):
             resultado.loading = True
             self._bloquear(True)
             self.consultar_worker(self._repo, self._versao)
-        elif self._versao is not None:
+        elif self._versao is not None and self._repo is not None:
             self._exibir_resultado(
                 f"Pronto para verificar {self._repo.nome} {self._versao.numero}."
             )
@@ -752,7 +756,7 @@ def _versoes_do_repo(
 
 
 def _deps_do_repo(
-    repo: RepoOption, sessao: object, progresso: RelatorProgresso = silencioso
+    repo: RepoOption, sessao: Session, progresso: RelatorProgresso = silencioso
 ) -> Deps:
     if repo.caminho is None:
         raise MotorError("checkout local não encontrado")
@@ -831,7 +835,9 @@ def _alertas(status: VersionStatus) -> Text | None:
     return Text("\n".join(linhas), style="bold yellow") if linhas else None
 
 
-def _commits_agrupados(commits: list, estados: dict[str, str]) -> Group | None:
+def _commits_agrupados(
+    commits: list[CommitRef], estados: dict[str, str]
+) -> Group | None:
     if not commits:
         return None
     tabelas: list[Table] = []
@@ -905,7 +911,7 @@ def _faltantes(status: VersionStatus) -> Group | None:
 
 def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
     bloqueada = resultado.status == AtualizarStatus.BLOCKED
-    partes: list = [
+    partes: list[RenderableType] = [
         Text(
             "● Atualização bloqueada" if bloqueada else "● Atualização concluída",
             style="bold red" if bloqueada else "bold green",
@@ -944,7 +950,7 @@ def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
 
 
 def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
-    partes: list = []
+    partes: list[RenderableType] = []
     if status.liberada_em is not None and not auditado:
         partes.extend(
             [

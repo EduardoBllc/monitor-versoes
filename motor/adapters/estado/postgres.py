@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import NoReturn
+from typing import NoReturn, TypeVar
 
-from sqlalchemy import delete, select
+from sqlalchemy import Select, delete, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -31,20 +32,28 @@ _TIPO_PARA_TEXTO = {
 }
 _TEXTO_PARA_TIPO = {v: k for k, v in _TIPO_PARA_TEXTO.items()}
 
+# A linha que o select devolve. Amarra o retorno de _scalar/_scalars ao modelo
+# pedido no statement, em vez de espalhar Any por todo metodo que os chama.
+_Linha = TypeVar("_Linha")
+
 
 @dataclass
 class PostgresEstado:
     sessao: Session
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
-        existente = self._scalar(
-            select(models.Repo).where(models.Repo.nome == nome)
-        )
-        if existente is None:
-            existente = self._scalar(
+        # Nome canonico e alias dividem o mesmo espaco de nomes, entao as duas
+        # tabelas contam para "ja cadastrado". Sao duas consultas so quando a
+        # primeira nao acha nada: o `or` curto-circuita.
+        ja_cadastrado = (
+            self._scalar(select(models.Repo).where(models.Repo.nome == nome))
+            is not None
+            or self._scalar(
                 select(models.RepoAlias).where(models.RepoAlias.nome == nome)
             )
-        if existente is not None:
+            is not None
+        )
+        if ja_cadastrado:
             raise MotorError(f"repo '{nome}' ja cadastrado")
         self.sessao.add(
             models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id)
@@ -290,7 +299,7 @@ class PostgresEstado:
             )
         )
 
-    def _scalar(self, stmt):
+    def _scalar(self, stmt: Select[tuple[_Linha]]) -> _Linha | None:
         """Le uma linha (ou None). Ler tambem pode achar o banco fora do ar
         — sem isso todo metodo de escrita, que abre com uma leitura, vazaria
         um OperationalError crua antes de chegar perto de um commit."""
@@ -299,7 +308,7 @@ class PostgresEstado:
         except DBAPIError as e:
             self._traduzir_erro(e)
 
-    def _scalars(self, stmt):
+    def _scalars(self, stmt: Select[tuple[_Linha]]) -> Iterable[_Linha]:
         try:
             return self.sessao.scalars(stmt)
         except DBAPIError as e:

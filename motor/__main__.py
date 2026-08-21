@@ -12,16 +12,24 @@ import os
 import sys
 import textwrap
 import time
-from typing import TextIO
+from collections.abc import Callable, Set as AbstractSet
+from typing import TextIO, TypeVar
 
+# Anotado Optional na declaracao: sem isso o `= None` do fallback conflita com
+# o tipo da funcao importada, e `if load_dotenv:` passa a ser lido como
+# "funcao sempre verdadeira".
+_CarregarAmbiente = Callable[..., bool]
+load_dotenv: _CarregarAmbiente | None
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv as _load_dotenv
 except ImportError:
     load_dotenv = None
+else:
+    load_dotenv = _load_dotenv
 
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.domain.commits import agrupar_por_chamado
-from motor.domain.types import VersionStatus
+from motor.domain.types import CommitRef, VersionStatus
 from motor.errors import MotorError
 from motor.engine.criar import criar
 from motor.engine.consultar import ChamadoConsultado, consultar
@@ -43,13 +51,15 @@ from motor.montagem import (
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
+_T = TypeVar("_T")
+
 _ARQUIVOS_AMBIENTE = {
     "development": ".env.development",
     "production": ".env",
 }
 
 
-def _tipo_cli(validador):
+def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
     """Adapta um validador de `motor.montagem` ao protocolo do argparse.
 
     A regra e compartilhada com a TUI e fala `MotorError`; traduzir para
@@ -57,7 +67,7 @@ def _tipo_cli(validador):
     argparse.
     """
 
-    def converter(valor: str):
+    def converter(valor: str) -> _T:
         try:
             return validador(valor)
         except MotorError as erro:
@@ -176,9 +186,9 @@ def _resolver_repo(valor: str) -> str:
 
 def _imprimir_commits_por_task(
     titulo: str,
-    commits: list,
+    commits: list[CommitRef],
     conflitantes: set[str],
-    suspeitos: set[str] = frozenset(),
+    suspeitos: AbstractSet[str] = frozenset(),
     causado_por: dict[str, list[str]] | None = None,
 ) -> None:
     grupos = agrupar_por_chamado(commits)

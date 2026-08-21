@@ -37,7 +37,7 @@ class _GitQueTagueiaNoFetch(FakeGit):
         self.tags["13.7.0"] = True
 
 
-def _git(classe=FakeGit) -> FakeGit:
+def _git(classe: type[FakeGit] = FakeGit) -> FakeGit:
     """A 13.7.0 nao existe: e ela que o criar tem de montar. A 13.6.0 em m0 e a
     base inferida, e a0 (so no master) e o commit a cobrar.
     """

@@ -56,7 +56,7 @@ class _GitComPrevisaoEncadeada(FakeGit):
         )
 
 
-def _git(tags: dict[str, bool] | None = None, classe=FakeGit) -> FakeGit:
+def _git(tags: dict[str, bool] | None = None, classe: type[FakeGit] = FakeGit) -> FakeGit:
     """Grafo: m0 e a raiz; a0 e um commit que so existe no master.
 
     As versoes ficam em m0, entao a0 e faltante em todas elas — e o que
@@ -108,7 +108,8 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
     status = verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado),
                        "13.34.0")
 
-    assert estado.versao("r", "13.34.0").liberada_em is not None
+    congelada = estado.versao("r", "13.34.0")
+    assert congelada is not None and congelada.liberada_em is not None
     # devolve o snapshot congelado, nao recalcula
     assert status.verde is True
     assert status.tasks_novas == []
@@ -116,7 +117,7 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
     # chamados a saida sai byte-a-byte igual a de uma versao verde em
     # construcao, e um snapshot vazio imprime "verde: True" porque all([]) e
     # True — o operador nao distingue "fez o trabalho" de "nao recalculou".
-    assert status.liberada_em == estado.versao("r", "13.34.0").liberada_em
+    assert status.liberada_em == congelada.liberada_em
     assert status.chamados == ["123456"]
 
 
@@ -320,7 +321,8 @@ def test_verificar_busca_antes_de_ler_as_refs_e_congela_tag_nova_no_mesmo_run():
     status = verificar(_deps(git, tasks, FakeCommitSource(), estado), "13.34.0")
 
     assert git.fetched == ["origin"]
-    assert estado.versao("r", "13.34.0").liberada_em is not None
+    gravada = estado.versao("r", "13.34.0")
+    assert gravada is not None and gravada.liberada_em is not None
     # o snapshot da versao liberada continua intacto, sem a tarefa nova
     assert [a.chamado for a in estado.atribuicoes("r", "13.34.0")] == ["123456"]
     assert status.verde is True
