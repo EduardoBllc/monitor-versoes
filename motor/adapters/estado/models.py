@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -141,3 +142,28 @@ class SemEntrega(Base):
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
     chamado: Mapped[str] = mapped_column(primary_key=True)
     motivo: Mapped[str]
+
+
+class PrCommitCache(Base):
+    """Commits de uma PR mergeada do Bitbucket — cache puro de fato imutavel.
+
+    Existe para cortar o `GET /pullrequests/{id}/commits`, que hoje roda uma vez
+    por PR a cada `verificar`. A busca das PRs do chamado continua batendo na
+    API toda vez: e ela que descobre PR nova, e cachea-la esconderia um commit
+    de correcao — falso-verde, que e o modo de falha que o motor existe para
+    evitar.
+
+    Fica de fora de proposito: `chamado`, que vem da busca e nao da PR, e
+    `is_ancestor(hash, master)`, que e volatil — uma PR mergeada numa branch que
+    ainda nao chegou na master viraria commit escondido para sempre.
+    """
+
+    __tablename__ = "pr_commit_cache"
+
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
+    # BigInteger: o pr_id vem do Bitbucket, nao e nosso para caber em int4.
+    pr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    hash_origem: Mapped[str] = mapped_column(primary_key=True)
+    parent: Mapped[str]
+    commit_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    msg: Mapped[str]

@@ -25,7 +25,13 @@ import pytest
 from sqlalchemy import text
 
 from motor.adapters.estado.fake import FakeEstado
-from motor.domain.types import Atribuicao, RepoInfo, VersaoInfo, VersionType
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    RepoInfo,
+    VersaoInfo,
+    VersionType,
+)
 from motor.errors import MotorError
 
 REPO = "vendabemweb"
@@ -138,6 +144,11 @@ def test_listar_repos_devolve_canonicos_em_ordem_sem_alias(estado):
         pytest.param(
             lambda e: e.marcar_liberadas("outro", {"13.34.0": QUANDO}),
             id="marcar_liberadas",
+        ),
+        pytest.param(lambda e: e.commits_de_pr("outro", [7]), id="commits_de_pr"),
+        pytest.param(
+            lambda e: e.gravar_commits_de_pr("outro", {7: []}),
+            id="gravar_commits_de_pr",
         ),
     ],
 )
@@ -275,3 +286,66 @@ def test_exclusoes_e_sem_entrega_comecam_vazias(estado):
     # que ler um repo sem julgamento nao levanta nem inventa linha.
     assert estado.exclusoes(REPO) == []
     assert estado.sem_entrega(REPO) == {}
+
+
+# -- cache de commits por PR ---------------------------------------------------
+
+
+def _cr(hash_origem: str, parent: str = "p0", quando: int = 1) -> CommitRef:
+    return CommitRef(
+        hash_origem=hash_origem,
+        parent=parent,
+        commit_date=datetime.datetime(2026, 3, quando, tzinfo=datetime.UTC),
+        msg=f"msg {hash_origem}",
+    )
+
+
+def test_commits_de_pr_nunca_gravada_nao_aparece(estado):
+    # ausencia da chave e o unico sinal de "nunca consultei esta PR": e ela que
+    # manda a fonte bater na API. Devolver lista vazia seria dizer "PR sem
+    # commit", e a PR nova nunca mais seria buscada.
+    assert estado.commits_de_pr(REPO, [7]) == {}
+
+
+def test_gravar_commits_de_pr_e_relidos(estado):
+    estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})
+    assert estado.commits_de_pr(REPO, [7]) == {7: [_cr("aaa")]}
+
+
+def test_commits_de_pr_devolve_so_as_pedidas(estado):
+    estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")], 8: [_cr("bbb")]})
+    assert estado.commits_de_pr(REPO, [8]) == {8: [_cr("bbb")]}
+
+
+def test_commits_de_pr_vem_ordenados_por_data(estado):
+    # o adapter real usa ORDER BY; sem ordenar, o fake devolveria ordem de
+    # insercao por acidente e a suite ficaria verde num contrato que o banco
+    # nao cumpre.
+    estado.gravar_commits_de_pr(
+        REPO, {7: [_cr("bbb", quando=9), _cr("aaa", quando=2)]}
+    )
+    assert [c.hash_origem for c in estado.commits_de_pr(REPO, [7])[7]] == [
+        "aaa",
+        "bbb",
+    ]
+
+
+def test_gravar_commits_de_pr_e_idempotente(estado):
+    # PR mergeada e imutavel, mas nada impede a fonte de regravar a mesma PR
+    # (cache vazio por PR so de merge commit, por exemplo). Duplicar linha
+    # duplicaria commit no alvo.
+    estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})
+    estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})
+    assert estado.commits_de_pr(REPO, [7]) == {7: [_cr("aaa")]}
+
+
+def test_cache_de_pr_e_por_repo(estado):
+    # pr_id do Bitbucket e sequencial POR repositorio: sem o repo na chave, a
+    # PR 7 de um repo devolveria os commits da PR 7 do outro.
+    estado.registrar_repo("outro", 99)
+    estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})
+    assert estado.commits_de_pr("outro", [7]) == {}
+
+
+def test_commits_de_pr_sem_pr_pedida_nao_consulta_nada(estado):
+    assert estado.commits_de_pr(REPO, []) == {}

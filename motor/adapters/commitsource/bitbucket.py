@@ -18,13 +18,13 @@ import base64
 import datetime
 import re
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx
 
 from motor.domain.types import SEM_DATA, CommitRef
 from motor.errors import MotorError
-from motor.ports import GitRepo
+from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
@@ -56,6 +56,11 @@ class BitbucketPRCommitSource:
     master_ref: str = "master"
     client: httpx.Client | None = None
     progresso: RelatorProgresso = silencioso
+    # Cache de `PR -> commits`. Opcional: sem estado a fonte funciona igual,
+    # so mais lenta. `repo_estado` e o nome canonico no banco, que nao e
+    # necessariamente o `repo` do Bitbucket — e para isso que aliases existem.
+    estado: EstadoRepo | None = None
+    repo_estado: str = ""
 
     def _auth_header(self) -> str:
         credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
@@ -88,30 +93,73 @@ class BitbucketPRCommitSource:
             "pagelen": 50,
         }
 
-        vistos: set[str] = set()
-        commits: list[CommitRef] = []
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
             client = self.client
             if client is None:
                 client = pilha.enter_context(httpx.Client())
-            for pr in self._paginar(client, prs_url, params):
-                if not self._pr_casa(pr, termo):
+
+            # A busca roda SEMPRE, mesmo com tudo em cache: e ela que descobre
+            # PR de correcao mergeada depois. Cachear a busca esconderia esse
+            # commit e a versao sairia verde faltando entrega.
+            pr_ids = [
+                pr["id"]
+                for pr in self._paginar(client, prs_url, params)
+                if self._pr_casa(pr, termo) and pr.get("id")
+            ]
+
+            por_pr = self._do_cache(pr_ids)
+            # Unica chamada que o cache corta: os commits de PR ja vista.
+            novas = {
+                pr_id: self._buscar_commits(client, prs_url, pr_id)
+                for pr_id in pr_ids
+                if pr_id not in por_pr
+            }
+            self._gravar_cache(novas)
+            por_pr |= novas
+
+        vistos: set[str] = set()
+        commits: list[CommitRef] = []
+        for pr_id in pr_ids:
+            for c in por_pr.get(pr_id, []):
+                if c.hash_origem in vistos:
                     continue
-                pr_id = pr.get("id")
-                commits_url = f"{prs_url}/{pr_id}/commits"
-                for c in self._paginar(client, commits_url, None):
-                    h = c.get("hash", "")
-                    if not h or h in vistos:
-                        continue
-                    if len(c.get("parents") or []) > 1:
-                        continue  # merge commit: cherry-pick -x nao aceita sem -m; conteudo ja vem pelos pais individuais
-                    if not self.git.is_ancestor(h, self.master_ref):
-                        continue  # so o que ja esta na master
-                    vistos.add(h)
-                    commits.append(self._para_commit_ref(c, chamado))
+                # is_ancestor fica FORA do cache: e volatil. PR mergeada numa
+                # branch que ainda nao chegou na master viraria commit escondido
+                # para sempre se o filtro fosse gravado junto.
+                if not self.git.is_ancestor(c.hash_origem, self.master_ref):
+                    continue
+                vistos.add(c.hash_origem)
+                # o chamado vem da busca, nao da PR: duas tarefas podem apontar
+                # para a mesma PR, entao ele e carimbado aqui e nao no cache.
+                commits.append(replace(c, chamado=chamado))
         commits.sort(key=lambda c: c.commit_date)
         return commits
+
+    def _buscar_commits(
+        self, client: httpx.Client, prs_url: str, pr_id: int
+    ) -> list[CommitRef]:
+        return [
+            self._para_commit_ref(c)
+            for c in self._paginar(client, f"{prs_url}/{pr_id}/commits", None)
+            # merge commit: cherry-pick -x nao aceita sem -m, e o conteudo ja vem
+            # pelos pais individuais. Numero de pais e propriedade do commit,
+            # nunca muda — por isso filtra antes de cachear.
+            if c.get("hash") and len(c.get("parents") or []) <= 1
+        ]
+
+    def _do_cache(self, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+        if self.estado is None:
+            return {}
+        return self.estado.commits_de_pr(self.repo_estado, pr_ids)
+
+    def _gravar_cache(self, novas: dict[int, list[CommitRef]]) -> None:
+        # ponytail: PR cujos commits sao todos merge commit grava vazio e vira
+        # miss em todo run. Custa 1 request por run e nao tem PR assim na
+        # pratica; se aparecer, o conserto e uma linha-sentinela por PR.
+        if self.estado is None or not novas:
+            return
+        self.estado.gravar_commits_de_pr(self.repo_estado, novas)
 
     @staticmethod
     def _pr_casa(pr: dict, termo: str) -> bool:
@@ -122,7 +170,8 @@ class BitbucketPRCommitSource:
         return termo in branch
 
     @staticmethod
-    def _para_commit_ref(c: dict, chamado: str) -> CommitRef:
+    def _para_commit_ref(c: dict) -> CommitRef:
+        """Sem `chamado`: e o que o cache guarda, e o cache e por PR."""
         parents = c.get("parents") or []
         parent = parents[0].get("hash", "") if parents else ""
         data_raw = c.get("date", "")
@@ -133,7 +182,6 @@ class BitbucketPRCommitSource:
         return CommitRef(
             hash_origem=c.get("hash", ""),
             parent=parent,
-            chamado=chamado,
             commit_date=data,
             msg=c.get("message", ""),
         )

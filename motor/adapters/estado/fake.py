@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 
-from motor.domain.types import Atribuicao, Exclusion, RepoInfo, VersaoInfo
+from motor.domain.types import Atribuicao, CommitRef, Exclusion, RepoInfo, VersaoInfo
 from motor.errors import MotorError
 
 
@@ -17,6 +17,11 @@ class FakeEstado:
     _atribuicoes: dict[tuple[str, str], list[Atribuicao]] = field(default_factory=dict)
     _exclusoes: dict[str, list[Exclusion]] = field(default_factory=dict)
     _sem_entrega: dict[str, dict[str, str]] = field(default_factory=dict)
+    # (repo, pr_id) -> hash -> commit. Dict por hash, nao lista: o adapter
+    # real usa merge, entao regravar o mesmo hash sobrescreve em vez de somar.
+    _pr_commits: dict[tuple[str, int], dict[str, CommitRef]] = field(
+        default_factory=dict
+    )
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
         if nome in self.repos or nome in self.aliases:
@@ -111,6 +116,29 @@ class FakeEstado:
     def sem_entrega(self, repo: str) -> dict[str, str]:
         self._exigir_repo(repo)
         return dict(self._sem_entrega.get(repo, {}))
+
+    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+        self._exigir_repo(repo)
+        achados: dict[int, list[CommitRef]] = {}
+        for pr_id in pr_ids:
+            guardados = self._pr_commits.get((repo, pr_id))
+            # ausencia != vazio: PR nunca consultada nao entra no dict, senao a
+            # fonte a trataria como "PR sem commit" e nunca mais iria na API.
+            if guardados is None:
+                continue
+            achados[pr_id] = sorted(
+                guardados.values(), key=lambda c: (c.commit_date, c.hash_origem)
+            )
+        return achados
+
+    def gravar_commits_de_pr(
+        self, repo: str, commits: dict[int, list[CommitRef]]
+    ) -> None:
+        self._exigir_repo(repo)
+        for pr_id, refs in commits.items():
+            alvo = self._pr_commits.setdefault((repo, pr_id), {})
+            for c in refs:
+                alvo[c.hash_origem] = c
 
     # -- internos --------------------------------------------------------
 

@@ -43,6 +43,10 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
         repo=repo,
         git=deps.git,
         progresso=deps.progresso,
+        # cache de `PR -> commits`: corta o GET de commits das PRs ja vistas.
+        # A busca das PRs do chamado continua rodando a cada verificar.
+        estado=deps.estado,
+        repo_estado=deps.repo,
     )
     return ChainCommitSource(sources=[pr, grep])
 

@@ -511,3 +511,28 @@ def test_verificar_reporta_o_conflito_mesmo_sem_conseguir_atribuir():
 
     assert [c.hash_origem for c in status.conflitantes] == ["a0"]
     assert status.conflito_causado_por == {}
+
+
+def test_montar_commit_source_liga_o_cache_de_pr_no_estado():
+    # sem o estado e o nome canonico do repo, a fonte roda sem cache e volta a
+    # pedir os commits de toda PR a cada verificar.
+    from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
+    from motor.engine.verificar import _montar_commit_source
+
+    git = FakeGit()
+    git.remote_urls["origin"] = "git@bitbucket.org:acme/monitor.git"
+    estado = FakeEstado(repos={"vbweb": RepoInfo(nome="vbweb", tickio_sistema_id=1)})
+    deps = Deps(
+        git=git,
+        estado=estado,
+        tasks=FakeTaskSource(),
+        repo="vbweb",
+        bitbucket_token="tok",
+        bitbucket_email="dev@x.com",
+    )
+
+    fonte = _montar_commit_source(deps)
+
+    pr = fonte.sources[0]
+    assert isinstance(pr, BitbucketPRCommitSource)
+    assert (pr.estado, pr.repo_estado) == (estado, "vbweb")

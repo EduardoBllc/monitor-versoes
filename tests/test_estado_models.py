@@ -12,6 +12,7 @@ def test_metadata_tem_todas_as_tabelas():
         "atribuicao_commit",
         "exclusao",
         "sem_entrega",
+        "pr_commit_cache",
     }
 
 

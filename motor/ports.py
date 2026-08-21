@@ -219,3 +219,23 @@ class EstadoRepo(Protocol):
     def sem_entrega(self, repo: str) -> dict[str, str]:
         """chamado -> motivo."""
         ...
+
+    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+        """Commits em cache das PRs pedidas, ordenados por data.
+
+        PR ausente do dict = nunca consultada, e a fonte tem que ir na API.
+        Lista vazia significaria "PR sem commit nenhum", e a diferenca importa:
+        confundir as duas faria a PR nova nunca mais ser buscada.
+        """
+        ...
+
+    def gravar_commits_de_pr(
+        self, repo: str, commits: dict[int, list[CommitRef]]
+    ) -> None:
+        """Guarda os commits de PRs MERGED. Upsert por (repo, pr_id, hash).
+
+        So fato imutavel entra: PR mergeada nao ganha nem perde commit. O
+        `chamado` fica de fora porque vem da busca, nao da PR — duas tarefas
+        podem apontar para a mesma PR.
+        """
+        ...

@@ -17,7 +17,11 @@ from motor.adapters.commitsource.bitbucket import (
     BitbucketPRCommitSource,
     parse_workspace_repo,
 )
+from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.domain.types import RepoInfo
+
+REPO_ESTADO = "monitor"
 
 
 @pytest.mark.parametrize(
@@ -44,7 +48,7 @@ def _git_com_master(*hashes_na_master: str) -> FakeGit:
     return g
 
 
-def _fonte(handler, git: FakeGit) -> BitbucketPRCommitSource:
+def _fonte(handler, git: FakeGit, estado=None) -> BitbucketPRCommitSource:
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://testserver")
     return BitbucketPRCommitSource(
         base_url="http://testserver",
@@ -54,10 +58,25 @@ def _fonte(handler, git: FakeGit) -> BitbucketPRCommitSource:
         repo="monitor",
         git=git,
         client=client,
+        estado=estado,
+        repo_estado=REPO_ESTADO,
     )
 
 
-def _handler_pr(prs: list[dict], commits_por_pr: dict[int, list[dict]]):
+def _estado_vazio() -> FakeEstado:
+    return FakeEstado(
+        repos={REPO_ESTADO: RepoInfo(nome=REPO_ESTADO, tickio_sistema_id=1)}
+    )
+
+
+def _handler_pr(
+    prs: list[dict],
+    commits_por_pr: dict[int, list[dict]],
+    pedidos: list[int] | None = None,
+):
+    """`pedidos` acumula o id de cada PR cujos commits foram pedidos — e assim
+    que os testes de cache veem a request que deveria ter sido evitada."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Basic ZGV2QHguY29tOnRvazEyMw=="
         path = request.url.path
@@ -65,6 +84,8 @@ def _handler_pr(prs: list[dict], commits_por_pr: dict[int, list[dict]]):
             return httpx.Response(200, json={"values": prs})
         # .../pullrequests/{id}/commits
         pr_id = int(path.split("/pullrequests/")[1].split("/")[0])
+        if pedidos is not None:
+            pedidos.append(pr_id)
         return httpx.Response(200, json={"values": commits_por_pr.get(pr_id, [])})
 
     return handler
@@ -148,3 +169,125 @@ def test_repr_nao_vaza_credencial():
     assert (fonte.token, fonte.email) == ("tok123", "dev@x.com")
     assert "tok123" not in repr(fonte)
     assert "dev@x.com" not in repr(fonte)
+
+
+# -- cache de commits por PR ---------------------------------------------------
+#
+# O cache guarda so `PR -> commits`, que e imutavel porque PR mergeada nao ganha
+# nem perde commit. A BUSCA das PRs do chamado continua batendo na API a cada
+# run: e ela que descobre PR de correcao aberta depois, e cachea-la esconderia
+# esse commit — falso-verde, o modo de falha que o motor existe para evitar.
+
+
+def _pr(pr_id: int, chamado: str = "255514") -> dict:
+    return {
+        "id": pr_id,
+        "title": f"ch{chamado} corrige logs",
+        "source": {"branch": {"name": "feature/x"}},
+    }
+
+
+def _commit_bruto(hash_: str, dia: int = 2, parents: list[str] | None = None) -> dict:
+    return {
+        "hash": hash_,
+        "date": f"2024-01-{dia:02d}T10:00:00+00:00",
+        "message": f"fix {hash_}",
+        "parents": [{"hash": p} for p in (parents or ["p1"])],
+    }
+
+
+def test_pr_nova_e_gravada_no_cache():
+    estado = _estado_vazio()
+    fonte = _fonte(
+        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"), estado
+    )
+
+    fonte.resolve(["255514"])
+
+    guardados = estado.commits_de_pr(REPO_ESTADO, [7])
+    assert [c.hash_origem for c in guardados.get(7, [])] == ["c1"]
+
+
+def test_chamado_fica_fora_do_cache():
+    # o chamado vem da BUSCA, nao da PR: duas tarefas podem apontar para a mesma
+    # PR, e carimbar o chamado na linha faria a segunda ler o chamado da primeira.
+    estado = _estado_vazio()
+    fonte = _fonte(
+        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"), estado
+    )
+
+    fonte.resolve(["255514"])
+
+    assert estado.commits_de_pr(REPO_ESTADO, [7])[7][0].chamado == ""
+
+
+def test_pr_em_cache_nao_pede_os_commits_de_novo():
+    estado = _estado_vazio()
+    g = _git_com_master("c1")
+    pedidos: list[int] = []
+    handler = _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}, pedidos)
+
+    _fonte(handler, g, estado).resolve(["255514"])
+    assert pedidos == [7], "primeira passada tem que ir na API"
+
+    pedidos.clear()
+    resultado = _fonte(handler, g, estado).resolve(["255514"])
+
+    assert pedidos == [], "PR ja em cache nao deveria gerar request de commits"
+    assert [c.hash_origem for c in resultado["255514"]] == ["c1"]
+    assert resultado["255514"][0].chamado == "255514", "faltou carimbar na leitura"
+
+
+def test_pr_nova_no_mesmo_chamado_ainda_e_buscada():
+    # o buraco que este desenho evita: cache por PR, nao por chamado.
+    estado = _estado_vazio()
+    g = _git_com_master("c1", "c2")
+    commits = {7: [_commit_bruto("c1")], 9: [_commit_bruto("c2", dia=5, parents=["c1"])]}
+
+    _fonte(_handler_pr([_pr(7)], commits), g, estado).resolve(["255514"])
+    # PR 9 mergeada depois, no MESMO chamado
+    resultado = _fonte(_handler_pr([_pr(7), _pr(9)], commits), g, estado).resolve(
+        ["255514"]
+    )
+
+    assert [c.hash_origem for c in resultado["255514"]] == ["c1", "c2"]
+
+
+def test_commit_do_cache_ainda_passa_pelo_is_ancestor():
+    # is_ancestor fica FORA do cache porque e volatil: PR mergeada numa branch
+    # que ainda nao chegou na master viraria commit escondido para sempre.
+    estado = _estado_vazio()
+    handler = _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]})
+
+    fora = _fonte(handler, _git_com_master("outro"), estado).resolve(["255514"])
+    assert fora == {}, "c1 nao esta na master ainda"
+    assert 7 in estado.commits_de_pr(REPO_ESTADO, [7]), "mas foi cacheado"
+
+    dentro = _fonte(handler, _git_com_master("c1"), estado).resolve(["255514"])
+
+    assert [c.hash_origem for c in dentro["255514"]] == ["c1"]
+
+
+def test_merge_commit_nao_entra_no_cache():
+    # numero de pais e propriedade do commit, nunca muda: filtra antes de gravar.
+    estado = _estado_vazio()
+    fonte = _fonte(
+        _handler_pr(
+            [_pr(7)],
+            {7: [_commit_bruto("m1", parents=["a", "b"]), _commit_bruto("c1", dia=3)]},
+        ),
+        _git_com_master("c1"),
+        estado,
+    )
+
+    fonte.resolve(["255514"])
+
+    assert [c.hash_origem for c in estado.commits_de_pr(REPO_ESTADO, [7])[7]] == ["c1"]
+
+
+def test_sem_estado_a_fonte_funciona_igual():
+    # `estado=None` e o caminho de quem monta a fonte sem banco: sem cache,
+    # mesmo resultado.
+    fonte = _fonte(_handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"))
+
+    assert [c.hash_origem for c in fonte.resolve(["255514"])["255514"]] == ["c1"]

@@ -11,7 +11,14 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from motor.adapters.estado import models
-from motor.domain.types import Atribuicao, Exclusion, RepoInfo, VersaoInfo, VersionType
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    Exclusion,
+    RepoInfo,
+    VersaoInfo,
+    VersionType,
+)
 from motor.errors import MotorError
 
 # Levantado pela trigger trava_versao_liberada; ver a migracao que a define.
@@ -219,6 +226,54 @@ class PostgresEstado:
                 .order_by(models.SemEntrega.chamado)
             )
         }
+
+    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+        repo_id = self._repo_id(repo)
+        achados: dict[int, list[CommitRef]] = {}
+        for linha in self._scalars(
+            select(models.PrCommitCache)
+            .where(
+                models.PrCommitCache.repo_id == repo_id,
+                models.PrCommitCache.pr_id.in_(pr_ids),
+            )
+            # hash_origem no ORDER BY tambem: dois commits com o mesmo segundo
+            # sairiam em ordem arbitraria, e o fake nao teria como concordar.
+            .order_by(
+                models.PrCommitCache.pr_id,
+                models.PrCommitCache.commit_date,
+                models.PrCommitCache.hash_origem,
+            )
+        ):
+            achados.setdefault(linha.pr_id, []).append(
+                CommitRef(
+                    hash_origem=linha.hash_origem,
+                    parent=linha.parent,
+                    commit_date=linha.commit_date,
+                    msg=linha.msg,
+                )
+            )
+        return achados
+
+    def gravar_commits_de_pr(
+        self, repo: str, commits: dict[int, list[CommitRef]]
+    ) -> None:
+        repo_id = self._repo_id(repo)
+        for pr_id, refs in commits.items():
+            for c in refs:
+                # merge e nao add: a fonte regrava a mesma PR quando o cache
+                # dela saiu vazio (PR so de merge commit), e um add duplicaria
+                # a chave.
+                self.sessao.merge(
+                    models.PrCommitCache(
+                        repo_id=repo_id,
+                        pr_id=pr_id,
+                        hash_origem=c.hash_origem,
+                        parent=c.parent,
+                        commit_date=c.commit_date,
+                        msg=c.msg,
+                    )
+                )
+        self._commit()
 
     # -- internos --------------------------------------------------------
 
