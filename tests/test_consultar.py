@@ -69,3 +69,20 @@ def test_commit_sem_meta_vai_para_o_fim():
 
     assert [c.chamado for c in resultado] == ["25", "9"]
     assert resultado[1].commits[0].msg == "mensagem indisponível"
+
+
+def test_commit_sem_meta_convive_com_data_com_fuso():
+    # git de verdade devolve %cI com offset (aware); o fallback nascia naive e
+    # a comparacao explodia com TypeError.
+    git = FakeGit()
+    git.add_commit(
+        "b1", "", "ch25 so", datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
+    )
+    estado = _estado([
+        Atribuicao(chamado="9", marcada="13.34.0", commits=["sumido"]),
+        Atribuicao(chamado="25", marcada="13.34.0", commits=["b1", "sumido2"]),
+    ])
+
+    resultado = consultar(_deps(git, estado), "13.34.0")
+
+    assert [c.chamado for c in resultado] == ["25", "9"]

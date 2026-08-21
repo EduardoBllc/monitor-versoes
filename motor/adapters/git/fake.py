@@ -61,7 +61,14 @@ class FakeGit:
     _conflicted: list[str] = field(default_factory=list)
 
     def add_commit(self, hash: str, parent: str, msg: str, date: datetime.datetime) -> None:
-        """Registra um commit direto no grafo (fixture de teste)."""
+        """Registra um commit direto no grafo (fixture de teste).
+
+        Data naive vira UTC: o adapter real le %cI, que sempre tem fuso, e um
+        fake que aceitasse naive deixaria passar a comparacao mista que estoura
+        em producao.
+        """
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=datetime.timezone.utc)
         self.commits[hash] = FakeCommit(hash=hash, parent=parent, msg=msg, date=date)
 
     def set_branch(self, branch: str, hash: str) -> None:

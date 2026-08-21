@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, replace
 
-from motor.domain.types import CommitRef
+from motor.domain.types import SEM_DATA, CommitRef
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 
@@ -43,12 +43,12 @@ def consultar(deps: Deps, versao: str) -> list[ChamadoConsultado]:
     # quase a mesma e nao custa varredura de git.
     #
     # Chamado sem commit legivel (meta indisponivel, ou lista vazia) cai em
-    # datetime.min e vai para o fim.
+    # SEM_DATA e vai para o fim.
     resultado.sort(key=_mais_recente, reverse=True)
     return resultado
 
 
 def _mais_recente(chamado: ChamadoConsultado) -> datetime.datetime:
     return max(
-        (c.commit_date for c in chamado.commits), default=datetime.datetime.min
+        (c.commit_date for c in chamado.commits), default=SEM_DATA
     )

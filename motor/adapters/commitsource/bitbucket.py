@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from motor.domain.types import CommitRef
+from motor.domain.types import SEM_DATA, CommitRef
 from motor.errors import MotorError
 from motor.ports import GitRepo
 
@@ -119,9 +119,9 @@ class BitbucketPRCommitSource:
         parent = parents[0].get("hash", "") if parents else ""
         data_raw = c.get("date", "")
         try:
-            data = datetime.datetime.fromisoformat(data_raw) if data_raw else datetime.datetime.min
+            data = datetime.datetime.fromisoformat(data_raw) if data_raw else SEM_DATA
         except ValueError:
-            data = datetime.datetime.min
+            data = SEM_DATA
         return CommitRef(
             hash_origem=c.get("hash", ""),
             parent=parent,

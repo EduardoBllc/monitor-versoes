@@ -33,12 +33,18 @@ class Version:
     base: BaseRef = field(default_factory=BaseRef)
 
 
+# Toda data de commit que vem do git (%cI) ou do Bitbucket tem fuso. A
+# ausencia de data tem de ter fuso tambem, senao a comparacao com uma data de
+# verdade estoura com TypeError.
+SEM_DATA = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+
 @dataclass(frozen=True)
 class CommitRef:
     hash_origem: str = ""
     parent: str = ""  # pai do commit na origem (necessario pro predict_merge)
     chamado: str = ""  # "255514"
-    commit_date: datetime.datetime = field(default_factory=lambda: datetime.datetime.min)
+    commit_date: datetime.datetime = SEM_DATA
     msg: str = ""
 
 
