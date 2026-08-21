@@ -245,10 +245,9 @@ def test_consultar_conta_os_chamados_do_snapshot():
         "13.34.0",
     )
 
-    assert _fases(relatos) == [
-        ("lendo commits do snapshot", 1, 2),
-        ("lendo commits do snapshot", 2, 2),
-    ]
+    # Uma fase sem contagem, nao uma por chamado: os commits saem todos de uma
+    # varredura git so (ver consultar).
+    assert _fases(relatos) == [("lendo commits do snapshot", 0, 0)]
 
 
 def test_reconstruir_estado_relata_as_tres_bordas():

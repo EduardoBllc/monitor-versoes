@@ -146,6 +146,15 @@ class FakeGit:
             raise MotorError(f"commit {hash} nao encontrado")
         return CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
 
+    def commits_meta(self, hashes: list[str]) -> dict[str, CommitRef]:
+        # Hash ausente falta no retorno, nao levanta: e o git com
+        # --ignore-missing, nao um commit_meta em laco.
+        return {
+            c.hash: CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
+            for h in hashes
+            if (c := self.commits.get(h)) is not None
+        }
+
     def patch_id(self, hash: str) -> str:
         if hash not in self.commits:
             raise MotorError(f"commit {hash} nao encontrado")

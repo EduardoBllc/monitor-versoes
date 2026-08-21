@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace
 
 from motor.domain.types import SEM_DATA, CommitRef
 from motor.engine.deps import Deps
-from motor.errors import MotorError
 from motor.progresso import Progresso
 
 
@@ -19,21 +18,22 @@ class ChamadoConsultado:
 
 
 def consultar(deps: Deps, versao: str) -> list[ChamadoConsultado]:
-    resultado: list[ChamadoConsultado] = []
     atribuicoes = deps.estado.atribuicoes(deps.repo, versao)
-    for indice, atribuicao in enumerate(atribuicoes, start=1):
-        deps.progresso(
-            Progresso("lendo commits do snapshot", indice, len(atribuicoes))
-        )
+    # Uma varredura para a versao inteira, nao uma por commit: era processo git
+    # por commit (dois, com o parent), e o snapshot de uma versao passa de cem.
+    # Fase sem contagem porque o custo esta todo aqui dentro, num comando so.
+    deps.progresso(Progresso("lendo commits do snapshot"))
+    metas = deps.git.commits_meta(
+        [h for atribuicao in atribuicoes for h in atribuicao.commits]
+    )
+    resultado: list[ChamadoConsultado] = []
+    for atribuicao in atribuicoes:
         commits: list[CommitRef] = []
         for hash_origem in atribuicao.commits:
-            try:
-                commit = deps.git.commit_meta(hash_origem)
-            except MotorError:
-                commit = CommitRef(
-                    hash_origem=hash_origem,
-                    msg="mensagem indisponível",
-                )
+            commit = metas.get(hash_origem) or CommitRef(
+                hash_origem=hash_origem,
+                msg="mensagem indisponível",
+            )
             commits.append(replace(commit, chamado=atribuicao.chamado))
         resultado.append(
             ChamadoConsultado(

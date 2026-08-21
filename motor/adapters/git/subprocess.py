@@ -36,6 +36,11 @@ def _cronometrar(*args: str) -> Iterator[None]:
     finally:
         logger.debug("git %s: %.3fs", " ".join(args), time.monotonic() - inicio)
 
+#: Hashes por chamada de `commits_meta`. Existe pelo limite de tamanho de
+#: linha de comando do SO (ARG_MAX): 500 hashes de 40 caracteres dao ~20 KB,
+#: ordens de magnitude abaixo do limite de qualquer plataforma que rode isto.
+_LOTE_META = 500
+
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
 _PADRAO_HUNK_ORIGEM = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
@@ -86,6 +91,37 @@ def _parse_log(out: str) -> list[CommitRef]:
         except ValueError as e:
             raise MotorError(f"parseando data do commit {campos[0]}: {e}") from e
         resultado.append(CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2]))
+    return resultado
+
+
+def _parse_metas(out: str) -> dict[str, CommitRef]:
+    """Igual ao `_parse_log`, com o campo de parent no meio.
+
+    Separado em vez de generalizar o outro: as varreduras de range nao pedem
+    parent, e formato de log e o tipo de codigo em que um parametro booleano
+    depois vira o bug de campo trocado.
+    """
+    resultado: dict[str, CommitRef] = {}
+    for entrada in out.split(SEPARADOR_REGISTRO):
+        entrada = entrada.strip("\n")
+        if entrada == "":
+            continue
+        campos = entrada.split(SEPARADOR_CAMPO, 3)
+        if len(campos) != 4:
+            continue
+        try:
+            data = datetime.datetime.fromisoformat(campos[1])
+        except ValueError as e:
+            raise MotorError(f"parseando data do commit {campos[0]}: {e}") from e
+        # %P traz todos os pais separados por espaco; commit_meta usa `hash^`,
+        # que e o primeiro. Commit raiz nao tem nenhum e cai em "" — mesmo
+        # fallback do rev-parse que falha la.
+        resultado[campos[0]] = CommitRef(
+            hash_origem=campos[0],
+            commit_date=data,
+            msg=campos[3],
+            parent=campos[2].split(" ")[0],
+        )
     return resultado
 
 
@@ -220,6 +256,32 @@ class GitSubprocess:
         except MotorError:
             parent = ""
         return CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2], parent=parent)
+
+    def commits_meta(self, hashes: list[str]) -> dict[str, CommitRef]:
+        # `--no-walk=unsorted` para nao andar pelos ancestrais e devolver so os
+        # hashes pedidos; `--ignore-missing` para um hash que nao existe mais no
+        # repo (rebase, gc) nao derrubar o lote inteiro.
+        #
+        # A lista vazia sai daqui sem chamar git de proposito: `git log` sem
+        # revisao nenhuma assume HEAD, e o lote todo invalido cairia no mesmo
+        # caminho. Como o retorno e chaveado pelo %H que voltou, um HEAD
+        # intrometido some no lookup de quem chamou — mas gastar processo para
+        # nada nao.
+        encontrados: dict[str, CommitRef] = {}
+        for inicio in range(0, len(hashes), _LOTE_META):
+            lote = hashes[inicio : inicio + _LOTE_META]
+            with _cronometrar("log", "--no-walk", f"({len(lote)} hashes)"):
+                out = self._output(
+                    self.repo_path,
+                    "log",
+                    "--no-walk=unsorted",
+                    "--ignore-missing",
+                    f"--format=%H{SEPARADOR_CAMPO}%cI{SEPARADOR_CAMPO}%P"
+                    f"{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}",
+                    *lote,
+                )
+            encontrados.update(_parse_metas(out))
+        return encontrados
 
     def patch_id(self, hash: str) -> str:
         with _cronometrar("show", hash, "|", "patch-id"):

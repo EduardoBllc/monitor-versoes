@@ -179,3 +179,27 @@ def test_fake_culpados_por_linha_tem_a_assinatura_do_adapter_real():
     assert inspect.signature(FakeGit.culpados_por_linha) == inspect.signature(
         GitSubprocess.culpados_por_linha
     )
+
+
+def test_fake_commits_meta_omite_hash_ausente_e_bate_com_commit_meta():
+    """Mesmo contrato do real: hash que nao existe falta no retorno em vez de
+    levantar, e o que volta e igual ao de `commit_meta`.
+    """
+    git = FakeGit()
+    git.add_commit("a1", "", "ch9 raiz", datetime.datetime(2026, 1, 1))
+    git.add_commit("a2", "a1", "ch9 filho", datetime.datetime(2026, 2, 1))
+
+    lote = git.commits_meta(["a1", "a2", "ausente"])
+
+    assert set(lote) == {"a1", "a2"}
+    assert lote["a1"] == git.commit_meta("a1")
+    assert lote["a2"] == git.commit_meta("a2")
+    assert git.commits_meta([]) == {}
+
+
+def test_fake_commits_meta_tem_a_assinatura_do_adapter_real():
+    from motor.adapters.git.subprocess import GitSubprocess
+
+    assert inspect.signature(FakeGit.commits_meta) == inspect.signature(
+        GitSubprocess.commits_meta
+    )

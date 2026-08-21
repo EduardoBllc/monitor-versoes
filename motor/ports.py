@@ -70,6 +70,20 @@ class GitRepo(Protocol):
         """Metadados do commit."""
         ...
 
+    def commits_meta(self, hashes: list[str]) -> dict[str, CommitRef]:
+        """Metadados de vários commits numa varredura só.
+
+        Nao existe no ports.go: o Go le meta commit por commit, e num snapshot
+        de versao inteira isso e um processo git por commit (dois, com o parent).
+        Recebe o lote pelo mesmo motivo que o CommitSource recebe: deixar o
+        adapter varrer uma vez.
+
+        Hash desconhecido simplesmente falta no retorno — quem chama decide o
+        fallback. Contrato igual ao de `commit_meta` no resto: mesmos campos,
+        mesma data (a do committer), `parent` = primeiro pai.
+        """
+        ...
+
     def patch_id(self, hash: str) -> str:
         """ID do patch (para comparação de conteúdo)."""
         ...

@@ -228,6 +228,58 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(t
     ]
 
 
+def test_git_subprocess_commits_meta_concorda_com_commit_meta(tmp_path):
+    """O lote existe para substituir `commit_meta` em laco — se divergir num
+    campo, a consulta de versao passa a mostrar outra coisa que a verificacao.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    (tmp_path / "arquivo.txt").write_text("v2\n")
+    _run_git(repo_dir, "commit", "-am", "ch123456 segundo")
+    (tmp_path / "arquivo.txt").write_text("v3\n")
+    _run_git(repo_dir, "commit", "-am", "ch654321 terceiro")
+
+    g = new_git_subprocess(repo_dir)
+    hashes = [c.hash_origem for c in g.commits_in_range("master~2", "master")]
+    assert len(hashes) == 2
+
+    lote = g.commits_meta(hashes)
+
+    assert set(lote) == set(hashes)
+    for h in hashes:
+        assert lote[h] == g.commit_meta(h)
+
+
+def test_git_subprocess_commits_meta_ignora_hash_ausente_e_lote_vazio(tmp_path):
+    """Hash que o repo nao tem (rebase, gc) nao pode derrubar o lote — e lote
+    vazio nao pode virar `git log` sem revisao, que assume HEAD.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    g = new_git_subprocess(repo_dir)
+    existente = g.resolve_ref("master")
+    ausente = "0" * 40
+
+    assert set(g.commits_meta([existente, ausente])) == {existente}
+    assert g.commits_meta([ausente]) == {}
+    assert g.commits_meta([]) == {}
+
+
+def test_git_subprocess_commits_meta_nao_anda_pelos_ancestrais(tmp_path):
+    """`git log <hash>` sem `--no-walk` devolveria o historico inteiro a partir
+    dele — o lote tem de devolver so o que foi pedido.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    (tmp_path / "arquivo.txt").write_text("v2\n")
+    _run_git(repo_dir, "commit", "-am", "ch123456 segundo")
+
+    g = new_git_subprocess(repo_dir)
+    tip = g.resolve_ref("master")
+
+    lote = g.commits_meta([tip])
+
+    assert set(lote) == {tip}
+    assert lote[tip].parent != "", "esperava o primeiro pai preenchido"
+
+
 def test_git_subprocess_resolve_ref_descasca_tag_anotada(tmp_path):
     """As tags de release deste projeto sao anotadas: `rev-parse refs/tags/X`
     devolve o SHA do OBJETO DE TAG, nao do commit. Sem descascar, o
