@@ -199,6 +199,8 @@ def test_quadros_separa_por_cr_e_traduz_a_fase():
     r, w = os.pipe()
     os.write(w, b"remote: Counting objects:  25% (1/4)\rremote: Counting objects: 100% (4/4)\n")
     os.write(w, b"Receiving objects:  50% (3/6)\rFrom /tmp/origem\n")
+    # O checkout do `worktree add` conta arquivo, e num pipe, sem --progress.
+    os.write(w, b"Updating files:  97% (29100/30000)\r")
     os.close(w)
 
     quadros = list(_quadros(r))
@@ -208,6 +210,7 @@ def test_quadros_separa_por_cr_e_traduz_a_fase():
         Progresso("contando objetos", 1, 4),
         Progresso("contando objetos", 4, 4),
         Progresso("recebendo objetos", 3, 6),
+        Progresso("escrevendo os arquivos da worktree", 29100, 30000),
     ], f"quadros lidos: {quadros!r}"
 
 

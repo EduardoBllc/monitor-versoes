@@ -68,6 +68,7 @@ _FASES_GIT = {
     "Resolving deltas": "resolvendo deltas",
     "Unpacking objects": "desempacotando objetos",
     "Writing objects": "escrevendo objetos",
+    "Updating files": "escrevendo os arquivos da worktree",
 }
 
 
@@ -224,20 +225,21 @@ class GitSubprocess:
     def _run_progresso(self, dir_: str, *args: str) -> None:
         """`_run` que relata as fases pelo caminho.
 
-        O git so conta quando lhe pedem `--progress`: o default e contar apenas
-        se o stderr for um TTY, e aqui ele e um pipe.
+        Nem todo comando conta sozinho num pipe: o `fetch` so conta com
+        `--progress` (o default e contar apenas em TTY), enquanto o checkout do
+        `worktree add` conta de qualquer jeito, depois de uns 2s de trabalho.
         """
         with _cronometrar(*args):
             proc = subprocess.Popen(
                 ["git", *args],
                 cwd=dir_,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 env={**os.environ, "LC_ALL": "C"},
             )
-            assert proc.stderr is not None
+            assert proc.stdout is not None
             saida: list[str] = []
-            for quadro in _quadros(proc.stderr.fileno()):
+            for quadro in _quadros(proc.stdout.fileno()):
                 saida.append(quadro)
                 relato = _progresso_de_quadro(quadro)
                 if relato is not None:
@@ -407,7 +409,7 @@ class GitSubprocess:
         dir_ = self._worktree_dir(branch)
         if not os.path.exists(dir_):
             try:
-                self._run(self.repo_path, "worktree", "add", dir_, branch)
+                self._run_progresso(self.repo_path, "worktree", "add", dir_, branch)
             except MotorError as e:
                 raise MotorError(
                     f"worktree de {branch} nao encontrada em {dir_} e branch "
@@ -527,7 +529,9 @@ class GitSubprocess:
 
     def worktree_add(self, branch: str, base: str) -> None:
         dir_ = self._worktree_dir(branch)
-        self._run(self.repo_path, "worktree", "add", "-b", branch, dir_, base)
+        self._run_progresso(
+            self.repo_path, "worktree", "add", "-b", branch, dir_, base
+        )
         self._current_branch = branch
 
     def worktree_remove(self, branch: str) -> None:
