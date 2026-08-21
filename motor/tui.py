@@ -338,6 +338,16 @@ class MotorTUI(App[None]):
             (lambda _: self._reconsultar()) if reconsultar else None,
         )
 
+    def _ocupar_resultado(self) -> None:
+        """Loading vai no scroll, nao no Static de dentro.
+
+        O `#resultado` tem altura auto — com uma linha de texto, o cover widget
+        do Textual cobre uma linha, e do PainelProgresso sobrava so a fase: o
+        pulso ficava recortado fora da tela. O scroll tem `height: 1fr`, entao
+        o painel aparece inteiro e centrado, igual ao da lista de chamados.
+        """
+        self.query_one("#resultado-scroll").loading = True
+
     def _ocupar_lista(self) -> bool:
         """Marca a lista de chamados como carregando, se e ela que esta na tela."""
         painel = self.query_one("#consulta-painel")
@@ -406,12 +416,13 @@ class MotorTUI(App[None]):
                 ("  ·  snapshot salvo", "green"),
             )
         )
+        largura_commits = max(len(str(len(chamado.commits))) for chamado in chamados)
         lista.add_options(
             [
                 Option(
                     Text.assemble(
                         (f"#{chamado.chamado}", "bold"),
-                        (f"  {len(chamado.commits)}", "dim"),
+                        (f"  {len(chamado.commits):>{largura_commits}}", "dim"),
                         (
                             f"  ● {chamado.estado}",
                             "green" if chamado.estado == "aplicado" else "yellow",
@@ -464,7 +475,7 @@ class MotorTUI(App[None]):
             # anterior pisca antes da primeira do novo.
             self._slot.limpar()
         if not ocupado:
-            self.query_one("#resultado", Static).loading = False
+            self.query_one("#resultado-scroll").loading = False
             self.query_one("#consulta-painel").loading = False
         self.query_one("#repo", Select).disabled = ocupado or not self._tem_repos
         self.query_one("#versao", Select).disabled = ocupado or not self._tem_versoes
@@ -534,6 +545,7 @@ class MotorTUI(App[None]):
         self._exibir_resultado(
             f"Carregando versões de {self._repo.nome}…"
         )
+        self._ocupar_resultado()
         self._bloquear(True)
         self.carregar_versoes_worker(self._repo, self._geracao_versoes)
 
@@ -573,10 +585,10 @@ class MotorTUI(App[None]):
         auditoria.value = False
         auditoria.display = bool(self._versao and self._versao.liberada)
         if self._versao is not None and self._repo is not None and self._consultar:
-            resultado = self._exibir_resultado(
+            self._exibir_resultado(
                 f"Consultando {self._repo.nome} {self._versao.numero}…"
             )
-            resultado.loading = True
+            self._ocupar_resultado()
             self._bloquear(True)
             self.consultar_worker(self._repo, self._versao)
         elif self._versao is not None and self._repo is not None:
@@ -633,7 +645,8 @@ class MotorTUI(App[None]):
         if not self._ocupar_lista():
             self._exibir_resultado(
                 f"Verificando {self._repo.nome} {self._versao.numero}…"
-            ).loading = True
+            )
+            self._ocupar_resultado()
         self._bloquear(True)
         self.executar_worker(
             self._repo,

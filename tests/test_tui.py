@@ -736,6 +736,40 @@ def test_app_esconde_erro_interno_e_registra_traceback(caplog):
     assert "Traceback" in caplog.text
 
 
+def test_app_exibe_loading_enquanto_carrega_versoes():
+    """O fetch do origin e a espera mais longa da TUI — sem loading aqui o
+    painel ficava com uma linha de texto parada, sem o pulso das outras fases.
+    """
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    iniciou = Event()
+    liberar = Event()
+
+    def carregar_versoes(opcao):
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return [VersionOption(numero="14.0.0", liberada=False)]
+
+    async def executar_fluxo() -> None:
+        def nao_chamado(opcao, numero, auditar):
+            raise AssertionError("verificar nao devia rodar neste fluxo")
+
+        app = MotorTUI(lambda: [repo], carregar_versoes, nao_chamado)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            assert await asyncio.to_thread(iniciou.wait, 1)
+
+            scroll = app.query_one("#resultado-scroll")
+            assert scroll.loading
+
+            liberar.set()
+            await app.workers.wait_for_complete()
+            assert not scroll.loading
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_exibe_loading_apenas_durante_verificacao():
     repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
     versao = VersionOption(numero="14.0.0", liberada=False)
@@ -760,12 +794,13 @@ def test_app_exibe_loading_apenas_durante_verificacao():
             assert await asyncio.to_thread(iniciou.wait, 1)
 
             resultado = app.query_one("#resultado", Static)
-            assert resultado.loading
+            scroll = app.query_one("#resultado-scroll")
+            assert scroll.loading
             assert "Verificando alpha 14.0.0" in _texto(resultado.content)
 
             liberar.set()
             await app.workers.wait_for_complete()
-            assert not resultado.loading
+            assert not scroll.loading
 
     asyncio.run(executar_fluxo())
 
