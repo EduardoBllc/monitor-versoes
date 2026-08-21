@@ -1,4 +1,28 @@
-"""Portas (interfaces) — transcrição 1-pra-1 de internal/ports/ports.go."""
+"""Portas (interfaces) do motor.
+
+## Contrato de erro
+
+Adapter levanta `MotorError` ou subclasse, e **nada mais**. Exceção fora dessa
+familia e tratada como bug: os services propagam em vez de degradar, e o
+front-end imprime traceback.
+
+O vocabulario esta em `motor.errors`:
+
+- `RecusaDeInvariante` — a operacao e ilegal; o dado esta integro
+- `NaoEncontrado` — o que foi pedido nao existe
+- `BackendIndisponivel` — o servico nao respondeu
+- `RespostaInvalida` — respondeu, fora do contrato
+- `MotorError` puro — falha que o site nao sabe classificar
+
+Assere por **tipo**, nunca por substring de mensagem: a suite e publicada, e
+casar texto em portugues reprovaria um adapter correto escrito em outro idioma.
+
+## Parametros posicionais
+
+Toda assinatura aqui marca os parametros como posicionais (`/`). Nenhum chamador
+passa por nome, e o type checker nao pega renome de parametro — marcar posicional
+torna o renome explicitamente permitido em vez de um risco nao verificado.
+"""
 
 from __future__ import annotations
 
@@ -48,7 +72,17 @@ class CommitSource(Protocol):
 
 
 class GitRepo(Protocol):
-    """Repositório Git."""
+    """Repositório Git.
+
+    **Assimetria entre fake e adapter:** FakeGit levanta `NaoEncontrado` em
+    `merge_base`, `commit_meta`, `patch_id`, `changed_files`, `resolve_ref`,
+    `cherry_pick_x`, `remote_url`, `push_branch`, `pull_branch` e `read_file`.
+    `GitSubprocess` funila essas mesmas condições por um `exit status` genérico
+    sem classe — porque não sabe se falhou por conflito, permissão, objeto
+    ausente ou bug de invocação, e adivinhar seria pior. **Não ramifique em
+    `NaoEncontrado` vindo de `GitRepo`** — a divergência existe por design e
+    nada (ao contrário de `EstadoRepo`) a pega automaticamente.
+    """
 
     def merge_base(self, a: str, b: str, /) -> str:
         """Base comum de dois commits."""
