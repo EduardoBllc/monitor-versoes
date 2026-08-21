@@ -63,5 +63,10 @@ docs/superpowers/*
 .superpowers/
 
 # Arquivos 
-VERSAO
+.worktrees/
+
+/CLAUDE.md
+.rtk
+
+.claude/worktrees
 .worktrees/
