@@ -17,7 +17,7 @@ from motor.adapters.git.subprocess import (
     new_git_subprocess,
 )
 from motor.domain.version import versoes_abertas
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado
 from motor.progresso import Progresso
 from motor.ports import CherryPickOutcome
 
@@ -484,7 +484,7 @@ def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):
     repo_dir = init_repo_de_teste(tmp_path)
     g = new_git_subprocess(repo_dir)
 
-    with pytest.raises(Exception):
+    with pytest.raises(NaoEncontrado, match="rode 'motor criar"):
         g.use_worktree("99.0.0")
 
 

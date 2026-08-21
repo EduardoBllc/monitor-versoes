@@ -7,7 +7,7 @@ import pytest
 
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import CommitRef
-from motor.errors import MotorError
+from motor.errors import NaoEncontrado, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 
 
@@ -138,7 +138,7 @@ def test_fake_nome_puro_nao_resolve_ref_de_rastreamento():
     """
     git = FakeGit(remote_refs={"13.35.0": "bbb"})
 
-    with pytest.raises(MotorError):
+    with pytest.raises(NaoEncontrado):
         git.resolve_ref("13.35.0")
     assert git.resolve_ref("refs/remotes/origin/13.35.0") == "bbb"
 
@@ -203,3 +203,22 @@ def test_fake_commits_meta_tem_a_assinatura_do_adapter_real():
     assert inspect.signature(FakeGit.commits_meta) == inspect.signature(
         GitSubprocess.commits_meta
     )
+
+
+def test_ref_ausente_e_nao_encontrado_nao_erro_generico():
+    """O oraculo de presenca e o BaseResolver ramificam em "nao achei" contra
+    "o git falhou". Com uma classe so, os dois eram indistinguiveis.
+    """
+    git = FakeGit()
+
+    with pytest.raises(NaoEncontrado):
+        git.resolve_ref("13.34.0")
+
+
+def test_branch_duplicada_e_recusa_nao_ausencia():
+    git = FakeGit()
+    git.add_commit("m0", "", "raiz", datetime.datetime(2026, 1, 1))
+    git.set_branch("13.34.0", "m0")
+
+    with pytest.raises(RecusaDeInvariante):
+        git.worktree_add("13.34.0", "m0")

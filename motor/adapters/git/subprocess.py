@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef
-from motor.errors import MotorError
+from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado, RespostaInvalida
 from motor.ports import CherryPickOutcome, MergePrediction
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -103,15 +103,15 @@ def _checar_versao_git() -> None:
     try:
         proc = subprocess.run(["git", "version"], capture_output=True, text=True)
     except OSError as e:
-        raise MotorError(f"git nao encontrado: {e}") from e
+        raise BackendIndisponivel(f"git nao encontrado: {e}") from e
     if proc.returncode != 0:
-        raise MotorError(f"git nao encontrado: exit status {proc.returncode}")
+        raise BackendIndisponivel(f"git nao encontrado: exit status {proc.returncode}")
     m = _PADRAO_VERSAO_GIT.match(proc.stdout.strip())
     if not m:
         return  # formato inesperado - nao bloqueia, so nao valida
     major, minor = int(m.group(1)), int(m.group(2))
     if major < 2 or (major == 2 and minor < 38):
-        raise MotorError(
+        raise BackendIndisponivel(
             f"git {major}.{minor} encontrado, motor precisa de >= 2.38 "
             "(merge-tree --write-tree)"
         )
@@ -131,7 +131,7 @@ def _parse_log(out: str) -> list[CommitRef]:
         try:
             data = datetime.datetime.fromisoformat(campos[1])
         except ValueError as e:
-            raise MotorError(f"parseando data do commit {campos[0]}: {e}") from e
+            raise RespostaInvalida(f"parseando data do commit {campos[0]}: {e}") from e
         resultado.append(CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2]))
     return resultado
 
@@ -154,7 +154,7 @@ def _parse_metas(out: str) -> dict[str, CommitRef]:
         try:
             data = datetime.datetime.fromisoformat(campos[1])
         except ValueError as e:
-            raise MotorError(f"parseando data do commit {campos[0]}: {e}") from e
+            raise RespostaInvalida(f"parseando data do commit {campos[0]}: {e}") from e
         # %P traz todos os pais separados por espaco; commit_meta usa `hash^`,
         # que e o primeiro. Commit raiz nao tem nenhum e cai em "" — mesmo
         # fallback do rev-parse que falha la.
@@ -319,11 +319,11 @@ class GitSubprocess:
         )
         campos = out.split(SEPARADOR_CAMPO, 2)
         if len(campos) != 3:
-            raise MotorError(f"saida inesperada de git show: {out!r}")
+            raise RespostaInvalida(f"saida inesperada de git show: {out!r}")
         try:
             data = datetime.datetime.fromisoformat(campos[1])
         except ValueError as e:
-            raise MotorError(f"parseando data do commit {campos[0]}: {e}") from e
+            raise RespostaInvalida(f"parseando data do commit {campos[0]}: {e}") from e
         try:
             parent = self._output(self.repo_path, "rev-parse", hash + "^")
         except MotorError:
@@ -382,7 +382,7 @@ class GitSubprocess:
             )
         campos = patch.stdout.split()
         if not campos:
-            raise MotorError(f"patch-id vazio para {hash}")
+            raise RespostaInvalida(f"patch-id vazio para {hash}")
         return campos[0]
 
     def changed_files(self, hash: str, /) -> frozenset[str]:
@@ -411,7 +411,7 @@ class GitSubprocess:
             try:
                 self._run_progresso(self.repo_path, "worktree", "add", dir_, branch)
             except MotorError as e:
-                raise MotorError(
+                raise NaoEncontrado(
                     f"worktree de {branch} nao encontrada em {dir_} e branch "
                     f"{branch} nao existe pra adotar (rode 'motor criar {branch}' "
                     f"primeiro): {e}"
