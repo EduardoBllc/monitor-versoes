@@ -552,10 +552,19 @@ class GitSubprocess:
         return self._output(self.repo_path, "remote", "get-url", remote)
 
     def push_branch(self, remote: str, branch: str) -> None:
-        self._run(self._worktree_dir(branch), "push", "-u", remote, branch)
+        self._run_progresso(
+            self._worktree_dir(branch), "push", "--progress", "-u", remote, branch
+        )
 
     def pull_branch(self, remote: str, branch: str) -> None:
-        self._run(self._worktree_dir(branch), "pull", "--ff-only", remote, branch)
+        self._run_progresso(
+            self._worktree_dir(branch),
+            "pull",
+            "--progress",
+            "--ff-only",
+            remote,
+            branch,
+        )
 
     def fetch(self, remote: str) -> None:
         self._run_progresso(self.repo_path, "fetch", "--progress", remote)

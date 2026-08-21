@@ -72,25 +72,54 @@ def test_git_subprocess_remote_url(tmp_path):
     assert g.remote_url("origin") == "git@bitbucket.org:acme/monitor.git"
 
 
+_FALHA_AUTENTICACAO = (
+    "fatal: Authentication failed for "
+    "'https://usuario:token-secreto@bitbucket.org/acme/monitor.git'"
+)
+
+
+def _assertar_sem_credencial(mensagem: str) -> None:
+    assert "bitbucket.org/acme/monitor.git" in mensagem
+    assert "token-secreto" not in mensagem
+    assert "usuario" not in mensagem
+
+
 def test_git_subprocess_erro_nao_expoe_credencial_da_url(tmp_path, monkeypatch):
     def falhar(*args, **kwargs):
-        return subprocess.CompletedProcess(
-            args,
-            128,
-            "",
-            "fatal: Authentication failed for "
-            "'https://usuario:token-secreto@bitbucket.org/acme/monitor.git'",
-        )
+        return subprocess.CompletedProcess(args, 128, "", _FALHA_AUTENTICACAO)
 
     monkeypatch.setattr(subprocess, "run", falhar)
 
     with pytest.raises(MotorError) as erro:
+        GitSubprocess(str(tmp_path)).remote_branch_exists("origin", "13.34.0")
+
+    _assertar_sem_credencial(str(erro.value))
+
+
+def test_git_subprocess_erro_com_progresso_nao_expoe_credencial_da_url(
+    tmp_path, monkeypatch
+):
+    """Os tres comandos que carregam credencial — fetch, push e pull — sao
+    justamente os que passam pelo runner com progresso, entao a mascara tem de
+    valer nele tambem, e nao so no `_run`.
+    """
+
+    class PopenFalso:
+        def __init__(self, *args, **kwargs):
+            leitura, escrita = os.pipe()
+            os.write(escrita, _FALHA_AUTENTICACAO.encode())
+            os.close(escrita)
+            self.stdout = os.fdopen(leitura, "rb")
+
+        def wait(self) -> int:
+            return 128
+
+    monkeypatch.setattr(subprocess, "Popen", PopenFalso)
+
+    with pytest.raises(MotorError) as erro:
         GitSubprocess(str(tmp_path)).push_branch("origin", "13.34.0")
 
-    mensagem = str(erro.value)
-    assert "bitbucket.org/acme/monitor.git" in mensagem
-    assert "token-secreto" not in mensagem
-    assert "usuario" not in mensagem
+    _assertar_sem_credencial(str(erro.value))
 
 
 def test_git_subprocess_write_file_noop_quando_conteudo_igual(tmp_path):
