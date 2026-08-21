@@ -871,3 +871,231 @@ def test_app_mantem_repo_sem_checkout_visivel_mas_inexecutavel():
             )
 
     asyncio.run(executar_fluxo())
+
+
+def _app_com_consulta(**extra) -> MotorTUI:
+    """Base dos testes de modal: repo e versão únicos, lista de chamados visível."""
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = extra.pop("versao", VersionOption(numero="14.0.0", liberada=False))
+    return MotorTUI(
+        carregar_repos=lambda: [repo],
+        carregar_versoes=lambda opcao: [versao],
+        **extra,
+    )
+
+
+async def _selecionar(app: MotorTUI, pilot) -> None:
+    await app.workers.wait_for_complete()
+    repos = app.query_one("#repo", Select)
+    repos.value = repos._options[1][1]
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    versoes = app.query_one("#versao", Select)
+    versoes.value = versoes._options[1][1]
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+
+
+def test_app_verificar_com_lista_visivel_abre_modal_e_recarrega_chamados():
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    consultas = 0
+
+    def consultar_runner(opcao: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        nonlocal consultas
+        consultas += 1
+        return [
+            ChamadoConsultado(
+                chamado="255514",
+                estado="pendente" if consultas == 1 else "aplicado",
+                commits=[commit],
+            )
+        ]
+
+    async def executar_fluxo() -> None:
+        app = _app_com_consulta(
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            consultar_versao=consultar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar(app, pilot)
+            assert consultas == 1
+
+            base = app.screen_stack[0]
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert isinstance(app.screen, tui.ResultadoModal)
+            assert base.query_one("#consulta-painel").display
+            assert not base.query_one("#resultado-scroll").display
+            assert "FALTANTE" in _texto(
+                app.screen.query_one("#modal-conteudo", Static).content
+            )
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert not isinstance(app.screen, tui.ResultadoModal)
+            assert consultas == 2
+            assert "APLICADO" in _texto(
+                app.query_one("#consulta-detalhe", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_auditoria_nao_recarrega_lista_de_chamados():
+    consultas = 0
+
+    def consultar_runner(opcao: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        nonlocal consultas
+        consultas += 1
+        return [ChamadoConsultado(chamado="255514", estado="aplicado", commits=[])]
+
+    async def executar_fluxo() -> None:
+        app = _app_com_consulta(
+            versao=VersionOption(numero="14.0.0", liberada=True),
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=True, estado_integro=True
+            ),
+            consultar_versao=consultar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar(app, pilot)
+            app.query_one("#auditar", Checkbox).value = True
+            await pilot.pause()
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "AUDITORIA DA TAG" in _texto(
+                app.screen.query_one("#modal-conteudo", Static).content
+            )
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert consultas == 1
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_falha_ao_verificar_preserva_lista_de_chamados():
+    consultas = 0
+
+    def consultar_runner(opcao: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        nonlocal consultas
+        consultas += 1
+        return [ChamadoConsultado(chamado="255514", estado="pendente", commits=[])]
+
+    def falhar(repo, numero, auditar):
+        raise MotorError("verificação falhou")
+
+    async def executar_fluxo() -> None:
+        app = _app_com_consulta(executar=falhar, consultar_versao=consultar_runner)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar(app, pilot)
+
+            base = app.screen_stack[0]
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert "verificação falhou" in _texto(
+                app.screen.query_one("#modal-conteudo", Static).content
+            )
+            assert base.query_one("#consulta-painel").display
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert consultas == 1
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_atualizar_com_lista_visivel_recarrega_chamados():
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    consultas = 0
+
+    def consultar_runner(opcao: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        nonlocal consultas
+        consultas += 1
+        return [
+            ChamadoConsultado(chamado="255514", estado="pendente", commits=[commit])
+        ]
+
+    async def executar_fluxo() -> None:
+        app = _app_com_consulta(
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            atualizar_repo=lambda repo, numero: AtualizarResult(
+                status=AtualizarStatus.DONE, aplicados=[commit]
+            ),
+            consultar_versao=consultar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar(app, pilot)
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert consultas == 2
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "Atualização concluída" in _texto(
+                app.screen.query_one("#modal-conteudo", Static).content
+            )
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert consultas == 3
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_exibe_loading_na_lista_durante_verificacao():
+    iniciou = Event()
+    liberar = Event()
+
+    def executar(opcao, numero, auditar):
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return VersionStatus(verde=True, estado_integro=True)
+
+    async def executar_fluxo() -> None:
+        app = _app_com_consulta(
+            executar=executar,
+            consultar_versao=lambda opcao, numero: [
+                ChamadoConsultado(chamado="255514", estado="pendente", commits=[])
+            ],
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar(app, pilot)
+
+            painel = app.query_one("#consulta-painel")
+            await pilot.click("#verificar")
+            assert await asyncio.to_thread(iniciou.wait, 1)
+            await pilot.pause()
+
+            assert painel.display
+            assert painel.loading
+
+            liberar.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not painel.loading
+
+    asyncio.run(executar_fluxo())

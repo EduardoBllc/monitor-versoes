@@ -14,6 +14,7 @@ from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Footer, Header, OptionList, Select, Static
 from textual.widgets.option_list import Option
 
@@ -53,6 +54,35 @@ VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
+
+
+class ResultadoModal(ModalScreen[None]):
+    """Resultado de verificar/atualizar por cima da lista de chamados.
+
+    A lista continua montada embaixo: fechar o modal volta para ela em vez de
+    exigir uma troca de versao para reconstrui-la.
+    """
+
+    BINDINGS = [("escape,enter,q", "dismiss", "Fechar")]
+    DEFAULT_CSS = """
+    ResultadoModal { align: center middle; }
+    ResultadoModal > VerticalScroll {
+        width: 90%;
+        height: 80%;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+    }
+    """
+
+    def __init__(self, conteudo: object) -> None:
+        super().__init__()
+        self._conteudo = conteudo
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll() as caixa:
+            caixa.border_subtitle = "esc para fechar"
+            yield Static(self._conteudo, id="modal-conteudo")
 
 
 class MotorTUI(App[None]):
@@ -135,14 +165,45 @@ class MotorTUI(App[None]):
         resultado.update(conteudo)
         return resultado
 
-    def _erro(self, mensagem: str) -> None:
-        self._exibir_resultado(
-            Panel(mensagem, title="Erro", style="bold red")
+    def _apresentar(self, conteudo: object, *, reconsultar: bool = False) -> None:
+        """Com a lista de chamados na tela, resultado e transitorio: vai para um
+        modal e ao fechar recarrega a lista, que o verificar/atualizar acabou de
+        reescrever no banco. Sem lista, ocupa o painel como antes.
+        """
+        if not self.query_one("#consulta-painel").display:
+            self._exibir_resultado(conteudo)
+            return
+        self.push_screen(
+            ResultadoModal(conteudo),
+            (lambda _: self._reconsultar()) if reconsultar else None,
         )
 
+    def _ocupar_lista(self) -> bool:
+        """Marca a lista de chamados como carregando, se e ela que esta na tela."""
+        painel = self.query_one("#consulta-painel")
+        painel.loading = painel.display
+        return painel.display
+
+    def _reconsultar(self) -> None:
+        if self._repo is None or self._versao is None or self._consultar is None:
+            return
+        self._ocupar_lista()
+        self._bloquear(True)
+        self.consultar_worker(self._repo, self._versao)
+
+    def _erro(self, mensagem: str, transitorio: bool = False) -> None:
+        painel = Panel(mensagem, title="Erro", style="bold red")
+        if transitorio:
+            self._apresentar(painel)
+        else:
+            self._exibir_resultado(painel)
+
     def _mostrar_resultado(self, status: VersionStatus, auditado: bool) -> None:
-        self._exibir_resultado(
-            renderizar_status(status, auditado=auditado)
+        # Auditoria nao persiste (verificar --auditar nao toca no snapshot):
+        # recarregar a lista traria o mesmo conteudo por um round de git a mais.
+        self._apresentar(
+            renderizar_status(status, auditado=auditado),
+            reconsultar=not auditado,
         )
         self._pode_atualizar = bool(
             self._atualizar
@@ -162,7 +223,7 @@ class MotorTUI(App[None]):
         )
 
     def _mostrar_atualizacao(self, resultado: AtualizarResult) -> None:
-        self._exibir_resultado(renderizar_atualizacao(resultado))
+        self._apresentar(renderizar_atualizacao(resultado), reconsultar=True)
         self._resetar_atualizacao()
 
     def _mostrar_consulta(self, chamados: list[ChamadoConsultado]) -> None:
@@ -225,20 +286,21 @@ class MotorTUI(App[None]):
         botao.variant = "default"
         self.query_one("#verificar", Button).variant = "primary"
 
-    def _falha(self, erro: Exception) -> None:
+    def _falha(self, erro: Exception, transitorio: bool = False) -> None:
         if isinstance(erro, MotorError):
-            self._erro(str(erro))
+            self._erro(str(erro), transitorio)
             return
         logging.error(
             "Erro interno fatal na TUI",
             exc_info=(type(erro), erro, erro.__traceback__),
         )
-        self._erro("Erro interno fatal")
+        self._erro("Erro interno fatal", transitorio)
 
     def _bloquear(self, ocupado: bool) -> None:
         self._ocupado = ocupado
         if not ocupado:
             self.query_one("#resultado", Static).loading = False
+            self.query_one("#consulta-painel").loading = False
         self.query_one("#repo", Select).disabled = ocupado or not self._tem_repos
         self.query_one("#versao", Select).disabled = ocupado or not self._tem_versoes
         self.query_one("#auditar", Checkbox).disabled = ocupado
@@ -377,10 +439,10 @@ class MotorTUI(App[None]):
         if self._repo is None or self._versao is None:
             return
         self._resetar_atualizacao()
-        resultado = self._exibir_resultado(
-            f"Verificando {self._repo.nome} {self._versao.numero}…"
-        )
-        resultado.loading = True
+        if not self._ocupar_lista():
+            self._exibir_resultado(
+                f"Verificando {self._repo.nome} {self._versao.numero}…"
+            ).loading = True
         self._bloquear(True)
         self.executar_worker(
             self._repo,
@@ -393,6 +455,7 @@ class MotorTUI(App[None]):
             return
         if self._repo is None or self._versao is None:
             return
+        self._ocupar_lista()
         self._bloquear(True)
         self.atualizar_worker(self._repo, self._versao)
 
@@ -403,7 +466,7 @@ class MotorTUI(App[None]):
         try:
             status = self._executar(repo, versao.numero, auditar)
         except Exception as erro:
-            self.call_from_thread(self._falha, erro)
+            self.call_from_thread(self._falha, erro, True)
         else:
             self.call_from_thread(self._mostrar_resultado, status, auditar)
         finally:
@@ -425,7 +488,7 @@ class MotorTUI(App[None]):
         try:
             resultado = self._atualizar(repo, versao.numero) if self._atualizar else None
         except Exception as erro:
-            self.call_from_thread(self._falha, erro)
+            self.call_from_thread(self._falha, erro, True)
         else:
             if resultado is not None:
                 self.call_from_thread(self._mostrar_atualizacao, resultado)
