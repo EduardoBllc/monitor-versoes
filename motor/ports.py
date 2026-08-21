@@ -31,7 +31,14 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from motor.domain.types import Atribuicao, CommitRef, Exclusion, RepoInfo, VersaoInfo
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    Exclusion,
+    PrIndex,
+    RepoInfo,
+    VersaoInfo,
+)
 
 
 class CherryPickOutcome(IntEnum):
@@ -170,8 +177,14 @@ class GitRepo(Protocol):
         """Cria worktree."""
         ...
 
-    def worktree_remove(self, branch: str, /) -> None:
-        """Remove worktree."""
+    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
+        """Descarta worktrees de versao alem das `manter` de uso mais recente.
+
+        `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
+        todas, inclusive a `atual`. Devolve as removidas. Nunca leva trabalho
+        embora: worktree com alteracao nao commitada ou cherry-pick pendente e
+        pulada.
+        """
         ...
 
     def tag_exists(self, tag: str, /) -> bool:
@@ -286,5 +299,27 @@ class EstadoRepo(Protocol):
         So fato imutavel entra: PR mergeada nao ganha nem perde commit. O
         `chamado` fica de fora porque vem da busca, nao da PR — duas tarefas
         podem apontar para a mesma PR.
+        """
+        ...
+
+    def prs_indexadas(self, repo: str, /) -> list[PrIndex]:
+        """Indice local das PRs mergeadas, em ordem de `pr_id`.
+
+        E o que responde "quais PRs casam com ch1234" sem ir na API.
+        """
+        ...
+
+    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
+        """Ate quando o indice esta completo. None = nunca varrido, e a proxima
+        varredura baixa o historico inteiro."""
+        ...
+
+    def gravar_varredura(
+        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+    ) -> None:
+        """Indice e marca na MESMA transacao.
+
+        A atomicidade e o contrato, nao um detalhe: marca avancada por cima de
+        indice incompleto deixa as PRs que faltaram fora de toda janela futura.
         """
         ...

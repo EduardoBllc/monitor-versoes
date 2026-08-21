@@ -5,9 +5,12 @@ from __future__ import annotations
 import os
 from urllib.parse import quote
 
-from motor.errors import ErroDeEntrada
+from motor.errors import ErroDeEntrada, MotorError
 
 _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
+
+#: Worktrees de versao que ficam em disco depois de cada operacao.
+_WORKTREES_MANTIDAS_PADRAO = 3
 
 
 def database_url() -> str:
@@ -31,3 +34,27 @@ def database_url() -> str:
         f"postgresql+psycopg://{quote(v['USER'], safe='')}:"
         f"{quote(v['PASSWORD'], safe='')}@{v['HOST']}:{v['PORT']}/{v['NAME']}"
     )
+
+
+def worktrees_mantidas() -> int:
+    """Quantas worktrees de versao sobrevivem a cada operacao.
+
+    Levantar uma worktree e um checkout inteiro — depois do fetch, a espera mais
+    longa do motor. Mantendo as ultimas em disco, o run seguinte na mesma versao
+    so reusa o diretorio que ja esta la.
+
+    `0` e valor valido, e significa o comportamento historico (descarta no fim
+    de cada run) — por isso o default nao pode sair de um `or`. Valor nao
+    numerico e erro do operador, nao default calado: `WORKTREES_MANTIDAS=tres`
+    cairia em 3 e a pessoa nunca saberia que nao configurou nada.
+    """
+    valor = os.environ.get("WORKTREES_MANTIDAS", "").strip()
+    if not valor:
+        return _WORKTREES_MANTIDAS_PADRAO
+    # isdigit recusa "-1", "1.5" e "3 worktrees" de uma vez; int() sozinho
+    # aceitaria negativo, que nao tem significado aqui.
+    if not valor.isdigit():
+        raise MotorError(
+            f"WORKTREES_MANTIDAS invalido: {valor!r} (esperado inteiro >= 0)"
+        )
+    return int(valor)

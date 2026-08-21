@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from dataclasses import replace
 
 import pytest
 
@@ -531,3 +532,20 @@ def test_verificar_cobra_a_fonte_de_commits_nao_montada():
 
     with pytest.raises(AssertionError, match="commit_source"):
         verificar(deps, "14.0.0")
+
+
+def test_verificar_preserva_worktrees_quando_configurado_para_manter():
+    """Com WORKTREES_MANTIDAS > 0 o run nao paga o checkout de novo no
+    proximo: a worktree da versao usada sobrevive ao fim do verificar."""
+    git = _git()
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
+                                            base_ref="master", base_commit="m0"))
+    deps = replace(
+        _deps(git, FakeTaskSource(chamados={}), FakeCommitSource(), estado),
+        worktrees_mantidas=2,
+    )
+
+    verificar(deps, "14.0.0")
+
+    assert git.removed_worktrees == []

@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-from motor.domain.types import SEM_DATA, CommitRef
+from motor.domain.types import SEM_DATA, CommitRef, PrIndex
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -40,6 +40,22 @@ _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 
 # git@bitbucket.org:ws/repo.git  |  https://user@bitbucket.org/ws/repo(.git)
 _PADRAO_REMOTE = re.compile(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$")
+
+
+def _padrao_do_chamado(chamado: str) -> re.Pattern[str]:
+    """`ch<numero>` com fronteira a direita.
+
+    O `(?!\\d)` e o conserto de um bug antigo: com `startswith`/`in` crus, o
+    chamado 255514 casava com a PR de 2555145 — nada via onde o numero
+    terminava, e o chamado curto roubava a entrega do longo.
+    """
+    return re.compile(re.escape("ch" + chamado) + r"(?!\d)")
+
+
+def _casa(pr: PrIndex, padrao: re.Pattern[str]) -> bool:
+    # match no titulo (ancorado, como o startswith de antes) e search na branch,
+    # onde o termo pode estar em qualquer posicao.
+    return padrao.match(pr.titulo) is not None or padrao.search(pr.branch) is not None
 
 
 def parse_workspace_repo(url: str) -> tuple[str, str]:
@@ -70,11 +86,12 @@ class BitbucketPRCommitSource:
     master_ref: str = "master"
     client: httpx.Client | None = None
     progresso: RelatorProgresso = silencioso
-    # Cache de `PR -> commits`. Opcional: sem estado a fonte funciona igual,
-    # so mais lenta. `repo_estado` e o nome canonico no banco, que nao e
-    # necessariamente o `repo` do Bitbucket — e para isso que aliases existem.
-    estado: EstadoRepo | None = None
-    repo_estado: str = ""
+    # Obrigatorios: o indice local de PRs vive no estado, e sem ele esta fonte
+    # nao tem o que ler. Quem nao tem banco monta so o grep (ver montagem.py).
+    # `repo_estado` e o nome canonico no banco, que nao e necessariamente o
+    # `repo` do Bitbucket — e para isso que aliases existem.
+    estado: EstadoRepo = field(kw_only=True)
+    repo_estado: str = field(kw_only=True)
 
     def _workspace_repo(self) -> tuple[str, str]:
         """Resolve (workspace, repo) do remote uma vez por instancia."""
@@ -90,56 +107,92 @@ class BitbucketPRCommitSource:
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
-        for indice, chamado in enumerate(chamados, start=1):
-            # Relata antes de filtrar: o total e o tamanho do lote pedido, e
-            # uma barra que pula numeros por causa de chamado vazio confunde
-            # mais do que informa.
-            self.progresso(
-                Progresso("commits dos chamados no Bitbucket", indice, len(chamados))
-            )
-            if not chamado:  # sem numero nao tem como casar PR
-                continue
-            commits = self._commits_do_chamado(chamado)
-            if commits:
-                resultado[chamado] = commits
-        return resultado
-
-    def _commits_do_chamado(self, chamado: str) -> list[CommitRef]:
-        base = self.base_url or _BASE_URL_PADRAO
-        termo = "ch" + chamado
-        workspace, repo = self._workspace_repo()
-
-        prs_url = f"{base}/repositories/{workspace}/{repo}/pullrequests"
-        params = {
-            "state": "MERGED",
-            "q": f'title ~ "{termo}" OR source.branch.name ~ "{termo}"',
-            "pagelen": 50,
-        }
-
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
             client = self.client
             if client is None:
                 client = pilha.enter_context(httpx.Client())
 
-            # A busca roda SEMPRE, mesmo com tudo em cache: e ela que descobre
-            # PR de correcao mergeada depois. Cachear a busca esconderia esse
-            # commit e a versao sairia verde faltando entrega.
-            pr_ids = [
-                pr["id"]
-                for pr in self._paginar(client, prs_url, params)
-                if self._pr_casa(pr, termo) and pr.get("id")
-            ]
+            self.progresso(Progresso("varrendo PRs do Bitbucket"))
+            self._varrer(client)
+            indice = self.estado.prs_indexadas(self.repo_estado)
 
-            por_pr = self._do_cache(pr_ids)
-            # Unica chamada que o cache corta: os commits de PR ja vista.
-            novas = {
-                pr_id: self._buscar_commits(client, prs_url, pr_id)
-                for pr_id in pr_ids
-                if pr_id not in por_pr
-            }
-            self._gravar_cache(novas)
-            por_pr |= novas
+            for posicao, chamado in enumerate(chamados, start=1):
+                # Relata antes de filtrar: o total e o tamanho do lote pedido, e
+                # uma barra que pula numeros por causa de chamado vazio confunde
+                # mais do que informa.
+                self.progresso(
+                    Progresso(
+                        "commits dos chamados no Bitbucket", posicao, len(chamados)
+                    )
+                )
+                if not chamado:  # sem numero nao tem como casar PR
+                    continue
+                commits = self._commits_do_chamado(client, chamado, indice)
+                if commits:
+                    resultado[chamado] = commits
+        return resultado
+
+    def _varrer(self, client: httpx.Client) -> None:
+        """Uma passada que descobre tudo que mergeou desde a ultima.
+
+        Substitui uma busca por chamado (27 requests numa versao real) por uma
+        pergunta so. O que responde "quais PRs casam com ch1234" passa a ser o
+        indice local, nao a API.
+        """
+        # Marca = inicio da varredura, nao o maior `updated_on` visto. PR
+        # mergeada DURANTE esta varredura pode nao aparecer nela; com o inicio
+        # como marca, o `updated_on` dela e maior e a proxima janela a pega.
+        inicio = datetime.datetime.now(datetime.timezone.utc)
+        marca = self.estado.marca_varredura(self.repo_estado)
+
+        params: dict[str, object] = {
+            "state": "MERGED",
+            "sort": "updated_on",
+            "pagelen": 50,
+        }
+        if marca is not None:
+            # `>=` e nao `>`: reentregar PR ja conhecida e upsert, e a sobreposicao
+            # e o que cobre quem mergeou no meio da varredura anterior.
+            params["q"] = f'updated_on >= "{marca.isoformat()}"'
+        # Sem marca = nunca varrido: baixa o historico inteiro. Filtrar por data
+        # aqui deixaria de fora toda PR anterior, e o chamado com PR antiga
+        # apareceria como sem entrega.
+
+        # Extrai (e valida a forma) antes de filtrar: `pr.get("id")` num item
+        # que nao e dict estouraria AttributeError cru, escapando do contrato.
+        indices = [self._para_pr_index(pr) for pr in self._paginar(client, self._prs_url(), params)]
+        prs = [indice for indice in indices if indice.pr_id]
+        # Indice e marca na mesma escrita: paginacao que levantou no meio nunca
+        # chega aqui, entao a marca nao avanca por cima de um indice furado.
+        self.estado.gravar_varredura(self.repo_estado, prs, inicio)
+
+    def _prs_url(self) -> str:
+        base = self.base_url or _BASE_URL_PADRAO
+        workspace, repo = self._workspace_repo()
+        return f"{base}/repositories/{workspace}/{repo}/pullrequests"
+
+    def _commits_do_chamado(
+        self, client: httpx.Client, chamado: str, indice: list[PrIndex]
+    ) -> list[CommitRef]:
+        padrao = _padrao_do_chamado(chamado)
+        pr_ids = [pr.pr_id for pr in indice if _casa(pr, padrao)]
+
+        por_pr = self.estado.commits_de_pr(self.repo_estado, pr_ids)
+        # So as PRs que casam com um chamado pedido vao na API. O indice tem
+        # 1118 PRs num repo real; buscar os commits de todas encostaria no limite
+        # de taxa para responder pergunta que ninguem fez.
+        novas = {
+            pr_id: self._buscar_commits(client, pr_id)
+            for pr_id in pr_ids
+            if pr_id not in por_pr
+        }
+        # ponytail: PR cujos commits sao todos merge commit grava vazio e vira
+        # miss em todo run. Custa 1 request por run e nao tem PR assim na
+        # pratica; se aparecer, o conserto e uma linha-sentinela por PR.
+        if novas:
+            self.estado.gravar_commits_de_pr(self.repo_estado, novas)
+        por_pr |= novas
 
         vistos: set[str] = set()
         commits: list[CommitRef] = []
@@ -153,48 +206,48 @@ class BitbucketPRCommitSource:
                 if not self.git.is_ancestor(c.hash_origem, self.master_ref):
                     continue
                 vistos.add(c.hash_origem)
-                # o chamado vem da busca, nao da PR: duas tarefas podem apontar
-                # para a mesma PR, entao ele e carimbado aqui e nao no cache.
+                # o chamado vem do casamento, nao da PR: duas tarefas podem
+                # apontar para a mesma PR, entao ele e carimbado aqui.
                 commits.append(replace(c, chamado=chamado))
         commits.sort(key=lambda c: c.commit_date)
         return commits
 
-    def _buscar_commits(
-        self, client: httpx.Client, prs_url: str, pr_id: int
-    ) -> list[CommitRef]:
+    def _buscar_commits(self, client: httpx.Client, pr_id: int) -> list[CommitRef]:
         return [
             self._para_commit_ref(c)
-            for c in self._paginar(client, f"{prs_url}/{pr_id}/commits", None)
+            for c in self._paginar(client, f"{self._prs_url()}/{pr_id}/commits", None)
             # merge commit: cherry-pick -x nao aceita sem -m, e o conteudo ja vem
             # pelos pais individuais. Numero de pais e propriedade do commit,
             # nunca muda — por isso filtra antes de cachear.
             if c.get("hash") and len(c.get("parents") or []) <= 1
         ]
 
-    def _do_cache(self, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
-        if self.estado is None:
-            return {}
-        return self.estado.commits_de_pr(self.repo_estado, pr_ids)
-
-    def _gravar_cache(self, novas: dict[int, list[CommitRef]]) -> None:
-        # ponytail: PR cujos commits sao todos merge commit grava vazio e vira
-        # miss em todo run. Custa 1 request por run e nao tem PR assim na
-        # pratica; se aparecer, o conserto e uma linha-sentinela por PR.
-        if self.estado is None or not novas:
-            return
-        self.estado.gravar_commits_de_pr(self.repo_estado, novas)
-
     @staticmethod
-    def _pr_casa(pr: JSON, termo: str) -> bool:
+    def _para_pr_index(pr: JSON) -> PrIndex:
+        """Titulo e branch crus: o casamento e predicado, nao extracao.
+
+        Guarda de forma herdada de `_pr_casa`: e aqui, na extracao do JSON cru
+        da API, que o formato inesperado tem que ser pego — depois deste ponto
+        o resto do modulo so ve `PrIndex` ja validado.
+        """
         if not isinstance(pr, dict):
             raise RespostaInvalida(f"PR do Bitbucket em formato inesperado: {pr!r}")
         titulo = pr.get("title") or ""
         if not isinstance(titulo, str):
             raise RespostaInvalida(f"title da PR do Bitbucket em formato inesperado: {titulo!r}")
-        if titulo.startswith(termo):
-            return True
-        branch = ((pr.get("source") or {}).get("branch") or {}).get("name") or ""
-        return termo in branch
+        bruto = pr.get("updated_on", "")
+        try:
+            quando = datetime.datetime.fromisoformat(bruto) if bruto else SEM_DATA
+        except ValueError:
+            quando = SEM_DATA
+        return PrIndex(
+            # get com default 0, nao pr["id"]: PR sem id e descartada pelo
+            # filtro de pr_id em `_varrer`, nao um erro de forma.
+            pr_id=pr.get("id") or 0,
+            titulo=titulo,
+            branch=((pr.get("source") or {}).get("branch") or {}).get("name") or "",
+            updated_on=quando,
+        )
 
     @staticmethod
     def _para_commit_ref(c: JSON) -> CommitRef:

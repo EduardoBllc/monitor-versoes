@@ -27,7 +27,7 @@ from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
-from motor.config import database_url
+from motor.config import database_url, worktrees_mantidas
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
@@ -111,15 +111,16 @@ def montar_commit_source(
     num clone sem `origin` passaria a falhar na montagem.
     """
     grep = GrepCommitSource(git=git, progresso=progresso)
-    if not token:
+    # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
+    if not token or estado is None:
         return grep
     pr = BitbucketPRCommitSource(
         token=token,
         email=email,
         git=git,
         progresso=progresso,
-        # cache de `PR -> commits`: corta o GET de commits das PRs ja vistas.
-        # A busca das PRs do chamado continua rodando a cada verificar.
+        # indice local de PRs + cache de `PR -> commits`: uma varredura
+        # incremental no lugar de uma busca por chamado.
         estado=estado,
         repo_estado=repo,
     )
@@ -162,4 +163,5 @@ def montar_deps(
             progresso=progresso,
         ),
         progresso=progresso,
+        worktrees_mantidas=worktrees_mantidas(),
     )

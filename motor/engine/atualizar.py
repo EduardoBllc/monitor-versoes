@@ -123,8 +123,9 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     deps.progresso(Progresso("publicando na origin"))
     deps.git.push_branch("origin", versao)
     # a worktree e so um checkout local descartavel - o que importa (commits) ja
-    # esta na branch e no remoto. use_worktree recria sob demanda.
-    deps.git.worktree_remove(versao)
+    # esta na branch e no remoto. use_worktree recria sob demanda. Com
+    # worktrees_mantidas > 0 este checkout fica, e o proximo run nao o paga.
+    deps.git.worktree_gc(deps.worktrees_mantidas, versao)
     return AtualizarResult(
         status=AtualizarStatus.DONE,
         aplicados=aplicados,
@@ -160,4 +161,4 @@ def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
 def atualizar_abort(deps: Deps, versao: str) -> None:
     deps.git.use_worktree(versao)
     deps.git.abort_cherry_pick()
-    deps.git.worktree_remove(versao)
+    deps.git.worktree_gc(deps.worktrees_mantidas, versao)

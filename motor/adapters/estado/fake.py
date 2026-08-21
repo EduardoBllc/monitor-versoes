@@ -5,7 +5,14 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 
-from motor.domain.types import Atribuicao, CommitRef, Exclusion, RepoInfo, VersaoInfo
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    Exclusion,
+    PrIndex,
+    RepoInfo,
+    VersaoInfo,
+)
 from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 
@@ -22,6 +29,10 @@ class FakeEstado:
     _pr_commits: dict[tuple[str, int], dict[str, CommitRef]] = field(
         default_factory=dict
     )
+    # repo -> pr_id -> PrIndex. Dict por pr_id porque o adapter real usa
+    # merge: reentregar a mesma PR sobrescreve em vez de somar.
+    _prs: dict[str, dict[int, PrIndex]] = field(default_factory=dict)
+    _marca: dict[str, datetime.datetime] = field(default_factory=dict)
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         if nome in self.repos or nome in self.aliases:
@@ -139,6 +150,24 @@ class FakeEstado:
             alvo = self._pr_commits.setdefault((repo, pr_id), {})
             for c in refs:
                 alvo[c.hash_origem] = c
+
+    def prs_indexadas(self, repo: str, /) -> list[PrIndex]:
+        self._exigir_repo(repo)
+        guardadas = self._prs.get(repo, {})
+        return [guardadas[pr_id] for pr_id in sorted(guardadas)]
+
+    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
+        self._exigir_repo(repo)
+        return self._marca.get(repo)
+
+    def gravar_varredura(
+        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+    ) -> None:
+        self._exigir_repo(repo)
+        alvo = self._prs.setdefault(repo, {})
+        for pr in prs:
+            alvo[pr.pr_id] = pr
+        self._marca[repo] = ate
 
     # -- internos --------------------------------------------------------
 

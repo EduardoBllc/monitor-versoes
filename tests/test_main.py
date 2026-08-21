@@ -423,15 +423,45 @@ def test_criar_ponta_a_ponta(bordas, tmp_path, capsys):
     assert "a0" in saida and "concluido" in saida
 
 
-def test_atualizar_abort_ponta_a_ponta(bordas, tmp_path, capsys):
+def test_atualizar_abort_ponta_a_ponta(bordas, tmp_path, capsys, monkeypatch):
     # pina o despacho de --abort: a flag e lida como args.abortar, e o comando
     # nem chega a precisar de fonte de tasks.
     git, _ = bordas
+    # Pina o default: o conftest carrega .env.development na coleta, e um
+    # WORKTREES_MANTIDAS=0 na maquina de alguem trocaria o resultado aqui.
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "")
 
     main(["atualizar", "13.34.0", "--repo", _repo_dir(tmp_path), "--abort"])
 
     assert capsys.readouterr().out == "abortado\n"
+    # Default de WORKTREES_MANTIDAS (3): o checkout sobrevive ao abort, pra o
+    # `atualizar` seguinte na mesma versao nao pagar `worktree add` de novo.
+    assert git.removed_worktrees == []
+
+
+def test_worktrees_mantidas_zero_descarta_o_checkout_no_fim(
+    bordas, tmp_path, capsys, monkeypatch
+):
+    """Ponta a ponta do outro extremo: `WORKTREES_MANTIDAS=0` no ambiente
+    chega ate o `worktree_gc` e reproduz o comportamento historico."""
+    git, _ = bordas
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "0")
+
+    main(["atualizar", "13.34.0", "--repo", _repo_dir(tmp_path), "--abort"])
+
     assert git.removed_worktrees == ["13.34.0"]
+
+
+def test_worktrees_mantidas_invalido_sai_1(bordas, tmp_path, caplog, monkeypatch):
+    """Erro de config nao pode virar default calado: o comando para, e a
+    mensagem diz qual variavel esta errada."""
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "tres")
+
+    with pytest.raises(SystemExit) as saida:
+        main(["atualizar", "13.34.0", "--repo", _repo_dir(tmp_path), "--abort"])
+
+    assert saida.value.code == 1
+    assert "WORKTREES_MANTIDAS invalido: 'tres'" in caplog.text
 
 
 def test_manual_sem_lista_sai_1(bordas, tmp_path, capsys):

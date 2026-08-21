@@ -32,7 +32,8 @@ def _sem_dotenv_dentro_do_main(monkeypatch):
 
 _TRUNCATE_TUDO = (
     "truncate atribuicao_commit, atribuicao, versao, exclusao, "
-    "sem_entrega, pr_commit_cache, repo_alias, repo restart identity cascade"
+    "sem_entrega, pr_commit_cache, bitbucket_pr, bitbucket_varredura, "
+    "repo_alias, repo restart identity cascade"
 )
 
 _BANCO_DEVELOPMENT = {

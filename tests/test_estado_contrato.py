@@ -29,6 +29,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    PrIndex,
     RepoInfo,
     VersaoInfo,
     VersionType,
@@ -147,6 +148,12 @@ def test_listar_repos_devolve_canonicos_em_ordem_sem_alias(estado):
             id="marcar_liberadas",
         ),
         pytest.param(lambda e: e.commits_de_pr("outro", [7]), id="commits_de_pr"),
+        pytest.param(lambda e: e.prs_indexadas("outro"), id="prs_indexadas"),
+        pytest.param(lambda e: e.marca_varredura("outro"), id="marca_varredura"),
+        pytest.param(
+            lambda e: e.gravar_varredura("outro", [], QUANDO),
+            id="gravar_varredura",
+        ),
         pytest.param(
             lambda e: e.gravar_commits_de_pr("outro", {7: []}),
             id="gravar_commits_de_pr",
@@ -362,3 +369,62 @@ def test_nenhuma_assercao_casa_substring_de_mensagem():
     """
     padrao_do_parametro = "match" + "="
     assert padrao_do_parametro not in Path(__file__).read_text()
+
+
+# -- indice de PRs e marca da varredura ----------------------------------------
+
+
+def _pr(pr_id: int, titulo: str = "ch1 fix", branch: str = "b", dia: int = 1) -> PrIndex:
+    return PrIndex(
+        pr_id=pr_id,
+        titulo=titulo,
+        branch=branch,
+        updated_on=datetime.datetime(2026, 4, dia, tzinfo=datetime.UTC),
+    )
+
+
+def test_marca_varredura_de_repo_nunca_varrido_e_none(estado):
+    # None e o sinal de "nunca varri": e ele que dispara o backfill completo.
+    # Uma data-zero no lugar faria o backfill ser pulado e o indice nascer furado.
+    assert estado.marca_varredura(REPO) is None
+
+
+def test_gravar_varredura_grava_indice_e_marca(estado):
+    estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
+    assert estado.prs_indexadas(REPO) == [_pr(7)]
+    assert estado.marca_varredura(REPO) == QUANDO
+
+
+def test_prs_indexadas_vem_ordenadas_por_pr_id(estado):
+    estado.gravar_varredura(REPO, [_pr(9), _pr(7)], QUANDO)
+    assert [p.pr_id for p in estado.prs_indexadas(REPO)] == [7, 9]
+
+
+def test_gravar_varredura_faz_upsert_da_pr(estado):
+    # PR mergeada nao muda de commits, mas o titulo e editavel e a varredura
+    # incremental reentrega quem foi atualizado. Somar linha duplicaria a PR.
+    estado.gravar_varredura(REPO, [_pr(7, titulo="ch1 fix")], QUANDO)
+    estado.gravar_varredura(REPO, [_pr(7, titulo="ch2 outro")], DEPOIS)
+    assert [(p.pr_id, p.titulo) for p in estado.prs_indexadas(REPO)] == [
+        (7, "ch2 outro")
+    ]
+
+
+def test_gravar_varredura_avanca_a_marca(estado):
+    estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
+    estado.gravar_varredura(REPO, [], DEPOIS)
+    assert estado.marca_varredura(REPO) == DEPOIS
+
+
+def test_gravar_varredura_sem_pr_nenhuma_ainda_avanca_a_marca(estado):
+    # varredura que nao achou nada e varredura bem-sucedida: nao avancar a marca
+    # faria a proxima refazer a mesma janela para sempre.
+    estado.gravar_varredura(REPO, [], QUANDO)
+    assert estado.marca_varredura(REPO) == QUANDO
+
+
+def test_indice_de_pr_e_por_repo(estado):
+    estado.registrar_repo("outro", 99)
+    estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
+    assert estado.prs_indexadas("outro") == []
+    assert estado.marca_varredura("outro") is None

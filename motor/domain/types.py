@@ -49,6 +49,22 @@ class CommitRef:
 
 
 @dataclass(frozen=True)
+class PrIndex:
+    """PR mergeada como o indice local a conhece.
+
+    Guarda titulo e branch CRUS, nao o numero do chamado extraido: o casamento
+    e um predicado (`ch<n>` no comeco do titulo ou dentro da branch), nao uma
+    extracao. Uma PR pode citar dois chamados, e extrair um na gravacao seria
+    escolher por conta propria qual conta.
+    """
+
+    pr_id: int = 0
+    titulo: str = ""
+    branch: str = ""
+    updated_on: datetime.datetime = SEM_DATA
+
+
+@dataclass(frozen=True)
 class TaskTarget:
     chamado: str = ""  # numero do chamado — identidade unica da tarefa
     marcada: str = ""  # versao para a qual o Tickio marcou

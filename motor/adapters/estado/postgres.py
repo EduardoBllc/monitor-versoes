@@ -15,6 +15,7 @@ from motor.adapters.estado import models
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    PrIndex,
     Exclusion,
     RepoInfo,
     VersaoInfo,
@@ -288,6 +289,54 @@ class PostgresEstado:
                         msg=c.msg,
                     )
                 )
+        self._commit()
+
+    def prs_indexadas(self, repo: str, /) -> list[PrIndex]:
+        repo_id = self._repo_id(repo)
+        return [
+            PrIndex(
+                pr_id=linha.pr_id,
+                titulo=linha.titulo,
+                branch=linha.branch,
+                updated_on=linha.updated_on,
+            )
+            for linha in self._scalars(
+                select(models.BitbucketPr)
+                .where(models.BitbucketPr.repo_id == repo_id)
+                .order_by(models.BitbucketPr.pr_id)
+            )
+        ]
+
+    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
+        linha = self._scalar(
+            select(models.BitbucketVarredura).where(
+                models.BitbucketVarredura.repo_id == self._repo_id(repo)
+            )
+        )
+        return None if linha is None else linha.ate
+
+    def gravar_varredura(
+        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+    ) -> None:
+        """Indice e marca na MESMA transacao.
+
+        E o que impede varredura interrompida de avancar a marca: sem isso, as
+        PRs que faltaram ficariam fora da proxima janela e sumiriam para sempre.
+        """
+        repo_id = self._repo_id(repo)
+        for pr in prs:
+            # merge: a varredura incremental reentrega PR que so mudou de
+            # titulo, e um add duplicaria a chave.
+            self.sessao.merge(
+                models.BitbucketPr(
+                    repo_id=repo_id,
+                    pr_id=pr.pr_id,
+                    titulo=pr.titulo,
+                    branch=pr.branch,
+                    updated_on=pr.updated_on,
+                )
+            )
+        self.sessao.merge(models.BitbucketVarredura(repo_id=repo_id, ate=ate))
         self._commit()
 
     # -- internos --------------------------------------------------------

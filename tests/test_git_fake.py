@@ -222,3 +222,61 @@ def test_branch_duplicada_e_recusa_nao_ausencia():
 
     with pytest.raises(RecusaDeInvariante):
         git.worktree_add("13.34.0", "m0")
+
+
+def test_fake_worktree_gc_mantem_as_n_mais_usadas():
+    g = FakeGit()
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    g.add_commit("tip", "", "base", base)
+    for v in ("13.1.0", "13.2.0", "13.3.0"):
+        g.branches[v] = "tip"
+        g.use_worktree(v)
+
+    removidas = g.worktree_gc(2, "13.3.0")
+
+    # 13.1.0 foi a primeira usada, logo a mais antiga no mru.
+    assert removidas == ["13.1.0"]
+    assert g.removed_worktrees == ["13.1.0"]
+
+
+def test_fake_worktree_gc_promove_worktree_reusada():
+    g = FakeGit()
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    g.add_commit("tip", "", "base", base)
+    for v in ("13.1.0", "13.2.0", "13.3.0"):
+        g.branches[v] = "tip"
+        g.use_worktree(v)
+    g.use_worktree("13.1.0")  # volta pro topo do mru
+
+    assert g.worktree_gc(2, "13.1.0") == ["13.2.0"]
+
+
+def test_fake_worktree_gc_com_manter_zero_remove_tudo():
+    g = FakeGit()
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    g.add_commit("tip", "", "base", base)
+    g.branches["13.1.0"] = "tip"
+    g.use_worktree("13.1.0")
+
+    assert g.worktree_gc(0, "13.1.0") == ["13.1.0"]
+    # worktree removida sai do mru: nao existe mais em disco.
+    assert g.worktree_gc(0, "13.1.0") == []
+
+
+def test_fake_worktree_add_registra_a_worktree_criada():
+    g = FakeGit()
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    g.add_commit("tip", "", "base", base)
+    g.branches["master"] = "tip"
+
+    g.worktree_add("13.4.0", "master")
+
+    assert g.worktree_gc(0, "") == ["13.4.0"]
+
+
+def test_fake_worktree_gc_tem_a_assinatura_do_adapter_real():
+    from motor.adapters.git.subprocess import GitSubprocess
+
+    assert inspect.signature(FakeGit.worktree_gc) == inspect.signature(
+        GitSubprocess.worktree_gc
+    )

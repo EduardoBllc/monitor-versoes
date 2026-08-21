@@ -6,6 +6,7 @@ Usa git real em tmp_path (o Go não pula esses testes, então este também não)
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 
 import pytest
@@ -744,3 +745,183 @@ def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(t
     msgs = [c.msg for c in culpados["a.txt"]]
     assert len(msgs) == 1, f"culpados = {msgs!r}"
     assert "ch200" in msgs[0]
+
+
+# --- worktree_gc: GC das worktrees por uso recente ---
+#
+# Os caminhos abaixo repetem o layout do adapter de proposito: se
+# `_worktree_dir` mudar de lugar, estes testes gritam em vez de silenciosamente
+# passarem a olhar um diretorio vazio.
+
+
+def _dir_worktrees(repo_dir: str) -> str:
+    return os.path.join(
+        os.path.dirname(repo_dir), os.path.basename(repo_dir) + "-worktrees"
+    )
+
+
+def _wt(repo_dir: str, branch: str) -> str:
+    return os.path.join(_dir_worktrees(repo_dir), branch)
+
+
+def _arquivo_mru(repo_dir: str) -> str:
+    return os.path.join(_dir_worktrees(repo_dir), ".motor-mru")
+
+
+def _repo_para_gc(tmp_path) -> str:
+    """Repo num subdiretorio, para as worktrees cairem num `repo-worktrees/`
+    isolado em vez de no diretorio pai do tmp_path, compartilhado."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    dir_ = str(repo)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (repo / "arquivo.txt").write_text("v1\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+    return dir_
+
+
+def test_worktree_gc_mantem_as_n_mais_recentes_e_apaga_o_resto(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    for v in ("13.1.0", "13.2.0", "13.3.0"):
+        g.worktree_add(v, "master")
+
+    removidas = g.worktree_gc(2, "13.3.0")
+
+    assert removidas == ["13.1.0"]
+    assert not os.path.exists(_wt(repo, "13.1.0"))
+    assert os.path.isdir(_wt(repo, "13.2.0"))
+    assert os.path.isdir(_wt(repo, "13.3.0"))
+
+
+def test_worktree_gc_le_o_mru_gravado_por_outra_instancia(tmp_path):
+    """O mru mora em arquivo justamente porque cada comando do motor e um
+    processo novo: sem persistir, todo run comecaria sem historico de uso."""
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    for v in ("13.1.0", "13.2.0", "13.3.0"):
+        g.worktree_add(v, "master")
+    g.use_worktree("13.1.0")  # promove a mais antiga ao topo
+
+    outra = new_git_subprocess(repo)
+
+    assert outra.worktree_gc(1, "") == ["13.3.0", "13.2.0"]
+    assert os.path.isdir(_wt(repo, "13.1.0"))
+
+
+def test_worktree_gc_nao_remove_worktree_com_cherry_pick_pendente(tmp_path):
+    """Checkpoint resumivel (design.md §8): dentro dessa worktree pode haver
+    resolucao manual de conflito que so existe ali."""
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+    g.write_file("13.1.0", "arquivo.txt", b"vA\n", "muda para A")
+
+    (tmp_path / "repo" / "arquivo.txt").write_text("vB\n")
+    _run_git(repo, "commit", "-am", "muda para B")
+    conflitante = _rev(repo, "HEAD")
+
+    g.use_worktree("13.1.0")
+    assert g.cherry_pick_x(conflitante) == CherryPickOutcome.CONFLITO
+
+    g.worktree_add("13.9.0", "master")  # candidata a evictar passa a ser 13.1.0
+
+    assert g.worktree_gc(1, "13.9.0") == []
+    assert os.path.isdir(_wt(repo, "13.1.0"))
+
+
+def test_worktree_gc_nao_remove_worktree_com_alteracao_rastreada(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+    g.worktree_add("13.9.0", "master")
+    with open(os.path.join(_wt(repo, "13.1.0"), "arquivo.txt"), "w") as f:
+        f.write("editado a mao\n")
+
+    assert g.worktree_gc(1, "13.9.0") == []
+    assert os.path.isdir(_wt(repo, "13.1.0"))
+
+
+def test_worktree_gc_remove_apesar_de_arquivo_nao_rastreado(tmp_path):
+    """Cruft nao rastreado (deps instaladas, .env) e exatamente o que o
+    `--force` do worktree remove existe para descartar — nao pode virar
+    motivo de a worktree ficar viva para sempre."""
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+    g.worktree_add("13.9.0", "master")
+    with open(os.path.join(_wt(repo, "13.1.0"), ".env"), "w") as f:
+        f.write("SEGREDO=1\n")
+
+    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert not os.path.exists(_wt(repo, "13.1.0"))
+
+
+def test_worktree_gc_ignora_worktree_que_nao_e_de_versao(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+    _run_git(
+        repo, "worktree", "add", "-b", "experimento", _wt(repo, "experimento"), "master"
+    )
+
+    assert g.worktree_gc(0, "") == ["13.1.0"]
+    assert os.path.isdir(_wt(repo, "experimento"))
+
+
+def test_worktree_gc_mru_ilegivel_cai_em_semver_desc(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    for v in ("13.10.0", "13.9.0"):
+        g.worktree_add(v, "master")
+    # mru diria que 13.9.0 e a mais recente; lixo nao-utf8 o invalida.
+    with open(_arquivo_mru(repo), "wb") as f:
+        f.write(b"\xff\xfe nao e utf-8")
+
+    outra = new_git_subprocess(repo)
+
+    # Fallback e semver desc: 13.10.0 fica. Ordem textual manteria "13.9.0".
+    assert outra.worktree_gc(1, "") == ["13.9.0"]
+
+
+def test_worktree_gc_com_manter_zero_remove_inclusive_a_atual(tmp_path):
+    """manter=0 e o comportamento historico: worktree nao sobrevive ao run."""
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+
+    assert g.worktree_gc(0, "13.1.0") == ["13.1.0"]
+    assert not os.path.exists(_wt(repo, "13.1.0"))
+    assert g.worktree_gc(0, "13.1.0") == []
+
+
+def test_worktree_gc_ignora_worktree_apagada_a_mao(tmp_path):
+    """Diretorio removido com `rm -rf` deixa o registro do git para tras.
+    Antes o `worktree_remove` so tocava a versao do run; o GC olha as outras,
+    entao um registro quebrado nao pode derrubar todo comando do motor.
+    """
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+    g.worktree_add("13.9.0", "master")
+    shutil.rmtree(_wt(repo, "13.1.0"))
+
+    assert g.worktree_gc(1, "13.9.0") == []
+    assert os.path.isdir(_wt(repo, "13.9.0"))
+
+
+def test_worktree_gc_enxerga_as_worktrees_sob_caminho_com_symlink(tmp_path):
+    """`/tmp` -> `/private/tmp` no macOS: se o git reportar o caminho resolvido
+    e o motor comparar com o caminho como recebido, o filtro nao casa e o GC
+    vira um no-op silencioso — pior que falhar.
+    """
+    (tmp_path / "real").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "real")
+    repo = _repo_para_gc(tmp_path / "link")
+    g = new_git_subprocess(repo)
+    g.worktree_add("13.1.0", "master")
+    g.worktree_add("13.9.0", "master")
+
+    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
