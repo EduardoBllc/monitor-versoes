@@ -241,6 +241,7 @@ class MotorTUI(App[None]):
     #conteudo { height: 1fr; }
     #resultado-scroll { height: 1fr; padding: 1 2; }
     #resultado { width: 1fr; }
+    #resultado.aviso { height: 100%; content-align: center middle; }
     #consulta-painel { display: none; height: 1fr; padding: 1 2; }
     #consulta-resumo { height: auto; padding-bottom: 1; color: $text-muted; }
     #consulta-corpo { height: 1fr; }
@@ -292,7 +293,9 @@ class MotorTUI(App[None]):
             yield Button("Atualizar", id="atualizar", disabled=True)
         with Container(id="conteudo"):
             with VerticalScroll(id="resultado-scroll"):
-                yield Static("Selecione um repositório.", id="resultado")
+                yield Static(
+                    "Selecione um repositório.", id="resultado", classes="aviso"
+                )
             with Vertical(id="consulta-painel"):
                 yield Static(id="consulta-resumo")
                 with Horizontal(id="consulta-corpo"):
@@ -322,6 +325,9 @@ class MotorTUI(App[None]):
         self.query_one("#consulta-painel").display = False
         self.query_one("#resultado-scroll").display = True
         resultado = self.query_one("#resultado", Static)
+        # Aviso de uma linha fica centrado no painel vazio; conteudo de verdade
+        # (tabela, Panel de erro) continua no canto de cima, alinhado a esquerda.
+        resultado.set_class(isinstance(conteudo, (str, Text)), "aviso")
         resultado.update(conteudo)
         return resultado
 

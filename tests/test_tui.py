@@ -736,6 +736,38 @@ def test_app_esconde_erro_interno_e_registra_traceback(caplog):
     assert "Traceback" in caplog.text
 
 
+def test_app_centra_aviso_e_alinha_resultado_no_canto():
+    """Aviso de uma linha centrado; resultado de verdade encostado no canto."""
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            resultado = app.query_one("#resultado", Static)
+            assert resultado.has_class("aviso")
+
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert "Selecione uma versão." in _texto(resultado.content)
+            assert resultado.has_class("aviso")
+
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+            app.query_one("#verificar", Button).press()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert not resultado.has_class("aviso")
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_exibe_loading_enquanto_carrega_versoes():
     """O fetch do origin e a espera mais longa da TUI — sem loading aqui o
     painel ficava com uma linha de texto parada, sem o pulso das outras fases.
