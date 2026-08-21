@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 from collections.abc import Callable
@@ -15,10 +16,19 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Footer, Header, OptionList, Select, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Footer,
+    Header,
+    Input,
+    OptionList,
+    Select,
+    Static,
+)
 from textual.widgets.option_list import Option
 
-from motor.__main__ import _abrir_sessao
+from motor.__main__ import _abrir_sessao, _nome_repo, _tickio_sistema_id
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.tickio import TickioRest
@@ -54,6 +64,7 @@ VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
+RepoRegistrar = Callable[[str, int], None]
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -85,11 +96,73 @@ class ResultadoModal(ModalScreen[None]):
             yield Static(self._conteudo, id="modal-conteudo")
 
 
+class CadastroModal(ModalScreen["tuple[str, int] | None"]):
+    """Formulario de cadastro de repo.
+
+    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o par
+    pronto. Erro de banco (nome duplicado) nao e do formulario: sai pelo
+    caminho de erro normal do app, com o modal ja fechado.
+    """
+
+    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    DEFAULT_CSS = """
+    CadastroModal { align: center middle; }
+    CadastroModal > Vertical {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+    }
+    CadastroModal .rotulo { height: auto; color: $text-muted; }
+    #cadastro-erro { height: auto; color: $error; }
+    #cadastro-botoes { height: auto; align-horizontal: right; padding-top: 1; }
+    #cadastro-botoes Button { margin-left: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical() as caixa:
+            caixa.border_title = "Cadastrar repositório"
+            caixa.border_subtitle = "esc para cancelar"
+            yield Static("nome", classes="rotulo")
+            yield Input(placeholder="nome canônico, sem caminho", id="cadastro-nome")
+            yield Static("tickio_sistema_id", classes="rotulo")
+            yield Input(placeholder="inteiro positivo", id="cadastro-sistema")
+            yield Static(id="cadastro-erro")
+            with Horizontal(id="cadastro-botoes"):
+                yield Button("Cancelar", id="cadastro-cancelar")
+                yield Button("Salvar", id="cadastro-salvar", variant="primary")
+
+    def action_cancelar(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, evento: Button.Pressed) -> None:
+        if evento.button.id == "cadastro-salvar":
+            self._salvar()
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, evento: Input.Submitted) -> None:
+        self._salvar()
+
+    def _salvar(self) -> None:
+        try:
+            nome = _nome_repo(self.query_one("#cadastro-nome", Input).value)
+            sistema_id = _tickio_sistema_id(
+                self.query_one("#cadastro-sistema", Input).value
+            )
+        except argparse.ArgumentTypeError as erro:
+            self.query_one("#cadastro-erro", Static).update(str(erro))
+            return
+        self.dismiss((nome, sistema_id))
+
+
 class MotorTUI(App[None]):
     BINDINGS = [
         ("q", "quit", "Sair"),
         ("v", "verificar", "Verificar"),
         ("u", "atualizar", "Atualizar"),
+        ("n", "cadastrar", "Cadastrar repo"),
     ]
     CSS = """
     #barra { height: auto; padding: 1; align-vertical: middle; }
@@ -117,6 +190,7 @@ class MotorTUI(App[None]):
         executar: VerifyRunner,
         atualizar_repo: UpdateRunner | None = None,
         consultar_versao: ConsultaRunner | None = None,
+        registrar_repo: RepoRegistrar | None = None,
     ) -> None:
         super().__init__()
         self._carregar_repos = carregar_repos
@@ -124,6 +198,7 @@ class MotorTUI(App[None]):
         self._executar = executar
         self._atualizar = atualizar_repo
         self._consultar = consultar_versao
+        self._registrar = registrar_repo
         self._repo: RepoOption | None = None
         self._versao: VersionOption | None = None
         self._ocupado = False
@@ -427,6 +502,32 @@ class MotorTUI(App[None]):
         elif evento.button.id == "atualizar":
             self._iniciar_atualizacao()
 
+    def action_cadastrar(self) -> None:
+        if self._ocupado or self._registrar is None:
+            return
+        self.push_screen(CadastroModal(), self._cadastrar)
+
+    def _cadastrar(self, dados: tuple[str, int] | None) -> None:
+        if dados is None:
+            return
+        self._bloquear(True)
+        self.cadastrar_worker(*dados)
+
+    @work(thread=True, exclusive=True, group="cadastro")
+    def cadastrar_worker(self, nome: str, sistema_id: int) -> None:
+        try:
+            if self._registrar is not None:
+                self._registrar(nome, sistema_id)
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro)
+            self.call_from_thread(self._bloquear, False)
+            return
+        self.call_from_thread(self._cadastrado, nome)
+
+    def _cadastrado(self, nome: str) -> None:
+        self._exibir_resultado(f"repo '{nome}' cadastrado.")
+        self.carregar_repos_worker()
+
     def action_verificar(self) -> None:
         self._iniciar_verificacao()
 
@@ -548,6 +649,11 @@ def _repos_do_ambiente() -> list[RepoOption]:
         )
 
 
+def _registrar_no_banco(nome: str, sistema_id: int) -> None:
+    with _abrir_sessao() as sessao:
+        PostgresEstado(sessao=sessao).registrar_repo(nome, sistema_id)
+
+
 def _versoes_do_repo(repo: RepoOption) -> list[VersionOption]:
     if repo.caminho is None:
         return []
@@ -601,6 +707,7 @@ def run_tui() -> None:
         _verificar_repo,
         _atualizar_repo,
         _consultar_repo,
+        _registrar_no_banco,
     ).run()
 
 
