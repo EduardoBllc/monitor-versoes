@@ -28,7 +28,7 @@ from typing import Any
 import httpx
 
 from motor.domain.types import SEM_DATA, CommitRef
-from motor.errors import MotorError
+from motor.errors import BackendIndisponivel, RespostaInvalida
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -48,7 +48,7 @@ def parse_workspace_repo(url: str) -> tuple[str, str]:
     # ultimos segmentos de path (ws/repo).
     m = _PADRAO_REMOTE.search(url.strip())
     if m is None:
-        raise MotorError(f"nao consegui extrair workspace/repo de {url!r}")
+        raise RespostaInvalida(f"nao consegui extrair workspace/repo de {url!r}")
     return m.group(1), m.group(2)
 
 
@@ -217,13 +217,15 @@ class BitbucketPRCommitSource:
             try:
                 resp = client.get(url, params=params, headers={"Authorization": self._auth_header()})
             except httpx.HTTPError as e:
-                raise MotorError(f"chamando Bitbucket {url}: {e}") from e
+                raise BackendIndisponivel(f"chamando Bitbucket {url}: {e}") from e
             if resp.status_code != 200:
-                raise MotorError(f"Bitbucket respondeu {resp.status_code} em {url}: {resp.text}")
+                raise BackendIndisponivel(
+                    f"Bitbucket respondeu {resp.status_code} em {url}: {resp.text}"
+                )
             try:
                 corpo = resp.json()
             except ValueError as e:
-                raise MotorError(f"decodificando resposta do Bitbucket em {url}: {e}") from e
+                raise RespostaInvalida(f"decodificando resposta do Bitbucket em {url}: {e}") from e
             yield from corpo.get("values", [])
             url = corpo.get("next", "")
             params = None  # `next` ja traz a query embutida

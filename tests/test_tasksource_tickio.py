@@ -3,8 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from motor.adapters.tasksource.tickio import TickioRest
-from motor.errors import MotorError
+from motor.adapters.tasksource.tickio import TickioRest, _extrair_chamados
+from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 
 def _fonte(handler, **kwargs) -> TickioRest:
@@ -83,7 +83,7 @@ def test_credencial_invalida_vira_motorerror():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, text="credenciais invalidas")
 
-    with pytest.raises(MotorError, match="autenticando no Tickio"):
+    with pytest.raises(BackendIndisponivel, match="autenticando no Tickio"):
         _fonte(handler).fetch("13.34.0")
 
 
@@ -93,7 +93,7 @@ def test_erro_na_listagem_vira_motorerror():
             return httpx.Response(200, json={"access": "tok"})
         return httpx.Response(500, text="boom")
 
-    with pytest.raises(MotorError, match="500"):
+    with pytest.raises(BackendIndisponivel, match="500"):
         _fonte(handler).fetch("13.34.0")
 
 
@@ -104,7 +104,7 @@ def test_rejeita_corpo_em_formato_desconhecido():
             return httpx.Response(200, json={"access": "tok"})
         return httpx.Response(200, json={"detail": "nao encontrado"})
 
-    with pytest.raises(MotorError, match="formato inesperado"):
+    with pytest.raises(RespostaInvalida):
         _fonte(handler).fetch("13.34.0")
 
 
@@ -114,7 +114,7 @@ def test_rejeita_item_sem_numero_de_chamado():
             return httpx.Response(200, json={"access": "tok"})
         return httpx.Response(200, json=[{"titulo": "sem numero aqui"}])
 
-    with pytest.raises(MotorError, match="sem numero de chamado"):
+    with pytest.raises(RespostaInvalida):
         _fonte(handler).fetch("13.34.0")
 
 
@@ -136,3 +136,19 @@ def test_repr_nao_vaza_senha_nem_jwt():
     assert (fonte.senha, fonte._access) == ("senha-secreta", "jwt-secreto")
     assert "senha-secreta" not in repr(fonte)
     assert "jwt-secreto" not in repr(fonte)
+
+
+def test_formato_inesperado_e_resposta_invalida_nao_backend_fora():
+    """A secao 10 do desenho registra que o corpo de resposta do Tickio nunca
+    foi observado. Distinguir "respondeu lixo" de "nao respondeu" e o que
+    permite ao operador saber se o problema e rede ou contrato.
+    """
+    with pytest.raises(RespostaInvalida):
+        _extrair_chamados({"forma": "nao reconhecida"})
+
+
+def test_variavel_faltando_e_erro_de_entrada_nao_backend():
+    fonte = TickioRest(base_url="", usuario="", senha="", sistema_id=7)
+
+    with pytest.raises(ErroDeEntrada, match="faltando no .env"):
+        fonte.fetch("13.34.0")
