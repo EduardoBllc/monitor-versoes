@@ -88,6 +88,49 @@ def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
     assert [opcao.caminho for opcao in opcoes] == [None, None, None]
 
 
+def test_descobrir_repos_relata_o_banco_e_a_varredura(tmp_path):
+    """Era o unico worker sem fase nenhuma: a tela ficava parada enquanto o
+    banco abria e o PROJECTS_DIR era varrido (um resolver_repo por diretorio
+    desconhecido).
+    """
+    _checkout(tmp_path, "alpha")
+    _checkout(tmp_path, "nao-cadastrado")
+    relatos: list[Progresso] = []
+
+    descobrir_repos(_estado(), str(tmp_path), progresso=relatos.append)
+
+    assert relatos[0] == Progresso("lendo os repos cadastrados")
+    assert relatos[1:] == [
+        Progresso("procurando os checkouts", 1, 2),
+        Progresso("procurando os checkouts", 2, 2),
+    ]
+
+
+def test_app_exibe_loading_enquanto_carrega_repos():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    iniciou = Event()
+    liberar = Event()
+
+    def carregar_repos() -> list[RepoOption]:
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return [repo]
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(carregar_repos, lambda opcao: [], _nunca_executa)
+        async with app.run_test(size=(120, 36)):
+            assert await asyncio.to_thread(iniciou.wait, 1)
+
+            scroll = app.query_one("#resultado-scroll")
+            assert scroll.loading
+
+            liberar.set()
+            await app.workers.wait_for_complete()
+            assert not scroll.loading
+
+    asyncio.run(executar_fluxo())
+
+
 def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
     estado = FakeEstado(
         repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}

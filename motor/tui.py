@@ -305,6 +305,8 @@ class MotorTUI(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        self._ocupar_resultado()
+        self._bloquear(True)
         self.carregar_repos_worker()
         # Amostragem a 10 Hz em vez de call_from_thread por evento: o motor
         # relata uma vez por commit, e cada call_from_thread bloquearia a thread
@@ -504,6 +506,7 @@ class MotorTUI(App[None]):
             opcoes = self._carregar_repos()
         except Exception as erro:
             self.call_from_thread(self._falha, erro)
+            self.call_from_thread(self._bloquear, False)
             return
         self.call_from_thread(self._mostrar_repos, opcoes)
 
@@ -639,6 +642,7 @@ class MotorTUI(App[None]):
 
     def _cadastrado(self, nome: str) -> None:
         self._exibir_resultado(f"repo '{nome}' cadastrado.")
+        self._ocupar_resultado()
         self.carregar_repos_worker()
 
     def action_verificar(self) -> None:
@@ -711,7 +715,10 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._bloquear, False)
 
 
-def descobrir_repos(estado: EstadoRepo, projects_dir: str) -> list[RepoOption]:
+def descobrir_repos(
+    estado: EstadoRepo, projects_dir: str, *, progresso: RelatorProgresso = silencioso
+) -> list[RepoOption]:
+    progresso(Progresso("lendo os repos cadastrados"))
     repos = estado.listar_repos()
     if not projects_dir:
         return [RepoOption(nome=repo.nome, caminho=None) for repo in repos]
@@ -720,7 +727,11 @@ def descobrir_repos(estado: EstadoRepo, projects_dir: str) -> list[RepoOption]:
     raiz = Path(projects_dir)
 
     if raiz.is_dir():
-        for caminho in sorted(raiz.iterdir(), key=lambda item: item.name):
+        # Conta os diretorios porque a varredura pode consultar o banco em cada
+        # um (`resolver_repo` de nome que nao esta na lista canonica).
+        candidatos = sorted(raiz.iterdir(), key=lambda item: item.name)
+        for indice, caminho in enumerate(candidatos, start=1):
+            progresso(Progresso("procurando os checkouts", indice, len(candidatos)))
             if not caminho.is_dir() or not (caminho / ".git").exists():
                 continue
             if caminho.name in canonicos:
@@ -759,10 +770,14 @@ def descobrir_versoes(
     return [VersionOption(numero, numero in tags) for numero in numeros]
 
 
-def _repos_do_ambiente() -> list[RepoOption]:
+def _repos_do_ambiente(
+    *, progresso: RelatorProgresso = silencioso
+) -> list[RepoOption]:
     with abrir_sessao() as sessao:
         return descobrir_repos(
-            PostgresEstado(sessao=sessao), os.environ.get("PROJECTS_DIR", "")
+            PostgresEstado(sessao=sessao),
+            os.environ.get("PROJECTS_DIR", ""),
+            progresso=progresso,
         )
 
 
@@ -824,7 +839,7 @@ def run_tui() -> None:
     # progresso existe.
     slot = SlotProgresso()
     MotorTUI(
-        _repos_do_ambiente,
+        partial(_repos_do_ambiente, progresso=slot.relatar),
         partial(_versoes_do_repo, progresso=slot.relatar),
         partial(_verificar_repo, progresso=slot.relatar),
         partial(_atualizar_repo, progresso=slot.relatar),
