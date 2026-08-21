@@ -32,7 +32,7 @@ from motor.domain.types import (
     VersaoInfo,
     VersionType,
 )
-from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
+from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 REPO = "vendabemweb"
 ALIAS = "vbweb"
