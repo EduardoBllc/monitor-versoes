@@ -43,7 +43,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
@@ -800,7 +800,7 @@ def _deps_do_repo(
     repo: RepoOption, sessao: Session, progresso: RelatorProgresso = silencioso
 ) -> Deps:
     if repo.caminho is None:
-        raise MotorError("checkout local não encontrado")
+        raise NaoEncontrado("checkout local não encontrado")
     # Sem flags: token e email do Bitbucket saem do ambiente dentro do
     # montar_deps, e a fonte de tasks e sempre o Tickio.
     return montar_deps(repo.caminho, sessao, progresso=progresso)

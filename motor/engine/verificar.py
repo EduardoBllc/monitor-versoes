@@ -12,7 +12,7 @@ from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconcilia
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import chave, inferir_tipo, versoes_abertas
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada, MotorError
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
 from motor.services.presence_oracle import PresenceOracle
@@ -94,9 +94,9 @@ def verificar(
     if auditar:
         info = deps.estado.versao(deps.repo, versao)
         if versao not in tags:
-            raise MotorError("--auditar exige uma versao liberada")
+            raise ErroDeEntrada("--auditar exige uma versao liberada")
         if info is None:
-            raise MotorError("--auditar exige uma versao registrada no estado")
+            raise ErroDeEntrada("--auditar exige uma versao registrada no estado")
         ref_alvo = deps.git.resolve_ref(f"refs/tags/{versao}")
     else:
         # Congela o que ganhou tag desde o ultimo run. A data e a do commit
@@ -147,9 +147,10 @@ def verificar(
 
     if deps.commit_source is None:
         # Bug de montagem, nao erro do operador: o front-end tem de montar a
-        # fonte (motor.montagem.montar_commit_source). Nomear isso aqui e mais
-        # barato que um AttributeError vindo de dentro do TargetResolver.
-        raise MotorError("Deps.commit_source nao montado")
+        # fonte (motor.montagem.montar_commit_source). AssertionError em vez de
+        # MotorError porque o main() ja roteia nao-MotorError para traceback, e
+        # e traceback que o autor deste bug precisa ver.
+        raise AssertionError("Deps.commit_source nao montado")
     resolver = TargetResolver(
         tasks=deps.tasks, commits=deps.commit_source, progresso=deps.progresso
     )

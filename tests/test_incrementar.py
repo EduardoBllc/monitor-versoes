@@ -18,7 +18,7 @@ from motor.engine.atualizar import (
     atualizar_continue,
 )
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import RecusaDeInvariante
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
 D1 = D + datetime.timedelta(minutes=1)
@@ -145,7 +145,7 @@ def test_atualizar_bloqueia_com_suspeita_de_conteudo():
     g.file_changes["alvo0"] = frozenset({"a.txt"})
     estado = _estado()
 
-    with pytest.raises(MotorError, match="suspeitos"):
+    with pytest.raises(RecusaDeInvariante):
         atualizar(_deps(g, estado, ["255514"], UM), "13.7.0")
 
     assert "13.7.0" not in g.remotes, "nao esperava push com suspeita nao resolvida"
@@ -255,7 +255,7 @@ def test_atualizar_continue_recusa_versao_com_tag():
 
     g.tags["13.7.0"] = True  # liberada em outra maquina, conflito ainda aberto
 
-    with pytest.raises(MotorError, match="ja liberada"):
+    with pytest.raises(RecusaDeInvariante):
         atualizar_continue(deps, "13.7.0")
 
     assert g.branches["13.7.0"] == tip, (
@@ -273,7 +273,7 @@ def test_atualizar_recusa_versao_com_tag():
     deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r",
                 commit_source=FakeCommitSource())
 
-    with pytest.raises(MotorError, match="liberada"):
+    with pytest.raises(RecusaDeInvariante):
         atualizar(deps, "13.34.0")
 
 
@@ -291,7 +291,7 @@ def test_atualizar_busca_antes_de_ler_a_tag():
     estado.registrar_versao("r", VersaoInfo(numero="13.7.0", tipo=VersionType.AJUSTADA,
                                             base_ref="13.6.0", base_commit="m0"))
 
-    with pytest.raises(MotorError, match="ja liberada"):
+    with pytest.raises(RecusaDeInvariante):
         atualizar(_deps(g, estado, ["255514"], UM), "13.7.0")
 
     assert g.fetched == ["origin"]

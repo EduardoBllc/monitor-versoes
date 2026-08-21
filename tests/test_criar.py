@@ -14,7 +14,7 @@ from motor.domain.types import CommitRef, RepoInfo, VersionType
 from motor.engine.atualizar import AtualizarStatus
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import RecusaDeInvariante
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
 
@@ -104,7 +104,7 @@ def test_criar_falha_se_ja_publicada():
     g.tags["13.7.0"] = True
     estado = _estado()
 
-    with pytest.raises(MotorError, match="ja publicada"):
+    with pytest.raises(RecusaDeInvariante):
         criar(_deps(g, estado), "13.7.0")
 
     assert "13.7.0" not in g.branches, "nao pode criar branch de versao ja publicada"
@@ -120,7 +120,7 @@ def test_criar_busca_antes_de_ler_a_publicacao():
     g = _git(classe=_GitQueTagueiaNoFetch)
     estado = _estado()
 
-    with pytest.raises(MotorError, match="ja publicada"):
+    with pytest.raises(RecusaDeInvariante):
         criar(_deps(g, estado), "13.7.0")
 
     assert g.fetched == ["origin"]

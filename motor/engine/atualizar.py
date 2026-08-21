@@ -9,7 +9,7 @@ from motor.domain.commits import ordenar_por_data
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
 from motor.services.publication_gate import PublicationGate
@@ -55,7 +55,7 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
     deps.git.fetch("origin")
 
     if PublicationGate(git=deps.git).liberada(versao):
-        raise MotorError(
+        raise RecusaDeInvariante(
             f"versao {versao} ja liberada (tem tag) - remarque a tarefa "
             "para a proxima versao em construcao"
         )
@@ -74,7 +74,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
 
     if status.suspeitos_conteudo:
         hashes = ", ".join(c.hash_origem[:8] for c in status.suspeitos_conteudo)
-        raise MotorError(
+        raise RecusaDeInvariante(
             "commits suspeitos de cherry-pick manual com conteudo divergente "
             f"(mesma mensagem e arquivos ja existem no alvo, sem trailer -x): {hashes}. "
             "Confirme manualmente (exclua no estado se ja aplicado) antes de rodar atualizar de novo."
@@ -151,7 +151,7 @@ def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
     deps.git.use_worktree(versao)
     _, ok = deps.git.pending_cherry_pick()
     if not ok:
-        raise MotorError("nenhum cherry-pick pendente pra continuar")
+        raise ErroDeEntrada("nenhum cherry-pick pendente pra continuar")
 
     deps.git.continue_cherry_pick()
     return atualizar(deps, versao)

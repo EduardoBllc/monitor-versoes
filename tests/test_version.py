@@ -4,7 +4,7 @@ import pytest
 
 from motor.domain.types import VersionType
 from motor.domain.version import chave, fontes_de_alvo, inferir_base, inferir_tipo, versoes_abertas
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada
 
 
 def test_inferir_tipo():
@@ -19,7 +19,7 @@ def test_inferir_tipo():
 
 
 def test_inferir_tipo_invalido():
-    with pytest.raises(MotorError):
+    with pytest.raises(ErroDeEntrada):
         inferir_tipo("13.7")
 
 
