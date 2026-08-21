@@ -1033,6 +1033,56 @@ def test_app_verificar_com_lista_visivel_abre_modal_e_recarrega_chamados():
     asyncio.run(executar_fluxo())
 
 
+def test_app_primeira_verificacao_sem_snapshot_abre_modal_e_carrega_lista():
+    """Versão nunca verificada: a consulta inicial vem vazia, então a lista não
+    está na tela. O resultado ainda é transitório — o verificar acabou de gravar
+    o snapshot — logo vai para o modal e ao fechar traz a lista."""
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    consultas = 0
+
+    def consultar_runner(opcao: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        nonlocal consultas
+        consultas += 1
+        if consultas == 1:
+            return []
+        return [
+            ChamadoConsultado(chamado="255514", estado="pendente", commits=[commit])
+        ]
+
+    async def executar_fluxo() -> None:
+        app = _app_com_consulta(
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            consultar_versao=consultar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar(app, pilot)
+            assert consultas == 1
+            base = app.screen_stack[0]
+            assert not base.query_one("#consulta-painel").display
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert isinstance(app.screen, tui.ResultadoModal)
+            assert "FALTANTE" in _texto(
+                app.screen.query_one("#modal-conteudo", Static).content
+            )
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert consultas == 2
+            assert app.query_one("#consulta-painel").display
+            assert not app.query_one("#resultado-scroll").display
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_auditoria_nao_recarrega_lista_de_chamados():
     consultas = 0
 

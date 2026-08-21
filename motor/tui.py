@@ -332,11 +332,15 @@ class MotorTUI(App[None]):
         return resultado
 
     def _apresentar(self, conteudo: VisualType, *, reconsultar: bool = False) -> None:
-        """Com a lista de chamados na tela, resultado e transitorio: vai para um
-        modal e ao fechar recarrega a lista, que o verificar/atualizar acabou de
-        reescrever no banco. Sem lista, ocupa o painel como antes.
+        """Resultado que o verificar/atualizar acabou de gravar no banco e
+        transitorio: vai para um modal e ao fechar recarrega a lista de chamados.
+        Vale tambem na primeira verificacao da versao, quando a consulta veio
+        vazia e a lista ainda nao esta na tela — o snapshot que ela vai mostrar
+        e justamente o que este resultado escreveu. Sem recarga pendente (erro,
+        auditoria, TUI sem consulta) e sem lista, ocupa o painel.
         """
-        if not self.query_one("#consulta-painel").display:
+        recarrega = reconsultar and self._consultar is not None
+        if not recarrega and not self.query_one("#consulta-painel").display:
             self._exibir_resultado(conteudo)
             return
         self.push_screen(
@@ -363,7 +367,8 @@ class MotorTUI(App[None]):
     def _reconsultar(self) -> None:
         if self._repo is None or self._versao is None or self._consultar is None:
             return
-        self._ocupar_lista()
+        if not self._ocupar_lista():
+            self._ocupar_resultado()
         self._bloquear(True)
         self.consultar_worker(self._repo, self._versao)
 
