@@ -111,6 +111,10 @@ class VersionStatus:
     ancestrais: list[CommitRef] = field(default_factory=list)  # presente no historico, sem cherry-pick a fazer (ancestral, trailer ou patch-id)
     conflitantes: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes que da conflito (merge-tree)
     suspeitos_conteudo: list[CommitRef] = field(default_factory=list)  # subconjunto de Faltantes com match de mensagem+arquivos no alvo (provavel cherry-pick manual com conteudo divergente) - so alerta, nao conta como presente
+    # hash_origem conflitante -> chamados que tocaram as mesmas linhas antes
+    # dele e nao estao nesta versao. E a resposta para "de que alteracao esse
+    # cherry-pick depende": sem ela o operador sabe que conflita, nao por que.
+    conflito_causado_por: dict[str, list[str]] = field(default_factory=dict)
     tasks_sem_commits: list[str] = field(default_factory=list)  # tarefa no Tickio sem nenhum commit achado e nao reconhecida em sem_entrega
     # Preenchidos so no snapshot de versao liberada (spec §4): sem eles a saida
     # e byte-a-byte igual a de uma versao verde em construcao — nada de data,

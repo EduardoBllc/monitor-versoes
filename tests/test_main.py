@@ -25,7 +25,14 @@ from motor.__main__ import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.domain.types import Atribuicao, RepoInfo, VersaoInfo, VersionStatus, VersionType
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    RepoInfo,
+    VersaoInfo,
+    VersionStatus,
+    VersionType,
+)
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
@@ -583,3 +590,35 @@ def test_resolver_repo_nao_encontrado(tmp_path, monkeypatch):
     monkeypatch.delenv("PROJECTS_DIR", raising=False)
     with pytest.raises(SystemExit):
         _resolver_repo(str(tmp_path / "nao-existe"))
+
+
+def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):
+    """"[CONFLITANTE]" sozinho diz que o commit trava, nao de que alteracao ele
+    depende. Nomear os chamados e o que permite decidir entre puxar a
+    dependencia para esta versao ou devolver o chamado.
+    """
+    faltante = CommitRef(hash_origem="a0a0a0a0a0", chamado="255514", msg="ch255514 alfa")
+    imprimir_status(VersionStatus(
+        estado_integro=True,
+        faltantes=[faltante],
+        conflitantes=[faltante],
+        conflito_causado_por={"a0a0a0a0a0": ["255101", "254800"]},
+    ))
+
+    saida = capsys.readouterr().out
+    assert "CONFLITANTE" in saida
+    assert "ch255101" in saida
+    assert "ch254800" in saida
+
+
+def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
+    faltante = CommitRef(hash_origem="a0a0a0a0a0", chamado="255514", msg="ch255514 alfa")
+    imprimir_status(VersionStatus(
+        estado_integro=True,
+        faltantes=[faltante],
+        conflitantes=[faltante],
+    ))
+
+    saida = capsys.readouterr().out
+    assert "[CONFLITANTE]" in saida
+    assert "depende" not in saida

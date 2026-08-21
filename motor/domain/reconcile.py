@@ -80,6 +80,7 @@ def reconciliar(
     presentes: dict[str, Presence],
     conflitantes: list[CommitRef],
     suspeitos_conteudo: list[CommitRef] = (),
+    conflito_causado_por: dict[str, list[str]] | None = None,
 ) -> VersionStatus:
     """Produz o VersionStatus. Funcao pura: `presentes`, `conflitantes` e
     `suspeitos_conteudo` chegam pre-computados pelo chamador.
@@ -136,5 +137,6 @@ def reconciliar(
         ancestrais=ancestrais,
         conflitantes=conflitantes,
         suspeitos_conteudo=list(suspeitos_conteudo),
+        conflito_causado_por=dict(conflito_causado_por or {}),
         tasks_sem_commits=sem_commits,
     )

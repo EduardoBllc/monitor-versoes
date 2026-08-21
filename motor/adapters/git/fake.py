@@ -47,6 +47,10 @@ class FakeGit:
     conflict_on: dict[str, bool] = field(default_factory=dict)
     file_changes: dict[str, frozenset[str]] = field(default_factory=dict)  # fixture: arquivos alterados por commit (nivel 4)
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
+    # fixture: commit conflitante -> arquivo -> commits culpados por linha.
+    culpados_por_linha_por_commit: dict[str, dict[str, list[CommitRef]]] = field(
+        default_factory=dict
+    )
     commits_in_range_err: Exception | None = None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
     pulled: list[str] = field(default_factory=list)  # espiao de teste: branches que sofreram pull_branch
     fetched: list[str] = field(default_factory=list)  # espiao de teste: remotos que sofreram fetch
@@ -214,6 +218,15 @@ class FakeGit:
         if not pred.conflita and not pred.arvore_resultante:
             return replace(pred, arvore_resultante=f"arvore-{commit}")
         return pred
+
+    def culpados_por_linha(
+        self, base: str, parent: str, commit: str, arquivos: list[str]
+    ) -> dict[str, list[CommitRef]]:
+        por_arquivo = self.culpados_por_linha_por_commit.get(commit, {})
+        # Filtra pelos arquivos pedidos como o real faz: sem isso um engine que
+        # esquecesse de passar arquivos_conflito ainda veria culpados aqui.
+        pedidos = set(arquivos)
+        return {a: c for a, c in por_arquivo.items() if a in pedidos}
 
     def worktree_add(self, branch: str, base: str) -> None:
         if branch in self.branches:

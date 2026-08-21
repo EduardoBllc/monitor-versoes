@@ -1,10 +1,12 @@
 """Porte de internal/adapters/git/fake_test.go."""
 
 import datetime
+import inspect
 
 import pytest
 
 from motor.adapters.git.fake import FakeGit
+from motor.domain.types import CommitRef
 from motor.errors import MotorError
 from motor.ports import CherryPickOutcome
 
@@ -139,3 +141,41 @@ def test_fake_nome_puro_nao_resolve_ref_de_rastreamento():
     with pytest.raises(MotorError):
         git.resolve_ref("13.35.0")
     assert git.resolve_ref("refs/remotes/origin/13.35.0") == "bbb"
+
+
+def test_fake_culpados_por_linha_devolve_a_fixture():
+    """O fake nao faz matematica de hunk: a atribuicao vem configurada, como
+    conflict_on e merge_predictions.
+    """
+    culpado = CommitRef(hash_origem="c200", msg="fix: ch200 mexe a linha 3")
+    git = FakeGit(culpados_por_linha_por_commit={"c400": {"a.txt": [culpado]}})
+
+    assert git.culpados_por_linha("base", "c300", "c400", ["a.txt"]) == {
+        "a.txt": [culpado]
+    }
+
+
+def test_fake_culpados_por_linha_filtra_pelos_arquivos_pedidos():
+    """Sem o filtro, um teste de engine passaria arquivos_conflito=[] e ainda
+    veria culpados — o real nunca faria isso.
+    """
+    culpado = CommitRef(hash_origem="c200", msg="fix: ch200")
+    git = FakeGit(culpados_por_linha_por_commit={"c400": {"a.txt": [culpado]}})
+
+    assert git.culpados_por_linha("base", "c300", "c400", ["outro.txt"]) == {}
+
+
+def test_fake_culpados_por_linha_sem_fixture_e_vazio():
+    git = FakeGit()
+    assert git.culpados_por_linha("base", "c300", "c400", ["a.txt"]) == {}
+
+
+def test_fake_culpados_por_linha_tem_a_assinatura_do_adapter_real():
+    """Fake divergente do real deixa a suite verde num caminho que quebra em
+    producao — o mesmo custo que o contrato de EstadoRepo existe para evitar.
+    """
+    from motor.adapters.git.subprocess import GitSubprocess
+
+    assert inspect.signature(FakeGit.culpados_por_linha) == inspect.signature(
+        GitSubprocess.culpados_por_linha
+    )

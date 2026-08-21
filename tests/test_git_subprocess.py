@@ -483,3 +483,127 @@ def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_
         f"list_version_branches() = {g.list_version_branches()!r}; 13.99.0 vive so "
         "em refs/remotes/upstream/ e o BaseResolver nunca a resolveria"
     )
+
+
+def _cenario_culpado(tmp_path, linhas_iniciais: str = "l1\nl2\nl3\nl4\nl5\n"):
+    """Monta o cenario de atribuicao de conflito.
+
+    base -> ch200 (mexe linha 3) -> ch300 (mexe linha 5) -> ch400 (mexe linha 3
+    de novo). O commit a cherry-pickar e o ch400; o culpado por linha e o ch200,
+    e o ch300 e o distrator que so o filtro por linha descarta.
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    arquivo = tmp_path / "a.txt"
+
+    arquivo.write_text(linhas_iniciais)
+    _run_git(dir_, "add", "a.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch100 primeira versao")
+    base = _rev(dir_, "HEAD")
+
+    arquivo.write_text(linhas_iniciais.replace("l3\n", "l3-ch200\n"))
+    _run_git(dir_, "commit", "-am", "fix: ch200 mexe a linha 3")
+
+    arquivo.write_text(
+        linhas_iniciais.replace("l3\n", "l3-ch200\n").replace("l5\n", "l5-ch300\n")
+    )
+    _run_git(dir_, "commit", "-am", "fix: ch300 mexe a linha 5")
+    parent = _rev(dir_, "HEAD")
+
+    arquivo.write_text(
+        linhas_iniciais.replace("l3\n", "l3-ch400\n").replace("l5\n", "l5-ch300\n")
+    )
+    _run_git(dir_, "commit", "-am", "fix: ch400 mexe a linha 3 de novo")
+    commit = _rev(dir_, "HEAD")
+
+    return dir_, base, parent, commit
+
+
+def _rev(dir_: str, ref: str) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", ref], cwd=dir_, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_culpados_por_linha_acha_quem_tocou_as_mesmas_linhas(tmp_path):
+    dir_, base, parent, commit = _cenario_culpado(tmp_path)
+
+    g = new_git_subprocess(dir_)
+    culpados = g.culpados_por_linha(base, parent, commit, ["a.txt"])
+
+    msgs = [c.msg for c in culpados["a.txt"]]
+    assert len(msgs) == 1, f"culpados = {msgs!r}"
+    assert "ch200" in msgs[0]
+
+
+def test_culpados_por_linha_ignora_quem_tocou_outras_linhas(tmp_path):
+    dir_, base, parent, commit = _cenario_culpado(tmp_path)
+
+    g = new_git_subprocess(dir_)
+    culpados = g.culpados_por_linha(base, parent, commit, ["a.txt"])
+
+    msgs = " ".join(c.msg for c in culpados["a.txt"])
+    assert "ch300" not in msgs, (
+        f"ch300 mexeu na linha 5, o conflito e na 3; atribuicao por arquivo "
+        f"traria ele. culpados = {msgs!r}"
+    )
+
+
+def test_culpados_por_linha_com_insercao_pura(tmp_path):
+    """Hunk `@@ -3,0 +4 @@` tem comprimento zero e nao e range valido pro -L."""
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    arquivo = tmp_path / "a.txt"
+
+    arquivo.write_text("l1\nl2\nl3\nl4\nl5\n")
+    _run_git(dir_, "add", "a.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch100 primeira versao")
+    base = _rev(dir_, "HEAD")
+
+    arquivo.write_text("l1\nl2\nl3-ch200\nl4\nl5\n")
+    _run_git(dir_, "commit", "-am", "fix: ch200 mexe a linha 3")
+    parent = _rev(dir_, "HEAD")
+
+    arquivo.write_text("l1\nl2\nl3-ch200\nNOVA\nl4\nl5\n")
+    _run_git(dir_, "commit", "-am", "feat: ch400 insere depois da linha 3")
+    commit = _rev(dir_, "HEAD")
+
+    g = new_git_subprocess(dir_)
+    culpados = g.culpados_por_linha(base, parent, commit, ["a.txt"])
+
+    msgs = [c.msg for c in culpados["a.txt"]]
+    assert len(msgs) == 1, f"culpados = {msgs!r}"
+    assert "ch200" in msgs[0]
+
+
+def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(tmp_path):
+    """Conflito add/add: o commit *cria* o arquivo, entao ele nao existe no
+    parent e nao ha linha a rastrear. O culpado e quem o apagou no meio.
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    arquivo = tmp_path / "a.txt"
+
+    arquivo.write_text("l1\nl2\n")
+    _run_git(dir_, "add", "a.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch100 primeira versao")
+    base = _rev(dir_, "HEAD")
+
+    _run_git(dir_, "rm", "-q", "a.txt")
+    _run_git(dir_, "commit", "-m", "refactor: ch200 apaga o a.txt")
+    parent = _rev(dir_, "HEAD")
+
+    arquivo.write_text("novo1\nnovo2\n")
+    _run_git(dir_, "add", "a.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch400 recria o a.txt")
+    commit = _rev(dir_, "HEAD")
+
+    g = new_git_subprocess(dir_)
+    culpados = g.culpados_por_linha(base, parent, commit, ["a.txt"])
+
+    msgs = [c.msg for c in culpados["a.txt"]]
+    assert len(msgs) == 1, f"culpados = {msgs!r}"
+    assert "ch200" in msgs[0]

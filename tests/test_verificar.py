@@ -384,3 +384,130 @@ def test_verificar_reporta_suspeita_de_cherry_pick_manual_sem_x():
     assert [c.hash_origem for c in status.suspeitos_conteudo] == ["a0"]
     assert [c.hash_origem for c in status.faltantes] == ["a0"]
     assert status.verde is False
+
+
+def _versao_registrada(estado: FakeEstado, numero: str = "14.0.0") -> None:
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero=numero,
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
+
+
+def test_verificar_atribui_o_conflito_ao_chamado_culpado():
+    """Sem isso a saida diz que a0 conflita, nao de que alteracao ele depende."""
+    git = _git()
+    git.add_commit("c200", "m0", "fix: ch200 mexe a mesma linha", D)
+    git.merge_predictions["a0"] = MergePrediction(
+        conflita=True, arquivos_conflito=["a.txt"]
+    )
+    git.culpados_por_linha_por_commit["a0"] = {
+        "a.txt": [CommitRef(hash_origem="c200", msg="fix: ch200 mexe a mesma linha")]
+    }
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.conflitantes] == ["a0"]
+    assert status.conflito_causado_por == {"a0": ["200"]}
+
+
+def test_verificar_nao_culpa_chamado_que_ja_esta_na_versao():
+    """Culpado presente no alvo nao pode ser a causa da divergencia — apontar
+    ele manda o operador cherry-pickar o que ja esta la.
+    """
+    git = _git()
+    # p200 e ancestral da 14.0.0: ja foi entregue nessa versao.
+    git.add_commit("p200", "m0", "fix: ch200 ja aplicado aqui", D)
+    git.set_branch("14.0.0", "p200")
+    git.merge_predictions["a0"] = MergePrediction(
+        conflita=True, arquivos_conflito=["a.txt"]
+    )
+    git.culpados_por_linha_por_commit["a0"] = {
+        "a.txt": [CommitRef(hash_origem="p200", msg="fix: ch200 ja aplicado aqui")]
+    }
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.conflitantes] == ["a0"]
+    assert status.conflito_causado_por == {}
+
+
+def test_verificar_nao_culpa_commit_que_o_proprio_lote_ja_aplicou():
+    """O laco de previsao encadeia o tip: quando chega em a1, o a0 ja esta na
+    arvore simulada. Ele segue AUSENTE no alvo de verdade, entao so o filtro por
+    "ja simulado" evita culpar o commit que o `atualizar` aplica antes.
+    """
+    git = _git()
+    git.add_commit("a1", "a0", "ch123123 beta", D + datetime.timedelta(seconds=1))
+    git.set_branch("master", "a1")
+    git.set_branch("origin/master", "a1")
+    git.merge_predictions["a1"] = MergePrediction(
+        conflita=True, arquivos_conflito=["a.txt"]
+    )
+    git.culpados_por_linha_por_commit["a1"] = {
+        "a.txt": [CommitRef(hash_origem="a0", msg="ch123123 alfa")]
+    }
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [
+            CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                      commit_date=D, msg="ch123123 alfa"),
+            CommitRef(hash_origem="a1", parent="a0", chamado="123123",
+                      commit_date=D + datetime.timedelta(seconds=1),
+                      msg="ch123123 beta"),
+        ]
+    })
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.conflitantes] == ["a1"]
+    assert status.conflito_causado_por == {}
+
+
+class _GitSemAtribuicao(FakeGit):
+    """Atribuicao e diagnostico em cima do conflito, nao o conflito. Se um
+    `log -L` falhar (objeto podado, arquivo renomeado de um jeito que o git nao
+    rastreia), o operador ainda precisa saber que a0 conflita.
+    """
+
+    def culpados_por_linha(self, base, parent, commit, arquivos):
+        raise MotorError("git log -L: fatal: there is no path a.txt")
+
+
+def test_verificar_reporta_o_conflito_mesmo_sem_conseguir_atribuir():
+    git = _git(classe=_GitSemAtribuicao)
+    git.merge_predictions["a0"] = MergePrediction(
+        conflita=True, arquivos_conflito=["a.txt"]
+    )
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
+                             commit_date=D, msg="ch123123 alfa")]
+    })
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.conflitantes] == ["a0"]
+    assert status.conflito_causado_por == {}

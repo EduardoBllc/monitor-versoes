@@ -159,3 +159,31 @@ def test_reconciliar_nao_confunde_pendente_com_commit_sumido():
                              {"2": "sem entrega"}, {}, [], [])
     assert com_sumido.commits_sumidos == ["bbb"]
     assert com_sumido.estado_integro is False
+
+
+def test_reconciliar_repassa_os_culpados_pelo_conflito():
+    """Atribuicao de conflito nao e re-derivavel do status: se `reconciliar` nao
+    carregar o dicionario, o dado morre no engine e a saida volta a dizer so
+    "conflitante".
+    """
+    alvo = Alvo(tasks=_alvo(**{"400": ["aaa"]}))
+    conflitante = CommitRef(hash_origem="aaa", chamado="400")
+
+    status = reconciliar(
+        alvo,
+        [],
+        {},
+        {"aaa": Presence.AUSENTE},
+        [conflitante],
+        [],
+        conflito_causado_por={"aaa": ["200", "300"]},
+    )
+
+    assert status.conflito_causado_por == {"aaa": ["200", "300"]}
+
+
+def test_reconciliar_sem_culpados_deixa_o_dicionario_vazio():
+    alvo = Alvo(tasks=_alvo(**{"400": ["aaa"]}))
+    status = reconciliar(alvo, [], {}, {"aaa": Presence.AUSENTE}, [], [])
+
+    assert status.conflito_causado_por == {}

@@ -36,6 +36,7 @@ def _cronometrar(*args: str):
         logger.debug("git %s: %.3fs", " ".join(args), time.monotonic() - inicio)
 
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
+_PADRAO_HUNK_ORIGEM = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 _PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 # So refs/remotes/origin/: e o unico remoto que o motor usa (todo entry point
 # faz fetch("origin"), e push/pull/remote_branch_exists passam o literal).
@@ -85,6 +86,31 @@ def _parse_log(out: str) -> list[CommitRef]:
             raise MotorError(f"parseando data do commit {campos[0]}: {e}") from e
         resultado.append(CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2]))
     return resultado
+
+
+def _ranges_de_hunks(diff: str) -> list[tuple[int, int]]:
+    """Ranges do lado `a` de um diff -U0 — coordenadas do lado esquerdo, que e
+    exatamente o que o `log -L` exige (ele rastreia a partir da revisao final
+    do range, e nas nossas chamadas essa revisao e o proprio lado `a`).
+
+    Comprimento 0 aparece em dois casos e os dois precisam de tratamento:
+    insercao pura (`@@ -3,0 +4 @@`, ancorada *depois* da linha 3) e arquivo
+    inexistente no lado `a` (`@@ -0,0 +1,5 @@`). O primeiro colapsa na linha de
+    ancoragem; o segundo devolve inicio 0, que o chamador usa para saber que
+    nao ha linha nenhuma a rastrear.
+    """
+    ranges: list[tuple[int, int]] = []
+    for linha in diff.split("\n"):
+        m = _PADRAO_HUNK_ORIGEM.match(linha)
+        if m is None:
+            continue
+        inicio = int(m.group(1))
+        tamanho = 1 if m.group(2) is None else int(m.group(2))
+        if tamanho == 0:
+            ranges.append((inicio, inicio))
+        else:
+            ranges.append((inicio, inicio + tamanho - 1))
+    return ranges
 
 
 def _parse_conflict_files(out: str) -> list[str]:
@@ -329,6 +355,41 @@ class GitSubprocess:
             f"git merge-tree --write-tree --merge-base={parent} {branch_tip} {commit}: "
             f"exit status {proc.returncode}: {saida}"
         )
+
+    def culpados_por_linha(
+        self, base: str, parent: str, commit: str, arquivos: list[str]
+    ) -> dict[str, list[CommitRef]]:
+        formato = f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}"
+        resultado: dict[str, list[CommitRef]] = {}
+        for arquivo in arquivos:
+            diff = self._output(
+                self.repo_path, "diff", "-U0", parent, commit, "--", arquivo
+            )
+            ranges = _ranges_de_hunks(diff)
+            if not ranges:
+                continue
+            if any(inicio == 0 for inicio, _ in ranges):
+                # Arquivo nao existe em `parent` (conflito modify/delete, ou
+                # arquivo que so o `commit` cria): nao ha linha a rastrear e o
+                # `-L` erraria com "there is no path". Quem tocou o arquivo no
+                # range e o candidato — e num modify/delete e literalmente quem
+                # o apagou.
+                commits = _parse_log(
+                    self._output(
+                        self.repo_path, "log", formato, f"{base}..{parent}", "--", arquivo
+                    )
+                )
+            else:
+                # -s: sem ele o `log -L` imprime o patch das linhas rastreadas
+                # dentro do campo %B, e extrair_chamado passaria a casar `chNNN`
+                # que estivesse no *codigo*, nao na mensagem.
+                args = ["log", "-s", formato]
+                args += [f"-L{a},{b}:{arquivo}" for a, b in ranges]
+                args.append(f"{base}..{parent}")
+                commits = _parse_log(self._output(self.repo_path, *args))
+            if commits:
+                resultado[arquivo] = commits
+        return resultado
 
     def worktree_add(self, branch: str, base: str) -> None:
         dir_ = self._worktree_dir(branch)

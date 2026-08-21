@@ -177,7 +177,11 @@ def _agrupar_por_task(commits: list) -> dict[str, list]:
 
 
 def _imprimir_commits_por_task(
-    titulo: str, commits: list, conflitantes: set[str], suspeitos: set[str] = frozenset()
+    titulo: str,
+    commits: list,
+    conflitantes: set[str],
+    suspeitos: set[str] = frozenset(),
+    causado_por: dict[str, list[str]] | None = None,
 ) -> None:
     grupos = _agrupar_por_task(commits)
     print(f"{titulo} ({len(commits)} em {len(grupos)} tasks):")
@@ -185,7 +189,18 @@ def _imprimir_commits_por_task(
         print(f"  {chave}:")
         for c in itens:
             primeira_linha_msg = c.msg.splitlines()[0] if c.msg else ""
-            tag = " [CONFLITANTE]" if c.hash_origem in conflitantes else ""
+            tag = ""
+            if c.hash_origem in conflitantes:
+                # Os culpados vao dentro da propria tag: em linha separada o
+                # operador perde a ligacao com o commit ao ler uma lista longa.
+                culpados = (causado_por or {}).get(c.hash_origem, [])
+                tag = (
+                    " [CONFLITANTE: depende de "
+                    + ", ".join("ch" + ch for ch in culpados)
+                    + ", fora desta versao]"
+                    if culpados
+                    else " [CONFLITANTE]"
+                )
             tag += " [SUSPEITO: msg+arquivos ja existem no alvo com conteudo diferente]" if c.hash_origem in suspeitos else ""
             print(f"    - {c.hash_origem[:8]} {primeira_linha_msg}{tag}".rstrip())
 
@@ -229,7 +244,9 @@ def imprimir_status(s: VersionStatus) -> None:
         print("estado: integro")
     conflitantes = {c.hash_origem for c in s.conflitantes}
     suspeitos = {c.hash_origem for c in s.suspeitos_conteudo}
-    _imprimir_commits_por_task("faltantes", s.faltantes, conflitantes, suspeitos)
+    _imprimir_commits_por_task(
+        "faltantes", s.faltantes, conflitantes, suspeitos, s.conflito_causado_por
+    )
 
 
 def imprimir_atualizacao(r: AtualizarResult) -> None:

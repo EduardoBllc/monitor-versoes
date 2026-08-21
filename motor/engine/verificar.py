@@ -13,7 +13,7 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
-from motor.domain.commits import ordenar_por_data
+from motor.domain.commits import extrair_chamado, ordenar_por_data
 from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import chave, inferir_tipo, versoes_abertas
@@ -43,6 +43,48 @@ def _montar_commit_source(deps: Deps) -> CommitSource:
         git=deps.git,
     )
     return ChainCommitSource(sources=[pr, grep])
+
+
+def _culpados_do_conflito(
+    deps: Deps,
+    oracle: PresenceOracle,
+    base_commit: str,
+    ref_alvo: str,
+    meta: CommitRef,
+    arquivos: list[str],
+    ja_simulados: set[str],
+) -> list[str]:
+    """Chamados que tocaram as mesmas linhas antes do commit conflitante e que
+    nao estao nesta versao — a resposta a "de que alteracao esse cherry-pick
+    depende". Atribuicao por *linha*: em arquivo de milhares de linhas, "quem
+    mexeu no arquivo" e todo mundo, e a resposta nao informa nada.
+    """
+    if not arquivos:
+        return []
+    try:
+        por_arquivo = deps.git.culpados_por_linha(
+            base_commit, meta.parent, meta.hash_origem, arquivos
+        )
+    except MotorError as e:
+        # Mesma politica do oraculo de presenca (§2 "senao -> ausente"): o que
+        # nao da pra confirmar nao derruba o resto. Atribuicao e diagnostico em
+        # cima do conflito — perde-la nao pode custar o proprio conflito.
+        logger.debug("atribuicao do conflito em %s falhou: %s", meta.hash_origem, e)
+        return []
+    chamados: set[str] = set()
+    for commits in por_arquivo.values():
+        for c in commits:
+            # Ja dobrado no tip simulado: o `atualizar` aplica esse antes, entao
+            # culpa-lo mandaria o operador buscar o que o proprio lote resolve.
+            if c.hash_origem in ja_simulados:
+                continue
+            # Culpado que ja esta no alvo nao pode ser a causa da divergencia.
+            if oracle.presente(c.hash_origem, base_commit, ref_alvo) != Presence.AUSENTE:
+                continue
+            ch = extrair_chamado(c.msg)
+            if ch is not None:
+                chamados.add(ch)
+    return sorted(chamados)
 
 
 def verificar(
@@ -165,6 +207,8 @@ def verificar(
         [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito]
     )
     conflitantes: list[CommitRef] = []
+    conflito_causado_por: dict[str, list[str]] = {}
+    ja_simulados: set[str] = set()
     for c in candidatos:
         if presentes[c.hash_origem] != Presence.AUSENTE:
             continue
@@ -172,7 +216,19 @@ def verificar(
         pred = deps.git.predict_merge(meta.parent, tip, c.hash_origem)
         if pred.conflita:
             conflitantes.append(c)
+            culpados = _culpados_do_conflito(
+                deps,
+                oracle,
+                base_commit,
+                ref_alvo,
+                meta,
+                pred.arquivos_conflito,
+                ja_simulados,
+            )
+            if culpados:
+                conflito_causado_por[c.hash_origem] = culpados
             break
+        ja_simulados.add(c.hash_origem)
         tip = pred.arvore_resultante
     logger.debug(
         "oraculo de presenca: %.3fs (%d commits)",
@@ -187,6 +243,7 @@ def verificar(
         presentes,
         conflitantes,
         suspeitos_conteudo,
+        conflito_causado_por,
     )
 
     if not auditar:

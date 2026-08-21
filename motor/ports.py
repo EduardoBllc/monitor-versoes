@@ -110,6 +110,14 @@ class GitRepo(Protocol):
         """Prevê merge."""
         ...
 
+    def culpados_por_linha(
+        self, base: str, parent: str, commit: str, arquivos: list[str]
+    ) -> dict[str, list[CommitRef]]:
+        """Commits em base..parent que tocaram as mesmas linhas que `commit`
+        altera nos `arquivos`. Atribui o conflito a quem o causou.
+        """
+        ...
+
     def worktree_add(self, branch: str, base: str) -> None:
         """Cria worktree."""
         ...
