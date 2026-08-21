@@ -457,6 +457,27 @@ def test_erro_operacional_sai_1_sem_traceback(bordas, tmp_path, monkeypatch, cap
     assert "Traceback" not in caplog.text
 
 
+def test_erro_com_nota_mostra_contexto_e_causa_na_linha(bordas, tmp_path, monkeypatch, caplog):
+    """__notes__ so aparece em traceback renderizado, e MotorError nunca
+    renderiza traceback aqui — sem concatenar a nota na linha visivel, o
+    contexto que os services agregam via add_note (task 7) se perdia por
+    completo para o operador.
+    """
+    def sem_banco():
+        erro = MotorError("Tickio respondeu 503")
+        erro.add_note("buscando tasks da versao 13.34.0")
+        raise erro
+
+    monkeypatch.setattr(cli, "abrir_sessao", sem_banco)
+
+    with pytest.raises(SystemExit) as saida:
+        main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    assert saida.value.code == 1
+    assert "buscando tasks da versao 13.34.0" in caplog.text
+    assert "Tickio respondeu 503" in caplog.text
+
+
 def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
     def bug():
         raise RuntimeError("isto e um bug")
@@ -511,8 +532,10 @@ def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(bordas, tmp_path, monkeyp
         main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
     assert saida.value.code == 1
-    # o engine prefixa com "buscando tasks da versao ..."; o que importa e a
-    # variavel nomeada, em vez da reclamacao de protocolo do httpx.
+    # o contexto ("buscando tasks da versao ...") chega na linha via nota
+    # (formatar_com_notas), nao mais embutido na mensagem do erro; o que
+    # importa aqui e a variavel nomeada, em vez da reclamacao de protocolo do
+    # httpx.
     assert "faltando no .env: TICKIO_BASE_URL" in caplog.text
 
 

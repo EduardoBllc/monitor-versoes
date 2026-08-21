@@ -43,7 +43,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.errors import MotorError, NaoEncontrado
+from motor.errors import MotorError, NaoEncontrado, formatar_com_notas
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
@@ -472,7 +472,7 @@ class MotorTUI(App[None]):
 
     def _falha(self, erro: Exception, transitorio: bool = False) -> None:
         if isinstance(erro, MotorError):
-            self._erro(str(erro), transitorio)
+            self._erro(formatar_com_notas(erro), transitorio)
             return
         logging.error(
             "Erro interno fatal na TUI",

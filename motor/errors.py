@@ -72,3 +72,14 @@ class ErroDeEntrada(MotorError):
     Variavel faltando no .env, flag incompativel, numero de versao malformado,
     campo de formulario invalido na TUI. Nao sai de porta nenhuma.
     """
+
+
+def formatar_com_notas(e: MotorError) -> str:
+    """Linha para o operador: contexto (add_note, se houver) antes da causa.
+
+    `__notes__` so aparece em traceback renderizado, e os dois front-ends
+    imprimem MotorError como mensagem limpa, nunca traceback — sem isto o
+    contexto que os services agregam nas fronteiras (task 7) nao chegava ao
+    operador.
+    """
+    return ": ".join([*getattr(e, "__notes__", []), str(e)])

@@ -127,3 +127,17 @@ def test_excecao_fora_do_contrato_propaga_sem_embrulho():
 
     with pytest.raises(RuntimeError, match="bug no adapter"):
         resolver.resolve("13.34.0", ["13.34.0"])
+
+
+def test_nota_de_buscando_commits_das_tasks_tambem_preserva_o_tipo():
+    """O segundo site de add_note deste arquivo (linha 59) nao tinha teste
+    nenhum: FakeCommitSource(err=...) nunca era usado na suite.
+    """
+    tasks = FakeTaskSource(chamados={"13.34.0": ["123456"]})
+    commits = FakeCommitSource(err=BackendIndisponivel("Bitbucket fora do ar"))
+    resolver = TargetResolver(tasks=tasks, commits=commits)
+
+    with pytest.raises(BackendIndisponivel) as capturado:
+        resolver.resolve("13.34.0", ["13.34.0"])
+
+    assert "buscando commits das tasks" in capturado.value.__notes__

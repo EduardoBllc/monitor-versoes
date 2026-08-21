@@ -762,6 +762,27 @@ def test_app_exibe_motor_error_sem_traceback():
     asyncio.run(executar_fluxo())
 
 
+def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
+    """__notes__ so aparece em traceback renderizado, e MotorError nunca
+    renderiza traceback aqui — sem concatenar a nota no painel, o contexto
+    agregado via add_note (task 7) se perdia por completo para o operador.
+    """
+    def falhar():
+        erro = MotorError("Tickio respondeu 503")
+        erro.add_note("buscando tasks da versao 13.34.0")
+        raise erro
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(falhar, lambda repo: [], _nunca_executa)
+        async with app.run_test(size=(120, 36)):
+            await app.workers.wait_for_complete()
+            texto = _texto(app.query_one("#resultado", Static).content)
+            assert "buscando tasks da versao 13.34.0" in texto
+            assert "Tickio respondeu 503" in texto
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_esconde_erro_interno_e_registra_traceback(caplog):
     def falhar():
         raise RuntimeError("bug secreto")

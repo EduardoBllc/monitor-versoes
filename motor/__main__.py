@@ -30,7 +30,7 @@ else:
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
-from motor.errors import MotorError
+from motor.errors import MotorError, formatar_com_notas
 from motor.engine.criar import criar
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
@@ -409,7 +409,7 @@ def main(argv: list[str] | None = None) -> None:
                 # linha, senao a mensagem de erro sai colada na barra.
                 _limpar_progresso(relator)
     except MotorError as e:
-        logging.error(str(e))
+        logging.error(formatar_com_notas(e))
         sys.exit(1)
     except Exception:
         logging.exception("Erro interno fatal (bug). Traceback completo:")
