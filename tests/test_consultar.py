@@ -13,7 +13,7 @@ from motor.engine.deps import Deps
 
 def _deps(git: FakeGit, estado: FakeEstado) -> Deps:
     return Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r",
-                _commit_source=FakeCommitSource())
+                commit_source=FakeCommitSource())
 
 
 def _estado(atribuicoes: list[Atribuicao]) -> FakeEstado:

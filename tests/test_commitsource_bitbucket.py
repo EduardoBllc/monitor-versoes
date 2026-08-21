@@ -160,6 +160,57 @@ def test_chamado_sem_pr_correspondente_e_omitido():
     assert resultado == {}, "chamado sem PR correspondente nao deveria aparecer no resultado"
 
 
+# -- workspace/repo derivados do remote ---------------------------------------
+
+
+def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
+    """Construir nao resolve: quem monta a fonte (motor.montagem) nao tem de
+    pagar uma chamada de git, e `atualizar --abort` num clone sem `origin`
+    continua rodando.
+    """
+    urls_pedidas: list[str] = []
+    git = _git_com_master("c1")
+    git.remote_urls["origin"] = "git@bitbucket.org:acme/monitor.git"
+    remote_url_original = git.remote_url
+
+    def espiar(remote: str) -> str:
+        urls_pedidas.append(remote)
+        return remote_url_original(remote)
+
+    git.remote_url = espiar
+    caminhos: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        caminhos.append(request.url.path)
+        return httpx.Response(200, json={"values": [], "next": ""})
+
+    fonte = BitbucketPRCommitSource(
+        base_url="http://testserver",
+        token="tok",
+        email="dev@x.com",
+        git=git,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    assert urls_pedidas == [], "construir nao pode tocar o git"
+
+    fonte.resolve(["255514", "255515"])
+
+    assert urls_pedidas == ["origin"], "resolvido uma vez por instancia"
+    assert caminhos == [
+        "/repositories/acme/monitor/pullrequests",
+        "/repositories/acme/monitor/pullrequests",
+    ]
+
+
+def test_workspace_explicito_ganha_do_remote():
+    # o teste (e um repo cujo remote nao e o Bitbucket) passa o par direto.
+    git = _git_com_master("c1")
+    git.remote_urls["origin"] = "git@bitbucket.org:outro/outro.git"
+    fonte = _fonte(_handler_pr([], {}), git)
+
+    assert fonte._workspace_repo() == ("acme", "monitor")
+
+
 def test_repr_nao_vaza_credencial():
     """token e email formam o Basic auth: um repr desta dataclass (com --debug,
     ou no repr de uma excecao) vazaria a credencial inteira."""

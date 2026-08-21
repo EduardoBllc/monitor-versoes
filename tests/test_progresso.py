@@ -141,7 +141,7 @@ def test_verificar_relata_suas_fases_na_ordem():
         tasks=FakeTaskSource(chamados={"13.33.1": ["123123"]}),
         estado=estado,
         repo="r",
-        _commit_source=FakeCommitSource(
+        commit_source=FakeCommitSource(
             por_chamado={
                 "123123": [
                     CommitRef(
@@ -189,7 +189,7 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514", "255515"]}),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
         repo="r",
-        _commit_source=FakeCommitSource(
+        commit_source=FakeCommitSource(
             por_chamado={
                 "255514": [
                     CommitRef(hash_origem="a0", parent="m0", chamado="255514",

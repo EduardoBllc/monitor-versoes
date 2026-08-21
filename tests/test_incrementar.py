@@ -85,7 +85,7 @@ def _deps(git, estado, chamados: list[str], commits: dict) -> Deps:
         tasks=FakeTaskSource(chamados={"13.7.0": chamados}),
         estado=estado,
         repo="r",
-        _commit_source=FakeCommitSource(por_chamado=commits),
+        commit_source=FakeCommitSource(por_chamado=commits),
     )
 
 
@@ -269,7 +269,7 @@ def test_atualizar_recusa_versao_com_tag():
     git = FakeGit(branches={"13.34.0": "b1"}, tags={"13.34.0": True})
     estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
     deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r",
-                _commit_source=FakeCommitSource())
+                commit_source=FakeCommitSource())
 
     with pytest.raises(MotorError, match="liberada"):
         atualizar(deps, "13.34.0")

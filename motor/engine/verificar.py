@@ -7,48 +7,18 @@ import logging
 import time
 from dataclasses import replace
 
-from motor.adapters.commitsource.bitbucket import (
-    BitbucketPRCommitSource,
-    parse_workspace_repo,
-)
-from motor.adapters.commitsource.chain import ChainCommitSource
-from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.domain.commits import extrair_chamado, ordenar_por_data
 from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import chave, inferir_tipo, versoes_abertas
 from motor.engine.deps import Deps
 from motor.errors import MotorError
-from motor.ports import CommitSource
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
 from motor.services.presence_oracle import PresenceOracle
 from motor.services.target_resolver import TargetResolver
 
 logger = logging.getLogger(__name__)
-
-
-def _montar_commit_source(deps: Deps) -> CommitSource:
-    """Grep em master é o fallback sempre disponível. Com token do Bitbucket,
-    a PR (merged) vira a fonte primária: ordem = prioridade (§CommitSource).
-    """
-    grep = GrepCommitSource(git=deps.git, progresso=deps.progresso)
-    if not deps.bitbucket_token:
-        return grep
-    workspace, repo = parse_workspace_repo(deps.git.remote_url("origin"))
-    pr = BitbucketPRCommitSource(
-        token=deps.bitbucket_token,
-        email=deps.bitbucket_email,
-        workspace=workspace,
-        repo=repo,
-        git=deps.git,
-        progresso=deps.progresso,
-        # cache de `PR -> commits`: corta o GET de commits das PRs ja vistas.
-        # A busca das PRs do chamado continua rodando a cada verificar.
-        estado=deps.estado,
-        repo_estado=deps.repo,
-    )
-    return ChainCommitSource(sources=[pr, grep])
 
 
 def _culpados_do_conflito(
@@ -175,9 +145,13 @@ def verificar(
         # oraculo passaria a considerar presente tudo que entrou depois.
         base_commit = info.base_commit
 
-    fonte = deps._commit_source or _montar_commit_source(deps)
+    if deps.commit_source is None:
+        # Bug de montagem, nao erro do operador: o front-end tem de montar a
+        # fonte (motor.montagem.montar_commit_source). Nomear isso aqui e mais
+        # barato que um AttributeError vindo de dentro do TargetResolver.
+        raise MotorError("Deps.commit_source nao montado")
     resolver = TargetResolver(
-        tasks=deps.tasks, commits=fonte, progresso=deps.progresso
+        tasks=deps.tasks, commits=deps.commit_source, progresso=deps.progresso
     )
     resultado = resolver.resolve(versao, sorted({*abertas, versao}, key=chave))
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)

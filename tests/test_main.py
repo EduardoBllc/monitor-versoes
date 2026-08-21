@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import pytest
 
 import motor.__main__ as cli
+import motor.montagem as montagem
 from motor.__main__ import (
     _build_parser,
     _resolver_repo,
@@ -63,7 +64,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
     monkeypatch.setattr(cli, "_iniciar_tui", lambda: chamadas.append("tui"))
     monkeypatch.setattr(
         cli,
-        "_abrir_sessao",
+        "abrir_sessao",
         lambda: pytest.fail("o CLI nao deve abrir banco antes da TUI"),
     )
 
@@ -127,7 +128,7 @@ def test_comando_desconhecido_sai_com_erro():
 
 def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
     estado = FakeEstado()
-    monkeypatch.setattr(cli, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
 
     main(["repo", "adicionar", "backend", "--tickio-sistema-id", "42"])
@@ -252,7 +253,10 @@ def _git() -> FakeGit:
 
 @pytest.fixture
 def bordas(monkeypatch):
-    """Troca as tres bordas de IO do composition root e devolve os doubles.
+    """Troca as tres bordas de IO da montagem e devolve os doubles.
+
+    Duas delas moram em `motor.montagem` (git e adapter de estado), que e onde o
+    Deps e montado; a sessao ainda e aberta pelo `main()`.
 
     Todo o resto de main() roda de verdade: parse, resolucao do repo, montagem
     de Deps, escolha da fonte de tasks, despacho e impressao.
@@ -264,9 +268,9 @@ def bordas(monkeypatch):
     for var, valor in (("TICKIO_BASE_URL", "http://tickio.exemplo"),
                        ("TICKIO_USER", "u"), ("TICKIO_PASSWORD", "p")):
         monkeypatch.setenv(var, valor)
-    monkeypatch.setattr(cli, "new_git_subprocess", lambda repo: git)
-    monkeypatch.setattr(cli, "_abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo: git)
+    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     return git, estado
 
 
@@ -348,7 +352,7 @@ def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
         def fetch(self, versao: str) -> list[str]:
             return []
 
-    monkeypatch.setattr(cli, "TickioRest", TickioSpy)
+    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
 
     # sem --task-source: prova que o default do CLI e tickio
     main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
@@ -439,7 +443,7 @@ def test_erro_operacional_sai_1_sem_traceback(bordas, tmp_path, monkeypatch, cap
     def sem_banco():
         raise MotorError("banco inacessivel na fixture")
 
-    monkeypatch.setattr(cli, "_abrir_sessao", sem_banco)
+    monkeypatch.setattr(cli, "abrir_sessao", sem_banco)
 
     with pytest.raises(SystemExit) as saida:
         main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
@@ -453,7 +457,7 @@ def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
     def bug():
         raise RuntimeError("isto e um bug")
 
-    monkeypatch.setattr(cli, "_abrir_sessao", bug)
+    monkeypatch.setattr(cli, "abrir_sessao", bug)
 
     with pytest.raises(SystemExit) as saida:
         main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
@@ -547,12 +551,19 @@ def test_lista_manual_nao_exige_variavel_do_tickio(bordas, tmp_path, monkeypatch
 
 
 def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
-    # o CLI entrega o token do Bitbucket aqui; com repr default, um dump de deps
-    # sob --debug imprimiria a credencial em claro.
-    deps = Deps(git=_git(), tasks=None, estado=FakeEstado(), repo="r",
-                bitbucket_token="tok123", bitbucket_email="dev@x.com")
+    # a credencial mora dentro do CommitSource, e o repr default de Deps
+    # atravessa o ChainCommitSource ate ela: um dump de deps sob --debug
+    # imprimiria tudo em claro se o adapter nao tivesse repr=False.
+    deps = Deps(
+        git=_git(),
+        tasks=None,
+        estado=FakeEstado(),
+        repo="r",
+        commit_source=montagem.montar_commit_source(
+            _git(), token="tok123", email="dev@x.com"
+        ),
+    )
 
-    assert (deps.bitbucket_token, deps.bitbucket_email) == ("tok123", "dev@x.com")
     assert "tok123" not in repr(deps)
     assert "dev@x.com" not in repr(deps)
 

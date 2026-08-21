@@ -12,11 +12,7 @@ import os
 import sys
 import textwrap
 import time
-from contextlib import contextmanager
 from typing import TextIO
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
 try:
     from dotenv import load_dotenv
@@ -24,11 +20,8 @@ except ImportError:
     load_dotenv = None
 
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.adapters.git.subprocess import new_git_subprocess
-from motor.adapters.tasksource.manuallist import ManualList
-from motor.adapters.tasksource.tickio import TickioRest
-from motor.config import database_url
-from motor.domain.types import RepoInfo, VersionStatus
+from motor.domain.commits import agrupar_por_chamado
+from motor.domain.types import VersionStatus
 from motor.errors import MotorError
 from motor.engine.criar import criar
 from motor.engine.consultar import ChamadoConsultado, consultar
@@ -42,8 +35,13 @@ from motor.engine.atualizar import (
 )
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
+from motor.montagem import (
+    abrir_sessao,
+    montar_deps,
+    validar_nome_repo,
+    validar_sistema_id,
+)
 from motor.progresso import Progresso, RelatorProgresso, silencioso
-from motor.ports import TaskSource
 
 _ARQUIVOS_AMBIENTE = {
     "development": ".env.development",
@@ -51,20 +49,21 @@ _ARQUIVOS_AMBIENTE = {
 }
 
 
-def _nome_repo(valor: str) -> str:
-    if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
-        raise argparse.ArgumentTypeError("use um nome simples, sem caminho")
-    return valor
+def _tipo_cli(validador):
+    """Adapta um validador de `motor.montagem` ao protocolo do argparse.
 
+    A regra e compartilhada com a TUI e fala `MotorError`; traduzir para
+    `ArgumentTypeError` e trabalho do CLI, e so aqui, porque so aqui existe
+    argparse.
+    """
 
-def _tickio_sistema_id(valor: str) -> int:
-    try:
-        numero = int(valor)
-    except ValueError:
-        raise argparse.ArgumentTypeError("deve ser um inteiro positivo") from None
-    if numero <= 0:
-        raise argparse.ArgumentTypeError("deve ser um inteiro positivo")
-    return numero
+    def converter(valor: str):
+        try:
+            return validador(valor)
+        except MotorError as erro:
+            raise argparse.ArgumentTypeError(str(erro)) from None
+
+    return converter
 
 
 def _carregar_ambiente(argv: list[str]) -> None:
@@ -138,8 +137,12 @@ def _build_parser() -> argparse.ArgumentParser:
     acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True,
                                        metavar="acao")
     p_adicionar = acoes_repo.add_parser("adicionar", help="cadastra um repositorio")
-    p_adicionar.add_argument("nome", type=_nome_repo, help="nome canonico do repo")
-    p_adicionar.add_argument("--tickio-sistema-id", required=True, type=_tickio_sistema_id)
+    p_adicionar.add_argument(
+        "nome", type=_tipo_cli(validar_nome_repo), help="nome canonico do repo"
+    )
+    p_adicionar.add_argument(
+        "--tickio-sistema-id", required=True, type=_tipo_cli(validar_sistema_id)
+    )
 
     return parser
 
@@ -171,15 +174,6 @@ def _resolver_repo(valor: str) -> str:
     sys.exit(1)
 
 
-def _agrupar_por_task(commits: list) -> dict[str, list]:
-    """Agrupa preservando a ordem de 1a aparicao de cada chamado."""
-    grupos: dict[str, list] = {}
-    for c in commits:
-        chave = c.chamado or c.hash_origem[:8]
-        grupos.setdefault(chave, []).append(c)
-    return grupos
-
-
 def _imprimir_commits_por_task(
     titulo: str,
     commits: list,
@@ -187,7 +181,7 @@ def _imprimir_commits_por_task(
     suspeitos: set[str] = frozenset(),
     causado_por: dict[str, list[str]] | None = None,
 ) -> None:
-    grupos = _agrupar_por_task(commits)
+    grupos = agrupar_por_chamado(commits)
     print(f"{titulo} ({len(commits)} em {len(grupos)} tasks):")
     for chave, itens in grupos.items():
         print(f"  {chave}:")
@@ -325,40 +319,6 @@ def _limpar_progresso(relator: RelatorProgresso, saida: TextIO | None = None) ->
     saida.flush()
 
 
-@contextmanager
-def _abrir_sessao():
-    """Ciclo de vida do banco: uma engine e uma sessao por comando.
-
-    O CLI e um processo de segundos, entao nao ha o que reaproveitar de um pool
-    — a engine nasce aqui, e descartada no fim e a sessao fecha com o `with`.
-    Nada disso vive em nivel de modulo: a suite roda sem banco, e uma sessao
-    montada no import (ou na construcao do parser) exigiria banco de pe so
-    para rodar `--help`.
-    """
-    engine = create_engine(database_url())
-    try:
-        with Session(engine) as sessao:
-            yield sessao
-    finally:
-        engine.dispose()
-
-
-def _montar_task_source(args: argparse.Namespace, info: RepoInfo) -> TaskSource:
-    """A fonte de tasks depende do repo: o sistema_id do Tickio sai da linha
-    `repo` do banco, lida antes daqui via EstadoRepo.resolver_repo."""
-    if args.fonte_flag == "tickio":
-        # Sem validar as variaveis aqui: montar nao e usar. `atualizar --abort`
-        # e `reconstruir-estado` recebem esta fonte e nunca chamam fetch — quem
-        # cobra credencial e o TickioRest, na primeira busca.
-        return TickioRest(
-            base_url=os.environ.get("TICKIO_BASE_URL", ""),
-            usuario=os.environ.get("TICKIO_USER", ""),
-            senha=os.environ.get("TICKIO_PASSWORD", ""),
-            sistema_id=info.tickio_sistema_id,
-        )
-    return ManualList(caminho=args.lista_manual)
-
-
 def _despachar(args: argparse.Namespace, deps: Deps) -> None:
     inicio = time.monotonic()
     if args.comando == "verificar":
@@ -410,7 +370,7 @@ def main(argv: list[str] | None = None) -> None:
             return
 
         if args.comando == "repo":
-            with _abrir_sessao() as sessao:
+            with abrir_sessao() as sessao:
                 PostgresEstado(sessao=sessao).registrar_repo(
                     args.nome, args.tickio_sistema_id
                 )
@@ -418,22 +378,16 @@ def main(argv: list[str] | None = None) -> None:
             return
 
         repo = _resolver_repo(args.repo)
-        git_repo = new_git_subprocess(repo)
 
-        with _abrir_sessao() as sessao:
-            estado = PostgresEstado(sessao=sessao)
-            # O estado vem antes da fonte de tasks: o nome canonico do repo e o
-            # tickio_sistema_id saem da linha `repo` (aceita nome ou alias).
-            info = estado.resolver_repo(os.path.basename(repo))
-
+        with abrir_sessao() as sessao:
             relator = _relator_do_cli(
                 desligado=getattr(args, "sem_progresso", False)
             )
-            deps = Deps(
-                git=git_repo,
-                tasks=_montar_task_source(args, info),
-                estado=estado,
-                repo=info.nome,
+            deps = montar_deps(
+                repo,
+                sessao,
+                fonte_tasks=args.fonte_flag,
+                lista_manual=args.lista_manual,
                 bitbucket_token=getattr(args, "bitbucket_token", ""),
                 bitbucket_email=getattr(args, "bitbucket_email", ""),
                 progresso=relator,

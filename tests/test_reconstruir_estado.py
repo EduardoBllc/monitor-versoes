@@ -13,7 +13,7 @@ from motor.engine.reconstruir_estado import ReconstructStatus, reconstruir_estad
 
 def _deps(git, estado) -> Deps:
     return Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r",
-                _commit_source=FakeCommitSource())
+                commit_source=FakeCommitSource())
 
 
 D = datetime.datetime(2026, 1, 1)

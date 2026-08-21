@@ -13,6 +13,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError
 from motor.progresso import Progresso, SlotProgresso
+import motor.montagem as montagem
 import motor.tui as tui
 from motor.tui import (
     MotorTUI,
@@ -82,7 +83,7 @@ def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
     )
     checkout = _checkout(tmp_path, "alpha")
     monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
-    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
 
     assert tui._repos_do_ambiente() == [
@@ -97,7 +98,7 @@ def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch)
     _checkout(tmp_path, "alpha")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("PROJECTS_DIR", raising=False)
-    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
 
     assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=None)]
@@ -159,22 +160,25 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
             self.sistema_id = sistema_id
 
     def verificar_spy(deps, versao, auditar=False):
+        # a TUI nao tem flag de credencial: token e email chegam do ambiente,
+        # dentro da fonte de PR que o montar_commit_source encadeia.
+        pr = deps.commit_source.sources[0]
         capturado.update(
             repo=deps.repo,
             versao=versao,
             auditar=auditar,
             tickio_sistema_id=deps.tasks.sistema_id,
-            bitbucket_token=deps.bitbucket_token,
-            bitbucket_email=deps.bitbucket_email,
+            bitbucket_token=pr.token,
+            bitbucket_email=pr.email,
         )
         return VersionStatus(verde=True, estado_integro=True)
 
     monkeypatch.setenv("BITBUCKET_TOKEN", "tok-secreto")
     monkeypatch.setenv("BITBUCKET_EMAIL", "dev@example.com")
-    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
-    monkeypatch.setattr(tui, "new_git_subprocess", lambda caminho: object())
-    monkeypatch.setattr(tui, "TickioRest", TickioSpy)
+    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "verificar", verificar_spy)
 
     status = tui._verificar_repo(
@@ -214,10 +218,10 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
         )
         return esperado
 
-    monkeypatch.setattr(tui, "_abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
-    monkeypatch.setattr(tui, "new_git_subprocess", lambda caminho: object())
-    monkeypatch.setattr(tui, "TickioRest", TickioSpy)
+    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho: object())
+    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "atualizar", atualizar_spy)
 
     resultado = tui._atualizar_repo(

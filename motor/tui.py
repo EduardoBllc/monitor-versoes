@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import logging
 import os
 from collections.abc import Callable
@@ -31,11 +30,9 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from motor.__main__ import _abrir_sessao, _nome_repo, _tickio_sistema_id
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
-from motor.adapters.tasksource.tickio import TickioRest
-from motor.__main__ import _agrupar_por_task
+from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import VersionStatus
 from motor.domain.version import chave
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
@@ -43,6 +40,12 @@ from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError
+from motor.montagem import (
+    abrir_sessao,
+    montar_deps,
+    validar_nome_repo,
+    validar_sistema_id,
+)
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
 
@@ -151,11 +154,11 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
 
     def _salvar(self) -> None:
         try:
-            nome = _nome_repo(self.query_one("#cadastro-nome", Input).value)
-            sistema_id = _tickio_sistema_id(
+            nome = validar_nome_repo(self.query_one("#cadastro-nome", Input).value)
+            sistema_id = validar_sistema_id(
                 self.query_one("#cadastro-sistema", Input).value
             )
-        except argparse.ArgumentTypeError as erro:
+        except MotorError as erro:
             self.query_one("#cadastro-erro", Static).update(str(erro))
             return
         self.dismiss((nome, sistema_id))
@@ -729,14 +732,14 @@ def descobrir_versoes(
 
 
 def _repos_do_ambiente() -> list[RepoOption]:
-    with _abrir_sessao() as sessao:
+    with abrir_sessao() as sessao:
         return descobrir_repos(
             PostgresEstado(sessao=sessao), os.environ.get("PROJECTS_DIR", "")
         )
 
 
 def _registrar_no_banco(nome: str, sistema_id: int) -> None:
-    with _abrir_sessao() as sessao:
+    with abrir_sessao() as sessao:
         PostgresEstado(sessao=sessao).registrar_repo(nome, sistema_id)
 
 
@@ -753,24 +756,9 @@ def _deps_do_repo(
 ) -> Deps:
     if repo.caminho is None:
         raise MotorError("checkout local não encontrado")
-    git = new_git_subprocess(repo.caminho)
-    estado = PostgresEstado(sessao=sessao)
-    info = estado.resolver_repo(os.path.basename(repo.caminho))
-    tasks = TickioRest(
-        base_url=os.environ.get("TICKIO_BASE_URL", ""),
-        usuario=os.environ.get("TICKIO_USER", ""),
-        senha=os.environ.get("TICKIO_PASSWORD", ""),
-        sistema_id=info.tickio_sistema_id,
-    )
-    return Deps(
-        git=git,
-        tasks=tasks,
-        estado=estado,
-        repo=info.nome,
-        bitbucket_token=os.environ.get("BITBUCKET_TOKEN", ""),
-        bitbucket_email=os.environ.get("BITBUCKET_EMAIL", ""),
-        progresso=progresso,
-    )
+    # Sem flags: token e email do Bitbucket saem do ambiente dentro do
+    # montar_deps, e a fonte de tasks e sempre o Tickio.
+    return montar_deps(repo.caminho, sessao, progresso=progresso)
 
 
 def _verificar_repo(
@@ -780,7 +768,7 @@ def _verificar_repo(
     *,
     progresso: RelatorProgresso = silencioso,
 ) -> VersionStatus:
-    with _abrir_sessao() as sessao:
+    with abrir_sessao() as sessao:
         deps = _deps_do_repo(repo, sessao, progresso)
         return verificar(deps, versao, auditar=auditar)
 
@@ -788,14 +776,14 @@ def _verificar_repo(
 def _atualizar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> AtualizarResult:
-    with _abrir_sessao() as sessao:
+    with abrir_sessao() as sessao:
         return atualizar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
 def _consultar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> list[ChamadoConsultado]:
-    with _abrir_sessao() as sessao:
+    with abrir_sessao() as sessao:
         return consultar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
@@ -847,7 +835,7 @@ def _commits_agrupados(commits: list, estados: dict[str, str]) -> Group | None:
     if not commits:
         return None
     tabelas: list[Table] = []
-    for chamado, itens in _agrupar_por_task(commits).items():
+    for chamado, itens in agrupar_por_chamado(commits).items():
         quantidade = len(itens)
         tabela = Table(
             title=f"#{chamado} · {quantidade} commit{'s' if quantidade != 1 else ''}",

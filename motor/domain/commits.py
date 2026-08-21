@@ -27,6 +27,19 @@ def extrair_chamado(msg: str) -> str | None:
     return None if m is None else m.group(1)
 
 
+def agrupar_por_chamado(commits: list[CommitRef]) -> dict[str, list[CommitRef]]:
+    """Agrupa preservando a ordem de 1a aparicao de cada chamado.
+
+    Commit sem chamado (orfao) cai numa chave propria pelo hash curto, em vez de
+    todos se juntarem numa cesta `""`: o CLI e a TUI listam essas chaves como
+    titulo, e uma cesta unica esconderia quantos orfaos distintos existem.
+    """
+    grupos: dict[str, list[CommitRef]] = {}
+    for c in commits:
+        grupos.setdefault(c.chamado or c.hash_origem[:8], []).append(c)
+    return grupos
+
+
 def ordenar_por_data(commits: list[CommitRef]) -> list[CommitRef]:
     """Ordena por commit_date asc - nao depende de flag do git (§5
     "Ordenacao"). Nao muta a lista de entrada.

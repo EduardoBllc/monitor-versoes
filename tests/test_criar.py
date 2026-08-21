@@ -60,7 +60,7 @@ def _deps(git, estado) -> Deps:
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514"]}),
         estado=estado,
         repo="r",
-        _commit_source=FakeCommitSource(por_chamado=UM),
+        commit_source=FakeCommitSource(por_chamado=UM),
     )
 
 

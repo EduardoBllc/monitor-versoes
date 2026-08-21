@@ -18,7 +18,7 @@ D = datetime.datetime(2026, 1, 1)
 
 
 def _deps(git, tasks, commits, estado) -> Deps:
-    return Deps(git=git, tasks=tasks, estado=estado, repo="r", _commit_source=commits)
+    return Deps(git=git, tasks=tasks, estado=estado, repo="r", commit_source=commits)
 
 
 def _estado_com_repo() -> FakeEstado:
@@ -513,26 +513,18 @@ def test_verificar_reporta_o_conflito_mesmo_sem_conseguir_atribuir():
     assert status.conflito_causado_por == {}
 
 
-def test_montar_commit_source_liga_o_cache_de_pr_no_estado():
-    # sem o estado e o nome canonico do repo, a fonte roda sem cache e volta a
-    # pedir os commits de toda PR a cada verificar.
-    from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
-    from motor.engine.verificar import _montar_commit_source
+def test_verificar_cobra_a_fonte_de_commits_nao_montada():
+    """Bug de montagem tem de se nomear. Sem esta guarda o sintoma e um
+    AttributeError em NoneType vindo de dentro do TargetResolver, e o rastro
+    nao aponta para o front-end que esqueceu de montar a fonte.
+    """
+    git = FakeGit(tags={})
+    git.add_commit("m0", "", "raiz", D)
+    git.set_branch("master", "m0")
+    git.set_branch("14.0.0", "m0")
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+    deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r")
 
-    git = FakeGit()
-    git.remote_urls["origin"] = "git@bitbucket.org:acme/monitor.git"
-    estado = FakeEstado(repos={"vbweb": RepoInfo(nome="vbweb", tickio_sistema_id=1)})
-    deps = Deps(
-        git=git,
-        estado=estado,
-        tasks=FakeTaskSource(),
-        repo="vbweb",
-        bitbucket_token="tok",
-        bitbucket_email="dev@x.com",
-    )
-
-    fonte = _montar_commit_source(deps)
-
-    pr = fonte.sources[0]
-    assert isinstance(pr, BitbucketPRCommitSource)
-    assert (pr.estado, pr.repo_estado) == (estado, "vbweb")
+    with pytest.raises(MotorError, match="commit_source"):
+        verificar(deps, "14.0.0")

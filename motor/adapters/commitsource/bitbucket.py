@@ -6,6 +6,9 @@ que começa com `ch<chamado>`, ou nome da branch de origem que contém
 Considera só PRs MERGED e só commits que já estão na master (is_ancestor) —
 commit fora da master não entra.
 
+O `workspace/repo` sai da URL do remote `origin` na primeira busca — construir
+esta fonte nao toca o git.
+
 API Bitbucket Cloud 2.0:
   GET /2.0/repositories/{ws}/{repo}/pullrequests?q=...&state=MERGED&pagelen=50
   GET /2.0/repositories/{ws}/{repo}/pullrequests/{id}/commits
@@ -49,9 +52,14 @@ class BitbucketPRCommitSource:
     # (com --debug, ou no repr de uma excecao) vazaria a credencial inteira.
     token: str = field(repr=False)
     email: str = field(repr=False)
-    workspace: str
-    repo: str
     git: GitRepo
+    # Vazios = derivados do remote na primeira busca, nao na construcao. Montar
+    # nao e usar: resolver aqui faria `atualizar --abort` e `reconstruir-estado`
+    # — que nunca chamam esta fonte — pagarem uma chamada de git, e quebrarem
+    # num clone sem `origin`.
+    workspace: str = ""
+    repo: str = ""
+    remote: str = "origin"
     base_url: str = ""
     master_ref: str = "master"
     client: httpx.Client | None = None
@@ -61,6 +69,14 @@ class BitbucketPRCommitSource:
     # necessariamente o `repo` do Bitbucket — e para isso que aliases existem.
     estado: EstadoRepo | None = None
     repo_estado: str = ""
+
+    def _workspace_repo(self) -> tuple[str, str]:
+        """Resolve (workspace, repo) do remote uma vez por instancia."""
+        if not self.workspace or not self.repo:
+            self.workspace, self.repo = parse_workspace_repo(
+                self.git.remote_url(self.remote)
+            )
+        return self.workspace, self.repo
 
     def _auth_header(self) -> str:
         credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
@@ -85,8 +101,9 @@ class BitbucketPRCommitSource:
     def _commits_do_chamado(self, chamado: str) -> list[CommitRef]:
         base = self.base_url or _BASE_URL_PADRAO
         termo = "ch" + chamado
+        workspace, repo = self._workspace_repo()
 
-        prs_url = f"{base}/repositories/{self.workspace}/{self.repo}/pullrequests"
+        prs_url = f"{base}/repositories/{workspace}/{repo}/pullrequests"
         params = {
             "state": "MERGED",
             "q": f'title ~ "{termo}" OR source.branch.name ~ "{termo}"',
