@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from motor.domain.types import BaseRef
 from motor.domain.version import inferir_base
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado
 from motor.ports import GitRepo
 
 
@@ -32,10 +32,12 @@ class BaseResolver:
             candidatos = [f"refs/tags/{ref}"]
         else:
             candidatos = [ref, f"refs/remotes/origin/{ref}"]
-        ultimo: Exception | None = None
+        ultimo: MotorError | None = None
         for candidato in candidatos:
             try:
                 return BaseRef(ref=ref, commit=self.git.resolve_ref(candidato))
-            except Exception as e:
+            except MotorError as e:
                 ultimo = e
-        raise MotorError(f"resolvendo ref {ref}: {ultimo}") from ultimo
+        # Nao esta propagando erro de porta: as duas tentativas (nome puro e ref de
+        # rastreamento) falharam, e isso e um fato novo - "nao achei a base".
+        raise NaoEncontrado(f"resolvendo ref {ref}: {ultimo}") from ultimo

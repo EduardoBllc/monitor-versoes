@@ -13,7 +13,7 @@ class FakeCommitSource:
     por_chamado: dict[str, list[CommitRef]] = field(default_factory=dict)
     err: Exception | None = None
 
-    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         if self.err is not None:
             raise self.err
         return {

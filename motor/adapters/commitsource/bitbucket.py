@@ -28,7 +28,7 @@ from typing import Any
 import httpx
 
 from motor.domain.types import SEM_DATA, CommitRef, PrIndex
-from motor.errors import MotorError
+from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -64,7 +64,7 @@ def parse_workspace_repo(url: str) -> tuple[str, str]:
     # ultimos segmentos de path (ws/repo).
     m = _PADRAO_REMOTE.search(url.strip())
     if m is None:
-        raise MotorError(f"nao consegui extrair workspace/repo de {url!r}")
+        raise RespostaInvalida(f"nao consegui extrair workspace/repo de {url!r}")
     return m.group(1), m.group(2)
 
 
@@ -105,7 +105,7 @@ class BitbucketPRCommitSource:
         credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
         return f"Basic {credenciais}"
 
-    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
@@ -159,11 +159,10 @@ class BitbucketPRCommitSource:
         # aqui deixaria de fora toda PR anterior, e o chamado com PR antiga
         # apareceria como sem entrega.
 
-        prs = [
-            self._para_pr_index(pr)
-            for pr in self._paginar(client, self._prs_url(), params)
-            if pr.get("id")
-        ]
+        # Extrai (e valida a forma) antes de filtrar: `pr.get("id")` num item
+        # que nao e dict estouraria AttributeError cru, escapando do contrato.
+        indices = [self._para_pr_index(pr) for pr in self._paginar(client, self._prs_url(), params)]
+        prs = [indice for indice in indices if indice.pr_id]
         # Indice e marca na mesma escrita: paginacao que levantou no meio nunca
         # chega aqui, entao a marca nao avanca por cima de um indice furado.
         self.estado.gravar_varredura(self.repo_estado, prs, inicio)
@@ -225,15 +224,27 @@ class BitbucketPRCommitSource:
 
     @staticmethod
     def _para_pr_index(pr: JSON) -> PrIndex:
-        """Titulo e branch crus: o casamento e predicado, nao extracao."""
+        """Titulo e branch crus: o casamento e predicado, nao extracao.
+
+        Guarda de forma herdada de `_pr_casa`: e aqui, na extracao do JSON cru
+        da API, que o formato inesperado tem que ser pego — depois deste ponto
+        o resto do modulo so ve `PrIndex` ja validado.
+        """
+        if not isinstance(pr, dict):
+            raise RespostaInvalida(f"PR do Bitbucket em formato inesperado: {pr!r}")
+        titulo = pr.get("title") or ""
+        if not isinstance(titulo, str):
+            raise RespostaInvalida(f"title da PR do Bitbucket em formato inesperado: {titulo!r}")
         bruto = pr.get("updated_on", "")
         try:
             quando = datetime.datetime.fromisoformat(bruto) if bruto else SEM_DATA
         except ValueError:
             quando = SEM_DATA
         return PrIndex(
-            pr_id=pr["id"],
-            titulo=pr.get("title") or "",
+            # get com default 0, nao pr["id"]: PR sem id e descartada pelo
+            # filtro de pr_id em `_varrer`, nao um erro de forma.
+            pr_id=pr.get("id") or 0,
+            titulo=titulo,
             branch=((pr.get("source") or {}).get("branch") or {}).get("name") or "",
             updated_on=quando,
         )
@@ -242,6 +253,10 @@ class BitbucketPRCommitSource:
     def _para_commit_ref(c: JSON) -> CommitRef:
         """Sem `chamado`: e o que o cache guarda, e o cache e por PR."""
         parents = c.get("parents") or []
+        if parents and not isinstance(parents[0], dict):
+            raise RespostaInvalida(
+                f"parent de commit do Bitbucket em formato inesperado: {parents[0]!r}"
+            )
         parent = parents[0].get("hash", "") if parents else ""
         data_raw = c.get("date", "")
         try:
@@ -262,14 +277,22 @@ class BitbucketPRCommitSource:
         while url:
             try:
                 resp = client.get(url, params=params, headers={"Authorization": self._auth_header()})
+            except httpx.InvalidURL as e:
+                raise ErroDeEntrada(f"URL do Bitbucket invalida: {url!r}: {e}") from e
             except httpx.HTTPError as e:
-                raise MotorError(f"chamando Bitbucket {url}: {e}") from e
+                raise BackendIndisponivel(f"chamando Bitbucket {url}: {e}") from e
             if resp.status_code != 200:
-                raise MotorError(f"Bitbucket respondeu {resp.status_code} em {url}: {resp.text}")
+                raise BackendIndisponivel(
+                    f"Bitbucket respondeu {resp.status_code} em {url}: {resp.text}"
+                )
             try:
                 corpo = resp.json()
             except ValueError as e:
-                raise MotorError(f"decodificando resposta do Bitbucket em {url}: {e}") from e
+                raise RespostaInvalida(f"decodificando resposta do Bitbucket em {url}: {e}") from e
+            if not isinstance(corpo, dict):
+                raise RespostaInvalida(
+                    f"resposta do Bitbucket em formato inesperado em {url}: {corpo!r}"
+                )
             yield from corpo.get("values", [])
             url = corpo.get("next", "")
             params = None  # `next` ja traz a query embutida

@@ -7,19 +7,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada
 
 
 @dataclass
 class ManualList:
     caminho: str
 
-    def fetch(self, versao: str) -> list[str]:
+    def fetch(self, versao: str, /) -> list[str]:
         try:
             with open(self.caminho, encoding="utf-8") as f:
                 linhas = f.read().splitlines()
         except OSError as e:
-            raise MotorError(f"abrindo lista manual {self.caminho}: {e}") from e
+            raise ErroDeEntrada(f"abrindo lista manual {self.caminho}: {e}") from e
 
         chamados: list[str] = []
         for linha in linhas:
@@ -27,7 +27,7 @@ class ManualList:
             if linha == "" or linha.startswith("#"):
                 continue
             if not linha.isdigit():
-                raise MotorError(
+                raise ErroDeEntrada(
                     f"linha invalida em {self.caminho}: {linha!r} "
                     "(esperado so o numero do chamado)"
                 )

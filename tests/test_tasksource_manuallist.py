@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from motor.adapters.tasksource.manuallist import ManualList
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada
 
 
 def test_manuallist_le_um_chamado_por_linha(tmp_path):
@@ -17,5 +17,5 @@ def test_manuallist_recusa_linha_que_nao_e_numero(tmp_path):
     arquivo = tmp_path / "lista.txt"
     arquivo.write_text("VB-2354\n", encoding="utf-8")
 
-    with pytest.raises(MotorError, match="linha invalida"):
+    with pytest.raises(ErroDeEntrada, match="linha invalida"):
         ManualList(caminho=str(arquivo)).fetch("13.34.0")

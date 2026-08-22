@@ -43,7 +43,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado, formatar_com_notas
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
@@ -470,7 +470,7 @@ class MotorTUI(App[None]):
 
     def _falha(self, erro: Exception, transitorio: bool = False) -> None:
         if isinstance(erro, MotorError):
-            self._erro(str(erro), transitorio)
+            self._erro(formatar_com_notas(erro), transitorio)
             return
         logging.error(
             "Erro interno fatal na TUI",
@@ -737,10 +737,8 @@ def descobrir_repos(
             else:
                 try:
                     info = estado.resolver_repo(caminho.name)
-                except MotorError as erro:
-                    if "desconhecido" in str(erro):
-                        continue
-                    raise
+                except NaoEncontrado:
+                    continue
             atual = encontrados.get(info.nome)
             if atual is None or (
                 caminho.name == info.nome and atual.name != info.nome
@@ -798,7 +796,7 @@ def _deps_do_repo(
     repo: RepoOption, sessao: Session, progresso: RelatorProgresso = silencioso
 ) -> Deps:
     if repo.caminho is None:
-        raise MotorError("checkout local não encontrado")
+        raise NaoEncontrado("checkout local não encontrado")
     # Sem flags: token e email do Bitbucket saem do ambiente dentro do
     # montar_deps, e a fonte de tasks e sempre o Tickio.
     return montar_deps(repo.caminho, sessao, progresso=progresso)

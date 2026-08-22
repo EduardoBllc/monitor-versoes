@@ -77,3 +77,15 @@ que não seja exatamente o do `.env.development` — sem essa checagem um
 assertion nova vai para lá, não para uma das duas suítes. Fake mais permissivo que
 o banco deixa a suíte verde num caminho que quebra em produção, e este projeto já
 pagou por isso três vezes.
+
+## Erro novo escolhe classe, não só mensagem
+
+`motor/errors.py` tem cinco classes. `raise MotorError(...)` puro só quando o
+site genuinamente não sabe o que falhou — em `GitSubprocess._run`, por exemplo.
+Nos outros, escolha: `RecusaDeInvariante`, `NaoEncontrado`,
+`BackendIndisponivel`, `RespostaInvalida` (portas) ou `ErroDeEntrada` (operador).
+Bug de programação é `AssertionError`, não `MotorError`.
+
+**Teste de erro assere tipo, não substring de mensagem.** Exceção: quando o
+*texto* é o requisito (a dica do `docker compose up -d`, a instrução `motor repo
+adicionar`) — aí valem os dois.

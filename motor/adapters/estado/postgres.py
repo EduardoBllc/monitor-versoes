@@ -21,7 +21,13 @@ from motor.domain.types import (
     VersaoInfo,
     VersionType,
 )
-from motor.errors import MotorError
+from motor.errors import (
+    BackendIndisponivel,
+    MotorError,
+    NaoEncontrado,
+    RecusaDeInvariante,
+    RespostaInvalida,
+)
 
 # Levantado pela trigger trava_versao_liberada; ver a migracao que a define.
 ERRCODE_VERSAO_CONGELADA = "MV001"
@@ -42,7 +48,7 @@ _Linha = TypeVar("_Linha")
 class PostgresEstado:
     sessao: Session
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
+    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         # Nome canonico e alias dividem o mesmo espaco de nomes, entao as duas
         # tabelas contam para "ja cadastrado". Sao duas consultas so quando a
         # primeira nao acha nada: o `or` curto-circuita.
@@ -55,13 +61,13 @@ class PostgresEstado:
             is not None
         )
         if ja_cadastrado:
-            raise MotorError(f"repo '{nome}' ja cadastrado")
+            raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
         self.sessao.add(
             models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id)
         )
         self._commit()
 
-    def resolver_repo(self, basename: str) -> RepoInfo:
+    def resolver_repo(self, basename: str, /) -> RepoInfo:
         linha = self._scalar(select(models.Repo).where(models.Repo.nome == basename))
         if linha is None:
             alias = self._scalar(
@@ -72,7 +78,7 @@ class PostgresEstado:
                     select(models.Repo).where(models.Repo.id == alias.repo_id)
                 )
         if linha is None:
-            raise MotorError(
+            raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
                 f"  uv run motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
@@ -85,7 +91,7 @@ class PostgresEstado:
             for linha in self._scalars(select(models.Repo).order_by(models.Repo.nome))
         ]
 
-    def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
+    def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:
         # Idempotente e nao-destrutivo: a base e o ponto onde a branch foi
         # cortada, gravado uma vez. Reescreve-la faria a base de uma X.0.0
         # seguir o tip atual do master.
@@ -105,7 +111,7 @@ class PostgresEstado:
         self._commit()
 
     def marcar_liberadas(
-        self, repo: str, liberadas: dict[str, datetime.datetime]
+        self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         repo_id = self._repo_id(repo)
         for numero, quando in liberadas.items():
@@ -117,13 +123,13 @@ class PostgresEstado:
             linha.liberada_em = quando
         self._commit()
 
-    def versao(self, repo: str, numero: str) -> VersaoInfo | None:
+    def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         linha = self._versao(self._repo_id(repo), numero)
         if linha is None:
             return None
         tipo = _TEXTO_PARA_TIPO.get(linha.tipo)
         if tipo is None:
-            raise MotorError(
+            raise RespostaInvalida(
                 f"tipo de versao invalido no banco: '{linha.tipo}' "
                 f"(esperado fechada, ajustada ou cliente)"
             )
@@ -135,7 +141,7 @@ class PostgresEstado:
             liberada_em=linha.liberada_em,
         )
 
-    def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]:
+    def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]:
         versao_id = self._versao_id(repo, versao)
         if versao_id is None:
             return []
@@ -161,18 +167,18 @@ class PostgresEstado:
         ]
 
     def substituir_atribuicoes(
-        self, repo: str, versao: str, novas: list[Atribuicao]
+        self, repo: str, versao: str, novas: list[Atribuicao], /
     ) -> None:
         linha = self._versao(self._repo_id(repo), versao)
         if linha is None:
-            raise MotorError(f"versao {versao} nao registrada no estado")
+            raise NaoEncontrado(f"versao {versao} nao registrada no estado")
         # A recusa nao pode depender so da trigger: se a versao ja estiver
         # liberada mas o snapshot atual estiver vazio e `novas` tambem vier
         # vazia, os deletes afetam 0 linhas e nenhum insert dispara a trigger
         # — o commit passaria em silencio. Checa aqui, a trigger fica so como
         # cinto-e-suspensorio para SQL escrito a mao.
         if linha.liberada_em is not None:
-            raise MotorError(f"versao {versao} liberada e imutavel")
+            raise RecusaDeInvariante(f"versao {versao} liberada e imutavel")
         versao_id = linha.id
 
         # As duas deletes sao statements Core enviados na hora (nao esperam
@@ -211,7 +217,7 @@ class PostgresEstado:
         except DBAPIError as e:
             self._traduzir_erro(e)
 
-    def exclusoes(self, repo: str) -> list[Exclusion]:
+    def exclusoes(self, repo: str, /) -> list[Exclusion]:
         repo_id = self._repo_id(repo)
         return [
             Exclusion(
@@ -226,7 +232,7 @@ class PostgresEstado:
             )
         ]
 
-    def sem_entrega(self, repo: str) -> dict[str, str]:
+    def sem_entrega(self, repo: str, /) -> dict[str, str]:
         repo_id = self._repo_id(repo)
         return {
             s.chamado: s.motivo
@@ -237,7 +243,7 @@ class PostgresEstado:
             )
         }
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
         repo_id = self._repo_id(repo)
         achados: dict[int, list[CommitRef]] = {}
         for linha in self._scalars(
@@ -265,7 +271,7 @@ class PostgresEstado:
         return achados
 
     def gravar_commits_de_pr(
-        self, repo: str, commits: dict[int, list[CommitRef]]
+        self, repo: str, commits: dict[int, list[CommitRef]], /
     ) -> None:
         repo_id = self._repo_id(repo)
         for pr_id, refs in commits.items():
@@ -285,7 +291,7 @@ class PostgresEstado:
                 )
         self._commit()
 
-    def prs_indexadas(self, repo: str) -> list[PrIndex]:
+    def prs_indexadas(self, repo: str, /) -> list[PrIndex]:
         repo_id = self._repo_id(repo)
         return [
             PrIndex(
@@ -301,7 +307,7 @@ class PostgresEstado:
             )
         ]
 
-    def marca_varredura(self, repo: str) -> datetime.datetime | None:
+    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
         linha = self._scalar(
             select(models.BitbucketVarredura).where(
                 models.BitbucketVarredura.repo_id == self._repo_id(repo)
@@ -310,7 +316,7 @@ class PostgresEstado:
         return None if linha is None else linha.ate
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime
+        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         """Indice e marca na MESMA transacao.
 
@@ -338,7 +344,7 @@ class PostgresEstado:
     def _repo_id(self, repo: str) -> int:
         linha = self._scalar(select(models.Repo).where(models.Repo.nome == repo))
         if linha is None:
-            raise MotorError(f"repo '{repo}' nao encontrado no estado")
+            raise NaoEncontrado(f"repo '{repo}' nao encontrado no estado")
         return linha.id
 
     def _versao(self, repo_id: int, numero: str) -> models.Versao | None:
@@ -408,11 +414,11 @@ class PostgresEstado:
             sqlstate is not None
             and "imutavel" in str(e.orig)
         ):
-            raise MotorError(
+            raise RecusaDeInvariante(
                 "versao liberada e imutavel — remarque a tarefa para a proxima versao"
             ) from e
         if sqlstate is None:
-            raise MotorError(
+            raise BackendIndisponivel(
                 f"banco inacessivel: {e.orig}. Suba com: docker compose up -d"
             ) from e
         raise MotorError(f"erro do banco: {e.orig}") from e

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 
 from motor.domain.types import CommitRef
 from motor.domain.version import worktrees_a_remover
-from motor.errors import MotorError
+from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.ports import CherryPickOutcome, MergePrediction
 
 _PADRAO_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
@@ -81,7 +81,7 @@ class FakeGit:
         self.branches[branch] = hash
         self._current_branch = branch
 
-    def merge_base(self, a: str, b: str) -> str:
+    def merge_base(self, a: str, b: str, /) -> str:
         ancestors_of_a: dict[str, bool] = {}
         h = self._resolve_ref_local(a)
         while h != "":
@@ -99,12 +99,12 @@ class FakeGit:
             if c is None:
                 break
             h = c.parent
-        raise MotorError(f"merge-base nao encontrado entre {a} e {b}")
+        raise NaoEncontrado(f"merge-base nao encontrado entre {a} e {b}")
 
     def _resolve_ref_local(self, ref: str) -> str:
         return self.branches.get(ref, ref)
 
-    def is_ancestor(self, commit: str, branch: str) -> bool:
+    def is_ancestor(self, commit: str, branch: str, /) -> bool:
         h = self._resolve_ref_local(branch)
         while h != "":
             if h == commit:
@@ -115,7 +115,7 @@ class FakeGit:
             h = c.parent
         return False
 
-    def search_commits(self, padroes: list[str], refs: str) -> list[CommitRef]:
+    def search_commits(self, padroes: list[str], refs: str, /) -> list[CommitRef]:
         h = self._resolve_ref_local(refs)
         resultado: list[CommitRef] = []
         while h != "":
@@ -131,7 +131,7 @@ class FakeGit:
             h = c.parent
         return resultado
 
-    def commits_in_range(self, from_: str, to: str) -> list[CommitRef]:
+    def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:
         if self.commits_in_range_err is not None:
             raise self.commits_in_range_err
         stop_at = self._resolve_ref_local(from_)
@@ -145,13 +145,13 @@ class FakeGit:
             h = c.parent
         return resultado
 
-    def commit_meta(self, hash: str) -> CommitRef:
+    def commit_meta(self, hash: str, /) -> CommitRef:
         c = self.commits.get(hash)
         if c is None:
-            raise MotorError(f"commit {hash} nao encontrado")
+            raise NaoEncontrado(f"commit {hash} nao encontrado")
         return CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
 
-    def commits_meta(self, hashes: list[str]) -> dict[str, CommitRef]:
+    def commits_meta(self, hashes: list[str], /) -> dict[str, CommitRef]:
         # Hash ausente falta no retorno, nao levanta: e o git com
         # --ignore-missing, nao um commit_meta em laco.
         return {
@@ -160,33 +160,33 @@ class FakeGit:
             if (c := self.commits.get(h)) is not None
         }
 
-    def patch_id(self, hash: str) -> str:
+    def patch_id(self, hash: str, /) -> str:
         if hash not in self.commits:
-            raise MotorError(f"commit {hash} nao encontrado")
+            raise NaoEncontrado(f"commit {hash} nao encontrado")
         return "patchid-" + hash
 
-    def changed_files(self, hash: str) -> frozenset[str]:
+    def changed_files(self, hash: str, /) -> frozenset[str]:
         if hash not in self.commits:
-            raise MotorError(f"commit {hash} nao encontrado")
+            raise NaoEncontrado(f"commit {hash} nao encontrado")
         return self.file_changes.get(hash, frozenset())
 
-    def resolve_ref(self, ref: str) -> str:
+    def resolve_ref(self, ref: str, /) -> str:
         if (m := _PREFIXO_REF_REMOTA.match(ref)) is not None:
             # So a ref qualificada resolve, como no git de verdade.
             remota = self.remote_refs.get(ref[m.end():])
             if remota is None:
-                raise MotorError(f"ref {ref} nao encontrada")
+                raise NaoEncontrado(f"ref {ref} nao encontrada")
             return remota
         nome = ref.removeprefix("refs/tags/").removeprefix("refs/heads/")
         if nome in self.branches:
             return self.branches[nome]
         if nome in self.commits:
             return nome
-        raise MotorError(f"ref {ref} nao encontrada")
+        raise NaoEncontrado(f"ref {ref} nao encontrada")
 
-    def use_worktree(self, branch: str) -> None:
+    def use_worktree(self, branch: str, /) -> None:
         if branch not in self.branches:
-            raise MotorError(f"branch {branch} nao existe")
+            raise NaoEncontrado(f"branch {branch} nao existe")
         self._registrar_uso(branch)
         self._current_branch = branch
 
@@ -196,10 +196,10 @@ class FakeGit:
             self.worktrees_mru.remove(branch)
         self.worktrees_mru.insert(0, branch)
 
-    def cherry_pick_x(self, hash: str) -> CherryPickOutcome:
+    def cherry_pick_x(self, hash: str, /) -> CherryPickOutcome:
         origem = self.commits.get(hash)
         if origem is None:
-            raise MotorError(f"commit {hash} nao encontrado")
+            raise NaoEncontrado(f"commit {hash} nao encontrado")
         if self.conflict_on.get(hash):
             self._pending_pick = hash
             self._conflicted = ["arquivo-conflito.txt"]
@@ -239,7 +239,7 @@ class FakeGit:
         self._pending_pick = ""
         self._conflicted = []
 
-    def predict_merge(self, parent: str, branch_tip: str, commit: str) -> MergePrediction:
+    def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
         pred = self.merge_predictions.get(
             commit, MergePrediction(conflita=False, arquivos_conflito=[])
         )
@@ -248,7 +248,7 @@ class FakeGit:
         return pred
 
     def culpados_por_linha(
-        self, base: str, parent: str, commit: str, arquivos: list[str]
+        self, base: str, parent: str, commit: str, arquivos: list[str], /
     ) -> dict[str, list[CommitRef]]:
         por_arquivo = self.culpados_por_linha_por_commit.get(commit, {})
         # Filtra pelos arquivos pedidos como o real faz: sem isso um engine que
@@ -256,14 +256,14 @@ class FakeGit:
         pedidos = set(arquivos)
         return {a: c for a, c in por_arquivo.items() if a in pedidos}
 
-    def worktree_add(self, branch: str, base: str) -> None:
+    def worktree_add(self, branch: str, base: str, /) -> None:
         if branch in self.branches:
-            raise MotorError(f"branch {branch} ja existe")
+            raise RecusaDeInvariante(f"branch {branch} ja existe")
         self.branches[branch] = self._resolve_ref_local(base)
         self._registrar_uso(branch)
         self._current_branch = branch
 
-    def worktree_gc(self, manter: int, atual: str) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
         # So desanexa as worktrees (como o git de verdade) - as branches em si
         # continuam existindo, pra use_worktree poder recria-las sob demanda.
         # Sem as guardas do adapter real (cherry-pick pendente e alteracao
@@ -279,29 +279,29 @@ class FakeGit:
         self.removed_worktrees.extend(removidas)
         return removidas
 
-    def tag_exists(self, tag: str) -> bool:
+    def tag_exists(self, tag: str, /) -> bool:
         return self.tags.get(tag, False)
 
-    def remote_branch_exists(self, remote: str, branch: str) -> bool:
+    def remote_branch_exists(self, remote: str, branch: str, /) -> bool:
         return self.remotes.get(branch, False)
 
-    def remote_url(self, remote: str) -> str:
+    def remote_url(self, remote: str, /) -> str:
         url = self.remote_urls.get(remote)
         if url is None:
-            raise MotorError(f"remoto {remote} nao configurado")
+            raise NaoEncontrado(f"remoto {remote} nao configurado")
         return url
 
-    def push_branch(self, remote: str, branch: str) -> None:
+    def push_branch(self, remote: str, branch: str, /) -> None:
         if branch not in self.branches:
-            raise MotorError(f"branch {branch} nao existe")
+            raise NaoEncontrado(f"branch {branch} nao existe")
         self.remotes[branch] = True
 
-    def pull_branch(self, remote: str, branch: str) -> None:
+    def pull_branch(self, remote: str, branch: str, /) -> None:
         if branch not in self.branches:
-            raise MotorError(f"branch {branch} nao existe")
+            raise NaoEncontrado(f"branch {branch} nao existe")
         self.pulled.append(branch)
 
-    def fetch(self, remote: str) -> None:
+    def fetch(self, remote: str, /) -> None:
         self.fetched.append(remote)
 
     def list_version_branches(self) -> list[str]:
@@ -321,16 +321,16 @@ class FakeGit:
             if existe and _PADRAO_VERSAO.match(t)
         )
 
-    def read_file(self, branch: str, path: str) -> bytes:
+    def read_file(self, branch: str, path: str, /) -> bytes:
         arquivos = self.files.get(branch)
         if arquivos is None:
-            raise MotorError(f"branch {branch} nao tem arquivos")
+            raise NaoEncontrado(f"branch {branch} nao tem arquivos")
         conteudo = arquivos.get(path)
         if conteudo is None:
-            raise MotorError(f"arquivo {path} nao encontrado em {branch}")
+            raise NaoEncontrado(f"arquivo {path} nao encontrado em {branch}")
         return conteudo
 
-    def write_file(self, branch: str, path: str, content: bytes, mensagem_commit: str) -> None:
+    def write_file(self, branch: str, path: str, content: bytes, mensagem_commit: str, /) -> None:
         if branch not in self.files:
             self.files[branch] = {}
         self.files[branch][path] = content

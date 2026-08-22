@@ -6,7 +6,7 @@ from motor.domain.types import VersaoInfo
 from motor.domain.version import inferir_tipo
 from motor.engine.atualizar import AtualizarResult, atualizar
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import RecusaDeInvariante
 from motor.services.base_resolver import BaseResolver
 from motor.services.publication_gate import PublicationGate
 
@@ -25,7 +25,7 @@ def criar(deps: Deps, versao: str) -> AtualizarResult:
 
     gate = PublicationGate(git=deps.git)
     if gate.publicada(versao):
-        raise MotorError(f"versao {versao} ja publicada - use atualizar")
+        raise RecusaDeInvariante(f"versao {versao} ja publicada - use atualizar")
 
     base = BaseResolver(git=deps.git).resolve(versao)
 

@@ -20,6 +20,7 @@ existe so num dos lados nao e contrato, e uma opiniao.
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -33,7 +34,7 @@ from motor.domain.types import (
     VersaoInfo,
     VersionType,
 )
-from motor.errors import MotorError
+from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 REPO = "vendabemweb"
 ALIAS = "vbweb"
@@ -94,7 +95,7 @@ def test_resolver_repo_por_nome_e_por_alias(estado):
 
 
 def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
-    with pytest.raises(MotorError, match="desconhecido") as e:
+    with pytest.raises(NaoEncontrado) as e:
         estado.resolver_repo("nao-existe")
     assert "motor repo adicionar" in str(e.value)
 
@@ -108,14 +109,14 @@ def test_registrar_repo_o_torna_resolvivel(estado):
 
 
 def test_registrar_repo_recusa_nome_duplicado(estado):
-    with pytest.raises(MotorError, match="ja cadastrado"):
+    with pytest.raises(RecusaDeInvariante):
         estado.registrar_repo(REPO, 99)
 
     assert estado.resolver_repo(REPO).tickio_sistema_id == SISTEMA_ID
 
 
 def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
-    with pytest.raises(MotorError, match="ja cadastrado"):
+    with pytest.raises(RecusaDeInvariante):
         estado.registrar_repo(ALIAS, 99)
 
     assert estado.resolver_repo(ALIAS).nome == REPO
@@ -163,7 +164,7 @@ def test_repo_desconhecido_levanta_em_todo_metodo(estado, chamada):
     # o fake devolvia None/[]/{} ou gravava versao pendurada num repo
     # inexistente; o banco levanta por causa da FK. Silencio de um lado e erro do
     # outro e como um caminho quebrado passa por verde.
-    with pytest.raises(MotorError, match="nao encontrado no estado"):
+    with pytest.raises(NaoEncontrado):
         chamada(estado)
 
 
@@ -216,7 +217,7 @@ def test_marcar_liberadas_nao_reescreve_data_ja_gravada(estado):
 
 def test_substituir_atribuicoes_recusa_versao_nao_registrada(estado):
     # no Postgres seria violacao de FK; o fake tem de recusar igual
-    with pytest.raises(MotorError, match="nao registrada no estado"):
+    with pytest.raises(NaoEncontrado):
         estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="1")])
 
 
@@ -225,7 +226,7 @@ def test_substituir_atribuicoes_recusa_versao_liberada(estado):
     estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="123456")])
     estado.marcar_liberadas(REPO, {"13.34.0": QUANDO})
 
-    with pytest.raises(MotorError, match="imutavel"):
+    with pytest.raises(RecusaDeInvariante):
         estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="999")])
 
     assert [a.chamado for a in estado.atribuicoes(REPO, "13.34.0")] == ["123456"]
@@ -237,7 +238,7 @@ def test_substituir_atribuicoes_recusa_liberada_mesmo_com_snapshot_vazio(estado)
     estado.registrar_versao(REPO, _base())
     estado.marcar_liberadas(REPO, {"13.34.0": QUANDO})
 
-    with pytest.raises(MotorError, match="imutavel"):
+    with pytest.raises(RecusaDeInvariante):
         estado.substituir_atribuicoes(REPO, "13.34.0", [])
 
 
@@ -356,6 +357,18 @@ def test_cache_de_pr_e_por_repo(estado):
 
 def test_commits_de_pr_sem_pr_pedida_nao_consulta_nada(estado):
     assert estado.commits_de_pr(REPO, []) == {}
+
+
+def test_nenhuma_assercao_casa_substring_de_mensagem():
+    """Este arquivo e publicado para adapters de terceiro. O parametro `match`
+    de `pytest.raises` casa o TEXTO da excecao, que aqui e portugues — um
+    adapter correto que levanta a mesma subclasse com mensagem em outro idioma
+    reprovaria. A suite discrimina por tipo, nunca por mensagem; se esse
+    parametro voltar a aparecer aqui, e o mesmo anti-padrao que este arquivo
+    existe para banir.
+    """
+    padrao_do_parametro = "match" + "="
+    assert padrao_do_parametro not in Path(__file__).read_text()
 
 
 # -- indice de PRs e marca da varredura ----------------------------------------

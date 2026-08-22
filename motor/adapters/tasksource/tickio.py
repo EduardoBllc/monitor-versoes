@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from motor.errors import MotorError
+from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 _ROTA_TOKEN = "/api/v1/ws/token/"
 _ROTA_CHAMADOS = "/api/v1/ws/versoes/chamados/"
@@ -30,7 +30,7 @@ class TickioRest:
     client: httpx.Client | None = None
     _access: str = field(default="", init=False, repr=False)
 
-    def fetch(self, versao: str) -> list[str]:
+    def fetch(self, versao: str, /) -> list[str]:
         # Cobrado no uso, nao na construcao: o CLI monta a fonte de tarefas para
         # todo comando, mas `atualizar --abort` e `reconstruir-estado` nunca
         # buscam nada — e sao justamente os comandos de recuperacao, que nao
@@ -46,7 +46,7 @@ class TickioRest:
             )
             if not valor
         ]:
-            raise MotorError(f"faltando no .env: {', '.join(faltando)}")
+            raise ErroDeEntrada(f"faltando no .env: {', '.join(faltando)}")
 
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
@@ -61,13 +61,15 @@ class TickioRest:
                     params={"sistema": self.sistema_id, "versao": versao},
                     headers={"Authorization": f"Bearer {token}"},
                 )
+            except httpx.InvalidURL as e:
+                raise ErroDeEntrada(f"TICKIO_BASE_URL invalido: {e}") from e
             except httpx.HTTPError as e:
-                raise MotorError(
+                raise BackendIndisponivel(
                     f"buscando chamados da versao {versao} no Tickio: {e}"
                 ) from e
 
             if resp.status_code != 200:
-                raise MotorError(
+                raise BackendIndisponivel(
                     f"Tickio respondeu {resp.status_code} ao listar a versao {versao}: "
                     f"{resp.text}"
                 )
@@ -75,7 +77,7 @@ class TickioRest:
             try:
                 corpo = resp.json()
             except ValueError as e:
-                raise MotorError(f"decodificando resposta do Tickio: {e}") from e
+                raise RespostaInvalida(f"decodificando resposta do Tickio: {e}") from e
 
             return _extrair_chamados(corpo)
 
@@ -87,25 +89,27 @@ class TickioRest:
                 f"{self.base_url}{_ROTA_TOKEN}",
                 json={"username": self.usuario, "password": self.senha},
             )
+        except httpx.InvalidURL as e:
+            raise ErroDeEntrada(f"TICKIO_BASE_URL invalido: {e}") from e
         except httpx.HTTPError as e:
-            raise MotorError(f"autenticando no Tickio: {e}") from e
+            raise BackendIndisponivel(f"autenticando no Tickio: {e}") from e
 
         if resp.status_code != 200:
-            raise MotorError(
+            raise BackendIndisponivel(
                 f"autenticando no Tickio: respondeu {resp.status_code}: {resp.text}"
             )
 
         try:
             corpo = resp.json()
         except ValueError as e:
-            raise MotorError(f"autenticando no Tickio: decodificando resposta: {e}") from e
+            raise RespostaInvalida(f"autenticando no Tickio: decodificando resposta: {e}") from e
 
         # str() e não cast(): o corpo vem de JSON de terceiro, e um `access`
         # numerico ou nulo entraria no header Authorization como o repr do
         # objeto. A checagem de vazio abaixo pega os dois casos.
         access = str((corpo or {}).get("access", "") or "")
         if not access:
-            raise MotorError("autenticando no Tickio: resposta sem campo 'access'")
+            raise RespostaInvalida("autenticando no Tickio: resposta sem campo 'access'")
         self._access = access
         return access
 
@@ -125,12 +129,12 @@ def _extrair_chamados(corpo: object) -> list[str]:
         elif "results" in corpo:
             itens = corpo["results"]
         else:
-            raise MotorError(f"resposta do Tickio em formato inesperado: {corpo!r}")
+            raise RespostaInvalida(f"resposta do Tickio em formato inesperado: {corpo!r}")
     else:
         itens = corpo
 
     if not isinstance(itens, list):
-        raise MotorError(f"resposta do Tickio em formato inesperado: {type(corpo)}")
+        raise RespostaInvalida(f"resposta do Tickio em formato inesperado: {type(corpo)}")
 
     chamados: list[str] = []
     for item in itens:
@@ -139,6 +143,6 @@ def _extrair_chamados(corpo: object) -> list[str]:
         else:
             valor = item
         if valor is None:
-            raise MotorError(f"item sem numero de chamado na resposta do Tickio: {item!r}")
+            raise RespostaInvalida(f"item sem numero de chamado na resposta do Tickio: {item!r}")
         chamados.append(str(valor))
     return chamados

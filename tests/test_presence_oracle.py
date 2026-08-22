@@ -2,9 +2,11 @@
 
 import datetime
 
+import pytest
+
 from motor.adapters.git.fake import FakeGit
-from motor.domain.types import Presence
-from motor.errors import MotorError
+from motor.domain.types import CommitRef, Presence
+from motor.errors import MotorError, NaoEncontrado
 from motor.services.presence_oracle import PresenceOracle
 
 
@@ -151,3 +153,41 @@ def test_presence_oracle_patch_id_origem_falha_trata_como_ausente():
     ok = oracle.presente("merge-sem-patch-id", "13.6.0", "13.7.0")
 
     assert ok == Presence.AUSENTE, "esperava presente=false quando patch_id do hash de origem falha"
+
+
+class _GitQueVazaBug(FakeGit):
+    """Adapter fora do contrato: levanta o que nao e MotorError."""
+
+    def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:
+        raise RuntimeError("bug no adapter")
+
+
+def test_excecao_fora_do_contrato_propaga_em_vez_de_virar_ausente():
+    """Antes disto o oraculo engolia qualquer excecao e devolvia AUSENTE: um bug
+    no adapter virava veredito de presenca errado, sem sinal nenhum. Com o
+    contrato declarado, so MotorError e degradavel.
+    """
+    t0 = datetime.datetime.now(datetime.timezone.utc)
+    git = _GitQueVazaBug()
+    git.add_commit("m0", "", "raiz", t0)
+    git.set_branch("13.34.0", "m0")
+
+    with pytest.raises(RuntimeError, match="bug no adapter"):
+        PresenceOracle(git=git).presente("aaa", "m0", "13.34.0")
+
+
+def test_motorerror_do_adapter_continua_degradando_para_ausente():
+    """O outro lado: erro DENTRO do contrato continua sendo tratado como
+    "nao deu para confirmar", per a secao 2 do desenho ("senao -> ausente").
+    """
+
+    class _GitQueFalhaNoContrato(FakeGit):
+        def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:
+            raise NaoEncontrado("objeto sumiu do historico")
+
+    t0 = datetime.datetime.now(datetime.timezone.utc)
+    git = _GitQueFalhaNoContrato()
+    git.add_commit("m0", "", "raiz", t0)
+    git.set_branch("13.34.0", "m0")
+
+    assert PresenceOracle(git=git).presente("aaa", "m0", "13.34.0") is Presence.AUSENTE

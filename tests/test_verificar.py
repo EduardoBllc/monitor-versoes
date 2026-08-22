@@ -12,7 +12,7 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada, MotorError
 from motor.ports import MergePrediction
 
 D = datetime.datetime(2026, 1, 1)
@@ -189,7 +189,7 @@ def test_auditar_recusa_versao_ainda_aberta():
         ),
     )
 
-    with pytest.raises(MotorError, match="liberada"):
+    with pytest.raises(ErroDeEntrada, match="liberada"):
         verificar(
             _deps(git, FakeTaskSource(), FakeCommitSource(), estado),
             "13.34.0",
@@ -517,9 +517,10 @@ def test_verificar_reporta_o_conflito_mesmo_sem_conseguir_atribuir():
 
 
 def test_verificar_cobra_a_fonte_de_commits_nao_montada():
-    """Bug de montagem tem de se nomear. Sem esta guarda o sintoma e um
-    AttributeError em NoneType vindo de dentro do TargetResolver, e o rastro
-    nao aponta para o front-end que esqueceu de montar a fonte.
+    """Bug de montagem nao e erro de operador: quem esqueceu de montar a fonte
+    foi o front-end, e o rastro tem de sair com traceback. AssertionError e o
+    que o main() ja roteia para o caminho de traceback — nao precisa de classe
+    nova nem de ramo novo.
     """
     git = FakeGit(tags={})
     git.add_commit("m0", "", "raiz", D)
@@ -529,7 +530,7 @@ def test_verificar_cobra_a_fonte_de_commits_nao_montada():
     _versao_registrada(estado)
     deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r")
 
-    with pytest.raises(MotorError, match="commit_source"):
+    with pytest.raises(AssertionError, match="commit_source"):
         verificar(deps, "14.0.0")
 
 

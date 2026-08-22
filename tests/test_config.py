@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from motor.config import database_url, worktrees_mantidas
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada
 
 COMPLETO = {
     "DATABASE_HOST": "localhost",
@@ -38,7 +38,7 @@ def test_database_url_escapa_caractere_que_quebraria_a_url(monkeypatch):
 
 def test_database_url_lista_todas_as_variaveis_faltando(monkeypatch):
     _ambiente(monkeypatch, {"DATABASE_HOST": "localhost"})
-    with pytest.raises(MotorError) as erro:
+    with pytest.raises(ErroDeEntrada) as erro:
         database_url()
     assert "DATABASE_PORT" in str(erro.value)
     assert "DATABASE_PASSWORD" in str(erro.value)
@@ -48,7 +48,7 @@ def test_database_url_recusa_porta_nao_numerica(monkeypatch):
     # create_engine converte a porta na hora e levanta ValueError, que cairia no
     # ramo de bug do CLI (traceback) em vez de virar mensagem para o operador.
     _ambiente(monkeypatch, {**COMPLETO, "DATABASE_PORT": "5433a"})
-    with pytest.raises(MotorError) as erro:
+    with pytest.raises(ErroDeEntrada) as erro:
         database_url()
     assert "DATABASE_PORT" in str(erro.value)
 
@@ -94,5 +94,6 @@ def test_worktrees_mantidas_aceita_zero(monkeypatch):
 def test_worktrees_mantidas_recusa_valor_invalido(monkeypatch, valor):
     # Cair no default calado faria o operador achar que configurou.
     monkeypatch.setenv("WORKTREES_MANTIDAS", valor)
-    with pytest.raises(MotorError, match="WORKTREES_MANTIDAS"):
+    with pytest.raises(ErroDeEntrada) as erro:
         worktrees_mantidas()
+    assert "WORKTREES_MANTIDAS" in str(erro.value)

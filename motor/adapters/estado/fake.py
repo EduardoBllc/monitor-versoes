@@ -13,7 +13,7 @@ from motor.domain.types import (
     RepoInfo,
     VersaoInfo,
 )
-from motor.errors import MotorError
+from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 
 @dataclass
@@ -34,18 +34,18 @@ class FakeEstado:
     _prs: dict[str, dict[int, PrIndex]] = field(default_factory=dict)
     _marca: dict[str, datetime.datetime] = field(default_factory=dict)
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
+    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         if nome in self.repos or nome in self.aliases:
-            raise MotorError(f"repo '{nome}' ja cadastrado")
+            raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
         self.repos[nome] = RepoInfo(
             nome=nome, tickio_sistema_id=tickio_sistema_id
         )
 
-    def resolver_repo(self, basename: str) -> RepoInfo:
+    def resolver_repo(self, basename: str, /) -> RepoInfo:
         nome = self.aliases.get(basename, basename)
         info = self.repos.get(nome)
         if info is None:
-            raise MotorError(
+            raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
                 f"  uv run motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
@@ -55,7 +55,7 @@ class FakeEstado:
     def listar_repos(self) -> list[RepoInfo]:
         return [self.repos[nome] for nome in sorted(self.repos)]
 
-    def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
+    def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:
         # Idempotente e nao-destrutivo: base e liberada_em so entram na
         # primeira gravacao. A base e o ponto onde a branch foi cortada, nao
         # algo a recomputar.
@@ -65,7 +65,7 @@ class FakeEstado:
         self.versoes[(repo, info.numero)] = info
 
     def marcar_liberadas(
-        self, repo: str, liberadas: dict[str, datetime.datetime]
+        self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         self._exigir_repo(repo)
         for numero, quando in liberadas.items():
@@ -80,11 +80,11 @@ class FakeEstado:
                 liberada_em=quando,
             )
 
-    def versao(self, repo: str, numero: str) -> VersaoInfo | None:
+    def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         self._exigir_repo(repo)
         return self.versoes.get((repo, numero))
 
-    def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]:
+    def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]:
         self._exigir_repo(repo)
         # Ordenado por chamado e por hash dentro de cada chamado: o adapter real
         # usa ORDER BY nas duas dimensoes. O dict aqui devolveria ordem de
@@ -108,27 +108,27 @@ class FakeEstado:
         ]
 
     def substituir_atribuicoes(
-        self, repo: str, versao: str, novas: list[Atribuicao]
+        self, repo: str, versao: str, novas: list[Atribuicao], /
     ) -> None:
         # Espelha a trigger do Postgres: o fake nao pode aceitar o que o banco
         # recusa, senao os testes de engine validam um comportamento que nao
         # existe em producao.
         atual = self.versao(repo, versao)
         if atual is None:
-            raise MotorError(f"versao {versao} nao registrada no estado")
+            raise NaoEncontrado(f"versao {versao} nao registrada no estado")
         if atual.liberada_em is not None:
-            raise MotorError(f"versao {versao} liberada e imutavel")
+            raise RecusaDeInvariante(f"versao {versao} liberada e imutavel")
         self._atribuicoes[(repo, versao)] = list(novas)
 
-    def exclusoes(self, repo: str) -> list[Exclusion]:
+    def exclusoes(self, repo: str, /) -> list[Exclusion]:
         self._exigir_repo(repo)
         return list(self._exclusoes.get(repo, []))
 
-    def sem_entrega(self, repo: str) -> dict[str, str]:
+    def sem_entrega(self, repo: str, /) -> dict[str, str]:
         self._exigir_repo(repo)
         return dict(self._sem_entrega.get(repo, {}))
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
         self._exigir_repo(repo)
         achados: dict[int, list[CommitRef]] = {}
         for pr_id in pr_ids:
@@ -143,7 +143,7 @@ class FakeEstado:
         return achados
 
     def gravar_commits_de_pr(
-        self, repo: str, commits: dict[int, list[CommitRef]]
+        self, repo: str, commits: dict[int, list[CommitRef]], /
     ) -> None:
         self._exigir_repo(repo)
         for pr_id, refs in commits.items():
@@ -151,17 +151,17 @@ class FakeEstado:
             for c in refs:
                 alvo[c.hash_origem] = c
 
-    def prs_indexadas(self, repo: str) -> list[PrIndex]:
+    def prs_indexadas(self, repo: str, /) -> list[PrIndex]:
         self._exigir_repo(repo)
         guardadas = self._prs.get(repo, {})
         return [guardadas[pr_id] for pr_id in sorted(guardadas)]
 
-    def marca_varredura(self, repo: str) -> datetime.datetime | None:
+    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
         self._exigir_repo(repo)
         return self._marca.get(repo)
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime
+        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         self._exigir_repo(repo)
         alvo = self._prs.setdefault(repo, {})
@@ -181,4 +181,4 @@ class FakeEstado:
         producao. Toma o nome canonico, nao alias: o `resolver_repo` ja traduziu.
         """
         if repo not in self.repos:
-            raise MotorError(f"repo '{repo}' nao encontrado no estado")
+            raise NaoEncontrado(f"repo '{repo}' nao encontrado no estado")

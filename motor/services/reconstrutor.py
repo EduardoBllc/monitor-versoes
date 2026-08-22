@@ -33,8 +33,9 @@ def reconstruir_atribuicoes(
     """
     try:
         commits = git.commits_in_range(base_commit, branch)
-    except Exception as e:
-        raise MotorError(f"varrendo commits: {e}") from e
+    except MotorError as e:
+        e.add_note("varrendo commits")
+        raise
 
     por_chamado: dict[str, list[str]] = {}
     orfaos: list[str] = []
@@ -47,7 +48,7 @@ def reconstruir_atribuicoes(
         else:
             try:
                 meta = git.commit_meta(origem)
-            except Exception:
+            except MotorError:
                 continue  # origem sumiu do historico
 
         chamado = extrair_chamado(meta.msg)

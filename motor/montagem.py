@@ -29,7 +29,7 @@ from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import database_url, worktrees_mantidas
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
 from motor.progresso import RelatorProgresso, silencioso
 
@@ -41,7 +41,7 @@ def validar_nome_repo(valor: str) -> str:
     duas linhas paralelas sem erro nenhum aparecer.
     """
     if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
-        raise MotorError("use um nome simples, sem caminho")
+        raise ErroDeEntrada("use um nome simples, sem caminho")
     return valor
 
 
@@ -50,9 +50,9 @@ def validar_sistema_id(valor: str) -> int:
     try:
         numero = int(valor)
     except ValueError:
-        raise MotorError("deve ser um inteiro positivo") from None
+        raise ErroDeEntrada("deve ser um inteiro positivo") from None
     if numero <= 0:
-        raise MotorError("deve ser um inteiro positivo")
+        raise ErroDeEntrada("deve ser um inteiro positivo")
     return numero
 
 

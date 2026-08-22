@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef, Presence
+from motor.errors import MotorError
 from motor.ports import GitRepo
 
 
@@ -98,7 +99,7 @@ class PresenceOracle:
         if hash_ not in self._changed_files_cache:
             try:
                 self._changed_files_cache[hash_] = self.git.changed_files(hash_)
-            except Exception:
+            except MotorError:
                 self._changed_files_cache[hash_] = None
         return self._changed_files_cache[hash_]
 
@@ -107,7 +108,7 @@ class PresenceOracle:
         if chave not in self._commits_in_range_cache:
             try:
                 self._commits_in_range_cache[chave] = self.git.commits_in_range(base, branch)
-            except Exception:
+            except MotorError:
                 self._commits_in_range_cache[chave] = None
         return self._commits_in_range_cache[chave]
 
@@ -115,6 +116,6 @@ class PresenceOracle:
         if hash_ not in self._patch_id_cache:
             try:
                 self._patch_id_cache[hash_] = self.git.patch_id(hash_)
-            except Exception:
+            except MotorError:
                 self._patch_id_cache[hash_] = None
         return self._patch_id_cache[hash_]

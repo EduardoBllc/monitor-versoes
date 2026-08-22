@@ -8,6 +8,7 @@ roda sem container.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -18,7 +19,12 @@ from motor.adapters.estado.postgres import (
     ERRCODE_VERSAO_CONGELADA,
     PostgresEstado,
 )
-from motor.errors import MotorError
+from motor.errors import (
+    BackendIndisponivel,
+    MotorError,
+    RecusaDeInvariante,
+    RespostaInvalida,
+)
 
 
 class _OrigComSqlstate(Exception):
@@ -90,7 +96,7 @@ def test_conexao_morta_ganha_a_dica_do_compose():
         InterfaceError("select 1", None, Exception("connection already closed"))
     )
 
-    with pytest.raises(MotorError, match="docker compose up -d"):
+    with pytest.raises(BackendIndisponivel, match="docker compose up -d"):
         PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
 
 
@@ -127,5 +133,31 @@ def test_congelamento_identificado_pelo_errcode_nao_pelo_texto():
         )
     )
 
-    with pytest.raises(MotorError, match="remarque a tarefa para a proxima versao"):
+    with pytest.raises(RecusaDeInvariante, match="remarque a tarefa para a proxima versao"):
         PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
+
+
+class _SessaoQueDevolve:
+    """Sessao cuja sequencia de scalar() devolve as linhas dadas, na ordem.
+
+    Diferente de _SessaoQueFalha: aqui a leitura tem sucesso — o caminho de
+    RespostaInvalida nao passa por excecao do banco, passa por dado bom que
+    chegou fora do dominio esperado.
+    """
+
+    def __init__(self, *linhas: object) -> None:
+        self._linhas = list(linhas)
+
+    def scalar(self, stmt: object) -> object:
+        return self._linhas.pop(0)
+
+
+def test_tipo_de_versao_invalido_no_banco_vira_resposta_invalida():
+    """versao() traduz o texto da coluna pelo dict reverso; um valor fora do
+    trio conhecido (fechada/ajustada/cliente) e resposta fora do contrato,
+    nao excecao do banco — RespostaInvalida, nao MotorError puro.
+    """
+    sessao = _SessaoQueDevolve(SimpleNamespace(id=1), SimpleNamespace(tipo="bugado"))
+
+    with pytest.raises(RespostaInvalida, match="bugado"):
+        PostgresEstado(sessao=cast(Session, sessao)).versao("vendabemweb", "13.34.0")

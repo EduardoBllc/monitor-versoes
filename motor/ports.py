@@ -1,4 +1,28 @@
-"""Portas (interfaces) — transcrição 1-pra-1 de internal/ports/ports.go."""
+"""Portas (interfaces) do motor.
+
+## Contrato de erro
+
+Adapter levanta `MotorError` ou subclasse, e **nada mais**. Exceção fora dessa
+familia e tratada como bug: os services propagam em vez de degradar, e o
+front-end imprime traceback.
+
+O vocabulario esta em `motor.errors`:
+
+- `RecusaDeInvariante` — a operacao e ilegal; o dado esta integro
+- `NaoEncontrado` — o que foi pedido nao existe
+- `BackendIndisponivel` — o servico nao respondeu
+- `RespostaInvalida` — respondeu, fora do contrato
+- `MotorError` puro — falha que o site nao sabe classificar
+
+Assere por **tipo**, nunca por substring de mensagem: a suite e publicada, e
+casar texto em portugues reprovaria um adapter correto escrito em outro idioma.
+
+## Parametros posicionais
+
+Toda assinatura aqui marca os parametros como posicionais (`/`). Nenhum chamador
+passa por nome, e o type checker nao pega renome de parametro — marcar posicional
+torna o renome explicitamente permitido em vez de um risco nao verificado.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +60,7 @@ class MergePrediction:
 class TaskSource(Protocol):
     """Fonte de tarefas (Tickio, lista manual)."""
 
-    def fetch(self, versao: str) -> list[str]:
+    def fetch(self, versao: str, /) -> list[str]:
         """Numeros de chamado marcados para a versao."""
         ...
 
@@ -49,35 +73,45 @@ class CommitSource(Protocol):
     completude e garantida pelo TargetResolver.
     """
 
-    def resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         """Acha os commits de cada chamado."""
         ...
 
 
 class GitRepo(Protocol):
-    """Repositório Git."""
+    """Repositório Git.
 
-    def merge_base(self, a: str, b: str) -> str:
+    **Assimetria entre fake e adapter:** FakeGit levanta `NaoEncontrado` em
+    `merge_base`, `commit_meta`, `patch_id`, `changed_files`, `resolve_ref`,
+    `cherry_pick_x`, `remote_url`, `push_branch`, `pull_branch` e `read_file`.
+    `GitSubprocess` funila essas mesmas condições por um `exit status` genérico
+    sem classe — porque não sabe se falhou por conflito, permissão, objeto
+    ausente ou bug de invocação, e adivinhar seria pior. **Não ramifique em
+    `NaoEncontrado` vindo de `GitRepo`** — a divergência existe por design e
+    nada (ao contrário de `EstadoRepo`) a pega automaticamente.
+    """
+
+    def merge_base(self, a: str, b: str, /) -> str:
         """Base comum de dois commits."""
         ...
 
-    def is_ancestor(self, commit: str, branch: str) -> bool:
+    def is_ancestor(self, commit: str, branch: str, /) -> bool:
         """Verifica se commit é ancestral de branch."""
         ...
 
-    def search_commits(self, padroes: list[str], refs: str) -> list[CommitRef]:
+    def search_commits(self, padroes: list[str], refs: str, /) -> list[CommitRef]:
         """Busca commits que correspondem a padrões."""
         ...
 
-    def commits_in_range(self, from_: str, to: str) -> list[CommitRef]:
+    def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:
         """Commits no intervalo from_ até to."""
         ...
 
-    def commit_meta(self, hash: str) -> CommitRef:
+    def commit_meta(self, hash: str, /) -> CommitRef:
         """Metadados do commit."""
         ...
 
-    def commits_meta(self, hashes: list[str]) -> dict[str, CommitRef]:
+    def commits_meta(self, hashes: list[str], /) -> dict[str, CommitRef]:
         """Metadados de vários commits numa varredura só.
 
         Nao existe no ports.go: o Go le meta commit por commit, e num snapshot
@@ -91,23 +125,23 @@ class GitRepo(Protocol):
         """
         ...
 
-    def patch_id(self, hash: str) -> str:
+    def patch_id(self, hash: str, /) -> str:
         """ID do patch (para comparação de conteúdo)."""
         ...
 
-    def changed_files(self, hash: str) -> frozenset[str]:
+    def changed_files(self, hash: str, /) -> frozenset[str]:
         """Caminhos alterados pelo commit (para o nível 4 do oráculo de presença)."""
         ...
 
-    def resolve_ref(self, ref: str) -> str:
+    def resolve_ref(self, ref: str, /) -> str:
         """Resolve uma referência para hash."""
         ...
 
-    def use_worktree(self, branch: str) -> None:
+    def use_worktree(self, branch: str, /) -> None:
         """Seleciona worktree por branch."""
         ...
 
-    def cherry_pick_x(self, hash: str) -> CherryPickOutcome:
+    def cherry_pick_x(self, hash: str, /) -> CherryPickOutcome:
         """Cherry-pick de um commit."""
         ...
 
@@ -127,23 +161,23 @@ class GitRepo(Protocol):
         """Aberta cherry-pick."""
         ...
 
-    def predict_merge(self, parent: str, branch_tip: str, commit: str) -> MergePrediction:
+    def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
         """Prevê merge."""
         ...
 
     def culpados_por_linha(
-        self, base: str, parent: str, commit: str, arquivos: list[str]
+        self, base: str, parent: str, commit: str, arquivos: list[str], /
     ) -> dict[str, list[CommitRef]]:
         """Commits em base..parent que tocaram as mesmas linhas que `commit`
         altera nos `arquivos`. Atribui o conflito a quem o causou.
         """
         ...
 
-    def worktree_add(self, branch: str, base: str) -> None:
+    def worktree_add(self, branch: str, base: str, /) -> None:
         """Cria worktree."""
         ...
 
-    def worktree_gc(self, manter: int, atual: str) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
         """Descarta worktrees de versao alem das `manter` de uso mais recente.
 
         `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
@@ -153,27 +187,27 @@ class GitRepo(Protocol):
         """
         ...
 
-    def tag_exists(self, tag: str) -> bool:
+    def tag_exists(self, tag: str, /) -> bool:
         """Verifica se tag existe."""
         ...
 
-    def remote_branch_exists(self, remote: str, branch: str) -> bool:
+    def remote_branch_exists(self, remote: str, branch: str, /) -> bool:
         """Verifica se branch remota existe."""
         ...
 
-    def remote_url(self, remote: str) -> str:
+    def remote_url(self, remote: str, /) -> str:
         """URL do remoto (ex: git@bitbucket.org:ws/repo.git)."""
         ...
 
-    def push_branch(self, remote: str, branch: str) -> None:
+    def push_branch(self, remote: str, branch: str, /) -> None:
         """Publica branch no remoto (-u)."""
         ...
 
-    def pull_branch(self, remote: str, branch: str) -> None:
+    def pull_branch(self, remote: str, branch: str, /) -> None:
         """Atualiza a branch local com o remoto (fast-forward only)."""
         ...
 
-    def fetch(self, remote: str) -> None:
+    def fetch(self, remote: str, /) -> None:
         """Atualiza as referencias remote-tracking (ex: origin/master), sem
         tocar em branch local nenhuma."""
         ...
@@ -186,12 +220,12 @@ class GitRepo(Protocol):
         """Tags no formato X.Y.Z. Versao com tag = liberada (§6)."""
         ...
 
-    def read_file(self, branch: str, path: str) -> bytes:
+    def read_file(self, branch: str, path: str, /) -> bytes:
         """Lê arquivo em branch."""
         ...
 
     def write_file(
-        self, branch: str, path: str, content: bytes, mensagem_commit: str
+        self, branch: str, path: str, content: bytes, mensagem_commit: str, /
     ) -> None:
         """Escreve arquivo em branch."""
         ...
@@ -202,12 +236,12 @@ class EstadoRepo(Protocol):
     registro unico e imutavel para versao liberada.
     """
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int) -> None:
-        """Cadastra um repo canonico. MotorError se nome ou alias ja existir."""
+    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
+        """Cadastra um repo canonico. RecusaDeInvariante se nome ou alias ja existir."""
         ...
 
-    def resolver_repo(self, basename: str) -> RepoInfo:
-        """Resolve nome ou alias para o repo canonico. MotorError se
+    def resolver_repo(self, basename: str, /) -> RepoInfo:
+        """Resolve nome ou alias para o repo canonico. NaoEncontrado se
         desconhecido — nunca cria linha sozinho, senao um clone com nome
         diferente fragmenta o estado."""
         ...
@@ -216,38 +250,39 @@ class EstadoRepo(Protocol):
         """Repos canonicos cadastrados, em ordem de nome; aliases nao entram."""
         ...
 
-    def registrar_versao(self, repo: str, info: VersaoInfo) -> None:
+    def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:
         """Upsert da versao operada. Nao toca `liberada_em`."""
         ...
 
     def marcar_liberadas(
-        self, repo: str, liberadas: dict[str, datetime.datetime]
+        self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         """Grava a data de liberacao das versoes que ganharam tag. Ignora
         versao ausente do estado e nao reescreve data ja gravada."""
         ...
 
-    def versao(self, repo: str, numero: str) -> VersaoInfo | None:
+    def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         """A versao como esta no estado. A `base` daqui e a autoritativa —
         recomputar BaseResolver a cada run faria a base de uma X.0.0 seguir o
         tip atual do master em vez do ponto onde a branch foi cortada."""
         ...
 
-    def atribuicoes(self, repo: str, versao: str) -> list[Atribuicao]: ...
+    def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]: ...
 
     def substituir_atribuicoes(
-        self, repo: str, versao: str, novas: list[Atribuicao]
+        self, repo: str, versao: str, novas: list[Atribuicao], /
     ) -> None:
-        """Apaga e reinsere. MotorError se a versao ja estiver liberada."""
+        """Apaga e reinsere. NaoEncontrado se a versao nao existir no estado,
+        RecusaDeInvariante se ja estiver liberada."""
         ...
 
-    def exclusoes(self, repo: str) -> list[Exclusion]: ...
+    def exclusoes(self, repo: str, /) -> list[Exclusion]: ...
 
-    def sem_entrega(self, repo: str) -> dict[str, str]:
+    def sem_entrega(self, repo: str, /) -> dict[str, str]:
         """chamado -> motivo."""
         ...
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
         """Commits em cache das PRs pedidas, ordenados por data.
 
         PR ausente do dict = nunca consultada, e a fonte tem que ir na API.
@@ -257,7 +292,7 @@ class EstadoRepo(Protocol):
         ...
 
     def gravar_commits_de_pr(
-        self, repo: str, commits: dict[int, list[CommitRef]]
+        self, repo: str, commits: dict[int, list[CommitRef]], /
     ) -> None:
         """Guarda os commits de PRs MERGED. Upsert por (repo, pr_id, hash).
 
@@ -267,20 +302,20 @@ class EstadoRepo(Protocol):
         """
         ...
 
-    def prs_indexadas(self, repo: str) -> list[PrIndex]:
+    def prs_indexadas(self, repo: str, /) -> list[PrIndex]:
         """Indice local das PRs mergeadas, em ordem de `pr_id`.
 
         E o que responde "quais PRs casam com ch1234" sem ir na API.
         """
         ...
 
-    def marca_varredura(self, repo: str) -> datetime.datetime | None:
+    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
         """Ate quando o indice esta completo. None = nunca varrido, e a proxima
         varredura baixa o historico inteiro."""
         ...
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime
+        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         """Indice e marca na MESMA transacao.
 

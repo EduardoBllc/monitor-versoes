@@ -17,7 +17,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo
-from motor.errors import MotorError
+from motor.errors import ErroDeEntrada
 from motor.montagem import (
     montar_commit_source,
     montar_task_source,
@@ -130,7 +130,7 @@ def test_nome_repo_aceita_basename():
 def test_nome_repo_recusa_o_que_fragmentaria_o_estado(valor):
     # o nome e a chave do estado: aceitar caminho ou espaco em volta criaria
     # duas linhas paralelas para o mesmo repo, sem erro nenhum aparecer.
-    with pytest.raises(MotorError, match="nome simples"):
+    with pytest.raises(ErroDeEntrada, match="nome simples"):
         validar_nome_repo(valor)
 
 
@@ -140,5 +140,16 @@ def test_sistema_id_converte_para_int():
 
 @pytest.mark.parametrize("valor", ["0", "-1", "abc", "", "1.5"])
 def test_sistema_id_recusa_o_que_nao_e_inteiro_positivo(valor):
-    with pytest.raises(MotorError, match="inteiro positivo"):
+    with pytest.raises(ErroDeEntrada, match="inteiro positivo"):
         validar_sistema_id(valor)
+
+
+def test_validadores_levantam_erro_de_entrada():
+    """O formulario da TUI captura isto. Com MotorError generico ele capturaria
+    tambem erro de banco vindo do mesmo bloco, e mostraria falha de conexao
+    dentro do campo de texto.
+    """
+    with pytest.raises(ErroDeEntrada, match="nome simples"):
+        validar_nome_repo("pasta/backend")
+    with pytest.raises(ErroDeEntrada, match="inteiro positivo"):
+        validar_sistema_id("0")
