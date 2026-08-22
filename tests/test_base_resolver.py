@@ -77,3 +77,31 @@ def test_ref_que_nao_resolve_em_nenhum_candidato_e_nao_encontrado():
 
     with pytest.raises(NaoEncontrado, match="resolvendo ref"):
         BaseResolver(git=git).resolve("13.7.0")
+
+
+def test_bug_do_adapter_propaga_e_nao_vira_base_nao_encontrada():
+    """O `except` do laco captura `MotorError` para tentar o candidato seguinte,
+    e no fim relata "nao achei a base". Excecao fora do contrato nao pode entrar
+    nesse fluxo: seria um bug do adapter saindo como `NaoEncontrado`, mandando o
+    operador procurar uma base que existe.
+
+    Forma de codigo propria — laco de duas tentativas, `raise` fora do `except`
+    —, por isso tem teste proprio e nao herda o do oraculo de presenca.
+    """
+    tentativas: list[str] = []
+
+    class _GitComBug(FakeGit):
+        def resolve_ref(self, ref: str, /) -> str:
+            tentativas.append(ref)
+            raise RuntimeError("bug no adapter")
+
+    g = _GitComBug()
+    g.add_commit("hash136", "", "base", datetime.datetime.now(datetime.timezone.utc))
+    g.set_branch("13.6.0", "hash136")
+
+    with pytest.raises(RuntimeError, match="bug no adapter"):
+        BaseResolver(git=g).resolve("13.7.0")
+
+    # curto-circuita no primeiro: insistir no segundo candidato depois de um bug
+    # so troca a excecao util por "resolvendo ref 13.6.0: ...".
+    assert tentativas == ["13.6.0"], f"tentou de novo apos o bug: {tentativas}"
