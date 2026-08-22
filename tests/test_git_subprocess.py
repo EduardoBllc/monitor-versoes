@@ -18,7 +18,7 @@ from motor.adapters.git.subprocess import (
     new_git_subprocess,
 )
 from motor.domain.version import versoes_abertas
-from motor.errors import MotorError, NaoEncontrado
+from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado
 from motor.progresso import Progresso
 from motor.ports import CherryPickOutcome
 
@@ -925,3 +925,55 @@ def test_worktree_gc_enxerga_as_worktrees_sob_caminho_com_symlink(tmp_path):
     g.worktree_add("13.9.0", "master")
 
     assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+
+
+# -- o contrato de erro vale para o que o subprocess levanta -----------------
+#
+# `motor/ports.py` declara que adapter levanta MotorError ou subclasse, e nada
+# mais. Duas coisas escapavam disso pelo subprocess, e depois do estreitamento
+# dos `except` nos services elas viraram traceback em vez de degradacao:
+# OSError (o processo nem comecou) e UnicodeDecodeError (comecou, e a saida nao
+# era UTF-8).
+
+
+def test_cwd_que_sumiu_vira_backendindisponivel_nao_oserror(tmp_path):
+    """Worktree apagada debaixo do processo: `subprocess.run` levanta
+    FileNotFoundError antes de o git rodar. Sem guarda, isso sobe cru pelo
+    presence_oracle — que agora so degrada MotorError — e o operador ve
+    traceback onde deveria ver uma linha.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    g = new_git_subprocess(repo_dir)
+    g.repo_path = str(tmp_path / "sumiu")
+
+    with pytest.raises(BackendIndisponivel):
+        g.list_version_tags()
+
+
+def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
+    """`text=True` sem `errors=` decodifica em modo estrito: um byte invalido na
+    saida do git levanta UnicodeDecodeError no meio da varredura, e o comando
+    morre inteiro por causa de historico que nao e nosso para reescrever.
+
+    O git normaliza mensagem de commit para UTF-8 ao gravar, e o APFS recusa
+    nome de arquivo com byte invalido — entao nao da para reproduzir com git de
+    verdade nesta maquina. Um `git` falso no PATH exercita exatamente o mesmo
+    caminho de decode, que e o que esta sendo consertado.
+    """
+    falso = tmp_path / "bin"
+    falso.mkdir()
+    git_falso = falso / "git"
+    git_falso.write_text(
+        "#!/bin/sh\n"
+        # \xe7\xe3 nao e UTF-8 valido. printf escreve os bytes crus.
+        "printf 'refs/tags/13.34.0\\nacentua\\347\\343o\\n'\n"
+    )
+    git_falso.chmod(0o755)
+    monkeypatch.setenv("PATH", str(falso), prepend=False)
+
+    g = GitSubprocess(repo_path=str(tmp_path))
+
+    # nao pode levantar UnicodeDecodeError; o byte invalido vira substituicao
+    resultado = g.list_version_tags()
+
+    assert resultado == ["13.34.0"], "a linha valida tem de sobreviver"

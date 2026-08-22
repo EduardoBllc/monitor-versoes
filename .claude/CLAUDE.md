@@ -89,3 +89,14 @@ Bug de programação é `AssertionError`, não `MotorError`.
 **Teste de erro assere tipo, não substring de mensagem.** Exceção: quando o
 *texto* é o requisito (a dica do `docker compose up -d`, a instrução `motor repo
 adicionar`) — aí valem os dois.
+
+## No adapter de git, não chame `subprocess` direto
+
+Use `_rodar_git` (saída textual) ou `_rodar_git_bytes`. Os dois traduzem `OSError`
+em `BackendIndisponivel` — git fora do PATH, `cwd` que sumiu — e o textual passa
+`errors="replace"`, porque `text=True` decodifica em modo **estrito** e um byte
+inválido no histórico mataria a varredura inteira.
+
+Chamar `subprocess.run` na mão reabre os dois buracos, e o contrato de
+`motor.ports` promete que adapter só levanta `MotorError` ou subclasse. Os dois
+`Popen` que sobraram têm a guarda escrita à mão, pelo mesmo motivo.

@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import subprocess
+from typing import Any
 import time
 from dataclasses import dataclass, field
 
@@ -106,11 +107,46 @@ def _saida_git_publica(saida: str) -> str:
     return _CREDENCIAL_EM_URL.sub(r"\1[credenciais]@", saida)
 
 
-def _checar_versao_git() -> None:
+def _rodar_git(
+    args: list[str], *, cwd: str | None = None, **extra: Any
+) -> subprocess.CompletedProcess[str]:
+    """Todo `subprocess.run` de saida textual deste adapter passa por aqui.
+
+    Duas coisas que o contrato de `motor.ports` exige — adapter levanta
+    `MotorError` ou subclasse, e nada mais — e que o subprocess nao da de graca:
+
+    - **`OSError`.** O processo nem comeca: git ausente do PATH, `cwd` que sumiu
+      (worktree apagada debaixo do run), fd esgotado. Sai como
+      `BackendIndisponivel` em vez de vazar cru. Importa mais desde que os
+      `except` dos services estreitaram para `MotorError`: o que esta fora do
+      contrato deixou de degradar e passou a virar traceback.
+    - **`errors="replace"`.** `text=True` decodifica em modo ESTRITO, entao um
+      byte invalido na saida do git levanta `UnicodeDecodeError` no meio de uma
+      varredura e mata o comando inteiro. Historico alheio nao e nosso para
+      reescrever, e perder um acento e melhor que perder o commit.
+    """
     try:
-        proc = subprocess.run(["git", "version"], capture_output=True, text=True)
+        return subprocess.run(
+            args, cwd=cwd, capture_output=True, text=True, errors="replace", **extra
+        )
     except OSError as e:
-        raise BackendIndisponivel(f"git nao encontrado: {e}") from e
+        raise BackendIndisponivel(f"git {' '.join(args[1:])}: {e}") from e
+
+
+def _rodar_git_bytes(
+    args: list[str], *, cwd: str | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """`_rodar_git` sem decode: `read_file` devolve bytes por contrato da porta,
+    e `diff --quiet` so olha o returncode. A guarda de `OSError` e a mesma.
+    """
+    try:
+        return subprocess.run(args, cwd=cwd, capture_output=True)
+    except OSError as e:
+        raise BackendIndisponivel(f"git {' '.join(args[1:])}: {e}") from e
+
+
+def _checar_versao_git() -> None:
+    proc = _rodar_git(["git", "version"])
     if proc.returncode != 0:
         raise BackendIndisponivel(f"git nao encontrado: exit status {proc.returncode}")
     m = _PADRAO_VERSAO_GIT.match(proc.stdout.strip())
@@ -264,7 +300,7 @@ class GitSubprocess:
 
     def _run(self, dir_: str, *args: str) -> None:
         with _cronometrar(*args):
-            proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
+            proc = _rodar_git(["git", *args], cwd=dir_)
         if proc.returncode != 0:
             saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
             raise MotorError(f"git {' '.join(args)}: exit status {proc.returncode}: {saida}")
@@ -277,13 +313,16 @@ class GitSubprocess:
         `worktree add` conta de qualquer jeito, depois de uns 2s de trabalho.
         """
         with _cronometrar(*args):
-            proc = subprocess.Popen(
-                ["git", *args],
-                cwd=dir_,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                env={**os.environ, "LC_ALL": "C"},
-            )
+            try:
+                proc = subprocess.Popen(
+                    ["git", *args],
+                    cwd=dir_,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env={**os.environ, "LC_ALL": "C"},
+                )
+            except OSError as e:
+                raise BackendIndisponivel(f"git {' '.join(args)}: {e}") from e
             assert proc.stdout is not None
             saida: list[str] = []
             for quadro in _quadros(proc.stdout.fileno()):
@@ -298,7 +337,7 @@ class GitSubprocess:
 
     def _output(self, dir_: str, *args: str) -> str:
         with _cronometrar(*args):
-            proc = subprocess.run(["git", *args], cwd=dir_, capture_output=True, text=True)
+            proc = _rodar_git(["git", *args], cwd=dir_)
         if proc.returncode != 0:
             raise MotorError(
                 f"git {' '.join(args)}: exit status {proc.returncode}: "
@@ -313,11 +352,9 @@ class GitSubprocess:
 
     def is_ancestor(self, commit: str, branch: str, /) -> bool:
         with _cronometrar("merge-base", "--is-ancestor", commit, branch):
-            proc = subprocess.run(
+            proc = _rodar_git(
                 ["git", "merge-base", "--is-ancestor", commit, branch],
                 cwd=self.repo_path,
-                capture_output=True,
-                text=True,
             )
         if proc.returncode == 0:
             return True
@@ -405,16 +442,17 @@ class GitSubprocess:
 
     def patch_id(self, hash: str, /) -> str:
         with _cronometrar("show", hash, "|", "patch-id"):
-            show = subprocess.Popen(
-                ["git", "show", hash], cwd=self.repo_path, stdout=subprocess.PIPE
-            )
             try:
-                patch = subprocess.run(
+                show = subprocess.Popen(
+                    ["git", "show", hash], cwd=self.repo_path, stdout=subprocess.PIPE
+                )
+            except OSError as e:
+                raise BackendIndisponivel(f"git show {hash}: {e}") from e
+            try:
+                patch = _rodar_git(
                     ["git", "patch-id", "--stable"],
                     cwd=self.repo_path,
                     stdin=show.stdout,
-                    capture_output=True,
-                    text=True,
                 )
             finally:
                 if show.stdout is not None:
@@ -469,9 +507,7 @@ class GitSubprocess:
     def cherry_pick_x(self, hash: str, /) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)
         with _cronometrar("cherry-pick", "-x", hash):
-            proc = subprocess.run(
-                ["git", "cherry-pick", "-x", hash], cwd=dir_, capture_output=True, text=True
-            )
+            proc = _rodar_git(["git", "cherry-pick", "-x", hash], cwd=dir_)
         if proc.returncode == 0:
             return CherryPickOutcome.APLICADO
         _, pendente = self.pending_cherry_pick()
@@ -505,12 +541,8 @@ class GitSubprocess:
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
         with _cronometrar("cherry-pick", "--continue"):
-            proc = subprocess.run(
-                ["git", "cherry-pick", "--continue"],
-                cwd=dir_,
-                capture_output=True,
-                text=True,
-                env=env,
+            proc = _rodar_git(
+                ["git", "cherry-pick", "--continue"], cwd=dir_, env=env
             )
         if proc.returncode != 0:
             saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
@@ -522,12 +554,7 @@ class GitSubprocess:
     def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
         args = ("merge-tree", "--write-tree", f"--merge-base={parent}", branch_tip, commit)
         with _cronometrar(*args):
-            proc = subprocess.run(
-                ["git", *args],
-                cwd=self.repo_path,
-                capture_output=True,
-                text=True,
-            )
+            proc = _rodar_git(["git", *args], cwd=self.repo_path)
         if proc.returncode == 0:
             return MergePrediction(
                 conflita=False,
@@ -748,8 +775,8 @@ class GitSubprocess:
         return sorted(nomes)
 
     def read_file(self, branch: str, path: str, /) -> bytes:
-        proc = subprocess.run(
-            ["git", "show", f"{branch}:{path}"], cwd=self.repo_path, capture_output=True
+        proc = _rodar_git_bytes(
+            ["git", "show", f"{branch}:{path}"], cwd=self.repo_path
         )
         if proc.returncode != 0:
             raise MotorError(
@@ -767,10 +794,8 @@ class GitSubprocess:
             f.write(content)
         self._run(dir_, "add", path)
 
-        diff = subprocess.run(
-            ["git", "diff", "--cached", "--quiet", "--", path],
-            cwd=dir_,
-            capture_output=True,
+        diff = _rodar_git_bytes(
+            ["git", "diff", "--cached", "--quiet", "--", path], cwd=dir_
         )
         if diff.returncode == 0:
             return  # conteudo igual ao ja commitado - nada a fazer
