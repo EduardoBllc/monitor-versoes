@@ -1,5 +1,7 @@
 """Porte de internal/domain/version_test.go."""
 
+import datetime
+
 import pytest
 
 from motor.domain.types import VersionType
@@ -8,6 +10,7 @@ from motor.domain.version import (
     fontes_de_alvo,
     inferir_base,
     inferir_tipo,
+    liberadas_no_alvo,
     versoes_abertas,
     worktrees_a_remover,
 )
@@ -173,3 +176,42 @@ def test_worktrees_a_remover_nada_quando_manter_cobre_todas():
         ["13.1.0", "13.2.0"], mru=["13.1.0"], manter=5, atual="13.1.0"
     )
     assert remover == []
+
+
+def _quando(mes: int) -> datetime.datetime:
+    return datetime.datetime(2026, mes, 1, tzinfo=datetime.timezone.utc)
+
+
+def test_liberadas_no_alvo_entra_so_com_tag_posterior_ao_corte():
+    """As tres faixas tem de conviver num teste: a premissa velha do §4 era que
+    liberada nunca conta, e ela erra so numa das faixas. Separadas, o caso que
+    volta a passar sozinho e justamente o que reintroduz o bug.
+    """
+    datas = {
+        "13.34.0": _quando(1),  # liberada antes do corte: conteudo veio pela base
+        "14.6.0": _quando(5),  # liberada depois do corte: entrega que o alvo nao herdou
+        "14.5.0": _quando(3),  # tag exatamente no corte: ja e ancestral do alvo
+    }
+
+    assert liberadas_no_alvo("15.0.0", datas, _quando(3)) == ["14.6.0"]
+
+
+def test_liberadas_no_alvo_ignora_liberada_maior_que_o_alvo():
+    datas = {"14.6.0": _quando(5), "15.1.0": _quando(6)}
+
+    assert liberadas_no_alvo("15.0.0", datas, _quando(3)) == ["14.6.0"]
+
+
+def test_liberadas_no_alvo_ordena_por_semver_nao_por_texto():
+    datas = {"13.10.0": _quando(5), "13.9.0": _quando(5)}
+
+    assert liberadas_no_alvo("14.0.0", datas, _quando(3)) == ["13.9.0", "13.10.0"]
+
+
+def test_fontes_de_alvo_aceita_liberada_entre_as_candidatas():
+    """O chamador une abertas + liberadas pos-corte antes de chamar: a funcao
+    filtra a faixa, nao decide quem e aberta.
+    """
+    candidatas = sorted({"13.33.1", "14.6.0", "15.0.0"}, key=chave)
+
+    assert fontes_de_alvo("15.0.0", candidatas) == ["13.33.1", "14.6.0", "15.0.0"]

@@ -72,6 +72,13 @@ class FakeEstado:
             atual = self.versoes.get((repo, numero))
             if atual is None or atual.liberada_em is not None:
                 continue
+            # Data naive vira UTC, como em `FakeGit.add_commit`: a coluna e
+            # timestamptz e o Postgres devolve com fuso mesmo recebendo naive.
+            # Guardar o que veio deixaria a suite verde numa comparacao mista
+            # que estoura so em producao — a distribuicao do §2 compara esta
+            # data com a data de um commit, que sempre tem fuso.
+            if quando.tzinfo is None:
+                quando = quando.replace(tzinfo=datetime.timezone.utc)
             self.versoes[(repo, numero)] = VersaoInfo(
                 numero=atual.numero,
                 tipo=atual.tipo,

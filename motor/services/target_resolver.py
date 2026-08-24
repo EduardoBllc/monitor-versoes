@@ -17,9 +17,18 @@ class TargetResolver:
     commits: CommitSource
     progresso: RelatorProgresso = silencioso
 
-    def resolve(self, alvo: str, abertas: list[str]) -> Alvo:
-        """Une as tarefas de toda versao em construcao <= alvo e casa cada uma
+    def resolve(
+        self,
+        alvo: str,
+        candidatas: list[str],
+        liberadas: frozenset[str] = frozenset(),
+    ) -> Alvo:
+        """Une as tarefas de toda versao candidata <= alvo e casa cada uma
         com seus commits.
+
+        `candidatas` sao as abertas mais as liberadas que o corte do alvo nao
+        herdou (spec §2); `liberadas` diz quais delas sao as liberadas, e serve
+        so ao invariante de ambiguidade.
 
         Toda tarefa buscada aparece no resultado mesmo sem commit — e o que
         permite o `verificar` pintar de vermelho a tarefa sem entrega em vez
@@ -28,7 +37,7 @@ class TargetResolver:
         marcada_de: dict[str, str] = {}
         ambiguas: list[str] = []
 
-        fontes = fontes_de_alvo(alvo, abertas)
+        fontes = fontes_de_alvo(alvo, candidatas)
         for indice, v in enumerate(fontes, start=1):
             self.progresso(
                 Progresso("chamados marcados no Tickio", indice, len(fontes))
@@ -44,7 +53,17 @@ class TargetResolver:
             for ch in chamados:
                 # `get(ch, v) != v` so acusa quando a versao anterior e OUTRA:
                 # repeticao dentro da mesma fetch e dedup, nao ambiguidade.
-                if marcada_de.get(ch, v) != v:
+                #
+                # E so acusa entre duas ABERTAS: o invariante e sobre versoes que
+                # competem pelo mesmo chamado, e liberada nao compete — ja saiu.
+                # Sem esse recorte, todo chamado remarcado a mao para contornar
+                # uma liberada passaria a pintar a versao de vermelho.
+                anterior = marcada_de.get(ch, v)
+                if (
+                    anterior != v
+                    and anterior not in liberadas
+                    and v not in liberadas
+                ):
                     ambiguas.append(ch)
                 # last-writer-wins: se o chamado e ambiguo, este valor nao
                 # significa nada — a versao ja vai reprovar por causa da

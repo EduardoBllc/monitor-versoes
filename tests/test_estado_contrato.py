@@ -212,6 +212,23 @@ def test_marcar_liberadas_nao_reescreve_data_ja_gravada(estado):
     assert estado.versao(REPO, "13.34.0").liberada_em == QUANDO
 
 
+def test_liberada_em_sempre_volta_com_fuso(estado):
+    """A coluna e timestamptz, entao o Postgres devolve com fuso mesmo recebendo
+    uma data naive. O fake guardava o que recebeu.
+
+    Passou a importar: a distribuicao do §2 compara essa data com a data de um
+    commit, que sempre tem fuso (`%cI`). Fake permissivo aqui e um TypeError de
+    comparacao mista que so aparece em producao — o mesmo motivo pelo qual
+    `FakeGit.add_commit` ja normaliza naive para UTC.
+    """
+    estado.registrar_versao(REPO, _base())
+    estado.marcar_liberadas(REPO, {"13.34.0": datetime.datetime(2026, 1, 15, 10, 30)})
+
+    info = estado.versao(REPO, "13.34.0")
+    assert info is not None and info.liberada_em is not None
+    assert info.liberada_em.tzinfo is not None
+
+
 # -- atribuicoes --------------------------------------------------------------
 
 

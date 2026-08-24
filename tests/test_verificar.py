@@ -549,3 +549,111 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
     verificar(deps, "14.0.0")
 
     assert git.removed_worktrees == []
+
+
+# --- distribuicao a partir de versao liberada (spec §2) ---------------------
+#
+# O corte da 15.0.0 e m0. A entrega da 14.6.0 entrou no master DEPOIS disso
+# (m1), entao a premissa antiga do §2 — "conteudo da liberada chega por
+# ancestralidade da base" — e falsa aqui: a base de uma X.0.0 e o master no
+# ponto de corte, nao o master de agora.
+
+JAN = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+MAR = datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
+ABR = datetime.datetime(2026, 4, 1, tzinfo=datetime.timezone.utc)
+MAI = datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc)
+
+
+def _git_com_liberada_fora_da_base() -> FakeGit:
+    """t0 -> m0 -> m1 -> m2 no master; p1 e o pick da 14.6.0, fora do master.
+
+    A 15.0.0 fica em m0 (o corte). m1 e m2 entraram no master depois, entao
+    nenhum dos dois e ancestral dela — e o que permite afirmar que o commit foi
+    cobrado, e nao herdado.
+    """
+    git = FakeGit(tags={"13.34.0": True, "14.6.0": True})
+    git.add_commit("t0", "", "raiz", JAN)
+    git.add_commit("m0", "t0", "corte da 15.0.0", MAR)
+    git.add_commit("m1", "m0", "ch257270 alfa", ABR)
+    git.add_commit("m2", "m1", "ch111111 beta", ABR)
+    git.add_commit("p1", "m0", "ch257270 alfa\n\ncherry picked from commit m1", MAI)
+    git.set_branch("master", "m2")
+    git.set_branch("origin/master", "m2")
+    git.set_branch("13.34.0", "t0")  # liberada muito antes do corte
+    git.set_branch("14.6.0", "p1")  # liberada depois do corte
+    git.set_branch("15.0.0", "m0")
+    return git
+
+
+def _estado_com_liberadas() -> FakeEstado:
+    estado = _estado_com_repo()
+    for numero, tipo, base in (
+        ("13.34.0", VersionType.AJUSTADA, "t0"),
+        ("14.6.0", VersionType.AJUSTADA, "m0"),
+        ("15.0.0", VersionType.FECHADA, "m0"),
+    ):
+        estado.registrar_versao("r", VersaoInfo(numero=numero, tipo=tipo,
+                                                base_ref="master", base_commit=base))
+    return estado
+
+
+def test_verificar_cobra_chamado_de_liberada_que_o_corte_nao_herdou():
+    tasks = FakeTaskSource(chamados={"14.6.0": ["257270"], "15.0.0": []})
+    commits = FakeCommitSource(por_chamado={
+        "257270": [CommitRef(hash_origem="m1", parent="m0", chamado="257270",
+                             commit_date=ABR, msg="ch257270 alfa")]
+    })
+
+    status = verificar(
+        _deps(_git_com_liberada_fora_da_base(), tasks, commits, _estado_com_liberadas()),
+        "15.0.0",
+    )
+
+    assert status.tasks_novas == ["257270"]
+    assert [c.hash_origem for c in status.faltantes] == ["m1"]
+
+
+def test_verificar_ignora_liberada_com_tag_anterior_ao_corte():
+    """A 13.34.0 saiu antes do corte da 15.0.0: o que ela entregou chegou pelo
+    master. Cobrar de novo encheria o alvo de toda liberada desde a 13.0.0.
+
+    O commit da tarefa dela e m2, que NAO e ancestral da 15.0.0 — se a versao
+    entrasse no alvo, apareceria em faltantes.
+    """
+    tasks = FakeTaskSource(chamados={"13.34.0": ["111111"], "14.6.0": ["257270"]})
+    commits = FakeCommitSource(por_chamado={
+        "257270": [CommitRef(hash_origem="m1", parent="m0", chamado="257270",
+                             commit_date=ABR, msg="ch257270 alfa")],
+        "111111": [CommitRef(hash_origem="m2", parent="m1", chamado="111111",
+                             commit_date=ABR, msg="ch111111 beta")],
+    })
+
+    status = verificar(
+        _deps(_git_com_liberada_fora_da_base(), tasks, commits, _estado_com_liberadas()),
+        "15.0.0",
+    )
+
+    assert status.tasks_novas == ["257270"]
+    assert [c.hash_origem for c in status.faltantes] == ["m1"]
+
+
+def test_verificar_nao_recobra_liberada_que_e_a_propria_base_da_ajustada():
+    """Ajustada nao muda: a 14.7.0 sai da 14.6.0, entao a tag dela esta no
+    corte e o conteudo e ancestral. Com `>=` no lugar de `>` toda ajustada
+    passaria a recobrar a versao anterior.
+    """
+    git = _git_com_liberada_fora_da_base()
+    git.set_branch("14.7.0", "p1")
+    estado = _estado_com_liberadas()
+    estado.registrar_versao("r", VersaoInfo(numero="14.7.0", tipo=VersionType.AJUSTADA,
+                                            base_ref="14.6.0", base_commit="p1"))
+    tasks = FakeTaskSource(chamados={"14.6.0": ["257270"], "14.7.0": []})
+    commits = FakeCommitSource(por_chamado={
+        "257270": [CommitRef(hash_origem="m1", parent="m0", chamado="257270",
+                             commit_date=ABR, msg="ch257270 alfa")]
+    })
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.7.0")
+
+    assert status.tasks_novas == []
+    assert status.faltantes == []

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 from motor.domain.types import VersionType
 from motor.errors import ErroDeEntrada, NaoEncontrado
 
@@ -68,14 +70,40 @@ def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
     return sorted(set(todas) - set(tags), key=chave)
 
 
-def fontes_de_alvo(alvo: str, abertas: list[str]) -> list[str]:
-    """Versoes cujas tarefas caem no alvo: abertas entre 13.0.0 e o alvo.
+def fontes_de_alvo(alvo: str, candidatas: list[str]) -> list[str]:
+    """Versoes cujas tarefas caem no alvo: candidatas entre 13.0.0 e o alvo.
 
-    E a regra de distribuicao vista pelo lado da versao (spec §2).
+    E a regra de distribuicao vista pelo lado da versao (spec §2). Quem monta
+    `candidatas` e o chamador — abertas mais o que `liberadas_no_alvo` devolve.
     """
     corte = chave("13.0.0")
     k = chave(alvo)
-    return [v for v in abertas if corte <= chave(v) <= k]
+    return [v for v in candidatas if corte <= chave(v) <= k]
+
+
+def liberadas_no_alvo(
+    alvo: str,
+    datas_das_tags: dict[str, datetime.datetime],
+    corte: datetime.datetime,
+) -> list[str]:
+    """Liberadas que continuam sendo fonte de alvo de `alvo` (spec §2).
+
+    A liberada sai do conjunto aberto, e a premissa era que o conteudo dela
+    chegava por ancestralidade da base. Isso vale para `X.Y.0` sobre
+    `X.(Y-1).0`, e **nao** vale para `X.0.0`, cuja base e o master no ponto de
+    corte: entrega que virou tag depois desse corte nunca foi herdada. Uma
+    liberada nessas condicoes volta a ser fonte, e o oraculo de presenca decide
+    commit por commit o que ainda falta.
+
+    `corte` e a data do commit-base de `alvo` — o estado ja a guarda, entao nao
+    ha ponto de corte a recomputar. Tag exatamente no corte fica fora: e o caso
+    da ajustada cortada da anterior ja liberada, cujo conteudo e ancestral.
+    """
+    k = chave(alvo)
+    return sorted(
+        (n for n, data in datas_das_tags.items() if chave(n) <= k and data > corte),
+        key=chave,
+    )
 
 
 def worktrees_a_remover(

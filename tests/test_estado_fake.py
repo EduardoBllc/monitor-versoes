@@ -76,9 +76,15 @@ def test_marcar_liberadas_ignora_versao_que_nao_esta_no_estado():
 def test_marcar_liberadas_nao_reescreve_data_ja_gravada():
     estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
     estado.registrar_versao("r", _info("13.34.0"))
-    primeira = datetime.datetime(2026, 8, 1)
+    # Com fuso: a coluna e timestamptz e o fake normaliza naive para UTC, entao
+    # data naive aqui compararia contra a normalizada e o teste falaria de fuso
+    # em vez de falar de sobrescrita. O fuso tem contrato proprio, em
+    # tests/test_estado_contrato.py.
+    primeira = datetime.datetime(2026, 8, 1, tzinfo=datetime.timezone.utc)
     estado.marcar_liberadas("r", {"13.34.0": primeira})
-    estado.marcar_liberadas("r", {"13.34.0": datetime.datetime(2026, 9, 1)})
+    estado.marcar_liberadas(
+        "r", {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)}
+    )
     gravada = estado.versao("r", "13.34.0")
     assert gravada is not None
     assert gravada.liberada_em == primeira

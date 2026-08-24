@@ -10,7 +10,12 @@ from dataclasses import replace
 from motor.domain.commits import extrair_chamado, ordenar_por_data
 from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
-from motor.domain.version import chave, inferir_tipo, versoes_abertas
+from motor.domain.version import (
+    chave,
+    inferir_tipo,
+    liberadas_no_alvo,
+    versoes_abertas,
+)
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada, MotorError
 from motor.progresso import Progresso
@@ -63,6 +68,46 @@ def _culpados_do_conflito(
     return sorted(chamados)
 
 
+def _datas_das_tags(
+    deps: Deps, tags: list[str], versao: str, *, congelar: bool
+) -> dict[str, datetime.datetime]:
+    """Data de liberacao de cada tag que interessa, congelando de passagem o que
+    ganhou tag desde o ultimo run.
+
+    A data e a do commit apontado pela tag, nao a de agora: senao registraria
+    quando o comando rodou, nao quando a versao saiu. Ela serve a dois donos — o
+    congelamento (§4) e a distribuicao (§2), que precisa saber se a liberada saiu
+    depois do corte do alvo.
+
+    Versao ja congelada tem a data no estado e nao paga leitura no git, entao o
+    conjunto de chamadas ao git aqui e o mesmo de antes desta funcao existir: so
+    a tag nova.
+
+    Versao que o motor nunca operou fica fora das duas contas — nao tem snapshot
+    a proteger e nao tem base gravada, logo nao e fonte de alvo. A guarda tambem
+    e o que impede uma tag que nao resolve (branch apagada, tag anotada solta) de
+    matar um run que nem tem essa versao como alvo.
+    """
+    datas: dict[str, datetime.datetime] = {}
+    liberadas: dict[str, datetime.datetime] = {}
+    for indice, numero in enumerate(tags, start=1):
+        deps.progresso(Progresso("conferindo tags liberadas", indice, len(tags)))
+        conhecida = deps.estado.versao(deps.repo, numero)
+        if conhecida is None:
+            continue
+        if conhecida.liberada_em is not None:
+            datas[numero] = conhecida.liberada_em
+            continue
+        data = deps.git.commit_meta(
+            deps.git.resolve_ref(f"refs/tags/{numero}")
+        ).commit_date
+        datas[numero] = data
+        liberadas[numero] = data
+    if congelar and liberadas:
+        deps.estado.marcar_liberadas(deps.repo, liberadas)
+    return datas
+
+
 def verificar(
     deps: Deps,
     versao: str,
@@ -97,23 +142,11 @@ def verificar(
             raise ErroDeEntrada("--auditar exige uma versao liberada")
         if info is None:
             raise ErroDeEntrada("--auditar exige uma versao registrada no estado")
+        # `congelar=False`: auditoria nao escreve no estado nem na worktree.
+        datas_das_tags = _datas_das_tags(deps, tags, versao, congelar=False)
         ref_alvo = deps.git.resolve_ref(f"refs/tags/{versao}")
     else:
-        # Congela o que ganhou tag desde o ultimo run. A data e a do commit
-        # apontado pela tag, nao a de agora: senao registraria quando o comando
-        # rodou, nao quando a versao foi liberada.
-        liberadas: dict[str, datetime.datetime] = {}
-        for indice, numero in enumerate(tags, start=1):
-            deps.progresso(
-                Progresso("conferindo tags liberadas", indice, len(tags))
-            )
-            conhecida = deps.estado.versao(deps.repo, numero)
-            # Versao que o motor nunca operou nao tem snapshot a proteger.
-            if conhecida is not None and conhecida.liberada_em is None:
-                meta = deps.git.commit_meta(deps.git.resolve_ref(f"refs/tags/{numero}"))
-                liberadas[numero] = meta.commit_date
-        if liberadas:
-            deps.estado.marcar_liberadas(deps.repo, liberadas)
+        datas_das_tags = _datas_das_tags(deps, tags, versao, congelar=True)
 
         info = deps.estado.versao(deps.repo, versao)
         if info is not None and info.liberada_em is not None:
@@ -154,7 +187,15 @@ def verificar(
     resolver = TargetResolver(
         tasks=deps.tasks, commits=deps.commit_source, progresso=deps.progresso
     )
-    resultado = resolver.resolve(versao, sorted({*abertas, versao}, key=chave))
+    # A liberada saiu de `abertas`, mas volta como fonte quando o corte do alvo
+    # nao herdou o que ela entregou (spec §2). `corte` e a data do commit-base
+    # gravado — o mesmo que nao se recomputa acima, pelo mesmo motivo.
+    corte = deps.git.commit_meta(base_commit).commit_date
+    candidatas = sorted(
+        {*abertas, *liberadas_no_alvo(versao, datas_das_tags, corte), versao},
+        key=chave,
+    )
+    resultado = resolver.resolve(versao, candidatas, liberadas=frozenset(tags))
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
     alvo = filtrar_excluidos(

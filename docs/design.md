@@ -106,13 +106,42 @@ nova que abre. Visto do lado da versão, que é como o motor precisa:
 
 ```
 versoes_abertas(branches, tags) = branches sem tag homônima, em ordem semver
-fontes_de_alvo(V, abertas)      = { W em abertas : W <= V }        # V incluso
-alvo(V) = ∪ tickio.fetch(W), para todo W em fontes_de_alvo(V, abertas)
+liberadas_no_alvo(V, tags)      = { W com tag : W <= V, data_tag(W) > data(base_commit(V)) }
+candidatas(V)                   = versoes_abertas ∪ liberadas_no_alvo(V) ∪ { V }
+fontes_de_alvo(V, candidatas)   = { W em candidatas : 13.0.0 <= W <= V }   # V incluso
+alvo(V) = ∪ tickio.fetch(W), para todo W em fontes_de_alvo(V, candidatas)
 ```
 
-Só versões **em construção** entram na união — a liberada fica de fora, seu conteúdo chega a
-`V` por ancestralidade da base (§5), não pela distribuição. A ordem é semver sobre `(x, y, z)`,
-não textual: `13.9.0` vem antes de `13.10.0`.
+A ordem é semver sobre `(x, y, z)`, não textual: `13.9.0` vem antes de `13.10.0`.
+
+### Por que a liberada não sai de vez da união
+
+A versão em construção entra por definição. A liberada saiu do conjunto aberto, e a primeira
+versão desta seção dizia que ela ficava de fora porque **seu conteúdo chega a `V` por
+ancestralidade da base (§5)**. Essa premissa é falsa, e o modo de falhar é silencioso.
+
+Ela vale quando `W` está na cadeia de bases de `V` — `14.7.0` desce de `14.6.0`, que desce de
+`14.5.0`. Não vale para `X.0.0`, cuja base é o **master no ponto de corte**: uma `15.0.0`
+cortada antes de a `14.6.0` existir não tem nada do que a `14.6.0` entregou depois disso. Nem
+vale para versão de cliente `X.Y'.Z'` ≤ `V` fora da cadeia. No dia em que a `14.6.0` recebeu a
+tag, o chamado dela saiu do alvo da `15.0.0` — exatamente onde ainda era necessário — e nada
+pintou vermelho, porque tarefa que não está no alvo não é cobrada por ninguém.
+
+O discriminador é a **data da tag contra a data do commit-base de `V`**. Entrega que virou tag
+depois do corte de `V` nunca foi herdada; o que virou tag antes já chegou pela base. Tag
+exatamente no corte fica de fora — é a ajustada cortada da anterior já liberada, o caso em que
+a premissa antiga acertava. A data do commit-base é a que o estado já guarda (§3), então não há
+ponto de corte a recomputar, e resolvida a versão-fonte o oráculo de presença ainda decide
+commit por commit o que de fato falta.
+
+**Ancestralidade de branch não serve como teste aqui.** Cherry-pick troca o hash, então a tag
+de uma release branch praticamente nunca é ancestral de uma `X.0.0` — testar isso puxaria
+*toda* liberada desde a `13.0.0` para o alvo de cada versão fechada.
+
+**Custo aceito: liberada que o motor nunca operou fica fora.** Sem linha no estado ela não tem
+base gravada nem snapshot a proteger, e o motor não paga leitura de git pela tag dela — o que
+também impede uma tag que não resolve de matar um run que nem a tem como alvo. Na prática são
+versões antigas, anteriores a qualquer corte que ainda esteja aberto.
 
 Resolvidos os chamados, os commits saem numa **varredura só para todo o lote**, nunca uma por
 versão-fonte.
@@ -123,7 +152,10 @@ Bitbucket) só traz **candidatos** — é `contains`, não exato, e casar `5514`
 domínio: mais portável, e testável com o git fake.
 
 **Tarefa marcada em duas versões abertas é dado inconsistente, não erro fatal.** O motor
-sinaliza e pinta vermelho, mas o comando termina normal.
+sinaliza e pinta vermelho, mas o comando termina normal. **Duas abertas**, ao pé da letra: a
+liberada é fonte de alvo mas não disputa ambiguidade, porque não compete por nada — já saiu.
+Sem esse recorte, todo chamado remarcado à mão para contornar o buraco acima passaria a pintar
+a versão de vermelho, e limpar isso é trabalho manual no Tickio numa versão já liberada.
 
 ### Autenticação, e o custo do erro tardio
 

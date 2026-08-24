@@ -87,6 +87,55 @@ def test_resolve_ambiguidade_so_entre_versoes_diferentes(chamados, abertas, espe
     assert alvo.ambiguas == esperado
 
 
+@pytest.mark.parametrize(
+    "chamados, candidatas, liberadas",
+    [
+        pytest.param(
+            {"14.6.0": ["257270"], "15.0.0": ["257270"]},
+            ["14.6.0", "15.0.0"],
+            {"14.6.0"},
+            id="liberada_e_aberta",
+        ),
+        pytest.param(
+            {"14.5.0": ["257270"], "14.6.0": ["257270"]},
+            ["14.5.0", "14.6.0", "15.0.0"],
+            {"14.5.0", "14.6.0"},
+            id="duas_liberadas",
+        ),
+    ],
+)
+def test_resolve_nao_acusa_ambiguidade_quando_ha_liberada_no_par(
+    chamados, candidatas, liberadas
+):
+    """Liberada volta a ser fonte de alvo quando a tag e posterior ao corte
+    (spec §2), mas o invariante de ambiguidade e sobre duas versoes *abertas*:
+    duas abertas competem pelo mesmo chamado, uma liberada nao compete com
+    ninguem — ela ja saiu. Chamado remarcado a mao para contornar a versao
+    liberada nao pode pintar a versao de vermelho.
+    """
+    commits = FakeCommitSource(por_chamado={"257270": [_commit("aaa", "257270")]})
+    resolver = TargetResolver(tasks=FakeTaskSource(chamados=chamados), commits=commits)
+
+    alvo = resolver.resolve("15.0.0", candidatas, liberadas=frozenset(liberadas))
+
+    assert alvo.ambiguas == []
+
+
+def test_resolve_deixa_a_aberta_vencer_o_last_writer_wins():
+    """`marcada` e desnormalizado e informativo, mas gravar a liberada diria que
+    a cobranca veio de uma versao que ja saiu.
+    """
+    tasks = FakeTaskSource(chamados={"14.6.0": ["257270"], "15.0.0": ["257270"]})
+    commits = FakeCommitSource(por_chamado={"257270": [_commit("aaa", "257270")]})
+    resolver = TargetResolver(tasks=tasks, commits=commits)
+
+    alvo = resolver.resolve(
+        "15.0.0", ["14.6.0", "15.0.0"], liberadas=frozenset({"14.6.0"})
+    )
+
+    assert alvo.tasks["257270"].marcada == "15.0.0"
+
+
 def test_resolve_propaga_erro_da_fonte_como_motorerror():
     # A fonte ja levanta MotorError (adapters reclassificados nas tasks 3-6) -
     # o resolver so agrega contexto via add_note, nao embrulha mais.
