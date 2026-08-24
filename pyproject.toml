@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "mypy"]
+dev = ["pytest", "mypy", "testcontainers[postgres]"]
 
 [project.scripts]
 motor = "motor.__main__:main"
@@ -27,7 +27,7 @@ include = ["motor*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "integracao: exige Postgres de pe (pulado sem DATABASE_HOST no ambiente)",
+    "integracao: sobe um Postgres efemero via testcontainers (pulado sem Docker)",
 ]
 
 # O type checker e o que faz "adapter nao cumpre a porta" virar erro em vez de

@@ -47,16 +47,21 @@ variável já presente no ambiente.
 
 ## Testes e o arquivo de ambiente
 
-A suíte roda sem git, sem rede e sem banco. Exceção: os marcados
-`@pytest.mark.integracao`, que precisam do Postgres de **desenvolvimento** de pé.
-O `tests/conftest.py` carrega `.env.development` com `override=True` no import —
-o `.env` de produção não participa da suíte.
+A suíte roda sem git, sem rede e sem banco de pé. Os marcados
+`@pytest.mark.integracao` sobem um Postgres **efêmero** (testcontainers), migram
+com `alembic upgrade head` e o derrubam no fim da sessão. Sem Docker, pulam.
 
-- Sem `.env.development` (clone novo, CI) → `DATABASE_HOST` ausente → pulam.
-- Com `.env.development` e container parado → pulam pela guarda de
-  `OperationalError` no fixture.
-- `env -u DATABASE_HOST` **não** faz pular: o `conftest.py` repõe a variável.
-  Para simular ausência, use `DATABASE_HOST=` vazia.
+O `tests/conftest.py` continua carregando `.env.development` com `override=True`
+no import — mas só pelo `PROJECTS_DIR` e pelas credenciais externas vazias. Os
+`DATABASE_*` de lá são sobrescritos pelas coordenadas do container assim que ele
+sobe, e o `.env` de produção não participa da suíte.
+
+- O `_postgres_efemero` é **lazy**: rodar só `tests/test_git.py` não toca no
+  Docker. Rodada completa paga um start + migrate (~9s).
+- Consequência do sobrescrito: teste que aponte `DATABASE_*` para outro lugar
+  **antes** de pedir o banco não testa nada — o container repõe as variáveis. Se
+  o ponto é o ambiente divergir, peça `_postgres_efemero` primeiro
+  (`tests/test_config.py::test_sessao_postgres_ignora_o_ambiente`).
 
 **Nunca use `monkeypatch.delenv` para testar variável ausente em teste que chama
 `main()`.** O `main()` chama `load_dotenv()` a cada invocação, então a variável
@@ -66,9 +71,12 @@ desliga esse `load_dotenv()`, mas o teste dela só discrimina em máquina com
 `.env`.
 
 O fixture `sessao_postgres` dá `TRUNCATE` nas sete tabelas **no setup e no
-teardown**, e `_exigir_banco_development` **recusa rodar** contra qualquer banco
-que não seja exatamente o do `.env.development` — sem essa checagem um
-`.env` mal apontado truncaria produção.
+teardown**, e monta o engine com `_postgres_efemero.get_connection_url()`, não
+com `database_url()`. Não é estilo: enquanto a URL saía do ambiente, um `.env`
+mal apontado truncaria produção, e o que segurava isso era uma checagem
+(`_exigir_banco_development`) que alguém tinha de lembrar de manter. Trocar para
+a URL do container tira o ambiente do caminho — **não reintroduza
+`create_engine(database_url())` ali**.
 
 ## Ao mexer em `EstadoRepo`
 

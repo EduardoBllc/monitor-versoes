@@ -53,18 +53,23 @@ def test_database_url_recusa_porta_nao_numerica(monkeypatch):
     assert "DATABASE_PORT" in str(erro.value)
 
 
-def test_sessao_postgres_recusa_banco_de_producao(monkeypatch, request):
-    import sqlalchemy
+@pytest.mark.integracao
+def test_sessao_postgres_ignora_o_ambiente(monkeypatch, request):
+    """A fixture trunca sete tabelas — a URL dela nao pode sair do ambiente.
 
+    Enquanto saia, um `.env` apontado para producao truncava producao, e o que
+    segurava isso era a guarda `_exigir_banco_development`. Hoje a URL vem do
+    container efemero; este teste falha se alguem reintroduzir o
+    `create_engine(database_url())`.
+    """
+    # O container primeiro: ele povoa DATABASE_* no ambiente ao subir, entao
+    # apontar para producao antes disso so seria sobrescrito e o teste passaria
+    # sem testar nada.
+    container = request.getfixturevalue("_postgres_efemero")
     _ambiente(monkeypatch, COMPLETO)
-
-    def nao_conectar(*args, **kwargs):
-        raise AssertionError("fixture tentou conectar no banco de producao")
-
-    monkeypatch.setattr(sqlalchemy, "create_engine", nao_conectar)
-
-    with pytest.raises(pytest.fail.Exception, match="development"):
-        request.getfixturevalue("sessao_postgres")
+    sessao = request.getfixturevalue("sessao_postgres")
+    url = sessao.get_bind().url.render_as_string(hide_password=False)
+    assert url == container.get_connection_url()
 
 
 # -- worktrees mantidas -------------------------------------------------------

@@ -25,7 +25,8 @@ cp .env.example .env
 cp .env.development.example .env.development
 ```
 
-Banco de **desenvolvimento** — é o que o CLI e a suíte usam por padrão:
+Banco de **desenvolvimento** — é o que o CLI usa por padrão. A suíte não precisa dele:
+sobe o próprio Postgres efêmero (ver [Testes](#testes)).
 
 ```bash
 docker compose --env-file .env.development up -d
@@ -93,6 +94,15 @@ checkout e a branch continua em `refs/heads`.
 ./.venv/bin/python -m pytest
 ```
 
-Roda sem git, sem rede e sem banco. Os testes marcados `integracao` exigem o Postgres de
-desenvolvimento de pé — sem ele, pulam. Eles dão `TRUNCATE` nas tabelas, e a fixture **recusa
-rodar** contra qualquer banco que não seja exatamente o do `.env.development`.
+Roda sem git, sem rede e sem banco de pé. Os testes marcados `integracao` sobem um Postgres
+**efêmero** via testcontainers na primeira vez que algum deles pede banco, aplicam `alembic
+upgrade head` nele e o derrubam no fim da sessão — não fica banco de teste ligado fora da
+rodada. Sem Docker, pulam.
+
+Custo: ~9s na rodada completa, entre subir o container e migrar. A primeira rodada numa
+máquina nova é bem mais lenta, porque puxa as imagens `postgres:18-alpine` e
+`testcontainers/ryuk`.
+
+A URL da fixture vem do container, **nunca do ambiente**. É o que garante que o `TRUNCATE` das
+sete tabelas não alcance produção mesmo com `.env` apontado para lá — antes isso dependia de
+uma checagem que comparava as variáveis com as do `.env.development`.
