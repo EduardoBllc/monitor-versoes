@@ -39,7 +39,12 @@ from motor.adapters.git.subprocess import new_git_subprocess
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.domain.version import chave
-from motor.engine.atualizar import AtualizarResult, AtualizarStatus, atualizar
+from motor.engine.atualizar import (
+    AtualizarResult,
+    AtualizarStatus,
+    atualizar,
+    atualizar_continue,
+)
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
@@ -256,6 +261,7 @@ class MotorTUI(App[None]):
         carregar_versoes: VersionLoader,
         executar: VerifyRunner,
         atualizar_repo: UpdateRunner | None = None,
+        continuar_repo: UpdateRunner | None = None,
         consultar_versao: ConsultaRunner | None = None,
         registrar_repo: RepoRegistrar | None = None,
         slot: SlotProgresso | None = None,
@@ -269,6 +275,7 @@ class MotorTUI(App[None]):
         self._carregar_versoes = carregar_versoes
         self._executar = executar
         self._atualizar = atualizar_repo
+        self._continuar = continuar_repo
         self._consultar = consultar_versao
         self._registrar = registrar_repo
         self._repo: RepoOption | None = None
@@ -278,6 +285,7 @@ class MotorTUI(App[None]):
         self._tem_versoes = False
         self._geracao_versoes = 0
         self._pode_atualizar = False
+        self._bloqueado = False
         self._chamados_consultados: list[ChamadoConsultado] = []
 
     def compose(self) -> ComposeResult:
@@ -406,8 +414,21 @@ class MotorTUI(App[None]):
         )
 
     def _mostrar_atualizacao(self, resultado: AtualizarResult) -> None:
+        """Lote BLOCKED deixa o cherry-pick aberto na worktree: o mesmo botao
+        vira "Continuar" e passa a chamar o `atualizar_continue`, em vez de
+        mandar o operador para a CLI.
+
+        Nao reabilita nada aqui — o `_bloquear(False)` do `finally` do worker
+        vem depois e le o `_pode_atualizar` que este metodo acabou de firmar.
+        """
         self._apresentar(renderizar_atualizacao(resultado), reconsultar=True)
         self._resetar_atualizacao()
+        if resultado.status == AtualizarStatus.BLOCKED and self._continuar:
+            self._bloqueado = True
+            self._pode_atualizar = True
+            botao = self.query_one("#atualizar", Button)
+            botao.label = "Continuar"
+            botao.variant = "error"
 
     def _mostrar_consulta(self, chamados: list[ChamadoConsultado]) -> None:
         self._chamados_consultados = chamados
@@ -463,6 +484,9 @@ class MotorTUI(App[None]):
 
     def _resetar_atualizacao(self) -> None:
         self._pode_atualizar = False
+        # O pick pendente e da worktree daquela versao: sem limpar isto, o
+        # clique seguinte retomaria o lote na versao errada.
+        self._bloqueado = False
         botao = self.query_one("#atualizar", Button)
         botao.label = "Atualizar"
         botao.variant = "default"
@@ -668,13 +692,14 @@ class MotorTUI(App[None]):
         )
 
     def _iniciar_atualizacao(self) -> None:
-        if self._ocupado or not self._pode_atualizar or self._atualizar is None:
+        if self._ocupado or not self._pode_atualizar:
             return
-        if self._repo is None or self._versao is None:
+        executar = self._continuar if self._bloqueado else self._atualizar
+        if executar is None or self._repo is None or self._versao is None:
             return
         self._ocupar_lista()
         self._bloquear(True)
-        self.atualizar_worker(self._repo, self._versao)
+        self.atualizar_worker(executar, self._repo, self._versao)
 
     @work(thread=True, exclusive=True, group="executar")
     def executar_worker(
@@ -701,14 +726,15 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._bloquear, False)
 
     @work(thread=True, exclusive=True, group="executar")
-    def atualizar_worker(self, repo: RepoOption, versao: VersionOption) -> None:
+    def atualizar_worker(
+        self, executar: UpdateRunner, repo: RepoOption, versao: VersionOption
+    ) -> None:
         try:
-            resultado = self._atualizar(repo, versao.numero) if self._atualizar else None
+            resultado = executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
-            if resultado is not None:
-                self.call_from_thread(self._mostrar_atualizacao, resultado)
+            self.call_from_thread(self._mostrar_atualizacao, resultado)
         finally:
             self.call_from_thread(self._bloquear, False)
 
@@ -821,6 +847,13 @@ def _atualizar_repo(
         return atualizar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def _continuar_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> AtualizarResult:
+    with abrir_sessao() as sessao:
+        return atualizar_continue(_deps_do_repo(repo, sessao, progresso), versao)
+
+
 def _consultar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> list[ChamadoConsultado]:
@@ -839,6 +872,7 @@ def run_tui() -> None:
         partial(_versoes_do_repo, progresso=slot.relatar),
         partial(_verificar_repo, progresso=slot.relatar),
         partial(_atualizar_repo, progresso=slot.relatar),
+        partial(_continuar_repo, progresso=slot.relatar),
         partial(_consultar_repo, progresso=slot.relatar),
         _registrar_no_banco,
         slot=slot,
@@ -988,7 +1022,7 @@ def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
         partes.extend(Text(f"  {caminho}") for caminho in resultado.arquivos_conflito)
         partes.append(
             Text(
-                "Resolva os arquivos e continue pela CLI com --continue.",
+                "Resolva os arquivos e retome em Continuar (u).",
                 style="bold yellow",
             )
         )

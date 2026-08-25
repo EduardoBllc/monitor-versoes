@@ -312,6 +312,30 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
     }
 
 
+def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
+    checkout = _checkout(tmp_path, "alpha")
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    capturado: dict[str, object] = {}
+    esperado = AtualizarResult(status=AtualizarStatus.DONE)
+
+    def continue_spy(deps, versao):
+        capturado.update(repo=deps.repo, versao=versao)
+        return esperado
+
+    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
+    monkeypatch.setattr(montagem, "TickioRest", lambda *a, **k: object())
+    monkeypatch.setattr(tui, "atualizar_continue", continue_spy)
+
+    resultado = tui._continuar_repo(
+        RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0"
+    )
+
+    assert resultado is esperado
+    assert capturado == {"repo": "alpha", "versao": "14.0.0"}
+
+
 def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
     commit = CommitRef(
         hash_origem="deadbeefcafe",
@@ -427,7 +451,7 @@ def test_renderizar_atualizacao_bloqueada_orienta_continuacao():
     assert "Atualização bloqueada" in texto
     assert "deadbeef" in texto
     assert "motor/tui.py" in texto and "tests/test_tui.py" in texto
-    assert "--continue" in texto
+    assert "Continuar" in texto
 
 
 def test_app_seleciona_repo_tag_e_executa_auditoria():
@@ -616,6 +640,116 @@ def test_app_mantem_verificar_e_atualizar_visiveis_e_atualiza_pendencias():
                 app.query_one("#resultado", Static).content
             )
             assert atualizar_botao.disabled
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_bloqueio_transforma_atualizar_em_continuar():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    continuacoes: list[tuple[RepoOption, str]] = []
+
+    def atualizar_runner(opcao: RepoOption, numero: str) -> AtualizarResult:
+        return AtualizarResult(
+            status=AtualizarStatus.BLOCKED,
+            blocked_commit="deadbeefcafe",
+            arquivos_conflito=["motor/tui.py"],
+        )
+
+    def continuar_runner(opcao: RepoOption, numero: str) -> AtualizarResult:
+        continuacoes.append((opcao, numero))
+        return AtualizarResult(status=AtualizarStatus.DONE, aplicados=[commit])
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            atualizar_repo=atualizar_runner,
+            continuar_repo=continuar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            botao = app.query_one("#atualizar", Button)
+            assert _texto(botao.label).strip() == "Continuar"
+            assert not botao.disabled
+            assert continuacoes == []
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            assert continuacoes == [(repo, "14.0.0")]
+            assert "Atualização concluída" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+            assert _texto(botao.label).strip() == "Atualizar"
+            assert botao.disabled
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_troca_de_versao_esquece_o_bloqueio():
+    """Continuar so vale para a versao que travou.
+
+    O cherry-pick pendente esta na worktree daquela versao; se o botao
+    sobrevivesse a troca, o clique seguinte mandaria `atualizar_continue` para a
+    versao errada.
+    """
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao_a = VersionOption(numero="14.0.0", liberada=False)
+    versao_b = VersionOption(numero="14.0.1", liberada=False)
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao_a, versao_b],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            atualizar_repo=lambda opcao, numero: AtualizarResult(
+                status=AtualizarStatus.BLOCKED,
+                blocked_commit="deadbeefcafe",
+                arquivos_conflito=["motor/tui.py"],
+            ),
+            continuar_repo=lambda opcao, numero: AtualizarResult(
+                status=AtualizarStatus.DONE
+            ),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao_a
+            await pilot.pause()
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            botao = app.query_one("#atualizar", Button)
+            assert _texto(botao.label).strip() == "Continuar"
+
+            app.query_one("#versao", Select).value = versao_b
+            await pilot.pause()
+
+            assert _texto(botao.label).strip() == "Atualizar"
+            assert botao.disabled
 
     asyncio.run(executar_fluxo())
 
