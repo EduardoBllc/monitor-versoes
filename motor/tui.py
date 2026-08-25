@@ -43,6 +43,7 @@ from motor.engine.atualizar import (
     AtualizarResult,
     AtualizarStatus,
     atualizar,
+    atualizar_abort,
     atualizar_continue,
 )
 from motor.engine.consultar import ChamadoConsultado, consultar
@@ -79,6 +80,7 @@ RepoLoader = Callable[[], list[RepoOption]]
 VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
+AbortRunner = Callable[[RepoOption, str], None]
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 RepoRegistrar = Callable[[str, int], None]
 
@@ -173,6 +175,47 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
         self.dismiss((nome, sistema_id))
 
 
+class AbortarModal(ModalScreen[bool]):
+    """Confirmacao do abort do cherry-pick.
+
+    Unico ponto da TUI que pergunta antes de agir: `git cherry-pick --abort`
+    joga fora a resolucao de conflito que esta na worktree, e ela nao esta
+    commitada em lugar nenhum — um `a` sem querer apagaria o trabalho manual do
+    operador. O resto do app so escreve o que da para refazer sozinho.
+    """
+
+    BINDINGS = [("escape", "recusar", "Cancelar")]
+    DEFAULT_CSS = """
+    AbortarModal { align: center middle; }
+    AbortarModal > Vertical {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        border: round $error;
+        background: $surface;
+    }
+    #abortar-botoes { height: auto; align-horizontal: right; padding-top: 1; }
+    #abortar-botoes Button { margin-left: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical() as caixa:
+            caixa.border_title = "Abortar cherry-pick"
+            caixa.border_subtitle = "esc para cancelar"
+            yield Static(
+                "A resolução de conflito que está na worktree será descartada."
+            )
+            with Horizontal(id="abortar-botoes"):
+                yield Button("Cancelar", id="abortar-nao")
+                yield Button("Abortar", id="abortar-sim", variant="error")
+
+    def action_recusar(self) -> None:
+        self.dismiss(False)
+
+    def on_button_pressed(self, evento: Button.Pressed) -> None:
+        self.dismiss(evento.button.id == "abortar-sim")
+
+
 def renderizar_progresso(progresso: Progresso, quadro: int = 0) -> Group:
     """Fase em cima, barra e contagem lado a lado embaixo.
 
@@ -233,6 +276,7 @@ class MotorTUI(App[None]):
         ("q", "quit", "Sair"),
         ("v", "verificar", "Verificar"),
         ("u", "atualizar", "Atualizar"),
+        ("a", "abortar", "Abortar"),
         ("n", "cadastrar", "Cadastrar repo"),
     ]
     CSS = """
@@ -242,6 +286,7 @@ class MotorTUI(App[None]):
     #repo { width: 2fr; max-width: 30; }
     #versao { width: 1fr; max-width: 30; }
     #verificar, #atualizar { width: 18; margin-left: 1; }
+    #abortar { display: none; width: 13; margin-left: 1; }
     #auditar { display: none; height: auto; margin: 0 1; }
     #conteudo { height: 1fr; }
     #resultado-scroll { height: 1fr; padding: 1 2; }
@@ -262,6 +307,7 @@ class MotorTUI(App[None]):
         executar: VerifyRunner,
         atualizar_repo: UpdateRunner | None = None,
         continuar_repo: UpdateRunner | None = None,
+        abortar_repo: AbortRunner | None = None,
         consultar_versao: ConsultaRunner | None = None,
         registrar_repo: RepoRegistrar | None = None,
         slot: SlotProgresso | None = None,
@@ -276,6 +322,7 @@ class MotorTUI(App[None]):
         self._executar = executar
         self._atualizar = atualizar_repo
         self._continuar = continuar_repo
+        self._abortar = abortar_repo
         self._consultar = consultar_versao
         self._registrar = registrar_repo
         self._repo: RepoOption | None = None
@@ -299,6 +346,7 @@ class MotorTUI(App[None]):
             yield Checkbox("Auditar tag agora", id="auditar")
             yield Button("Verificar", id="verificar", variant="primary", disabled=True)
             yield Button("Atualizar", id="atualizar", disabled=True)
+            yield Button("Abortar", id="abortar", variant="error")
         with Container(id="conteudo"):
             with VerticalScroll(id="resultado-scroll"):
                 yield Static(
@@ -423,12 +471,15 @@ class MotorTUI(App[None]):
         """
         self._apresentar(renderizar_atualizacao(resultado), reconsultar=True)
         self._resetar_atualizacao()
-        if resultado.status == AtualizarStatus.BLOCKED and self._continuar:
-            self._bloqueado = True
+        if resultado.status != AtualizarStatus.BLOCKED:
+            return
+        self._bloqueado = True
+        if self._continuar is not None:
             self._pode_atualizar = True
             botao = self.query_one("#atualizar", Button)
             botao.label = "Continuar"
             botao.variant = "error"
+        self.query_one("#abortar", Button).display = self._abortar is not None
 
     def _mostrar_consulta(self, chamados: list[ChamadoConsultado]) -> None:
         self._chamados_consultados = chamados
@@ -490,6 +541,7 @@ class MotorTUI(App[None]):
         botao = self.query_one("#atualizar", Button)
         botao.label = "Atualizar"
         botao.variant = "default"
+        self.query_one("#abortar", Button).display = False
         self.query_one("#verificar", Button).variant = "primary"
 
     def _falha(self, erro: Exception, transitorio: bool = False) -> None:
@@ -521,6 +573,8 @@ class MotorTUI(App[None]):
         self.query_one("#atualizar", Button).disabled = (
             ocupado or not self._pode_atualizar
         )
+        # So a ocupacao: quem esconde o abort fora do bloqueio e o `display`.
+        self.query_one("#abortar", Button).disabled = ocupado
 
     @work(thread=True, exclusive=True, group="repos")
     def carregar_repos_worker(self) -> None:
@@ -639,6 +693,8 @@ class MotorTUI(App[None]):
             self._iniciar_verificacao()
         elif evento.button.id == "atualizar":
             self._iniciar_atualizacao()
+        elif evento.button.id == "abortar":
+            self._iniciar_abort()
 
     def action_cadastrar(self) -> None:
         if self._ocupado or self._registrar is None:
@@ -673,6 +729,9 @@ class MotorTUI(App[None]):
     def action_atualizar(self) -> None:
         self._iniciar_atualizacao()
 
+    def action_abortar(self) -> None:
+        self._iniciar_abort()
+
     def _iniciar_verificacao(self) -> None:
         if self._ocupado:
             return
@@ -701,6 +760,20 @@ class MotorTUI(App[None]):
         self._bloquear(True)
         self.atualizar_worker(executar, self._repo, self._versao)
 
+    def _iniciar_abort(self) -> None:
+        if self._ocupado or not self._bloqueado or self._abortar is None:
+            return
+        self.push_screen(AbortarModal(), self._abortar_confirmado)
+
+    def _abortar_confirmado(self, confirmado: bool | None) -> None:
+        if not confirmado or self._abortar is None:
+            return
+        if self._repo is None or self._versao is None:
+            return
+        self._ocupar_lista()
+        self._bloquear(True)
+        self.abortar_worker(self._abortar, self._repo, self._versao)
+
     @work(thread=True, exclusive=True, group="executar")
     def executar_worker(
         self, repo: RepoOption, versao: VersionOption, auditar: bool
@@ -722,6 +795,25 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._falha, erro)
         else:
             self.call_from_thread(self._mostrar_consulta, chamados)
+        finally:
+            self.call_from_thread(self._bloquear, False)
+
+    def _mostrar_abort(self) -> None:
+        self._apresentar(
+            Text("● Atualização abortada", style="bold yellow"), reconsultar=True
+        )
+        self._resetar_atualizacao()
+
+    @work(thread=True, exclusive=True, group="executar")
+    def abortar_worker(
+        self, executar: AbortRunner, repo: RepoOption, versao: VersionOption
+    ) -> None:
+        try:
+            executar(repo, versao.numero)
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro, True)
+        else:
+            self.call_from_thread(self._mostrar_abort)
         finally:
             self.call_from_thread(self._bloquear, False)
 
@@ -854,6 +946,13 @@ def _continuar_repo(
         return atualizar_continue(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def _abortar_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> None:
+    with abrir_sessao() as sessao:
+        atualizar_abort(_deps_do_repo(repo, sessao, progresso), versao)
+
+
 def _consultar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> list[ChamadoConsultado]:
@@ -873,6 +972,7 @@ def run_tui() -> None:
         partial(_verificar_repo, progresso=slot.relatar),
         partial(_atualizar_repo, progresso=slot.relatar),
         partial(_continuar_repo, progresso=slot.relatar),
+        partial(_abortar_repo, progresso=slot.relatar),
         partial(_consultar_repo, progresso=slot.relatar),
         _registrar_no_banco,
         slot=slot,
@@ -1022,7 +1122,8 @@ def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
         partes.extend(Text(f"  {caminho}") for caminho in resultado.arquivos_conflito)
         partes.append(
             Text(
-                "Resolva os arquivos e retome em Continuar (u).",
+                "Resolva os arquivos e retome em Continuar (u), "
+                "ou descarte em Abortar (a).",
                 style="bold yellow",
             )
         )

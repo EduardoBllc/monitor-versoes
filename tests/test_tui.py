@@ -336,6 +336,25 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     assert capturado == {"repo": "alpha", "versao": "14.0.0"}
 
 
+def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
+    checkout = _checkout(tmp_path, "alpha")
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    capturado: dict[str, object] = {}
+
+    def abort_spy(deps, versao):
+        capturado.update(repo=deps.repo, versao=versao)
+
+    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
+    monkeypatch.setattr(montagem, "TickioRest", lambda *a, **k: object())
+    monkeypatch.setattr(tui, "atualizar_abort", abort_spy)
+
+    tui._abortar_repo(RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0")
+
+    assert capturado == {"repo": "alpha", "versao": "14.0.0"}
+
+
 def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
     commit = CommitRef(
         hash_origem="deadbeefcafe",
@@ -451,7 +470,7 @@ def test_renderizar_atualizacao_bloqueada_orienta_continuacao():
     assert "Atualização bloqueada" in texto
     assert "deadbeef" in texto
     assert "motor/tui.py" in texto and "tests/test_tui.py" in texto
-    assert "Continuar" in texto
+    assert "Continuar" in texto and "Abortar" in texto
 
 
 def test_app_seleciona_repo_tag_e_executa_auditoria():
@@ -702,6 +721,104 @@ def test_app_bloqueio_transforma_atualizar_em_continuar():
     asyncio.run(executar_fluxo())
 
 
+def _app_bloqueada(
+    repo: RepoOption,
+    versao: VersionOption,
+    commit: CommitRef,
+    abortar_runner,
+) -> MotorTUI:
+    return MotorTUI(
+        carregar_repos=lambda: [repo],
+        carregar_versoes=lambda opcao: [versao],
+        executar=lambda repo, versao, auditar: VersionStatus(
+            verde=False, estado_integro=True, faltantes=[commit]
+        ),
+        atualizar_repo=lambda opcao, numero: AtualizarResult(
+            status=AtualizarStatus.BLOCKED,
+            blocked_commit="deadbeefcafe",
+            arquivos_conflito=["motor/tui.py"],
+        ),
+        continuar_repo=lambda opcao, numero: AtualizarResult(
+            status=AtualizarStatus.DONE
+        ),
+        abortar_repo=abortar_runner,
+    )
+
+
+async def _ate_o_bloqueio(app, pilot, repo, versao) -> None:
+    await app.workers.wait_for_complete()
+    app.query_one("#repo", Select).value = repo
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    app.query_one("#versao", Select).value = versao
+    await pilot.pause()
+    await pilot.click("#verificar")
+    await app.workers.wait_for_complete()
+    await pilot.click("#atualizar")
+    await app.workers.wait_for_complete()
+
+
+def test_app_bloqueio_oferece_abortar_sob_confirmacao():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    abortos: list[tuple[RepoOption, str]] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_bloqueada(
+            repo, versao, commit, lambda opcao, numero: abortos.append((opcao, numero))
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            botao = app.query_one("#abortar", Button)
+            assert not botao.display
+
+            await _ate_o_bloqueio(app, pilot, repo, versao)
+            assert botao.display and not botao.disabled
+
+            await pilot.click("#abortar")
+            await pilot.pause()
+            assert abortos == []
+
+            await pilot.click("#abortar-sim")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            assert abortos == [(repo, "14.0.0")]
+            assert "abortada" in _texto(app.query_one("#resultado", Static).content)
+            assert not botao.display
+            rotulo = _texto(app.query_one("#atualizar", Button).label).strip()
+            assert rotulo == "Atualizar"
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_abortar_cancelado_nao_toca_no_cherry_pick():
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    abortos: list[tuple[RepoOption, str]] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_bloqueada(
+            repo, versao, commit, lambda opcao, numero: abortos.append((opcao, numero))
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _ate_o_bloqueio(app, pilot, repo, versao)
+
+            await pilot.click("#abortar")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+
+            assert abortos == []
+            # segue bloqueada: Continuar continua na mesa
+            assert app.query_one("#abortar", Button).display
+            rotulo = _texto(app.query_one("#atualizar", Button).label).strip()
+            assert rotulo == "Continuar"
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_troca_de_versao_esquece_o_bloqueio():
     """Continuar so vale para a versao que travou.
 
@@ -750,6 +867,7 @@ def test_app_troca_de_versao_esquece_o_bloqueio():
 
             assert _texto(botao.label).strip() == "Atualizar"
             assert botao.disabled
+            assert not app.query_one("#abortar", Button).display
 
     asyncio.run(executar_fluxo())
 
