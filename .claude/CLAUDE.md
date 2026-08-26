@@ -30,12 +30,12 @@ fake) na sua porta. Adapter novo entra lá. Ele pega método faltando e tipo de
 parâmetro ou retorno trocado; **não** pega renome de parâmetro, porque toda
 chamada de porta aqui é posicional.
 
-## Desenvolvimento é o padrão do CLI, produção é o padrão de tudo o mais
+## Produção é o padrão em tudo; desenvolvimento é explícito
 
-O CLI usa `.env.development` (porta **5434**) por padrão; produção exige
-`--env production`. O `compose.yml` e o `alembic/env.py` fazem o contrário: leem
-`.env`, ou seja **produção** (porta 5433). `docker compose up -d` sozinho sobe o
-container de produção — não é o banco que a suíte usa.
+CLI, `compose.yml` e `alembic/env.py` leem `.env`, ou seja **produção** (porta
+5433). Desenvolvimento (`.env.development`, porta **5434**) exige
+`--env development` no CLI, e existe para a suíte automatizada — `docker compose
+up -d` sozinho sobe o container de produção, que não é o banco que a suíte usa.
 
 ```bash
 docker compose --env-file .env.development up -d

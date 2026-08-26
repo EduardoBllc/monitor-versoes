@@ -6,16 +6,18 @@ Tickio marcou, o que o estado declarou e o que está de fato aplicado no git.
 Desenho e as decisões por trás dele: [docs/design.md](docs/design.md).
 Armadilhas deste ambiente de desenvolvimento: [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
-## Os dois ambientes, e o pé errado que dá para sair
+## Os dois ambientes
 
-O CLI usa **desenvolvimento por padrão**; produção é explícita. O `compose.yml` e o Alembic
-fazem o **contrário**: ambos leem `.env`, ou seja, produção por padrão. Sair do pé errado é o
-erro fácil aqui — o container sobe em produção e o CLI vai falar com um banco que não existe.
+Tudo é **produção por padrão**: o CLI, o `compose.yml` e o Alembic leem `.env`.
+Desenvolvimento é sempre explícito.
 
 | | CLI | `docker compose` / Alembic |
 | --- | --- | --- |
-| padrão | desenvolvimento (`.env.development`, porta 5434) | **produção** (`.env`, porta 5433) |
-| o outro | `--env production` | `--env-file .env.development` / sourcing (abaixo) |
+| padrão | **produção** (`.env`, porta 5433) | **produção** (`.env`, porta 5433) |
+| o outro | `--env development` | `--env-file .env.development` / sourcing (abaixo) |
+
+O `.env.development` é o ambiente da suíte automatizada — o `tests/conftest.py` o carrega na
+coleta. Fora dela, só entra com `--env development`.
 
 ## Setup
 
@@ -25,7 +27,7 @@ cp .env.example .env
 cp .env.development.example .env.development
 ```
 
-Banco de **desenvolvimento** — é o que o CLI usa por padrão. A suíte não precisa dele:
+Banco de **desenvolvimento** — só com `--env development`. A suíte não precisa dele:
 sobe o próprio Postgres efêmero (ver [Testes](#testes)).
 
 ```bash
@@ -47,7 +49,7 @@ Cadastre cada repo antes do primeiro comando nele, em cada ambiente:
 
 ```bash
 uv run motor repo adicionar vendabemweb --tickio-sistema-id 7
-uv run motor --env production repo adicionar vendabemweb --tickio-sistema-id 7
+uv run motor --env development repo adicionar vendabemweb --tickio-sistema-id 7
 ```
 
 ## Comandos
@@ -67,8 +69,8 @@ uv run motor reconstruir-estado 13.35.0 --repo vendabemweb     # recuperação
 uv run motor tui                                     # interface interativa
 ```
 
-`uv run motor <comando> -h` lista as flags daquele comando. Em produção, `--env production` vem
-antes do comando: `uv run motor --env production verificar …`.
+`uv run motor <comando> -h` lista as flags daquele comando. Em desenvolvimento, `--env
+development` vem antes do comando: `uv run motor --env development verificar …`.
 
 A descoberta de commits por PR do Bitbucket é opcional: com `BITBUCKET_TOKEN` e
 `BITBUCKET_EMAIL` no ambiente (ou `--bitbucket-token`/`--bitbucket-email`), ela entra como

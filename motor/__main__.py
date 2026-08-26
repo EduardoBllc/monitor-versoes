@@ -79,7 +79,7 @@ def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
 def _carregar_ambiente(argv: list[str]) -> None:
     seletor = argparse.ArgumentParser(add_help=False)
     seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
-                         default="development")
+                         default="production")
     ambiente = seletor.parse_known_args(argv)[0].env
     if load_dotenv:
         raiz = os.path.dirname(os.path.dirname(__file__))
@@ -110,8 +110,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(prog="motor")
     parser.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
-                        default="development",
-                        help="ambiente (default: development)")
+                        default="production",
+                        help="ambiente (default: production)")
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
 
     p_verificar = sub.add_parser(

@@ -51,8 +51,8 @@ def test_task_source_default_e_tickio():
 
 
 @pytest.mark.parametrize(("argv", "arquivo"), [
-    (["tui"], ".env.development"),
-    (["--env", "production", "tui"], ".env"),
+    (["tui"], ".env"),
+    (["--env", "development", "tui"], ".env.development"),
 ])
 def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
     chamadas: list[str] = []
@@ -82,8 +82,8 @@ def test_help_descreve_as_acoes_da_tui():
 
 
 @pytest.mark.parametrize(("argv", "arquivo"), [
-    (["--help"], ".env.development"),
-    (["--env", "production", "--help"], ".env"),
+    (["--help"], ".env"),
+    (["--env", "development", "--help"], ".env.development"),
 ])
 def test_main_carrega_o_ambiente_escolhido_antes_do_parser(
     monkeypatch, argv, arquivo
