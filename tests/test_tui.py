@@ -642,7 +642,9 @@ def test_app_mantem_verificar_e_atualizar_visiveis_e_atualiza_pendencias():
             verificar = app.query_one("#verificar", Button)
             atualizar_botao = app.query_one("#atualizar", Button)
             assert not verificar.disabled
-            assert atualizar_botao.disabled
+            # Versao selecionada e nao liberada ja basta: o Atualizar nao espera
+            # um Verificar manual (ele roda o seu antes de aplicar).
+            assert not atualizar_botao.disabled
 
             await pilot.click("#verificar")
             await app.workers.wait_for_complete()
@@ -653,12 +655,216 @@ def test_app_mantem_verificar_e_atualizar_visiveis_e_atualiza_pendencias():
 
             await pilot.click("#atualizar")
             await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert atualizacoes == []
+
+            await pilot.click("#confirmar-sim")
+            await app.workers.wait_for_complete()
 
             assert atualizacoes == [(repo, "14.0.0")]
             assert "Atualização concluída" in _texto(
                 app.query_one("#resultado", Static).content
             )
-            assert atualizar_botao.disabled
+            # Segue habilitado: o lote acabou, mas rodar de novo e legitimo (e
+            # cai na previa de "nada faltando" se nao houver nada).
+            assert not atualizar_botao.disabled
+            assert _texto(atualizar_botao.label).strip() == "Atualizar"
+
+    asyncio.run(executar_fluxo())
+
+
+_REPO_PREVIA = RepoOption(nome="alpha", caminho="/projetos/alpha")
+_VERSAO_PREVIA = VersionOption(numero="14.0.0", liberada=False)
+
+
+def _app_para_previa(
+    status: VersionStatus, atualizar_runner, versao: VersionOption = _VERSAO_PREVIA
+) -> MotorTUI:
+    """App de um repo e uma versao, com verificacao de resultado fixo."""
+    return MotorTUI(
+        carregar_repos=lambda: [_REPO_PREVIA],
+        carregar_versoes=lambda opcao: [versao],
+        executar=lambda repo, numero, auditar: status,
+        atualizar_repo=atualizar_runner,
+    )
+
+
+async def _selecionar_previa(app, pilot, versao: VersionOption = _VERSAO_PREVIA) -> None:
+    await app.workers.wait_for_complete()
+    app.query_one("#repo", Select).value = _REPO_PREVIA
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    app.query_one("#versao", Select).value = versao
+    await pilot.pause()
+
+
+def test_app_atualizar_sem_verificar_antes_pede_confirmacao_e_aplica():
+    """O fluxo que a exigencia de Verificar antes cobrava sem precisar.
+
+    Um clique so: o Atualizar roda a verificacao dele, mostra o lote e aplica
+    depois do sim. A previa mostra a mesma tabela do Verificar, entao as secoes
+    vermelhas estao na tela no momento da decisao.
+    """
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    verificacoes = 0
+    atualizacoes: list[str] = []
+
+    def executar(repo, numero, auditar) -> VersionStatus:
+        nonlocal verificacoes
+        verificacoes += 1
+        return VersionStatus(
+            verde=False,
+            estado_integro=True,
+            faltantes=[commit],
+            tasks_ambiguas=["999999"],
+        )
+
+    def atualizar_runner(repo, numero) -> AtualizarResult:
+        atualizacoes.append(numero)
+        return AtualizarResult(status=AtualizarStatus.DONE, aplicados=[commit])
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+            executar=executar,
+            atualizar_repo=atualizar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert verificacoes == 1
+            assert atualizacoes == []
+            previa = _texto(app.screen.query_one("#modal-conteudo", Static).content)
+            assert "deadbeef" in previa
+            assert "999999" in previa
+
+            await pilot.click("#confirmar-sim")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert atualizacoes == ["14.0.0"]
+            assert "Atualização concluída" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_previa_cancelada_nao_aplica_nada():
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    atualizacoes: list[str] = []
+
+    def atualizar_runner(repo, numero) -> AtualizarResult:
+        atualizacoes.append(numero)
+        return AtualizarResult(status=AtualizarStatus.DONE)
+
+    async def executar_fluxo() -> None:
+        app = _app_para_previa(
+            VersionStatus(verde=False, estado_integro=True, faltantes=[commit]),
+            atualizar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            assert atualizacoes == []
+            # Segue oferecido, agora com a contagem que a previa apurou.
+            botao = app.query_one("#atualizar", Button)
+            assert not botao.disabled
+            assert "1" in _texto(botao.label)
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_previa_sem_faltantes_nao_pergunta_nada():
+    """Lote vazio nao merece confirmacao: nao ha nada para aplicar.
+
+    Cai no caminho de resultado normal — o mesmo que o Verificar mostraria —
+    em vez de perguntar "aplicar 0 commits?".
+    """
+
+    def atualizar_runner(repo, numero) -> AtualizarResult:
+        raise AssertionError("lote vazio nao pode chamar o atualizar")
+
+    async def executar_fluxo() -> None:
+        app = _app_para_previa(
+            VersionStatus(verde=True, estado_integro=True), atualizar_runner
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert not app.screen.query("#confirmar-sim")
+            assert "VERDE" in _texto(app.query_one("#resultado", Static).content)
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_previa_com_suspeitos_nao_pergunta_nada():
+    """`suspeitos_conteudo` o motor recusa na entrada (RecusaDeInvariante).
+
+    Perguntar aqui levaria um sim direto para uma recusa, gastando a varredura
+    do `atualizar` para nada. A tabela com os suspeitos vai para a tela, que e
+    onde a decisao (excluir do estado, conferir na mao) e tomada.
+    """
+    suspeito = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+
+    def atualizar_runner(repo, numero) -> AtualizarResult:
+        raise AssertionError("lote com suspeitos nao pode chamar o atualizar")
+
+    async def executar_fluxo() -> None:
+        app = _app_para_previa(
+            VersionStatus(
+                verde=False,
+                estado_integro=True,
+                faltantes=[suspeito],
+                suspeitos_conteudo=[suspeito],
+            ),
+            atualizar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert not app.screen.query("#confirmar-sim")
+            assert "deadbeef" in _texto(
+                app.query_one("#resultado", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_versao_liberada_nao_oferece_atualizar():
+    """Versao com tag nao aceita escrita (§6): o botao nem chega a perguntar."""
+
+    async def executar_fluxo() -> None:
+        liberada = VersionOption(numero="14.0.0", liberada=True)
+        app = _app_para_previa(
+            VersionStatus(verde=True, estado_integro=True),
+            lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE),
+            versao=liberada,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot, liberada)
+
+            assert app.query_one("#atualizar", Button).disabled
 
     asyncio.run(executar_fluxo())
 
@@ -702,12 +908,16 @@ def test_app_bloqueio_transforma_atualizar_em_continuar():
             await app.workers.wait_for_complete()
             await pilot.click("#atualizar")
             await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.click("#confirmar-sim")
+            await app.workers.wait_for_complete()
 
             botao = app.query_one("#atualizar", Button)
             assert _texto(botao.label).strip() == "Continuar"
             assert not botao.disabled
             assert continuacoes == []
 
+            # Continuar nao passa pela previa: o lote ja esta aberto na worktree.
             await pilot.click("#atualizar")
             await app.workers.wait_for_complete()
 
@@ -716,7 +926,7 @@ def test_app_bloqueio_transforma_atualizar_em_continuar():
                 app.query_one("#resultado", Static).content
             )
             assert _texto(botao.label).strip() == "Atualizar"
-            assert botao.disabled
+            assert not botao.disabled
 
     asyncio.run(executar_fluxo())
 
@@ -755,6 +965,9 @@ async def _ate_o_bloqueio(app, pilot, repo, versao) -> None:
     await pilot.click("#verificar")
     await app.workers.wait_for_complete()
     await pilot.click("#atualizar")
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+    await pilot.click("#confirmar-sim")
     await app.workers.wait_for_complete()
 
 
@@ -858,6 +1071,9 @@ def test_app_troca_de_versao_esquece_o_bloqueio():
             await app.workers.wait_for_complete()
             await pilot.click("#atualizar")
             await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.click("#confirmar-sim")
+            await app.workers.wait_for_complete()
 
             botao = app.query_one("#atualizar", Button)
             assert _texto(botao.label).strip() == "Continuar"
@@ -866,17 +1082,27 @@ def test_app_troca_de_versao_esquece_o_bloqueio():
             await pilot.pause()
 
             assert _texto(botao.label).strip() == "Atualizar"
-            assert botao.disabled
+            # Habilitado de novo, mas para um lote novo da 14.0.1: o clique agora
+            # cai na previa, nao no `atualizar_continue` da 14.0.0.
+            assert not botao.disabled
             assert not app.query_one("#abortar", Button).display
 
     asyncio.run(executar_fluxo())
 
 
-def test_app_rechecagem_falha_revoga_atualizacao_anterior():
+def test_app_atualizar_nao_aplica_quando_a_previa_falha():
+    """Verificacao que falha no caminho do Atualizar nao chega a aplicar nada.
+
+    Era o teste da revogacao do botao (`_pode_atualizar` caia quando a
+    rechecagem falhava). Nao ha mais flag para revogar: a previa e a propria
+    verificacao do clique, e falhar nela mata o clique — o runner de atualizacao
+    nunca e chamado, sem depender de estado guardado entre as duas telas.
+    """
     repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
     versao = VersionOption(numero="14.0.0", liberada=False)
     commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514")
     verificacoes = 0
+    atualizacoes: list[str] = []
 
     def verificar_runner(repo, versao, auditar):
         nonlocal verificacoes
@@ -889,12 +1115,16 @@ def test_app_rechecagem_falha_revoga_atualizacao_anterior():
             faltantes=[commit],
         )
 
+    def atualizar_runner(repo, numero) -> AtualizarResult:
+        atualizacoes.append(numero)
+        return AtualizarResult(status=AtualizarStatus.DONE)
+
     async def executar_fluxo() -> None:
         app = MotorTUI(
             lambda: [repo],
             lambda opcao: [versao],
             verificar_runner,
-            lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE),
+            atualizar_runner,
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -909,14 +1139,15 @@ def test_app_rechecagem_falha_revoga_atualizacao_anterior():
             assert not app.query_one("#atualizar", Button).disabled
 
             await pilot.pause()
-            await pilot.click("#verificar")
+            await pilot.click("#atualizar")
             await app.workers.wait_for_complete()
+            await pilot.pause()
             assert verificacoes == 2
 
+            assert atualizacoes == []
             assert "rechecagem falhou" in _texto(
                 app.query_one("#resultado", Static).content
             )
-            assert app.query_one("#atualizar", Button).disabled
 
     asyncio.run(executar_fluxo())
 
@@ -1524,6 +1755,9 @@ def test_app_atualizar_com_lista_visivel_recarrega_chamados():
             assert consultas == 2
 
             await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.click("#confirmar-sim")
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert "Atualização concluída" in _texto(

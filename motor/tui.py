@@ -227,6 +227,64 @@ class AbortarModal(ModalScreen[bool]):
         self.dismiss(evento.button.id == "abortar-sim")
 
 
+class ConfirmarModal(ModalScreen[bool]):
+    """O lote na tela antes do primeiro cherry-pick.
+
+    E o que substitui a exigencia de rodar um Verificar antes do Atualizar. A
+    exigencia nao protegia nada: o `atualizar` do motor chama o `verificar` ele
+    mesmo e recalcula o lote do git na hora, entao o status da tela anterior
+    nunca era o que embarcava. Aqui o status mostrado e o da mesma varredura que
+    vai alimentar os picks, e a decisao acontece antes de qualquer escrita.
+
+    Mesma tabela do Verificar, de proposito: as secoes vermelhas (ambiguas, sem
+    commits, commits sumidos, suspeitos) tem de estar na frente do operador no
+    momento em que ele decide, nao num modal que ele fechou dois cliques atras.
+    """
+
+    BINDINGS = [("escape", "recusar", "Cancelar")]
+    DEFAULT_CSS = """
+    ConfirmarModal { align: center middle; }
+    ConfirmarModal > Vertical {
+        width: 90%;
+        height: 80%;
+        padding: 1 2;
+        border: round $warning;
+        background: $surface;
+    }
+    #confirmar-aviso { height: auto; padding-top: 1; color: $text-muted; }
+    #confirmar-botoes { height: auto; align-horizontal: right; padding-top: 1; }
+    #confirmar-botoes Button { margin-left: 1; }
+    """
+
+    def __init__(self, status: VersionStatus, versao: str) -> None:
+        super().__init__()
+        self._status = status
+        self._versao = versao
+
+    def compose(self) -> ComposeResult:
+        with Vertical() as caixa:
+            caixa.border_title = f"Atualizar {self._versao}"
+            caixa.border_subtitle = "esc para cancelar"
+            with VerticalScroll():
+                yield Static(renderizar_status(self._status), id="modal-conteudo")
+            yield Static(
+                f"{len(self._status.faltantes)} commits entram na branch "
+                f"{self._versao} e são publicados na origin.",
+                id="confirmar-aviso",
+            )
+            with Horizontal(id="confirmar-botoes"):
+                yield Button("Cancelar", id="confirmar-nao")
+                yield Button(
+                    "Aplicar e publicar", id="confirmar-sim", variant="warning"
+                )
+
+    def action_recusar(self) -> None:
+        self.dismiss(False)
+
+    def on_button_pressed(self, evento: Button.Pressed) -> None:
+        self.dismiss(evento.button.id == "confirmar-sim")
+
+
 def renderizar_progresso(progresso: Progresso, quadro: int = 0) -> Group:
     """Fase em cima, barra e contagem lado a lado embaixo.
 
@@ -342,7 +400,6 @@ class MotorTUI(App[None]):
         self._tem_repos = False
         self._tem_versoes = False
         self._geracao_versoes = 0
-        self._pode_atualizar = False
         self._bloqueado = False
         self._chamados_consultados: list[ChamadoConsultado] = []
 
@@ -448,6 +505,46 @@ class MotorTUI(App[None]):
         else:
             self._exibir_resultado(painel)
 
+    def _pode_atualizar(self) -> bool:
+        """Atualizar depende da selecao, nao de ter rodado um Verificar antes.
+
+        Derivado em vez de gravado num flag porque a pre-condicao que o flag
+        guardava (ter um status fresco na tela) nao era pre-condicao de nada: o
+        `atualizar` do motor abre chamando o `verificar`, e o lote sai dessa
+        varredura, nao da anterior. O que existe no lugar e o `ConfirmarModal`,
+        que mostra o lote de verdade antes do primeiro pick.
+
+        Lote bloqueado sem runner de continuacao e o unico caso que trava o
+        botao: ha cherry-pick pendente na worktree e um lote novo por cima dele
+        nao passa do `use_worktree`.
+        """
+        if self._bloqueado and self._continuar is None:
+            return False
+        return bool(
+            self._atualizar is not None
+            and self._repo is not None
+            and self._versao is not None
+            and not self._versao.liberada
+        )
+
+    def _rotular_atualizacao(self, faltantes: int) -> None:
+        """Contagem no rotulo e destaque, a partir do ultimo verificar.
+
+        So cosmetica — o botao ja esta habilitado sem isto. Versao liberada (ou
+        TUI sem runner de atualizacao) nao ganha contagem: o botao esta
+        desabilitado, e "Atualizar · 3" em botao morto so confunde.
+        """
+        if not self._pode_atualizar():
+            faltantes = 0
+        atualizar_botao = self.query_one("#atualizar", Button)
+        atualizar_botao.label = (
+            f"Atualizar · {faltantes}" if faltantes else "Atualizar"
+        )
+        atualizar_botao.variant = "warning" if faltantes else "default"
+        self.query_one("#verificar", Button).variant = (
+            "default" if faltantes else "primary"
+        )
+
     def _mostrar_resultado(self, status: VersionStatus, auditado: bool) -> None:
         # Auditoria nao persiste (verificar --auditar nao toca no snapshot):
         # recarregar a lista traria o mesmo conteudo por um round de git a mais.
@@ -455,22 +552,7 @@ class MotorTUI(App[None]):
             renderizar_status(status, auditado=auditado),
             reconsultar=not auditado,
         )
-        self._pode_atualizar = bool(
-            self._atualizar
-            and self._versao
-            and not self._versao.liberada
-            and status.faltantes
-        )
-        atualizar_botao = self.query_one("#atualizar", Button)
-        atualizar_botao.label = (
-            f"Atualizar · {len(status.faltantes)}"
-            if self._pode_atualizar
-            else "Atualizar"
-        )
-        atualizar_botao.variant = "warning" if self._pode_atualizar else "default"
-        self.query_one("#verificar", Button).variant = (
-            "default" if self._pode_atualizar else "primary"
-        )
+        self._rotular_atualizacao(len(status.faltantes))
 
     def _mostrar_atualizacao(self, resultado: AtualizarResult) -> None:
         """Lote BLOCKED deixa o cherry-pick aberto na worktree: o mesmo botao
@@ -486,7 +568,6 @@ class MotorTUI(App[None]):
             return
         self._bloqueado = True
         if self._continuar is not None:
-            self._pode_atualizar = True
             botao = self.query_one("#atualizar", Button)
             botao.label = "Continuar"
             botao.variant = "error"
@@ -545,7 +626,6 @@ class MotorTUI(App[None]):
             self._mostrar_detalhe_consulta(evento.option_index)
 
     def _resetar_atualizacao(self) -> None:
-        self._pode_atualizar = False
         # O pick pendente e da worktree daquela versao: sem limpar isto, o
         # clique seguinte retomaria o lote na versao errada.
         self._bloqueado = False
@@ -582,7 +662,7 @@ class MotorTUI(App[None]):
             ocupado or self._repo is None or self._versao is None
         )
         self.query_one("#atualizar", Button).disabled = (
-            ocupado or not self._pode_atualizar
+            ocupado or not self._pode_atualizar()
         )
         # So a ocupacao: quem esconde o abort fora do bloqueio e o `display`.
         self.query_one("#abortar", Button).disabled = ocupado
@@ -762,8 +842,64 @@ class MotorTUI(App[None]):
         )
 
     def _iniciar_atualizacao(self) -> None:
-        if self._ocupado or not self._pode_atualizar:
+        """Verifica primeiro, mostra o lote, aplica so depois do sim.
+
+        A verificacao aqui nao e a que o motor usa — o `atualizar` roda a sua
+        propria — e nao ha promessa de que as duas vejam a mesma coisa: sao duas
+        varreduras separadas, e nada impede um push na origem no meio. E uma
+        previa para decidir, nao um contrato. O que garante que nada ilegitimo
+        embarca continua sendo o `verificar` de dentro do motor.
+        """
+        if self._ocupado or not self._pode_atualizar():
             return
+        if self._repo is None or self._versao is None:
+            return
+        if self._bloqueado:
+            # Continuar: o lote ja esta aberto na worktree e o operador acabou de
+            # resolver o conflito na mao. Previa aqui nao muda decisao nenhuma e
+            # custaria uma varredura de git inteira antes de retomar o pick.
+            self._rodar_atualizacao()
+            return
+        if not self._ocupar_lista():
+            self._exibir_resultado(
+                f"Verificando {self._repo.nome} {self._versao.numero}…"
+            )
+            self._ocupar_resultado()
+        self._bloquear(True)
+        self.executar_worker(self._repo, self._versao, False, confirmar=True)
+
+    def _confirmar_atualizacao(self, status: VersionStatus) -> None:
+        """Previa do lote entre o verificar e o primeiro cherry-pick.
+
+        Lote vazio nao pergunta nada: cai no caminho de resultado normal, que e
+        exatamente o que o Verificar mostraria. `suspeitos_conteudo` tambem nao
+        pergunta — o motor recusa esse lote na entrada (`RecusaDeInvariante`), e
+        um sim aqui so gastaria a varredura para levar uma recusa.
+        """
+        self._rotular_atualizacao(len(status.faltantes))
+        if not status.faltantes or status.suspeitos_conteudo:
+            self._mostrar_resultado(status, False)
+            return
+        self.push_screen(
+            ConfirmarModal(status, self._versao.numero if self._versao else ""),
+            partial(self._atualizacao_confirmada, status),
+        )
+
+    def _atualizacao_confirmada(
+        self, status: VersionStatus, confirmado: bool | None
+    ) -> None:
+        if confirmado:
+            self._rodar_atualizacao()
+            return
+        # Cancelar nao desfaz o verificar: ele ja regravou o snapshot, e a lista
+        # atras do modal esta velha. Sem modal de resultado por cima — o
+        # operador acabou de fechar essa mesma tabela.
+        if self._consultar is not None:
+            self._reconsultar()
+        else:
+            self._exibir_resultado(renderizar_status(status))
+
+    def _rodar_atualizacao(self) -> None:
         executar = self._continuar if self._bloqueado else self._atualizar
         if executar is None or self._repo is None or self._versao is None:
             return
@@ -787,14 +923,27 @@ class MotorTUI(App[None]):
 
     @work(thread=True, exclusive=True, group="executar")
     def executar_worker(
-        self, repo: RepoOption, versao: VersionOption, auditar: bool
+        self,
+        repo: RepoOption,
+        versao: VersionOption,
+        auditar: bool,
+        confirmar: bool = False,
     ) -> None:
+        """Uma verificacao, dois destinos: tela de resultado ou previa do lote.
+
+        Mesmo worker (mesmo grupo exclusivo, mesmo caminho de erro) porque a
+        varredura e a mesma. Verificacao que falha no caminho `confirmar` cai no
+        `_falha` e nao pergunta nada — sem lote na tela nao ha o que confirmar.
+        """
         try:
             status = self._executar(repo, versao.numero, auditar)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
-            self.call_from_thread(self._mostrar_resultado, status, auditar)
+            if confirmar:
+                self.call_from_thread(self._confirmar_atualizacao, status)
+            else:
+                self.call_from_thread(self._mostrar_resultado, status, auditar)
         finally:
             self.call_from_thread(self._bloquear, False)
 
