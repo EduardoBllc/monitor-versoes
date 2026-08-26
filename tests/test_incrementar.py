@@ -323,3 +323,81 @@ def test_atualizar_abort_preserva_worktree_quando_configurado_para_manter():
     atualizar_abort(deps, "13.7.0")
 
     assert g.removed_worktrees == []
+
+
+def test_atualizar_registra_pick_vazio_e_segue_o_lote():
+    """Pick que nao deixa alteracao nenhuma no alvo.
+
+    Quem disse "isso nao muda nada" foi o git, sem julgamento humano no meio:
+    o lote nao para. Entra como commit vazio (com o trailer -x) em vez de
+    `--skip` porque o skip deixaria o commit fora do historico e sem trailer, e
+    o oraculo de presenca o devolveria como faltante em todo run seguinte.
+    """
+    g = _git()
+    g.vazio_on["a0"] = True
+    estado = _estado()
+
+    resultado = atualizar(_deps(g, estado, ["255514", "255515"], DOIS), "13.7.0")
+
+    assert resultado.status == AtualizarStatus.DONE, (
+        f"status = {resultado.status!r}, quer DONE"
+    )
+    assert [c.hash_origem for c in resultado.vazios] == ["a0"]
+    assert [c.hash_origem for c in resultado.aplicados] == ["a1"], (
+        "o commit vazio nao pode contar como aplicado nem levar o lote junto"
+    )
+    _, pendente = g.pending_cherry_pick()
+    assert not pendente, (
+        "pick vazio deixado aberto na worktree trava o proximo commit do lote"
+    )
+    assert g.remotes.get("13.7.0") is True, "esperava push apos o lote fechar"
+
+
+def test_atualizar_continue_com_resolucao_vazia_espera_confirmacao():
+    """A resolucao do conflito nao deixou alteracao.
+
+    Aqui quem zerou o diff foi uma pessoa, e "resolvi mantendo o alvo" e
+    indistinguivel de "resolvi errado e apaguei a alteracao". O commit vazio
+    marca o commit como aplicado para sempre no oraculo, entao a decisao volta
+    para o operador em vez de o motor assinar por ele.
+    """
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.vazio_on["a0"] = True
+    estado = _estado()
+    deps = _deps(g, estado, ["255514"], UM)
+    atualizar(deps, "13.7.0")
+
+    resultado = atualizar_continue(deps, "13.7.0")
+
+    assert resultado.status == AtualizarStatus.VAZIO, (
+        f"status = {resultado.status!r}, quer VAZIO"
+    )
+    assert resultado.blocked_commit == "a0"
+    _, pendente = g.pending_cherry_pick()
+    assert pendente, "o pick tem de seguir aberto: o operador ainda vai decidir"
+    assert "13.7.0" not in g.remotes, "nao pode publicar sem a confirmacao"
+    assert [a.estado for a in estado.atribuicoes("r", "13.7.0")] == ["pendente"]
+
+
+def test_atualizar_continue_allow_empty_fecha_como_commit_vazio():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.vazio_on["a0"] = True
+    estado = _estado()
+    deps = _deps(g, estado, ["255514"], UM)
+    atualizar(deps, "13.7.0")
+
+    resultado = atualizar_continue(deps, "13.7.0", allow_empty=True)
+
+    assert resultado.status == AtualizarStatus.DONE, (
+        f"status = {resultado.status!r}, quer DONE"
+    )
+    assert [c.hash_origem for c in resultado.vazios] == ["a0"], (
+        "o commit vazio que o continue registrou nao pode sumir do relatorio - "
+        "o `atualizar` que roda depois abre lote novo e nao sabe dele"
+    )
+    assert [(a.chamado, a.estado) for a in estado.atribuicoes("r", "13.7.0")] == [
+        ("255514", "aplicado")
+    ]
+    assert g.remotes.get("13.7.0") is True, "esperava push apos o lote fechar"

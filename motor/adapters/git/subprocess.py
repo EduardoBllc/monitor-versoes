@@ -516,11 +516,33 @@ class GitSubprocess:
             return CherryPickOutcome.APLICADO
         _, pendente = self.pending_cherry_pick()
         if pendente:
-            return CherryPickOutcome.CONFLITO
+            return self._conflito_ou_vazio(dir_)
         saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
         raise MotorError(
             f"git cherry-pick -x {hash}: exit status {proc.returncode}: {saida}"
         )
+
+    def _conflito_ou_vazio(self, dir_: str) -> CherryPickOutcome:
+        """Separa "conflito a resolver" de "pick vazio" — os dois saem com erro
+        e deixam CHERRY_PICK_HEAD aberto.
+
+        A decisao e estrutural, nao pela mensagem: "The previous cherry-pick is
+        now empty" e traduzida pelo locale do operador, e casar substring de
+        saida de git aqui quebraria em maquina que nao esta em ingles.
+
+        Vazio = nenhum path em conflito E indice igual ao HEAD (nada a
+        commitar). O caminho do rerere.autoUpdate (§8) tambem nao tem path em
+        conflito, mas deixa a resolucao staged, entao o diff contra o HEAD nao e
+        vazio e ele continua CONFLITO — que e o que o `atualizar` espera para
+        chamar o --continue.
+        """
+        if self.conflicted_paths():
+            return CherryPickOutcome.CONFLITO
+        with _cronometrar("diff", "--cached", "--quiet"):
+            proc = _rodar_git(["git", "diff", "--cached", "--quiet", "HEAD"], cwd=dir_)
+        if proc.returncode == 0:
+            return CherryPickOutcome.VAZIO
+        return CherryPickOutcome.CONFLITO
 
     def conflicted_paths(self) -> list[str]:
         dir_ = self._worktree_dir(self._current_branch)
@@ -539,7 +561,7 @@ class GitSubprocess:
             return "", False
         return hash_, True
 
-    def continue_cherry_pick(self) -> None:
+    def continue_cherry_pick(self) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)
         self._run(dir_, "add", "-A")
         env = os.environ.copy()
@@ -548,9 +570,44 @@ class GitSubprocess:
             proc = _rodar_git(
                 ["git", "cherry-pick", "--continue"], cwd=dir_, env=env
             )
+        if proc.returncode == 0:
+            return CherryPickOutcome.APLICADO
+        # Resolucao que zerou o diff: o --continue nunca fecha esse pick, por
+        # mais vezes que o operador tente. Sem devolver VAZIO aqui, o motor
+        # levantava MotorError e deixava o pick aberto na worktree — o
+        # `atualizar` seguinte morria na mesma pedra.
+        _, pendente = self.pending_cherry_pick()
+        if pendente and self._conflito_ou_vazio(dir_) == CherryPickOutcome.VAZIO:
+            return CherryPickOutcome.VAZIO
+        saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
+        raise MotorError(f"git cherry-pick --continue: exit status {proc.returncode}: {saida}")
+
+    def commit_pick_vazio(self) -> None:
+        """`git commit --allow-empty` do pick pendente.
+
+        Fecha o pick com um commit sem diff, mas com a mensagem original e o
+        trailer `(cherry picked from commit X)` — que e o que faz o nivel 2 do
+        oraculo de presenca reconhecer o commit nos runs seguintes. Sem isso o
+        `--skip` deixaria o commit fora do historico e sem trailer, e todo
+        `verificar` o devolveria como faltante para sempre.
+
+        `--cleanup=strip` tira as linhas "# Conflicts:" que o git deixa na
+        mensagem preparada quando o vazio vem de resolucao de conflito.
+        """
+        dir_ = self._worktree_dir(self._current_branch)
+        env = os.environ.copy()
+        env["GIT_EDITOR"] = "true"
+        with _cronometrar("commit", "--allow-empty"):
+            proc = _rodar_git(
+                ["git", "commit", "--allow-empty", "--no-edit", "--cleanup=strip"],
+                cwd=dir_,
+                env=env,
+            )
         if proc.returncode != 0:
             saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
-            raise MotorError(f"git cherry-pick --continue: exit status {proc.returncode}: {saida}")
+            raise MotorError(
+                f"git commit --allow-empty: exit status {proc.returncode}: {saida}"
+            )
 
     def abort_cherry_pick(self) -> None:
         self._run(self._worktree_dir(self._current_branch), "cherry-pick", "--abort")

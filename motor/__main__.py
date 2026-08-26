@@ -129,6 +129,13 @@ def _build_parser() -> argparse.ArgumentParser:
     grupo = p_inc.add_mutually_exclusive_group()
     grupo.add_argument("--continue", dest="continuar", action="store_true", help="retoma apos resolver conflito")
     grupo.add_argument("--abort", dest="abortar", action="store_true", help="aborta o incremento em andamento")
+    p_inc.add_argument(
+        "--allow-empty",
+        dest="allow_empty",
+        action="store_true",
+        help="com --continue: aceita a resolucao que nao deixou alteracao, "
+             "registrando o commit como vazio",
+    )
 
     sub.add_parser("reconstruir-estado", parents=[comum],
                    help="regenera as atribuicoes a partir do git")
@@ -262,6 +269,12 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
         _imprimir_commits_por_task("cherry-picks aplicados", r.aplicados, set())
     else:
         print("nenhum cherry-pick (branch ja atualizada)")
+    if r.vazios:
+        hashes = ", ".join(c.hash_origem[:8] for c in r.vazios)
+        print(
+            f"{len(r.vazios)} commits sem alteracao no alvo, registrados como "
+            f"commit vazio: {hashes}"
+        )
     if r.ja_presentes:
         print(f"{r.ja_presentes} commits ja presentes no historico (ignorados)")
 
@@ -273,6 +286,17 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
     if r.status == AtualizarStatus.BLOCKED:
         print(f"BLOQUEADO em {r.blocked_commit[:8]}, arquivos: {r.arquivos_conflito}")
         print("resolva e rode: motor atualizar <versao> --repo <path> --continue")
+        return
+    if r.status == AtualizarStatus.VAZIO:
+        print(
+            f"VAZIO em {r.blocked_commit[:8]}: a resolucao nao deixou alteracao "
+            "nenhuma no alvo"
+        )
+        print(
+            "confirme com: motor atualizar <versao> --repo <path> --continue "
+            "--allow-empty (entra como commit vazio, com o trailer -x)"
+        )
+        print("ou descarte o commit com: motor atualizar <versao> --repo <path> --abort")
         return
     print("concluido")
 
@@ -343,7 +367,9 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
             atualizar_abort(deps, args.versao)
             print("abortado")
         elif args.continuar:
-            imprimir_atualizacao(atualizar_continue(deps, args.versao))
+            imprimir_atualizacao(
+                atualizar_continue(deps, args.versao, allow_empty=args.allow_empty)
+            )
         else:
             imprimir_atualizacao(atualizar(deps, args.versao))
     elif args.comando == "consulta":

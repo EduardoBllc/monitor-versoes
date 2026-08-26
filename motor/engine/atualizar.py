@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 class AtualizarStatus(IntEnum):
     DONE = 0
     BLOCKED = 1
+    # Resolucao de conflito que nao deixou alteracao: o pick fica aberto
+    # esperando decisao do operador (ver `atualizar_continue`).
+    VAZIO = 2
 
 
 @dataclass
@@ -31,6 +34,9 @@ class AtualizarResult:
     aplicados: list[CommitRef] = field(default_factory=list)
     # commits que ja estavam no historico (ancestrais, sem cherry-pick a fazer)
     ja_presentes: int = 0
+    # commits cujo pick nao deixou alteracao e entraram como commit vazio (com
+    # o trailer -x, para o oraculo nao os devolver como faltantes no proximo run)
+    vazios: list[CommitRef] = field(default_factory=list)
     # o VersionStatus do verificar que abriu o lote. O lote e empurrado mesmo
     # quando ele nao esta verde (todo commit vem de status.faltantes, nada
     # ilegitimo embarca, e travar em tasks_sem_commits emperraria o fluxo toda
@@ -61,6 +67,22 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
         )
 
 
+def _pick(deps: Deps, hash_origem: str) -> CherryPickOutcome:
+    """`cherry_pick_x` com o pick vazio ja fechado.
+
+    Vazio nao e conflito nem aplicacao: o commit nao deixou alteracao (o
+    conteudo ja esta no alvo por outro caminho). Aqui nao houve julgamento
+    humano nenhum — quem disse "isso nao muda nada" foi o proprio git — entao o
+    motor fecha como commit vazio e segue o lote. O commit vazio leva o trailer
+    -x, e e ele que impede o proximo `verificar` de devolver o mesmo commit como
+    faltante para sempre.
+    """
+    outcome = deps.git.cherry_pick_x(hash_origem)
+    if outcome == CherryPickOutcome.VAZIO:
+        deps.git.commit_pick_vazio()
+    return outcome
+
+
 def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     """Aplica os commits faltantes por commit-date asc (spec §5).
 
@@ -85,23 +107,35 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     deps.git.use_worktree(versao)
 
     aplicados: list[CommitRef] = []
+    vazios: list[CommitRef] = []
     ja_presentes = len(status.ancestrais)
     t = time.monotonic()
     for indice, c in enumerate(faltam, start=1):
         deps.progresso(Progresso("cherry-pick", indice, len(faltam)))
-        outcome = deps.git.cherry_pick_x(c.hash_origem)
+        outcome = _pick(deps, c.hash_origem)
+        if outcome == CherryPickOutcome.VAZIO:
+            vazios.append(c)
+            continue
         if outcome == CherryPickOutcome.CONFLITO:
             paths = deps.git.conflicted_paths()
             if len(paths) == 0:
-                # rerere.autoUpdate resolveu sozinho (§8) - segue o pick.
-                deps.git.continue_cherry_pick()
-                aplicados.append(c)
+                # rerere.autoUpdate resolveu sozinho (§8) - segue o pick. Se a
+                # resolucao gravada era "fica como esta no alvo", o --continue
+                # devolve VAZIO: e o julgamento que o operador ja fez na
+                # primeira vez, replayado, entao entra como commit vazio sem
+                # parar o lote.
+                if deps.git.continue_cherry_pick() == CherryPickOutcome.VAZIO:
+                    deps.git.commit_pick_vazio()
+                    vazios.append(c)
+                else:
+                    aplicados.append(c)
                 continue
             return AtualizarResult(
                 status=AtualizarStatus.BLOCKED,
                 blocked_commit=c.hash_origem,
                 arquivos_conflito=paths,
                 aplicados=aplicados,
+                vazios=vazios,
                 ja_presentes=ja_presentes,
                 status_versao=status,
             )
@@ -129,12 +163,15 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     return AtualizarResult(
         status=AtualizarStatus.DONE,
         aplicados=aplicados,
+        vazios=vazios,
         ja_presentes=ja_presentes,
         status_versao=status,
     )
 
 
-def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
+def atualizar_continue(
+    deps: Deps, versao: str, *, allow_empty: bool = False
+) -> AtualizarResult:
     """Retoma um cherry-pick resolvido manualmente (checkpoint resumivel, §8).
 
     Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
@@ -145,16 +182,37 @@ def atualizar_continue(deps: Deps, versao: str) -> AtualizarResult:
     versao foi liberada enquanto o conflito estava aberto, deixar o pick entrar
     poria um commit na branch de uma versao congelada — a recusa do `atualizar`
     la embaixo chegaria tarde.
+
+    Resolucao que nao deixou alteracao para com `AtualizarStatus.VAZIO` em vez de
+    decidir sozinha, e `allow_empty=True` (o operador confirmando) fecha o pick
+    como commit vazio. Nao e cerimonia: aqui quem zerou o diff foi uma pessoa, e
+    "resolvi mantendo o alvo" e indistinguivel de "resolvi errado e apaguei a
+    alteracao". Commit vazio com trailer -x marca o commit como aplicado para
+    sempre no oraculo de presenca — se essa for a leitura errada, o erro fica
+    invisivel. Quem descarta usa o --abort, que ja existe.
     """
     _recusar_se_liberada(deps, versao)
 
     deps.progresso(Progresso("retomando o cherry-pick"))
     deps.git.use_worktree(versao)
-    _, ok = deps.git.pending_cherry_pick()
+    pendente, ok = deps.git.pending_cherry_pick()
     if not ok:
         raise ErroDeEntrada("nenhum cherry-pick pendente pra continuar")
 
-    deps.git.continue_cherry_pick()
+    if deps.git.continue_cherry_pick() == CherryPickOutcome.VAZIO:
+        if not allow_empty:
+            return AtualizarResult(
+                status=AtualizarStatus.VAZIO, blocked_commit=pendente
+            )
+        deps.git.commit_pick_vazio()
+        resultado = atualizar(deps, versao)
+        # O `atualizar` acima abre lote novo e nao sabe deste pick; sem
+        # reinjetar, o commit vazio que acabou de entrar na branch nao apareceria
+        # em relatorio nenhum.
+        return replace(
+            resultado,
+            vazios=[CommitRef(hash_origem=pendente), *resultado.vazios],
+        )
     return atualizar(deps, versao)
 
 

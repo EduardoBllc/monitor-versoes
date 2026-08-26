@@ -42,10 +42,18 @@ from motor.domain.types import (
 
 
 class CherryPickOutcome(IntEnum):
-    """Estados do cherry-pick."""
+    """Estados do cherry-pick.
+
+    VAZIO e o terceiro estado que o git tem e o motor nao tinha: o pick nao
+    deixou alteracao nenhuma (o conteudo ja esta no alvo, ou a resolucao do
+    conflito o zerou). O git sai com erro e deixa CHERRY_PICK_HEAD aberto
+    esperando `--skip` ou `git commit --allow-empty` — nao e conflito, e
+    `--continue` nunca fecha.
+    """
 
     APLICADO = 0
     CONFLITO = 1
+    VAZIO = 2
 
 
 @dataclass(frozen=True)
@@ -153,8 +161,14 @@ class GitRepo(Protocol):
         """Cherry-pick pendente: (hash, ok)."""
         ...
 
-    def continue_cherry_pick(self) -> None:
-        """Continua cherry-pick."""
+    def continue_cherry_pick(self) -> CherryPickOutcome:
+        """Continua cherry-pick. VAZIO = a resolucao nao deixou alteracao e o
+        pick segue aberto (nada foi commitado)."""
+        ...
+
+    def commit_pick_vazio(self) -> None:
+        """Fecha o pick pendente como commit vazio, mantendo a mensagem
+        original e o trailer -x."""
         ...
 
     def abort_cherry_pick(self) -> None:

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import Protocol
 
 from sqlalchemy.orm import Session
 
@@ -81,6 +82,16 @@ VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
 AbortRunner = Callable[[RepoOption, str], None]
+
+
+class ContinueRunner(Protocol):
+    """Como UpdateRunner, mais o `allow_empty` do `atualizar_continue`: e a
+    confirmacao do operador de que a resolucao sem alteracao pode entrar como
+    commit vazio."""
+
+    def __call__(
+        self, repo: RepoOption, versao: str, *, allow_empty: bool = False
+    ) -> AtualizarResult: ...
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 RepoRegistrar = Callable[[str, int], None]
 

@@ -977,3 +977,100 @@ def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
     resultado = g.list_version_tags()
 
     assert resultado == ["13.34.0"], "a linha valida tem de sobreviver"
+
+
+def _log_topo(dir_: str) -> str:
+    proc = subprocess.run(
+        ["git", "log", "-1", "--format=%B"], cwd=dir_, capture_output=True, text=True
+    )
+    return proc.stdout
+
+
+def test_git_subprocess_cherry_pick_x_vazio_quando_o_conteudo_ja_esta_no_alvo(tmp_path):
+    """Pick que nao deixa alteracao: o git sai com erro E deixa
+    CHERRY_PICK_HEAD aberto, igualzinho a um conflito.
+
+    Antes disto o adapter classificava como CONFLITO, o engine via zero arquivo
+    em conflito, chamava --continue achando que era rerere, e o --continue
+    morria com "The previous cherry-pick is now empty" — deixando o pick aberto
+    na worktree para o run seguinte tropecar no mesmo lugar.
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("linha1\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+
+    g = new_git_subprocess(dir_)
+    base_hash = g.resolve_ref("master")
+
+    (tmp_path / "arquivo.txt").write_text("linha1\nlinha2\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch255514 acrescenta linha2")
+    commit = g.resolve_ref("master")
+
+    # O alvo ja tem exatamente o mesmo conteudo, por outro commit.
+    g.worktree_add("13.7.0", base_hash)
+    g.write_file("13.7.0", "arquivo.txt", b"linha1\nlinha2\n", "mesma alteracao na mao")
+
+    assert g.cherry_pick_x(commit) == CherryPickOutcome.VAZIO
+    assert g.conflicted_paths() == []
+    _, pendente = g.pending_cherry_pick()
+    assert pendente, "o pick vazio fica aberto ate alguem decidir (o git nao fecha sozinho)"
+
+    g.commit_pick_vazio()
+
+    _, pendente = g.pending_cherry_pick()
+    assert not pendente, "commit_pick_vazio tem de fechar o pick"
+    msg = _log_topo(g._worktree_dir("13.7.0"))
+    assert f"cherry picked from commit {commit}" in msg, (
+        "sem o trailer -x o oraculo de presenca devolve este commit como "
+        f"faltante em todo run seguinte; mensagem = {msg!r}"
+    )
+
+
+def test_git_subprocess_continue_cherry_pick_vazio_quando_a_resolucao_zera_o_diff(
+    tmp_path,
+):
+    """Conflito resolvido mantendo o conteudo do alvo: `--continue` nunca fecha
+    esse pick, por mais vezes que o operador tente."""
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("linha1\nlinha2\nlinha3\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+
+    g = new_git_subprocess(dir_)
+    base_hash = g.resolve_ref("master")
+
+    (tmp_path / "arquivo.txt").write_text("linha1\nlinha2-X\nlinha3\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch255514 muda linha2 para X")
+    commit_x = g.resolve_ref("master")
+
+    g.worktree_add("13.7.0", base_hash)
+    g.write_file("13.7.0", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y")
+
+    assert g.cherry_pick_x(commit_x) == CherryPickOutcome.CONFLITO
+    assert g.conflicted_paths() != [], "esperava conflito real antes da resolucao"
+
+    # Resolucao "fica como esta no alvo" - nao sobra diff nenhum.
+    with open(os.path.join(g._worktree_dir("13.7.0"), "arquivo.txt"), "w") as f:
+        f.write("linha1\nlinha2-Y\nlinha3\n")
+
+    assert g.continue_cherry_pick() == CherryPickOutcome.VAZIO
+    _, pendente = g.pending_cherry_pick()
+    assert pendente, "--continue nao fecha pick vazio; ele segue aberto"
+
+    g.commit_pick_vazio()
+
+    _, pendente = g.pending_cherry_pick()
+    assert not pendente
+    msg = _log_topo(g._worktree_dir("13.7.0"))
+    assert f"cherry picked from commit {commit_x}" in msg, f"mensagem = {msg!r}"
+    assert "# Conflicts:" not in msg, (
+        "o git deixa as linhas '# Conflicts:' na mensagem preparada; sem "
+        "--cleanup=strip elas viram parte do commit"
+    )

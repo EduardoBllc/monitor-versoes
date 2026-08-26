@@ -46,6 +46,10 @@ class FakeGit:
     files: dict[str, dict[str, bytes]] = field(default_factory=dict)
 
     conflict_on: dict[str, bool] = field(default_factory=dict)
+    # fixture: commit cujo pick nao deixa alteracao. Combinado com conflict_on
+    # no mesmo hash, reproduz o caso real de "resolvi o conflito e nao sobrou
+    # diff": o pick da CONFLITO e o --continue devolve VAZIO.
+    vazio_on: dict[str, bool] = field(default_factory=dict)
     file_changes: dict[str, frozenset[str]] = field(default_factory=dict)  # fixture: arquivos alterados por commit (nivel 4)
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
     # fixture: commit conflitante -> arquivo -> commits culpados por linha.
@@ -205,6 +209,12 @@ class FakeGit:
             self._pending_pick = hash
             self._conflicted = ["arquivo-conflito.txt"]
             return CherryPickOutcome.CONFLITO
+        if self.vazio_on.get(hash):
+            # Espelha o git: o pick vazio fica pendente esperando decisao
+            # (commit vazio ou abort), nao se resolve sozinho.
+            self._pending_pick = hash
+            self._conflicted = []
+            return CherryPickOutcome.VAZIO
         self._aplicar_pick(origem)
         return CherryPickOutcome.APLICADO
 
@@ -228,10 +238,26 @@ class FakeGit:
             return "", False
         return self._pending_pick, True
 
-    def continue_cherry_pick(self) -> None:
+    def continue_cherry_pick(self) -> CherryPickOutcome:
+        if self._pending_pick == "":
+            raise MotorError("nenhum cherry-pick pendente")
+        if self.vazio_on.get(self._pending_pick):
+            # Igual ao git: --continue nao fecha pick vazio e nao muda nada.
+            self._conflicted = []
+            return CherryPickOutcome.VAZIO
+        origem = self.commits[self._pending_pick]
+        self._aplicar_pick(origem)
+        self._pending_pick = ""
+        self._conflicted = []
+        return CherryPickOutcome.APLICADO
+
+    def commit_pick_vazio(self) -> None:
         if self._pending_pick == "":
             raise MotorError("nenhum cherry-pick pendente")
         origem = self.commits[self._pending_pick]
+        # Commit sem diff, mas com o trailer -x: e por ele que o nivel 2 do
+        # oraculo passa a reconhecer o commit. O fake nao modela conteudo, so
+        # o trailer, que e o que o oraculo le.
         self._aplicar_pick(origem)
         self._pending_pick = ""
         self._conflicted = []
