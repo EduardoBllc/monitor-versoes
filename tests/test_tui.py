@@ -318,8 +318,8 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
 
-    def continue_spy(deps, versao):
-        capturado.update(repo=deps.repo, versao=versao)
+    def continue_spy(deps, versao, *, allow_empty=False):
+        capturado.update(repo=deps.repo, versao=versao, allow_empty=allow_empty)
         return esperado
 
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
@@ -329,11 +329,13 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "atualizar_continue", continue_spy)
 
     resultado = tui._continuar_repo(
-        RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0"
+        RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0", allow_empty=True
     )
 
     assert resultado is esperado
-    assert capturado == {"repo": "alpha", "versao": "14.0.0"}
+    assert capturado == {"repo": "alpha", "versao": "14.0.0", "allow_empty": True}, (
+        "o allow_empty do botao 'Registrar vazio' tem de chegar ao engine"
+    )
 
 
 def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
@@ -869,6 +871,88 @@ def test_app_versao_liberada_nao_oferece_atualizar():
     asyncio.run(executar_fluxo())
 
 
+def test_app_resolucao_vazia_vira_registrar_vazio_e_confirma():
+    """Pick que nao deixou alteracao: o botao vira "Registrar vazio", e so o
+    clique nele manda o `allow_empty`.
+
+    O rotulo distinto e a confirmacao. Com "Continuar" no botao, o operador
+    assinaria um commit vazio — que marca o commit como aplicado para sempre no
+    oraculo de presenca — achando que so estava retomando o lote.
+    """
+    repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
+    versao = VersionOption(numero="14.0.0", liberada=False)
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    continuacoes: list[bool] = []
+
+    def continuar_runner(
+        opcao: RepoOption, numero: str, *, allow_empty: bool = False
+    ) -> AtualizarResult:
+        continuacoes.append(allow_empty)
+        if not allow_empty:
+            return AtualizarResult(
+                status=AtualizarStatus.VAZIO, blocked_commit="deadbeefcafe"
+            )
+        return AtualizarResult(status=AtualizarStatus.DONE, vazios=[commit])
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            atualizar_repo=lambda opcao, numero: AtualizarResult(
+                status=AtualizarStatus.BLOCKED,
+                blocked_commit="deadbeefcafe",
+                arquivos_conflito=["motor/tui.py"],
+            ),
+            continuar_repo=continuar_runner,
+            abortar_repo=lambda opcao, numero: None,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = repo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = versao
+            await pilot.pause()
+
+            await pilot.click("#verificar")
+            await app.workers.wait_for_complete()
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.click("#confirmar-sim")
+            await app.workers.wait_for_complete()
+
+            # Bloqueado por conflito: o primeiro Continuar vai sem allow_empty.
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            assert continuacoes == [False]
+            botao = app.query_one("#atualizar", Button)
+            assert _texto(botao.label).strip() == "Registrar vazio"
+            assert not botao.disabled
+            assert app.query_one("#abortar", Button).display, (
+                "descartar o commit e a outra saida: o Abortar tem de estar na tela"
+            )
+            painel = _texto(app.query_one("#resultado", Static).content)
+            assert "Resolução sem alteração" in painel, painel
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            assert continuacoes == [False, True], (
+                "o clique em Registrar vazio tem de mandar allow_empty=True; "
+                "sem isso o motor devolve VAZIO de novo e o operador fica em loop"
+            )
+            painel = _texto(app.query_one("#resultado", Static).content)
+            assert "commit vazio" in painel, painel
+            assert _texto(botao.label).strip() == "Atualizar"
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_bloqueio_transforma_atualizar_em_continuar():
     repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
     versao = VersionOption(numero="14.0.0", liberada=False)
@@ -882,7 +966,9 @@ def test_app_bloqueio_transforma_atualizar_em_continuar():
             arquivos_conflito=["motor/tui.py"],
         )
 
-    def continuar_runner(opcao: RepoOption, numero: str) -> AtualizarResult:
+    def continuar_runner(
+        opcao: RepoOption, numero: str, *, allow_empty: bool = False
+    ) -> AtualizarResult:
         continuacoes.append((opcao, numero))
         return AtualizarResult(status=AtualizarStatus.DONE, aplicados=[commit])
 
@@ -948,7 +1034,7 @@ def _app_bloqueada(
             blocked_commit="deadbeefcafe",
             arquivos_conflito=["motor/tui.py"],
         ),
-        continuar_repo=lambda opcao, numero: AtualizarResult(
+        continuar_repo=lambda opcao, numero, *, allow_empty=False: AtualizarResult(
             status=AtualizarStatus.DONE
         ),
         abortar_repo=abortar_runner,
@@ -1056,7 +1142,7 @@ def test_app_troca_de_versao_esquece_o_bloqueio():
                 blocked_commit="deadbeefcafe",
                 arquivos_conflito=["motor/tui.py"],
             ),
-            continuar_repo=lambda opcao, numero: AtualizarResult(
+            continuar_repo=lambda opcao, numero, *, allow_empty=False: AtualizarResult(
                 status=AtualizarStatus.DONE
             ),
         )

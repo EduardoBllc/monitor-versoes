@@ -90,7 +90,7 @@ class ContinueRunner(Protocol):
     commit vazio."""
 
     def __call__(
-        self, repo: RepoOption, versao: str, *, allow_empty: bool = False
+        self, repo: RepoOption, versao: str, /, *, allow_empty: bool = False
     ) -> AtualizarResult: ...
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 RepoRegistrar = Callable[[str, int], None]
@@ -375,7 +375,7 @@ class MotorTUI(App[None]):
         carregar_versoes: VersionLoader,
         executar: VerifyRunner,
         atualizar_repo: UpdateRunner | None = None,
-        continuar_repo: UpdateRunner | None = None,
+        continuar_repo: ContinueRunner | None = None,
         abortar_repo: AbortRunner | None = None,
         consultar_versao: ConsultaRunner | None = None,
         registrar_repo: RepoRegistrar | None = None,
@@ -401,6 +401,9 @@ class MotorTUI(App[None]):
         self._tem_versoes = False
         self._geracao_versoes = 0
         self._bloqueado = False
+        # Pick pendente que nao deixou alteracao: espera confirmacao explicita
+        # do operador, nao o mesmo clique de "Continuar".
+        self._vazio_pendente = False
         self._chamados_consultados: list[ChamadoConsultado] = []
 
     def compose(self) -> ComposeResult:
@@ -559,18 +562,26 @@ class MotorTUI(App[None]):
         vira "Continuar" e passa a chamar o `atualizar_continue`, em vez de
         mandar o operador para a CLI.
 
+        VAZIO usa o mesmo mecanismo com outro rotulo: o pick tambem segue aberto,
+        mas o que falta nao e resolver arquivo — e o operador dizer que a
+        resolucao sem alteracao pode entrar como commit vazio. O rotulo distinto
+        e a confirmacao, e por isso nao ha modal aqui: um clique em "Continuar"
+        marcaria o commit como aplicado para sempre no oraculo de presenca sem o
+        operador saber que assinou isso.
+
         Nao reabilita nada aqui — o `_bloquear(False)` do `finally` do worker
         vem depois e le o `_pode_atualizar` que este metodo acabou de firmar.
         """
         self._apresentar(renderizar_atualizacao(resultado), reconsultar=True)
         self._resetar_atualizacao()
-        if resultado.status != AtualizarStatus.BLOCKED:
+        if resultado.status not in (AtualizarStatus.BLOCKED, AtualizarStatus.VAZIO):
             return
         self._bloqueado = True
+        self._vazio_pendente = resultado.status == AtualizarStatus.VAZIO
         if self._continuar is not None:
             botao = self.query_one("#atualizar", Button)
-            botao.label = "Continuar"
-            botao.variant = "error"
+            botao.label = "Registrar vazio" if self._vazio_pendente else "Continuar"
+            botao.variant = "warning" if self._vazio_pendente else "error"
         self.query_one("#abortar", Button).display = self._abortar is not None
 
     def _mostrar_consulta(self, chamados: list[ChamadoConsultado]) -> None:
@@ -629,6 +640,7 @@ class MotorTUI(App[None]):
         # O pick pendente e da worktree daquela versao: sem limpar isto, o
         # clique seguinte retomaria o lote na versao errada.
         self._bloqueado = False
+        self._vazio_pendente = False
         botao = self.query_one("#atualizar", Button)
         botao.label = "Atualizar"
         botao.variant = "default"
@@ -900,7 +912,15 @@ class MotorTUI(App[None]):
             self._exibir_resultado(renderizar_status(status))
 
     def _rodar_atualizacao(self) -> None:
-        executar = self._continuar if self._bloqueado else self._atualizar
+        executar: UpdateRunner | None
+        if self._vazio_pendente and self._continuar is not None:
+            # O clique em "Registrar vazio" E a confirmacao que o
+            # `atualizar_continue` exige; sem ela ele so devolveria VAZIO de novo.
+            executar = partial(self._continuar, allow_empty=True)
+        elif self._bloqueado:
+            executar = self._continuar
+        else:
+            executar = self._atualizar
         if executar is None or self._repo is None or self._versao is None:
             return
         self._ocupar_lista()
@@ -1100,10 +1120,16 @@ def _atualizar_repo(
 
 
 def _continuar_repo(
-    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+    repo: RepoOption,
+    versao: str,
+    *,
+    allow_empty: bool = False,
+    progresso: RelatorProgresso = silencioso,
 ) -> AtualizarResult:
     with abrir_sessao() as sessao:
-        return atualizar_continue(_deps_do_repo(repo, sessao, progresso), versao)
+        return atualizar_continue(
+            _deps_do_repo(repo, sessao, progresso), versao, allow_empty=allow_empty
+        )
 
 
 def _abortar_repo(
@@ -1255,20 +1281,31 @@ def _faltantes(status: VersionStatus) -> Group | None:
 
 def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
     bloqueada = resultado.status == AtualizarStatus.BLOCKED
-    partes: list[RenderableType] = [
-        Text(
-            "● Atualização bloqueada" if bloqueada else "● Atualização concluída",
-            style="bold red" if bloqueada else "bold green",
-        )
-    ]
+    vazia = resultado.status == AtualizarStatus.VAZIO
+    if bloqueada:
+        cabecalho = Text("● Atualização bloqueada", style="bold red")
+    elif vazia:
+        cabecalho = Text("● Resolução sem alteração", style="bold yellow")
+    else:
+        cabecalho = Text("● Atualização concluída", style="bold green")
+    partes: list[RenderableType] = [cabecalho]
     aplicados = _commits_agrupados(
         resultado.aplicados,
         {commit.hash_origem: "APLICADO" for commit in resultado.aplicados},
     )
     if aplicados is not None:
         partes.append(aplicados)
-    elif not bloqueada:
+    elif not bloqueada and not vazia:
         partes.append(Text("Branch já estava atualizada.", style="dim"))
+    if resultado.vazios:
+        hashes = ", ".join(commit.hash_origem[:8] for commit in resultado.vazios)
+        partes.append(
+            Text(
+                f"{len(resultado.vazios)} commits sem alteração no alvo, "
+                f"registrados como commit vazio: {hashes}",
+                style="yellow",
+            )
+        )
     if resultado.ja_presentes:
         partes.append(
             Text(
@@ -1284,6 +1321,16 @@ def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
             Text(
                 "Resolva os arquivos e retome em Continuar (u), "
                 "ou descarte em Abortar (a).",
+                style="bold yellow",
+            )
+        )
+    if vazia:
+        partes.append(Text(f"Commit: {resultado.blocked_commit[:8]}"))
+        partes.append(
+            Text(
+                "A resolução não deixou alteração nenhuma no alvo. "
+                "Registrar vazio (u) entra com um commit vazio, com o trailer -x; "
+                "Abortar (a) descarta o commit.",
                 style="bold yellow",
             )
         )
