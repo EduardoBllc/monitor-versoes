@@ -26,6 +26,7 @@ from motor.tui import (
     descobrir_versoes,
     renderizar_chamado,
     renderizar_status,
+    sugerir_versoes,
 )
 
 
@@ -949,6 +950,252 @@ def test_app_resolucao_vazia_vira_registrar_vazio_e_confirma():
             painel = _texto(app.query_one("#resultado", Static).content)
             assert "commit vazio" in painel, painel
             assert _texto(botao.label).strip() == "Atualizar"
+
+    asyncio.run(executar_fluxo())
+
+
+def test_sugerir_versoes_deriva_da_mais_alta_por_semver():
+    """A mais alta e por semver, nao por texto: 13.10.0 e maior que 13.9.0."""
+    assert sugerir_versoes(["13.9.0", "13.6.0", "13.10.0"]) == [
+        "13.10.1",
+        "13.11.0",
+        "14.0.0",
+    ]
+
+
+def test_sugerir_versoes_sem_versao_nenhuma_nao_inventa():
+    assert sugerir_versoes([]) == []
+
+
+def _app_criar(criar_runner, versoes: list[VersionOption] | None = None) -> MotorTUI:
+    return MotorTUI(
+        carregar_repos=lambda: [_REPO_PREVIA],
+        carregar_versoes=lambda opcao: (
+            [_VERSAO_PREVIA] if versoes is None else versoes
+        ),
+        executar=_nunca_executa,
+        criar_repo=criar_runner,
+    )
+
+
+def test_criar_modal_previa_mostra_tipo_e_base():
+    """Numero certo com base errada e o erro caro do criar: a base entra em
+    `versao.base_commit` e fica definitiva. Por isso a previa e viva, enquanto
+    digita, e nao um resumo depois do sim.
+    """
+
+    async def executar_fluxo() -> None:
+        app = _app_criar(lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE))
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.press("c")
+            await pilot.pause()
+            app.screen.query_one("#criar-numero", Input).value = "14.0.1"
+            await pilot.pause()
+
+            previa = _texto(app.screen.query_one("#criar-previa", Static).content)
+            assert "cliente" in previa
+            assert "14.0.0" in previa
+
+    asyncio.run(executar_fluxo())
+
+
+def test_criar_modal_sugestao_preenche_o_campo_sem_submeter():
+    criacoes: list[str] = []
+
+    def criar_runner(repo: RepoOption, numero: str) -> AtualizarResult:
+        criacoes.append(numero)
+        return AtualizarResult(status=AtualizarStatus.DONE)
+
+    async def executar_fluxo() -> None:
+        app = _app_criar(criar_runner)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.press("c")
+            await pilot.pause()
+            # A ajustada: 14.0.0 existe, entao 14.1.0 sai da base 14.0.0.
+            await pilot.click("#criar-sugestao-1")
+            await pilot.pause()
+
+            assert app.screen.query_one("#criar-numero", Input).value == "14.1.0"
+            assert "ajustada" in _texto(
+                app.screen.query_one("#criar-previa", Static).content
+            )
+            assert criacoes == []
+
+    asyncio.run(executar_fluxo())
+
+
+def test_criar_modal_recusa_numero_que_ja_existe():
+    """Recusa aqui, nao no motor: o `criar` tambem recusa (por tag ou branch
+    remota), mas so depois de um fetch — e branch que existe so local nem chega
+    la, morre no `worktree_add`.
+    """
+
+    def nao_deve_criar(repo, numero) -> AtualizarResult:
+        raise AssertionError("numero existente nao pode chamar o criar")
+
+    async def executar_fluxo() -> None:
+        app = _app_criar(nao_deve_criar)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.press("c")
+            await pilot.pause()
+            app.screen.query_one("#criar-numero", Input).value = "14.0.0"
+            await pilot.pause()
+            await pilot.click("#criar-ok")
+            await pilot.pause()
+
+            assert "ja existe" in _texto(
+                app.screen.query_one("#criar-erro", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_criar_modal_recusa_formato_invalido():
+    async def executar_fluxo() -> None:
+        app = _app_criar(lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE))
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.press("c")
+            await pilot.pause()
+            app.screen.query_one("#criar-numero", Input).value = "14.0"
+            await pilot.pause()
+            await pilot.click("#criar-ok")
+            await pilot.pause()
+
+            assert "X.Y.Z" in _texto(
+                app.screen.query_one("#criar-erro", Static).content
+            )
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_criar_seleciona_a_versao_nova_e_consulta_ela():
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    criacoes: list[tuple[RepoOption, str]] = []
+    consultas: list[str] = []
+
+    def criar_runner(repo: RepoOption, numero: str) -> AtualizarResult:
+        criacoes.append((repo, numero))
+        return AtualizarResult(status=AtualizarStatus.DONE, aplicados=[commit])
+
+    def consultar_runner(repo: RepoOption, numero: str) -> list[ChamadoConsultado]:
+        consultas.append(numero)
+        return [
+            ChamadoConsultado(chamado="255514", estado="aplicado", commits=[commit])
+        ]
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+            executar=_nunca_executa,
+            consultar_versao=consultar_runner,
+            criar_repo=criar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+            await app.workers.wait_for_complete()
+            assert consultas == ["14.0.0"]
+
+            await pilot.press("c")
+            await pilot.pause()
+            await pilot.click("#criar-sugestao-1")
+            await pilot.pause()
+            await pilot.click("#criar-ok")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert criacoes == [(_REPO_PREVIA, "14.1.0")]
+            assert "Atualização concluída" in _texto(
+                app.screen.query_one("#modal-conteudo", Static).content
+            )
+
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            # A versao nova entrou na lista, esta selecionada e e ela que a
+            # consulta recarregada leu.
+            assert app.query_one("#versao", Select).selection == VersionOption(
+                numero="14.1.0", liberada=False
+            )
+            assert consultas == ["14.0.0", "14.1.0"]
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
+    """Lote do `criar` que trava tem de deixar Continuar apontando para a versao
+    recem-criada — o pick pendente esta na worktree dela, nao na que estava
+    selecionada quando o modal abriu.
+    """
+    continuacoes: list[str] = []
+
+    def criar_runner(repo: RepoOption, numero: str) -> AtualizarResult:
+        return AtualizarResult(
+            status=AtualizarStatus.BLOCKED,
+            blocked_commit="deadbeefcafe",
+            arquivos_conflito=["motor/tui.py"],
+        )
+
+    def continuar_runner(
+        repo: RepoOption, numero: str, /, *, allow_empty: bool = False
+    ) -> AtualizarResult:
+        continuacoes.append(numero)
+        return AtualizarResult(status=AtualizarStatus.DONE)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+            executar=_nunca_executa,
+            atualizar_repo=lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE),
+            continuar_repo=continuar_runner,
+            criar_repo=criar_runner,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.press("c")
+            await pilot.pause()
+            await pilot.click("#criar-sugestao-1")
+            await pilot.pause()
+            await pilot.click("#criar-ok")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            botao = app.query_one("#atualizar", Button)
+            assert _texto(botao.label).strip() == "Continuar"
+
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+
+            assert continuacoes == ["14.1.0"]
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_sem_runner_de_criacao_ignora_o_atalho():
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+            executar=_nunca_executa,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+
+            await pilot.press("c")
+            await pilot.pause()
+
+            assert not app.screen.query("#criar-numero")
 
     asyncio.run(executar_fluxo())
 

@@ -39,7 +39,7 @@ from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
-from motor.domain.version import chave
+from motor.domain.version import chave, inferir_base, inferir_tipo
 from motor.engine.atualizar import (
     AtualizarResult,
     AtualizarStatus,
@@ -48,6 +48,7 @@ from motor.engine.atualizar import (
     atualizar_continue,
 )
 from motor.engine.consultar import ChamadoConsultado, consultar
+from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import MotorError, NaoEncontrado, formatar_com_notas
@@ -82,6 +83,7 @@ VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
 AbortRunner = Callable[[RepoOption, str], None]
+CriarRunner = Callable[[RepoOption, str], AtualizarResult]
 
 
 class ContinueRunner(Protocol):
@@ -285,6 +287,131 @@ class ConfirmarModal(ModalScreen[bool]):
         self.dismiss(evento.button.id == "confirmar-sim")
 
 
+def sugerir_versoes(existentes: list[str]) -> list[str]:
+    """Os tres proximos numeros a partir da mais alta que existe, um por tipo.
+
+    Ordem de uso, nao de magnitude: cliente e o caso do dia a dia, fechada e o
+    corte raro. Lista vazia (repo sem nenhuma versao) nao sugere nada — a
+    primeira versao de um repo e digitada, porque nao ha de onde derivar.
+    """
+    if not existentes:
+        return []
+    x, y, z = max(chave(numero) for numero in existentes)
+    return [f"{x}.{y}.{z + 1}", f"{x}.{y + 1}.0", f"{x + 1}.0.0"]
+
+
+class CriarModal(ModalScreen["str | None"]):
+    """Numero da versao nova, com o tipo e a base que ele resolveria.
+
+    A prévia e o ponto: numero certo com base errada e o erro caro deste
+    comando, porque a base entra em `versao.base_commit` e fica definitiva. E
+    ela nao custa git nenhum — `inferir_tipo` e `inferir_base` sao funcoes puras
+    e a lista de versoes existentes o app ja carregou para o Select.
+
+    Este modal e a confirmacao do `criar`: nao ha previa do lote de commits para
+    mostrar depois, porque o `verificar` de dentro do `atualizar` precisa da
+    branch, e a branch e justamente o que ainda nao existe.
+    """
+
+    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    DEFAULT_CSS = """
+    CriarModal { align: center middle; }
+    CriarModal > Vertical {
+        width: 68;
+        height: auto;
+        padding: 1 2;
+        border: round $warning;
+        background: $surface;
+    }
+    CriarModal .rotulo { height: auto; color: $text-muted; }
+    #criar-sugestoes { height: auto; padding-top: 1; }
+    #criar-sugestoes Button { width: 20; margin-right: 1; }
+    #criar-previa { height: auto; padding-top: 1; }
+    #criar-erro { height: auto; color: $error; }
+    #criar-aviso { height: auto; padding-top: 1; color: $text-muted; }
+    #criar-botoes { height: auto; align-horizontal: right; padding-top: 1; }
+    #criar-botoes Button { margin-left: 1; }
+    """
+
+    def __init__(self, existentes: list[str]) -> None:
+        super().__init__()
+        self._existentes = existentes
+        self._sugestoes = sugerir_versoes(existentes)
+
+    def compose(self) -> ComposeResult:
+        with Vertical() as caixa:
+            caixa.border_title = "Nova versão"
+            caixa.border_subtitle = "esc para cancelar"
+            yield Static("número", classes="rotulo")
+            yield Input(placeholder="X.Y.Z", id="criar-numero")
+            with Horizontal(id="criar-sugestoes"):
+                for indice, numero in enumerate(self._sugestoes):
+                    tipo = inferir_tipo(numero).name.lower()
+                    yield Button(f"{numero} · {tipo}", id=f"criar-sugestao-{indice}")
+            yield Static(id="criar-previa")
+            yield Static(id="criar-erro")
+            yield Static(
+                "A branch sai da base, o VERSAO é commitado e o lote vai para a "
+                "origin.",
+                id="criar-aviso",
+            )
+            with Horizontal(id="criar-botoes"):
+                yield Button("Cancelar", id="criar-cancelar")
+                yield Button("Criar e publicar", id="criar-ok", variant="warning")
+
+    def action_cancelar(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, evento: Button.Pressed) -> None:
+        id_botao = evento.button.id or ""
+        if id_botao.startswith("criar-sugestao-"):
+            # Escreve no campo em vez de submeter direto: a sugestao e um atalho
+            # de digitacao, e o operador ainda ve tipo e base antes do sim.
+            self.query_one("#criar-numero", Input).value = self._sugestoes[
+                int(id_botao.rsplit("-", 1)[1])
+            ]
+            return
+        if id_botao == "criar-ok":
+            self._confirmar()
+            return
+        self.dismiss(None)
+
+    def on_input_changed(self, evento: Input.Changed) -> None:
+        previa, erro = self._avaliar(evento.value)
+        self.query_one("#criar-previa", Static).update(previa)
+        self.query_one("#criar-erro", Static).update(erro)
+
+    def on_input_submitted(self, evento: Input.Submitted) -> None:
+        self._confirmar()
+
+    def _avaliar(self, numero: str) -> tuple[str, str]:
+        """(previa, erro) do que esta digitado. Campo vazio nao e erro ainda."""
+        numero = numero.strip()
+        if not numero:
+            return "", ""
+        try:
+            tipo = inferir_tipo(numero)
+        except MotorError as erro:
+            return "", str(erro)
+        if numero in self._existentes:
+            return "", f"versao {numero} ja existe - use Atualizar"
+        try:
+            base = inferir_base(numero, self._existentes)
+        except MotorError as erro:
+            return "", str(erro)
+        return f"{tipo.name.lower()} · base {base}", ""
+
+    def _confirmar(self) -> None:
+        numero = self.query_one("#criar-numero", Input).value.strip()
+        previa, erro = self._avaliar(numero)
+        if erro or not previa:
+            self.query_one("#criar-erro", Static).update(
+                erro or "informe o número da versão"
+            )
+            return
+        self.dismiss(numero)
+
+
 def renderizar_progresso(progresso: Progresso, quadro: int = 0) -> Group:
     """Fase em cima, barra e contagem lado a lado embaixo.
 
@@ -346,6 +473,7 @@ class MotorTUI(App[None]):
         ("v", "verificar", "Verificar"),
         ("u", "atualizar", "Atualizar"),
         ("a", "abortar", "Abortar"),
+        ("c", "criar", "Nova versão"),
         ("n", "cadastrar", "Cadastrar repo"),
     ]
     CSS = """
@@ -379,6 +507,7 @@ class MotorTUI(App[None]):
         abortar_repo: AbortRunner | None = None,
         consultar_versao: ConsultaRunner | None = None,
         registrar_repo: RepoRegistrar | None = None,
+        criar_repo: CriarRunner | None = None,
         slot: SlotProgresso | None = None,
     ) -> None:
         super().__init__()
@@ -394,6 +523,7 @@ class MotorTUI(App[None]):
         self._abortar = abortar_repo
         self._consultar = consultar_versao
         self._registrar = registrar_repo
+        self._criar = criar_repo
         self._repo: RepoOption | None = None
         self._versao: VersionOption | None = None
         self._ocupado = False
@@ -405,6 +535,10 @@ class MotorTUI(App[None]):
         # do operador, nao o mesmo clique de "Continuar".
         self._vazio_pendente = False
         self._chamados_consultados: list[ChamadoConsultado] = []
+        # Numeros ja existentes, para as sugestoes e a recusa do CriarModal. Sai
+        # daqui e nao do Select porque o `criar` os precisa com o modal aberto,
+        # quando ler o widget seria ler a tela em vez do estado.
+        self._versoes: list[VersionOption] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -723,6 +857,7 @@ class MotorTUI(App[None]):
         self._tem_versoes = False
         self._geracao_versoes += 1
         self._resetar_atualizacao()
+        self._versoes = []
         versoes = self.query_one("#versao", Select)
         versoes.set_options([])
         versoes.value = Select.NULL
@@ -765,6 +900,7 @@ class MotorTUI(App[None]):
         select = self.query_one("#versao", Select)
         select.set_options([(opcao.numero, opcao) for opcao in opcoes])
         select.query_one(OptionList).disable_option_at_index(0)
+        self._versoes = opcoes
         self._tem_versoes = bool(opcoes)
         self._bloquear(False)
         self._exibir_resultado("Selecione uma versão.")
@@ -825,6 +961,62 @@ class MotorTUI(App[None]):
         self._exibir_resultado(f"repo '{nome}' cadastrado.")
         self._ocupar_resultado()
         self.carregar_repos_worker()
+
+    def action_criar(self) -> None:
+        if self._ocupado or self._criar is None or self._repo is None:
+            return
+        if not self._repo.disponivel:
+            return
+        self.push_screen(
+            CriarModal([opcao.numero for opcao in self._versoes]), self._criar_versao
+        )
+
+    def _criar_versao(self, numero: str | None) -> None:
+        if numero is None or self._criar is None or self._repo is None:
+            return
+        self._exibir_resultado(f"Criando {self._repo.nome} {numero}…")
+        self._ocupar_resultado()
+        self._bloquear(True)
+        self.criar_worker(self._criar, self._repo, numero)
+
+    @work(thread=True, exclusive=True, group="executar")
+    def criar_worker(
+        self, executar: CriarRunner, repo: RepoOption, numero: str
+    ) -> None:
+        try:
+            resultado = executar(repo, numero)
+        except Exception as erro:
+            self.call_from_thread(self._falha, erro, True)
+        else:
+            self.call_from_thread(self._mostrar_criacao, numero, resultado)
+        finally:
+            self.call_from_thread(self._bloquear, False)
+
+    def _mostrar_criacao(self, numero: str, resultado: AtualizarResult) -> None:
+        """A versao criada passa a ser a selecionada, sem disparar o
+        `_selecionar_versao`.
+
+        Nao e conveniencia: o `criar` termina chamando o `atualizar`, entao o
+        lote pode voltar BLOCKED ou VAZIO, e retomar o pick depende de
+        `self._versao` apontar para a versao nova. Deixar o Select disparar a
+        selecao chamaria `_resetar_atualizacao`, que apaga exatamente o bloqueio
+        que o `_mostrar_atualizacao` esta a um passo de estabelecer.
+        """
+        nova = VersionOption(numero=numero, liberada=False)
+        self._versoes = sorted(
+            [nova, *self._versoes], key=lambda o: chave(o.numero), reverse=True
+        )
+        select = self.query_one("#versao", Select)
+        with self.prevent(Select.Changed):
+            select.set_options([(opcao.numero, opcao) for opcao in self._versoes])
+            select.query_one(OptionList).disable_option_at_index(0)
+            select.value = nova
+        self._versao = nova
+        self._tem_versoes = True
+        auditoria = self.query_one("#auditar", Checkbox)
+        auditoria.value = False
+        auditoria.display = False
+        self._mostrar_atualizacao(resultado)
 
     def action_verificar(self) -> None:
         self._iniciar_verificacao()
@@ -1139,6 +1331,13 @@ def _abortar_repo(
         atualizar_abort(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def _criar_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> AtualizarResult:
+    with abrir_sessao() as sessao:
+        return criar(_deps_do_repo(repo, sessao, progresso), versao)
+
+
 def _consultar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> list[ChamadoConsultado]:
@@ -1161,6 +1360,7 @@ def run_tui() -> None:
         partial(_abortar_repo, progresso=slot.relatar),
         partial(_consultar_repo, progresso=slot.relatar),
         _registrar_no_banco,
+        partial(_criar_repo, progresso=slot.relatar),
         slot=slot,
     ).run()
 
