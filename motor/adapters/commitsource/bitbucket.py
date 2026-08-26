@@ -2,7 +2,8 @@
 
 Mais robusto que o grep de mensagem: associa commit->chamado pela PR (título
 que começa com `ch<chamado>`, ou nome da branch de origem que contém
-`ch<chamado>`), não pela formatação do trailer que o dev pode errar.
+`ch<chamado>` — caixa ignorada nos dois), não pela formatação do trailer que o
+dev pode errar.
 Considera só PRs MERGED e só commits que já estão na master (is_ancestor) —
 commit fora da master não entra.
 
@@ -43,13 +44,18 @@ _PADRAO_REMOTE = re.compile(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$")
 
 
 def _padrao_do_chamado(chamado: str) -> re.Pattern[str]:
-    """`ch<numero>` com fronteira a direita.
+    """`ch<numero>` com fronteira a direita, sem olhar caixa.
 
     O `(?!\\d)` e o conserto de um bug antigo: com `startswith`/`in` crus, o
     chamado 255514 casava com a PR de 2555145 — nada via onde o numero
     terminava, e o chamado curto roubava a entrega do longo.
+
+    `IGNORECASE` e o conserto do segundo: a PR "CH254473 - ..." nao casava, e
+    como a PR anterior do mesmo chamado casava, a cadeia (§ChainCommitSource)
+    dava o chamado por resolvido e nem o grep via a segunda entrega. O prefixo
+    e convencao humana digitada a mao; a caixa dele nao e dado.
     """
-    return re.compile(re.escape("ch" + chamado) + r"(?!\d)")
+    return re.compile(re.escape("ch" + chamado) + r"(?!\d)", re.IGNORECASE)
 
 
 def _casa(pr: PrIndex, padrao: re.Pattern[str]) -> bool:

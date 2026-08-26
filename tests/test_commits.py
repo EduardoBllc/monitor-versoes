@@ -41,3 +41,18 @@ def test_ordenar_por_data_asc():
         CommitRef(hash_origem="velho", commit_date=d),
     ]
     assert [c.hash_origem for c in ordenar_por_data(commits)] == ["velho", "novo"]
+
+
+def test_match_exato_ignora_caixa_do_prefixo():
+    # "CH254473." existe no historico real tanto quanto "ch254473." — o prefixo
+    # e digitado a mao. O `-i` de search_commits traz o candidato; perde-lo aqui
+    # so mudaria o lugar do falso-negativo.
+    candidatos = [
+        CommitRef(hash_origem="a", msg="CH254473. mais tempos para sessoes"),
+        CommitRef(hash_origem="b", msg="Ch2544731 outro chamado"),
+    ]
+    assert [c.hash_origem for c in match_exato(candidatos, "254473")] == ["a"]
+
+
+def test_extrair_chamado_ignora_caixa():
+    assert extrair_chamado("CH254473 - ajuste") == "254473"

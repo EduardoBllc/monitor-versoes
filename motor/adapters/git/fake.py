@@ -123,7 +123,8 @@ class FakeGit:
             if c is None:
                 break
             for p in padroes:
-                if p != "" and p in c.msg:
+                # casefold em par com o `-i` do adapter real.
+                if p != "" and p.casefold() in c.msg.casefold():
                     resultado.append(
                         CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
                     )

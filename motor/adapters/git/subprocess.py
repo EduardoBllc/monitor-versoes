@@ -370,6 +370,10 @@ class GitSubprocess:
             "log",
             refs,
             "--no-merges",
+            # -i: o `ch<numero>` na mensagem e digitado a mao e aparece como
+            # "CH254473." no historico real. O match exato por word-boundary
+            # (match_exato) tambem ignora caixa — os dois andam juntos.
+            "-i",
             f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}",
         ]
         for p in padroes:

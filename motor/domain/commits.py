@@ -6,16 +6,21 @@ import re
 
 from motor.domain.types import CommitRef
 
-padrao_chamado = re.compile(r"\bch(\d+)\b")
+# IGNORECASE: o prefixo e convencao digitada a mao, e "CH254473." aparece no
+# historico real tanto quanto "ch254473." — a caixa nao e dado.
+padrao_chamado = re.compile(r"\bch(\d+)\b", re.IGNORECASE)
 
 
 def match_exato(candidatos: list[CommitRef], chamado: str) -> list[CommitRef]:
     """Filtra candidatos de grep por word-boundary: `ch5514` nao pode casar
     dentro de `ch255514`. search_commits do GitRepo so traz candidatos brutos.
+
+    Sem olhar caixa, em par com o `-i` do `search_commits`: quem traz o
+    candidato "CH5514" nao pode perde-lo aqui.
     """
     if not chamado:
         return []
-    padrao = re.compile(r"\bch" + re.escape(chamado) + r"\b")
+    padrao = re.compile(r"\bch" + re.escape(chamado) + r"\b", re.IGNORECASE)
     return [c for c in candidatos if padrao.search(c.msg)]
 
 

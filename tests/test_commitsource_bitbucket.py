@@ -1,7 +1,7 @@
 """BitbucketPRCommitSource: acha commits do chamado via PR merged do Bitbucket Cloud.
 
 Regra: PR MERGED cujo titulo COMECA com `ch<chamado>`, OU cuja
-source.branch.name CONTEM `ch<chamado>`. So conta commit que esta na master
+source.branch.name CONTEM `ch<chamado>` — sem olhar caixa. So conta commit que esta na master
 (is_ancestor) — commit fora da master nao entra. httpx.MockTransport no
 lugar de servidor real.
 """
@@ -570,3 +570,31 @@ def test_marca_nao_avanca_se_a_varredura_falhar_no_meio():
         _fonte(handler, _git_com_master("c1"), estado).resolve(["255514"])
 
     assert estado.marca_varredura(REPO_ESTADO) is None
+
+
+def test_pr_com_prefixo_em_maiuscula_casa():
+    """A 2a PR de um chamado com o titulo em caixa alta ("CH255514 - ...") nao
+    casava, e o buraco era silencioso: a 1a PR casava, a cadeia dava o chamado
+    por resolvido e o grep — que teria achado o commit — nunca rodava. A versao
+    ficava verde sem a segunda entrega.
+    """
+    g = _git_com_master("c1", "c2")
+    prs = [
+        _pr(7, branch="VB-2458"),
+        {
+            "id": 9,
+            "title": "CH255514 - Ajuste para adicionar mais horarios",
+            "source": {"branch": {"name": "VB-2458"}},
+            "updated_on": "2026-08-25T10:00:00+00:00",
+        },
+    ]
+    commits = {
+        7: [_commit_bruto("c1")],
+        9: [_commit_bruto("c2", dia=5, parents=["c1"])],
+    }
+    fonte = _fonte(_handler_pr(prs, commits), g)
+
+    resultado = fonte.resolve(["255514"])
+
+    hashes = [c.hash_origem for c in resultado.get("255514", [])]
+    assert hashes == ["c1", "c2"], f"faltou a PR de titulo em caixa alta: {hashes}"
