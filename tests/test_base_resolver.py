@@ -105,3 +105,67 @@ def test_bug_do_adapter_propaga_e_nao_vira_base_nao_encontrada():
     # curto-circuita no primeiro: insistir no segundo candidato depois de um bug
     # so troca a excecao util por "resolvendo ref 13.6.0: ...".
     assert tentativas == ["13.6.0"], f"tentou de novo apos o bug: {tentativas}"
+
+
+def test_base_de_versao_existente_e_o_ponto_de_corte_nao_o_tip_da_base():
+    """A base de uma versao que JA existe e onde ela foi cortada, nao onde a
+    ref-base esta agora.
+
+    `X.0.0` sai do master, e o master anda todo dia. Resolver o nome puro dava
+    o tip do momento em que o motor viu a versao pela primeira vez — na 15.0.0
+    do vendabemweb, 20 dias depois do corte real. O corte e o que decide quais
+    liberadas voltam a ser fonte de alvo (`liberadas_no_alvo`, spec §2): com o
+    corte 20 dias adiantado, dez versoes 14.x liberadas nesse intervalo sairam
+    do alvo em silencio, levando 85 chamados junto.
+    """
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    g = FakeGit()
+    g.add_commit("corte", "", "master no ponto de corte", agora)
+    g.add_commit("master_depois", "corte", "master andou depois do corte", agora)
+    g.add_commit("trabalho_15", "corte", "commit da 15.0.0", agora)
+    g.set_branch("master", "master_depois")
+    g.set_branch("15.0.0", "trabalho_15")
+
+    base = BaseResolver(git=g).resolve("15.0.0")
+
+    assert (base.ref, base.commit) == ("master", "corte"), (
+        f"base = {base!r}; quer o ponto de corte 'corte', nao o tip 'master_depois'"
+    )
+
+
+def test_base_de_versao_que_ainda_nao_existe_e_o_tip_da_ref_base():
+    """O outro lado da mesma regra, e o caso do `criar`: a versao vai nascer
+    agora, entao o tip da ref-base E o ponto de corte. Sem esta metade, `criar`
+    quebraria — nao ha ref da versao para cruzar com a base.
+    """
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    g = FakeGit()
+    g.add_commit("corte", "", "master no ponto de corte", agora)
+    g.add_commit("master_depois", "corte", "master andou depois do corte", agora)
+    g.set_branch("master", "master_depois")
+
+    base = BaseResolver(git=g).resolve("15.0.0")
+
+    assert base.commit == "master_depois", (
+        f"base.commit = {base.commit!r}; versao inexistente corta do tip"
+    )
+
+
+def test_base_de_ajustada_e_o_corte_mesmo_com_commit_novo_na_anterior():
+    """Vale tambem para a ajustada, que e a maioria: a 14.9.0 recebe um hotfix
+    depois de a 14.10.0 ter sido cortada dela, e resolver a tag daria esse
+    hotfix como base — um commit que a 14.10.0 nunca teve.
+    """
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    g = FakeGit(tags={"14.9.0": True})
+    g.add_commit("corte", "", "tip da 14.9.0 no corte", agora)
+    g.add_commit("hotfix_149", "corte", "hotfix na 14.9.0 depois do corte", agora)
+    g.add_commit("trabalho_1410", "corte", "commit da 14.10.0", agora)
+    g.set_branch("14.9.0", "hotfix_149")
+    g.set_branch("14.10.0", "trabalho_1410")
+
+    base = BaseResolver(git=g).resolve("14.10.0")
+
+    assert (base.ref, base.commit) == ("14.9.0", "corte"), (
+        f"base = {base!r}; quer o corte 'corte', nao o hotfix 'hotfix_149'"
+    )

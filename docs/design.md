@@ -60,6 +60,18 @@ presente(commit_origem, branch):
 Item **2** é o principal: resiste a conflito resolvido, que muda o diff. Item **1** cobre
 merge direto. Item **3** existe só para commits anteriores à convenção `-x`.
 
+O **2 varre a branch inteira**; só o **3** se limita a `base..branch`. A assimetria é de
+custo: `git log --grep` numa branch de 39k commits é uma travessia de 0,2s, enquanto o
+patch-id de cada commit dela são segundos. Limitar o 2 ao range fazia entrega **herdada da
+base** aparecer como faltante — o commit que carrega o trailer entrou numa versão anterior,
+abaixo do corte (ch254994 na 14.11.0 do vendabemweb: 11 falsos faltantes).
+
+Fora dos três, uma última passada **dentro do lote**: candidato ausente cujo patch-id é
+igual ao de um candidato **presente** teve o conteúdo aplicado sob outro hash de origem.
+Branch de PR rebasada e depois mergeada de volta deixa dois commits de origem com patch
+idêntico, e um pick só leva os dois. É o item 3 com o alcance que o custo permite — o lote
+tem dezenas de hashes, não 39 mil.
+
 ## 3. O estado: por que existe e por que é descartável
 
 Mora em Postgres, escopado por repo. Guarda duas coisas de natureza diferente:
@@ -178,6 +190,25 @@ X.0.0        → master
 X.Y.0 (Y>0)  → maior X.(Y-1..0).0 existente         (13.7.0 → 13.6.0)
 X.Y.Z (Z>0)  → X.Y.(Z-1) se existir, senão X.Y.0    (específica de cliente)
 ```
+
+Isso resolve a **ref**. O **commit** gravado em `versao.base_commit` é o **ponto de
+corte**, não o tip dessa ref:
+
+```
+base_commit(V) = merge-base(ref_base, V)   se V já existe como ref
+                 tip(ref_base)             se não existe — é o `criar`, e a branch nasce dele agora
+```
+
+A ref-base anda depois do corte: o `master` todo dia, e uma ajustada sempre que recebe
+hotfix. Resolver só a ref gravava o tip do dia em que o motor viu a versão pela primeira
+vez, e essa data vira o `corte` de `liberadas_no_alvo` (§4) — na `15.0.0` do vendabemweb
+foram 20 dias de erro, que tiraram do alvo dez `14.x` liberadas no intervalo e 85 chamados
+com elas, sem nada ficar vermelho. Base errada também alarga `base..branch` no nível 3 do
+oráculo e desloca o pai da simulação de conflito.
+
+**`merge-base` que falha não cai para o tip.** Histórico sem ancestral comum diz que a
+ref-base está errada; cair para o tip devolveria o mesmo veneno silencioso, que dura a vida
+inteira da versão porque a base é gravada uma vez e depois é autoritativa (§3).
 
 ## 6. Duas travas: `publicada` e `liberada`
 

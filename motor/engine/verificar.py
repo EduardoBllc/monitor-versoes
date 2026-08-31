@@ -233,6 +233,19 @@ def verificar(
             if oracle.suspeita_por_conteudo(hash_, base_commit, ref_alvo) is not None:
                 suspeitos_conteudo.append(c)
 
+    # Segunda passada, agora com o lote todo resolvido: candidato ausente cujo
+    # patch e identico ao de um candidato presente ja teve o conteudo aplicado
+    # sob outro hash de origem — cobra-lo mandaria o operador aplicar o que nao
+    # tem mais o que aplicar (o pick sairia vazio). O gemeo aparece quando a
+    # branch da PR foi rebasada e depois mergeada de volta.
+    ja_presentes = {h: p for h, p in presentes.items() if p != Presence.AUSENTE}
+    for hash_ in [h for h, p in presentes.items() if p == Presence.AUSENTE]:
+        if oracle.duplicata_de_presente(hash_, ja_presentes):
+            presentes[hash_] = Presence.PATCH_ID
+    suspeitos_conteudo = [
+        c for c in suspeitos_conteudo if presentes[c.hash_origem] == Presence.AUSENTE
+    ]
+
     # Simula o mesmo lote ordenado que `atualizar` executa. Usar sempre o tip
     # original faz um commit dependente parecer modify/delete quando o pai
     # tambem esta faltando, embora o pai seja aplicado antes dele.

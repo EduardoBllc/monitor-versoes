@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef, Presence
@@ -21,6 +22,12 @@ class PresenceOracle:
         default_factory=dict, repr=False, compare=False
     )
     _patch_id_cache: dict[str, str | None] = field(default_factory=dict, repr=False, compare=False)
+    # branch -> commits da branch INTEIRA que carregam trailer de cherry-pick.
+    # Uma varredura por branch (`git log --grep`, ~0,2s em 39k commits) que o
+    # lote de candidatos reusa.
+    _cherry_picked_cache: dict[str, list[CommitRef] | None] = field(
+        default_factory=dict, repr=False, compare=False
+    )
     _changed_files_cache: dict[str, frozenset[str] | None] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -34,21 +41,27 @@ class PresenceOracle:
     def presente(self, hash_origem: str, base: str, branch: str) -> Presence:
         """Implementa o oraculo de 3 niveis (§2): ancestral direto, trailer de
         cherry-pick, e por ultimo patch-id (fallback legado). base delimita o
-        intervalo varrido para os niveis 2 e 3 (desvio 8 do topo deste plano).
+        intervalo varrido pelo nivel 3 — patch-id de 39k commits e proibitivo, e
+        §2 ja escreve o nivel 3 como `base..branch`.
+
+        O nivel 2 varre a branch inteira, como §2 o escreve. Limita-lo a
+        `base..branch` fazia commit herdado da base aparecer como faltante: o
+        commit que carrega o trailer entrou numa versao anterior, abaixo do
+        corte (chamado 254994 na 14.11.0 do vendabemweb, 11 falsos faltantes).
         """
         if self.git.is_ancestor(hash_origem, branch):
             return Presence.ANCESTRAL
+
+        trailer = "cherry picked from commit " + hash_origem
+        for c in self._cherry_picked(branch) or []:
+            if trailer in c.msg:
+                return Presence.TRAILER
 
         commits = self._commits_in_range(base, branch)
         if commits is None:
             # nao deu pra confirmar (ex.: objeto sumiu do historico) - trata
             # como ausente em vez de propagar, per §2 "senao -> ausente".
             return Presence.AUSENTE
-
-        trailer = "cherry picked from commit " + hash_origem
-        for c in commits:
-            if trailer in c.msg:
-                return Presence.TRAILER
 
         patch_id_origem = self._patch_id(hash_origem)
         if patch_id_origem is None:
@@ -62,6 +75,28 @@ class PresenceOracle:
             if pid is not None and pid == patch_id_origem:
                 return Presence.PATCH_ID
         return Presence.AUSENTE
+
+    def duplicata_de_presente(
+        self, hash_origem: str, presentes: Mapping[str, Presence]
+    ) -> bool:
+        """`hash_origem` tem o mesmo patch de algum candidato do lote que ja
+        esta presente — ou seja, o conteudo dele esta na branch, aplicado sob
+        outro hash de origem.
+
+        Branch rebasada e depois mergeada de volta deixa dois commits de origem
+        com patch identico; o pick de um deles levou o conteudo dos dois. O
+        nivel 3 do oraculo nao alcanca esse caso quando o pick esta abaixo da
+        base, e varrer o patch-id da branch inteira custaria segundos (39k
+        commits no vendabemweb). O lote de candidatos e dezenas, e os patch-ids
+        dele ja estao memoizados aqui.
+        """
+        pid = self._patch_id(hash_origem)
+        if pid is None:
+            return False
+        return any(
+            p != Presence.AUSENTE and self._patch_id(h) == pid
+            for h, p in presentes.items()
+        )
 
     def suspeita_por_conteudo(self, hash_origem: str, base: str, branch: str) -> CommitRef | None:
         """Nivel 4 (fora do oraculo de presenca formal - so alerta, nao conta
@@ -102,6 +137,22 @@ class PresenceOracle:
             except MotorError:
                 self._changed_files_cache[hash_] = None
         return self._changed_files_cache[hash_]
+
+    def _cherry_picked(self, branch: str) -> list[CommitRef] | None:
+        """Commits da branch inteira cujo texto tem trailer de cherry-pick.
+
+        Prefixo generico numa varredura so em vez de um `git log --grep=<hash>`
+        por candidato: o lote de um `verificar` tem dezenas de hashes, e cada
+        um custaria uma travessia inteira do historico.
+        """
+        if branch not in self._cherry_picked_cache:
+            try:
+                self._cherry_picked_cache[branch] = self.git.search_commits(
+                    ["cherry picked from commit "], branch
+                )
+            except MotorError:
+                self._cherry_picked_cache[branch] = None
+        return self._cherry_picked_cache[branch]
 
     def _commits_in_range(self, base: str, branch: str) -> list[CommitRef] | None:
         chave = (base, branch)

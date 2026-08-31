@@ -45,13 +45,16 @@ def test_parse_workspace_repo(url, esperado):
 def _git_com_master(
     *hashes_na_master: str, classe: type[FakeGit] = FakeGit
 ) -> FakeGit:
-    # encadeia os hashes numa branch master (o primeiro e a raiz).
+    # encadeia os hashes numa branch master (o primeiro e a raiz). As duas refs
+    # no mesmo tip: e o que um clone recem-fetchado tem, e a fonte le a de
+    # rastreamento.
     g = classe()
     t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
     anterior = ""
     for h in hashes_na_master:
         g.add_commit(h, anterior, f"commit {h}", t0)
         anterior = h
+    g.set_branch("origin/master", anterior)
     g.set_branch("master", anterior)
     return g
 
@@ -123,6 +126,30 @@ def test_pr_titulo_prefixo_so_commits_na_master():
     hashes = [c.hash_origem for c in commits_achados]
     assert hashes == ["c1"], f"so c1 esta na master, veio {hashes}"
     assert commits_achados[0].chamado == "255514", "faltou carimbar"
+
+
+def test_pr_conta_commit_que_so_chegou_no_origin_master():
+    """Regressao (chamado 257270, PR 1174): `git fetch` avanca origin/master e
+    nunca o head local, entao filtrar por `master` escondia entrega mergeada
+    depois do ultimo checkout+pull da maquina. O chamado tinha uma entrega
+    antiga, essa sim no head local, e com ela a fonte de PR devolvia commits —
+    a cadeia (ChainCommitSource) dava o chamado por resolvido e nem o grep, que
+    le origin/master, via a segunda.
+    """
+    g = _git_com_master("c1")
+    g.add_commit("c2", "c1", "commit c2", datetime.datetime(2024, 1, 2, tzinfo=datetime.timezone.utc))
+    g.set_branch("origin/master", "c2")  # local `master` fica em c1
+    prs = [{"id": 1174, "title": "ch257270 - ajusta", "source": {"branch": {"name": "feature/x"}}}]
+    commits = {
+        1174: [
+            {"hash": "c2", "date": "2024-01-02T10:00:00+00:00", "message": "ajusta", "parents": [{"hash": "c1"}]},
+        ]
+    }
+    fonte = _fonte(_handler_pr(prs, commits), g)
+
+    resultado = fonte.resolve(["257270"])
+
+    assert [c.hash_origem for c in resultado.get("257270", [])] == ["c2"]
 
 
 def test_pr_casa_por_nome_da_branch():

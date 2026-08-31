@@ -4,8 +4,8 @@ Mais robusto que o grep de mensagem: associa commit->chamado pela PR (título
 que começa com `ch<chamado>`, ou nome da branch de origem que contém
 `ch<chamado>` — caixa ignorada nos dois), não pela formatação do trailer que o
 dev pode errar.
-Considera só PRs MERGED e só commits que já estão na master (is_ancestor) —
-commit fora da master não entra.
+Considera só PRs MERGED e só commits que já estão em `origin/master`
+(is_ancestor) — commit fora dela não entra.
 
 O `workspace/repo` sai da URL do remote `origin` na primeira busca — construir
 esta fonte nao toca o git.
@@ -89,7 +89,11 @@ class BitbucketPRCommitSource:
     repo: str = ""
     remote: str = "origin"
     base_url: str = ""
-    master_ref: str = "master"
+    # origin/master, nao o head local: `git fetch` avanca a ref de rastreamento
+    # e NUNCA o head local, entao filtrar por `master` esconderia toda PR
+    # mergeada depois do ultimo checkout+pull da maquina (chamado 257270, PR
+    # 1174). E a mesma ref que o GrepCommitSource le.
+    master_ref: str = "origin/master"
     client: httpx.Client | None = None
     progresso: RelatorProgresso = silencioso
     # Obrigatorios: o indice local de PRs vive no estado, e sem ele esta fonte

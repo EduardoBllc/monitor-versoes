@@ -51,6 +51,10 @@ class FakeGit:
     # diff": o pick da CONFLITO e o --continue devolve VAZIO.
     vazio_on: dict[str, bool] = field(default_factory=dict)
     file_changes: dict[str, frozenset[str]] = field(default_factory=dict)  # fixture: arquivos alterados por commit (nivel 4)
+    # fixture: patch-id por commit; ausente = "patchid-<hash>". Existe porque
+    # dois commits distintos com o MESMO patch (branch rebasada e depois
+    # mergeada de volta) e caso real, e o default por hash nao o representa.
+    patch_ids: dict[str, str] = field(default_factory=dict)
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
     # fixture: commit conflitante -> arquivo -> commits culpados por linha.
     culpados_por_linha_por_commit: dict[str, dict[str, list[CommitRef]]] = field(
@@ -168,7 +172,7 @@ class FakeGit:
     def patch_id(self, hash: str, /) -> str:
         if hash not in self.commits:
             raise NaoEncontrado(f"commit {hash} nao encontrado")
-        return "patchid-" + hash
+        return self.patch_ids.get(hash, "patchid-" + hash)
 
     def changed_files(self, hash: str, /) -> frozenset[str]:
         if hash not in self.commits:

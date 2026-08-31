@@ -81,8 +81,8 @@ def test_verificar_une_tarefas_das_versoes_abertas_menores():
                              commit_date=D, msg="ch123123 alfa")]
     })
     estado = _estado_com_repo()
-    # base gravada na criacao: m0. Sem isso o BaseResolver resolveria "master",
-    # que hoje aponta para a0 — e o commit apareceria como ja presente.
+    # base gravada na criacao: m0. Pre-registrar e o que faz este teste entrar
+    # no ramo "base do estado e autoritativa" em vez de no BaseResolver.
     estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
                                             base_ref="master", base_commit="m0"))
 
@@ -350,8 +350,10 @@ def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
 
     gravada = estado.versao("r", "14.0.0")
     assert gravada is not None
-    # 14.0.0 e X.0.0, logo a base e master, que aponta para a0
-    assert (gravada.base_ref, gravada.base_commit) == ("master", "a0")
+    # 14.0.0 e X.0.0, logo a base e master — mas o commit gravado e o PONTO DE
+    # CORTE, m0, nao o tip do master (a0). Gravar a0 diria que a0 e herdado, e
+    # o commit que a versao esta devendo sairia verde.
+    assert (gravada.base_ref, gravada.base_commit) == ("master", "m0")
     assert gravada.tipo == VersionType.FECHADA
     # escreveu as atribuicoes, ou seja o registro veio antes
     assert [a.chamado for a in estado.atribuicoes("r", "14.0.0")] == ["123123"]
@@ -657,3 +659,40 @@ def test_verificar_nao_recobra_liberada_que_e_a_propria_base_da_ajustada():
 
     assert status.tasks_novas == []
     assert status.faltantes == []
+
+
+def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
+    """Branch rebasada e depois mergeada de volta deixa DOIS commits de origem
+    com o mesmo patch (aconteceu no ch254994 da 14.11.0 do vendabemweb, PR
+    1132). O pick de um levou o conteudo do outro, mas o nivel 3 do oraculo
+    varre so `base..alvo` e o pick esta abaixo da base — o gemeo aparecia como
+    faltante, e o operador nao tem o que aplicar.
+    """
+    git = _git()
+    # a0 e a1: mesmo patch, hashes diferentes (a1 e o a0 antes do rebase)
+    git.add_commit("a1", "a0", "ch123123 alfa", D)
+    git.set_branch("master", "a1")
+    git.set_branch("origin/master", "a1")
+    git.patch_ids["a0"] = "mesmo-patch"
+    git.patch_ids["a1"] = "mesmo-patch"
+    # o pick de a0 entrou ANTES do corte da 14.0.0: esta na base, nao no range
+    git.add_commit("p0", "m0", "ch123123 alfa\n\n(cherry picked from commit a0)", D)
+    git.set_branch("14.0.0", "p0")
+
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(por_chamado={
+        "123123": [
+            CommitRef(hash_origem="a0", parent="m0", chamado="123123", commit_date=D,
+                      msg="ch123123 alfa"),
+            CommitRef(hash_origem="a1", parent="a0", chamado="123123", commit_date=D,
+                      msg="ch123123 alfa"),
+        ]
+    })
+    estado = _estado_com_repo()
+    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
+                                            base_ref="master", base_commit="p0"))
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.faltantes] == []
+    assert sorted(c.hash_origem for c in status.ancestrais) == ["a0", "a1"]

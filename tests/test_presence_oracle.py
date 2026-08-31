@@ -191,3 +191,30 @@ def test_motorerror_do_adapter_continua_degradando_para_ausente():
     git.set_branch("13.34.0", "m0")
 
     assert PresenceOracle(git=git).presente("aaa", "m0", "13.34.0") is Presence.AUSENTE
+
+
+def test_presence_oracle_trailer_abaixo_da_base_conta_como_presente():
+    """Regressao (chamado 254994 na 14.11.0 do vendabemweb): commit
+    cherry-pickado numa versao ANTERIOR e herdado pela base aparecia como
+    faltante — o nivel 2 varria so `base..branch`, e o commit com o trailer
+    fica abaixo da base. §2 nao limita o nivel 2 a range nenhum: o trailer
+    prova que a entrega esta fisicamente na branch, venha de onde vier.
+    """
+    g = FakeGit()
+    t0 = datetime.datetime.now(datetime.timezone.utc)
+    g.add_commit("origem1", "", "fix: algo", t0)
+    g.add_commit("raiz", "", "raiz", t0)
+    # o pick entrou na 14.10.0, ANTES do corte da 14.11.0
+    g.add_commit(
+        "pick-na-anterior",
+        "raiz",
+        "fix: algo\n\n(cherry picked from commit origem1)",
+        t0,
+    )
+    g.set_branch("14.10.0", "pick-na-anterior")
+    g.add_commit("depois-do-corte", "pick-na-anterior", "outra coisa", t0)
+    g.set_branch("14.11.0", "depois-do-corte")
+
+    oracle = PresenceOracle(git=g)
+
+    assert oracle.presente("origem1", "14.10.0", "14.11.0") == Presence.TRAILER

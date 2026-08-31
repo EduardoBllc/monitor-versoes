@@ -448,7 +448,13 @@ class GitSubprocess:
         with _cronometrar("show", hash, "|", "patch-id"):
             try:
                 show = subprocess.Popen(
-                    ["git", "show", hash], cwd=self.repo_path, stdout=subprocess.PIPE
+                    ["git", "show", hash],
+                    cwd=self.repo_path,
+                    stdout=subprocess.PIPE,
+                    # O erro levantado abaixo so usa o returncode, entao esse
+                    # stderr nunca foi lido — sem DEVNULL ele era herdado e ia
+                    # direto para o terminal, rasgando o desenho da TUI.
+                    stderr=subprocess.DEVNULL,
                 )
             except OSError as e:
                 raise BackendIndisponivel(f"git show {hash}: {e}") from e
