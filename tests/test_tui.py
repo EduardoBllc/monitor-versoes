@@ -2421,3 +2421,26 @@ def test_renderizar_chamado_separa_sem_commits_de_pendente():
         )
     )
     assert "PENDENTE" in _texto(com_commit)
+
+
+def test_renderizar_chamado_ordena_commits_por_data_decrescente():
+    chamado = ChamadoConsultado(
+        chamado="256308",
+        estado="pendente",
+        commits=[
+            CommitRef(
+                hash_origem="antigo",
+                msg="Commit antigo",
+                commit_date=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+            ),
+            CommitRef(
+                hash_origem="novo",
+                msg="Commit novo",
+                commit_date=datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
+            ),
+        ],
+    )
+
+    texto = _texto(renderizar_chamado(chamado))
+
+    assert texto.index("Commit novo") < texto.index("Commit antigo")
