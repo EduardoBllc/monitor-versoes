@@ -219,7 +219,6 @@ class BitbucketPRCommitSource:
                 # o chamado vem do casamento, nao da PR: duas tarefas podem
                 # apontar para a mesma PR, entao ele e carimbado aqui.
                 commits.append(replace(c, chamado=chamado))
-        commits.sort(key=lambda c: c.commit_date)
         return commits
 
     def _buscar_commits(self, client: httpx.Client, pr_id: int) -> list[CommitRef]:

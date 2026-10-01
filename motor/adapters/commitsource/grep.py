@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from motor.domain.commits import match_exato, ordenar_por_data
+from motor.domain.commits import match_exato
 from motor.domain.types import CommitRef
 from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -33,7 +33,7 @@ class GrepCommitSource:
 
         resultado: dict[str, list[CommitRef]] = {}
         for chamado in chamados:
-            commits = ordenar_por_data(match_exato(candidatos, chamado))
+            commits = match_exato(candidatos, chamado)
             if not commits:
                 continue
             # search_commits nao sabe de chamado — carimba aqui.

@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import replace
 
-from motor.domain.commits import extrair_chamado, ordenar_por_data
+from motor.domain.commits import extrair_chamado, ordenar_por_grafo
 from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconciliar
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import (
@@ -66,6 +66,15 @@ def _culpados_do_conflito(
             if ch is not None:
                 chamados.add(ch)
     return sorted(chamados)
+
+
+def ordem_de_aplicacao(deps: Deps, commits: list[CommitRef]) -> list[CommitRef]:
+    """A ordem do lote, uma so para o `verificar` simular e o `atualizar`
+    aplicar — se divergirem, a previsao de conflito e de outro lote.
+    """
+    return ordenar_por_grafo(
+        commits, deps.git.ordem_topologica([c.hash_origem for c in commits])
+    )
 
 
 def _datas_das_tags(
@@ -250,8 +259,8 @@ def verificar(
     # original faz um commit dependente parecer modify/delete quando o pai
     # tambem esta faltando, embora o pai seja aplicado antes dele.
     tip = deps.git.resolve_ref(ref_alvo)
-    candidatos = ordenar_por_data(
-        [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito]
+    candidatos = ordem_de_aplicacao(
+        deps, [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito]
     )
     conflitantes: list[CommitRef] = []
     conflito_causado_por: dict[str, list[str]] = {}

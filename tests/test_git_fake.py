@@ -280,3 +280,15 @@ def test_fake_worktree_gc_tem_a_assinatura_do_adapter_real():
     assert inspect.signature(FakeGit.worktree_gc) == inspect.signature(
         GitSubprocess.worktree_gc
     )
+
+
+def test_fake_git_ordem_topologica_ignora_data_e_hash_ausente():
+    g = FakeGit()
+    cedo = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    tarde = cedo + datetime.timedelta(days=5)
+    g.add_commit("m0", "", "raiz", cedo)
+    g.add_commit("pai", "m0", "escrito depois", tarde)
+    g.add_commit("filho", "pai", "escrito antes, rebasado em cima", cedo)
+
+    assert g.ordem_topologica(["filho", "ausente", "pai"]) == ["pai", "filho"]
+    assert g.ordem_topologica([]) == []

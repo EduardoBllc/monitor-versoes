@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import datetime
 from dataclasses import dataclass, replace
 
-from motor.domain.types import SEM_DATA, CommitRef
+from motor.domain.commits import ordenar_por_grafo
+from motor.domain.types import CommitRef
 from motor.engine.deps import Deps
 from motor.progresso import Progresso
 
@@ -23,9 +23,11 @@ def consultar(deps: Deps, versao: str) -> list[ChamadoConsultado]:
     # por commit (dois, com o parent), e o snapshot de uma versao passa de cem.
     # Fase sem contagem porque o custo esta todo aqui dentro, num comando so.
     deps.progresso(Progresso("lendo commits do snapshot"))
-    metas = deps.git.commits_meta(
-        [h for atribuicao in atribuicoes for h in atribuicao.commits]
-    )
+    hashes = [h for atribuicao in atribuicoes for h in atribuicao.commits]
+    metas = deps.git.commits_meta(hashes)
+    # Commits do chamado na ordem do lote (ancestral primeiro), nao na
+    # alfabetica em que o estado os guarda.
+    ordem = deps.git.ordem_topologica(hashes)
     resultado: list[ChamadoConsultado] = []
     for atribuicao in atribuicoes:
         commits: list[CommitRef] = []
@@ -39,21 +41,19 @@ def consultar(deps: Deps, versao: str) -> list[ChamadoConsultado]:
             ChamadoConsultado(
                 chamado=atribuicao.chamado,
                 estado=atribuicao.estado,
-                commits=commits,
+                commits=ordenar_por_grafo(commits, ordem),
             )
         )
-    # Mais recente primeiro, pela data do commit de ORIGEM mais novo do chamado.
-    # Nao e a data do cherry-pick: o estado guarda so hash_origem, o commit
-    # espelho na branch da versao nao esta em lugar nenhum. Ordem pratica e
-    # quase a mesma e nao custa varredura de git.
+    # Mais recente primeiro: o chamado cujo commit de ORIGEM esta mais adiante
+    # no grafo. Data nao decide (o rebase preserva a do autor, ch257911).
     #
-    # Chamado sem commit legivel (meta indisponivel, ou lista vazia) cai em
-    # SEM_DATA e vai para o fim.
-    resultado.sort(key=_mais_recente, reverse=True)
-    return resultado
-
-
-def _mais_recente(chamado: ChamadoConsultado) -> datetime.datetime:
-    return max(
-        (c.commit_date for c in chamado.commits), default=SEM_DATA
+    # Chamado sem commit que o git conheca (meta indisponivel, ou lista vazia)
+    # fica com -1 e vai para o fim.
+    posicao = {h: i for i, h in enumerate(ordem)}
+    resultado.sort(
+        key=lambda ch: max(
+            (posicao.get(c.hash_origem, -1) for c in ch.commits), default=-1
+        ),
+        reverse=True,
     )
+    return resultado

@@ -287,10 +287,16 @@ A predição de conflito não toca a working tree:
 `git merge-tree --write-tree --merge-base=<parent(c)> <branch-tip> <c>` (Git ≥ 2.38) reporta
 os arquivos que conflitariam **antes** de aplicar.
 
-**Ordem de aplicação: commit-date ascendente, ordenada no domínio.** Sem agrupar por task —
-commits de tasks diferentes intercalam se as datas intercalarem. A ordenação não vem de flag
-do git: `--reverse` seria frágil a mudança de critério, e no domínio ela é testável com o git
-fake.
+**Ordem de aplicação: a do grafo — ancestral antes de descendente.** Sem agrupar por task —
+commits de tasks diferentes intercalam se o histórico intercalar. O git só responde quem
+descende de quem (`GitRepo.ordem_topologica`, `rev-list --topo-order`); a ordenação em si
+fica no domínio (`ordenar_por_grafo`), testável com o git fake. Commit que o git não conhece
+vai para o fim, na ordem em que chegou. O `verificar` simula o lote nessa mesma ordem.
+
+Data não entra, nem como desempate. A do autor sobrevive ao rebase: no ch257911 a PR 1273 foi
+rebasada em cima da 1272, e por data o commit da 1272 caía no meio dos que já dependiam
+dele. A do committer muda no rebase, mas tem resolução de segundo — 21 dos 31 commits
+rebasados empataram no mesmo.
 
 **O estado é regravado uma vez, ao final do lote**, não por commit aplicado. Se o processo for
 interrompido no meio, os cherry-picks já feitos ficam com trailer (prova em git) e o estado
@@ -344,8 +350,8 @@ sem banco.
 
 O domínio é só dados e funções determinísticas — nada nele toca git, rede ou banco. As regras
 que vivem lá: inferência de tipo e de base (§5), distribuição entre versões (§4),
-reconciliação três-vias (§7), o match exato por word-boundary (§4) e a ordenação por data
-(§7). A tradução entre modelo de banco e dataclass do domínio acontece na fronteira do
+reconciliação três-vias (§7), o match exato por word-boundary (§4) e a ordenação do lote
+(§5). A tradução entre modelo de banco e dataclass do domínio acontece na fronteira do
 adapter: **o domínio nunca importa `sqlalchemy`**.
 
 O estado fake **espelha as mesmas recusas da trigger de congelamento**. Não é zelo: um fake
@@ -432,7 +438,7 @@ aberta até alguém rodar `git fetch --prune`.
 
 ### Onde deliberadamente não se abstrai
 
-- **Sem porta de "clock".** A ordenação usa a data do commit, e a data de liberação vem do
+- **Sem porta de "clock".** A ordenação usa o grafo, e a data de liberação vem do
   commit apontado pela tag — nunca de `now()` (§6). Não há relógio para injetar.
 - **Sem camada de config por projeto** — o projeto é uma linha de tabela (§8).
 - **Sem cache para as checagens de tag e branch remota.** Checagem direta a cada chamada,

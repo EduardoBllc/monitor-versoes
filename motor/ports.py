@@ -133,6 +133,15 @@ class GitRepo(Protocol):
         """
         ...
 
+    def ordem_topologica(self, hashes: list[str], /) -> list[str]:
+        """Os `hashes` com ancestral antes de descendente.
+
+        E a ordem em que um lote pode ser cherry-picked: a data do autor
+        sobrevive ao rebase e deixa de dizer quem depende de quem. Hash
+        desconhecido falta no retorno, como em `commits_meta`.
+        """
+        ...
+
     def patch_id(self, hash: str, /) -> str:
         """ID do patch (para comparação de conteúdo)."""
         ...

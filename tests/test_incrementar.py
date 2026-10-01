@@ -401,3 +401,32 @@ def test_atualizar_continue_allow_empty_fecha_como_commit_vazio():
         ("255514", "aplicado")
     ]
     assert g.remotes.get("13.7.0") is True, "esperava push apos o lote fechar"
+
+
+def test_atualizar_aplica_na_ordem_do_grafo_nao_da_data_do_autor():
+    """ch257911: a PR 1273 foi rebasada em cima da 1272, mas o rebase preserva a
+    data do AUTOR. Por ela, o primeiro commit da 1273 (escrito dias antes) iria
+    antes do commit da 1272 de que o rebase o fez depender — e conflita. O lote
+    segue o grafo: ancestral antes de descendente, qualquer que seja a data.
+    """
+    g = FakeGit()
+    g.add_commit("m0", "", "raiz", D)
+    g.add_commit("p1272", "m0", "ch257911 parametro e tabelas", D1)
+    g.add_commit("r1", "p1272", "ch257911 cadastro (rebasado)", D)
+    g.add_commit("r2", "r1", "ch257911 controle (rebasado)", D1 + D1.resolution)
+    g.set_branch("master", "r2")
+    g.set_branch("origin/master", "r2")
+    g.set_branch("13.6.0", "m0")
+    g.set_branch("13.7.0", "m0")
+    commits = {
+        "257911": [
+            CommitRef(hash_origem=c.hash, parent=c.parent, chamado="257911",
+                      commit_date=c.date, msg=c.msg)
+            for c in (g.commits["r1"], g.commits["p1272"], g.commits["r2"])
+        ]
+    }
+
+    resultado = atualizar(_deps(g, _estado(), ["257911"], commits), "13.7.0")
+
+    assert resultado.status == AtualizarStatus.DONE
+    assert [c.hash_origem for c in resultado.aplicados] == ["p1272", "r1", "r2"]

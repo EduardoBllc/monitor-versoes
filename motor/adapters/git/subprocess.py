@@ -396,8 +396,8 @@ class GitSubprocess:
         # consumidor de commit_date daqui e a data de liberacao (a tag aponta um
         # commit, e "quando essa versao saiu" e quando o commit entrou nesta
         # branch). Num cherry-pick a data do autor e a da escrita original, que
-        # pode ser de meses antes. As varreduras seguem em %aI porque
-        # ordenar_por_data quer a ordem de autoria.
+        # pode ser de meses antes. As varreduras seguem em %aI, a mesma data
+        # que o Bitbucket devolve.
         out = self._output(
             self.repo_path,
             "show",
@@ -443,6 +443,25 @@ class GitSubprocess:
                 )
             encontrados.update(_parse_metas(out))
         return encontrados
+
+    def ordem_topologica(self, hashes: list[str], /) -> list[str]:
+        # Lista vazia sai sem git: `rev-list` sem revisao nenhuma e erro.
+        if not hashes:
+            return []
+        # Sem `--not <merge-base --octopus>`: quando o commit mais antigo do lote
+        # e ancestral dos outros, ele E a base, e o `--not` o tiraria do retorno.
+        # ponytail: anda o historico inteiro (~0,2s em 40 mil commits); limitar
+        # o walk se um repo crescer a ponto de pesar.
+        pedidos = set(hashes)
+        out = self._output(
+            self.repo_path,
+            "rev-list",
+            "--topo-order",
+            "--reverse",
+            "--ignore-missing",
+            *hashes,
+        )
+        return [h for h in out.splitlines() if h in pedidos]
 
     def patch_id(self, hash: str, /) -> str:
         with _cronometrar("show", hash, "|", "patch-id"):

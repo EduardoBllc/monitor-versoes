@@ -45,8 +45,11 @@ def agrupar_por_chamado(commits: list[CommitRef]) -> dict[str, list[CommitRef]]:
     return grupos
 
 
-def ordenar_por_data(commits: list[CommitRef]) -> list[CommitRef]:
-    """Ordena por commit_date asc - nao depende de flag do git (§5
-    "Ordenacao"). Nao muta a lista de entrada.
+def ordenar_por_grafo(commits: list[CommitRef], ordem: list[str]) -> list[CommitRef]:
+    """Ordem de aplicacao do lote: a posicao em `ordem` (topologica, do git).
+    Quem o git nao conhece vai para o fim, na ordem de entrada. Data nenhuma
+    entra: o rebase preserva a do autor, e o commit rebasado em cima de outro
+    pode ter sido escrito antes dele (ch257911). Nao muta a entrada.
     """
-    return sorted(commits, key=lambda c: c.commit_date)
+    posicao = {h: i for i, h in enumerate(ordem)}
+    return sorted(commits, key=lambda c: posicao.get(c.hash_origem, len(ordem)))

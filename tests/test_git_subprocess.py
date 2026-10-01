@@ -366,6 +366,24 @@ def test_git_subprocess_commits_meta_nao_anda_pelos_ancestrais(tmp_path):
     assert lote[tip].parent != "", "esperava o primeiro pai preenchido"
 
 
+def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):
+    """O filho tem data de autor ANTERIOR a do pai — e o que o rebase deixa. A
+    ordem tem de vir do grafo; hash ausente falta, e lista vazia nao vira
+    `rev-list` sem revisao.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    (tmp_path / "arquivo.txt").write_text("v2\n")
+    _run_git(repo_dir, "commit", "-am", "pai", "--date=2026-09-29T11:45:40-03:00")
+    (tmp_path / "arquivo.txt").write_text("v3\n")
+    _run_git(repo_dir, "commit", "-am", "filho", "--date=2026-09-24T15:30:12-03:00")
+
+    g = new_git_subprocess(repo_dir)
+    pai, filho = g.resolve_ref("master~1"), g.resolve_ref("master")
+
+    assert g.ordem_topologica([filho, "0" * 40, pai]) == [pai, filho]
+    assert g.ordem_topologica([]) == []
+
+
 def test_git_subprocess_resolve_ref_descasca_tag_anotada(tmp_path):
     """As tags de release deste projeto sao anotadas: `rev-parse refs/tags/X`
     devolve o SHA do OBJETO DE TAG, nao do commit. Sem descascar, o

@@ -23,13 +23,14 @@ def _estado(atribuicoes: list[Atribuicao]) -> FakeEstado:
     return estado
 
 
-def test_ordena_pelo_commit_de_origem_mais_recente():
+def test_ordena_pelo_commit_de_origem_mais_adiante_no_grafo():
     # O repo de estado devolve por chamado (ordem alfabetica: 100, 25, 9), que
-    # nao e nem a ordem numerica nem a cronologica. A consulta reordena.
+    # nao e nem a ordem numerica nem a do grafo. A consulta reordena — e a data
+    # do autor, invertida de proposito (rebase), nao decide.
     git = FakeGit()
-    git.add_commit("a1", "", "ch9 antigo", datetime.datetime(2026, 1, 1))
-    git.add_commit("b1", "", "ch25 novo", datetime.datetime(2026, 3, 1))
-    git.add_commit("c1", "", "ch100 meio", datetime.datetime(2026, 2, 1))
+    git.add_commit("a1", "", "ch9 antigo", datetime.datetime(2026, 3, 1))
+    git.add_commit("c1", "a1", "ch100 meio", datetime.datetime(2026, 2, 1))
+    git.add_commit("b1", "c1", "ch25 novo", datetime.datetime(2026, 1, 1))
     estado = _estado([
         Atribuicao(chamado="9", marcada="13.34.0", commits=["a1"]),
         Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
@@ -46,8 +47,8 @@ def test_ordena_pelo_commit_de_origem_mais_recente():
 def test_chamado_usa_o_commit_mais_novo_que_tem():
     git = FakeGit()
     git.add_commit("a1", "", "ch9 um", datetime.datetime(2026, 1, 1))
-    git.add_commit("a2", "", "ch9 dois", datetime.datetime(2026, 5, 1))
-    git.add_commit("b1", "", "ch25 so", datetime.datetime(2026, 3, 1))
+    git.add_commit("b1", "a1", "ch25 so", datetime.datetime(2026, 3, 1))
+    git.add_commit("a2", "b1", "ch9 dois", datetime.datetime(2026, 2, 1))
     estado = _estado([
         Atribuicao(chamado="9", marcada="13.34.0", commits=["a1", "a2"]),
         Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
@@ -57,7 +58,7 @@ def test_chamado_usa_o_commit_mais_novo_que_tem():
 
 
 def test_commit_sem_meta_vai_para_o_fim():
-    # Hash ausente no git cai no fallback com commit_date = datetime.min.
+    # Hash ausente no git nao tem posicao no grafo.
     git = FakeGit()
     git.add_commit("b1", "", "ch25 so", datetime.datetime(2026, 3, 1))
     estado = _estado([
@@ -71,18 +72,16 @@ def test_commit_sem_meta_vai_para_o_fim():
     assert resultado[1].commits[0].msg == "mensagem indisponível"
 
 
-def test_commit_sem_meta_convive_com_data_com_fuso():
-    # git de verdade devolve %cI com offset (aware); o fallback nascia naive e
-    # a comparacao explodia com TypeError.
+def test_commits_do_chamado_saem_na_ordem_do_grafo():
+    # O estado guarda os hashes em ordem alfabetica e a data do autor contraria
+    # o grafo (rebase, ch257911): nenhuma das duas pode decidir.
     git = FakeGit()
-    git.add_commit(
-        "b1", "", "ch25 so", datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
-    )
+    git.add_commit("z-pai", "", "ch9 pai", datetime.datetime(2026, 5, 1))
+    git.add_commit("a-filho", "z-pai", "ch9 filho", datetime.datetime(2026, 1, 1))
     estado = _estado([
-        Atribuicao(chamado="9", marcada="13.34.0", commits=["sumido"]),
-        Atribuicao(chamado="25", marcada="13.34.0", commits=["b1", "sumido2"]),
+        Atribuicao(chamado="9", marcada="13.34.0", commits=["a-filho", "z-pai"]),
     ])
 
-    resultado = consultar(_deps(git, estado), "13.34.0")
+    [chamado] = consultar(_deps(git, estado), "13.34.0")
 
-    assert [c.chamado for c in resultado] == ["25", "9"]
+    assert [c.hash_origem for c in chamado.commits] == ["z-pai", "a-filho"]

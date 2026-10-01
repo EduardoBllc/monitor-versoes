@@ -1455,9 +1455,9 @@ def renderizar_chamado(chamado: ChamadoConsultado) -> Group:
     )
     tabela.add_column("Commit", width=8, no_wrap=True)
     tabela.add_column("Título", ratio=1, no_wrap=True, overflow="ellipsis")
-    for commit in sorted(
-        chamado.commits, key=lambda item: item.commit_date, reverse=True
-    ):
+    # Mais novo no topo: o consultar entrega na ordem do grafo, ancestral
+    # primeiro.
+    for commit in reversed(chamado.commits):
         tabela.add_row(
             commit.hash_origem[:8],
             commit.msg.splitlines()[0] if commit.msg else "mensagem indisponível",

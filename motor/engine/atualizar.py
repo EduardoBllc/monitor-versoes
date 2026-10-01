@@ -5,10 +5,9 @@ import time
 from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
-from motor.domain.commits import ordenar_por_data
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
-from motor.engine.verificar import verificar
+from motor.engine.verificar import ordem_de_aplicacao, verificar
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
@@ -84,7 +83,7 @@ def _pick(deps: Deps, hash_origem: str) -> CherryPickOutcome:
 
 
 def atualizar(deps: Deps, versao: str) -> AtualizarResult:
-    """Aplica os commits faltantes por commit-date asc (spec §5).
+    """Aplica os commits faltantes na ordem do grafo (spec §5).
 
     Versao com tag e recusada: o alvo dela congelou na liberacao, e alteracao
     na branch nao reflete no que a tag aponta. Esquecimento vai para a proxima
@@ -102,7 +101,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
             "Confirme manualmente (exclua no estado se ja aplicado) antes de rodar atualizar de novo."
         )
 
-    faltam = ordenar_por_data(status.faltantes)
+    faltam = ordem_de_aplicacao(deps, status.faltantes)
 
     deps.git.use_worktree(versao)
 

@@ -169,6 +169,17 @@ class FakeGit:
             if (c := self.commits.get(h)) is not None
         }
 
+    def ordem_topologica(self, hashes: list[str], /) -> list[str]:
+        # Grafo de pai unico: a profundidade ja e uma ordem topologica. Empate
+        # (linhas sem parentesco) fica na ordem pedida.
+        def profundidade(h: str) -> int:
+            n = 0
+            while (c := self.commits.get(h)) is not None and c.parent:
+                h, n = c.parent, n + 1
+            return n
+
+        return sorted((h for h in hashes if h in self.commits), key=profundidade)
+
     def patch_id(self, hash: str, /) -> str:
         if hash not in self.commits:
             raise NaoEncontrado(f"commit {hash} nao encontrado")
