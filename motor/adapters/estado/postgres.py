@@ -44,6 +44,14 @@ _TEXTO_PARA_TIPO = {v: k for k, v in _TIPO_PARA_TEXTO.items()}
 _Linha = TypeVar("_Linha")
 
 
+def _repo_info(linha: models.Repo) -> RepoInfo:
+    return RepoInfo(
+        nome=linha.nome,
+        tickio_sistema_id=linha.tickio_sistema_id,
+        piso_versao=linha.piso_versao,
+    )
+
+
 @dataclass
 class PostgresEstado:
     sessao: Session
@@ -83,11 +91,18 @@ class PostgresEstado:
                 f"  uv run motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
             )
-        return RepoInfo(nome=linha.nome, tickio_sistema_id=linha.tickio_sistema_id)
+        return _repo_info(linha)
+
+    def definir_piso(self, nome: str, piso_versao: str, /) -> None:
+        canonico = self.resolver_repo(nome).nome
+        linha = self._scalar(select(models.Repo).where(models.Repo.nome == canonico))
+        assert linha is not None  # resolver_repo acabou de acha-la
+        linha.piso_versao = piso_versao
+        self._commit()
 
     def listar_repos(self) -> list[RepoInfo]:
         return [
-            RepoInfo(nome=linha.nome, tickio_sistema_id=linha.tickio_sistema_id)
+            _repo_info(linha)
             for linha in self._scalars(select(models.Repo).order_by(models.Repo.nome))
         ]
 

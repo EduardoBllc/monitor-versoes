@@ -111,6 +111,11 @@ def test_fontes_de_alvo_inclui_o_proprio_alvo_quando_ainda_nao_tem_branch():
     ]
 
 
+def test_fontes_de_alvo_respeita_o_piso_do_repo():
+    # 13.1.0 do vb2web: branch legada sem tag que o Tickio nao conhece
+    assert fontes_de_alvo("15.2.0", ["13.1.0", "15.2.0"], "14.0.0") == ["15.2.0"]
+
+
 def test_fontes_de_alvo_ignora_versoes_anteriores_ao_corte():
     assert fontes_de_alvo("13.34.0", ["5.2.0", "13.0.0", "13.34.0"]) == [
         "13.0.0",

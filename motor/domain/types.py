@@ -119,6 +119,7 @@ class VersaoInfo:
 class RepoInfo:
     nome: str = ""  # canonico, nunca o alias
     tickio_sistema_id: int = 0
+    piso_versao: str = "13.0.0"  # = version.PISO_PADRAO; menor fonte de alvo
 
 
 @dataclass(frozen=True)

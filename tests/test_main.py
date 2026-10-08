@@ -143,6 +143,25 @@ def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
     assert capsys.readouterr().out == "repo 'backend' adicionado\n"
 
 
+def test_repo_piso_altera_o_repo(monkeypatch, capsys):
+    estado = FakeEstado(repos={"backend": RepoInfo(nome="backend")})
+    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
+
+    main(["repo", "piso", "backend", "14.0.0"])
+
+    assert estado.resolver_repo("backend").piso_versao == "14.0.0"
+    assert capsys.readouterr().out == "repo 'backend': piso 14.0.0\n"
+
+
+def test_repo_piso_recusa_versao_fora_do_formato(capsys):
+    with pytest.raises(SystemExit) as saida:
+        _build_parser().parse_args(["repo", "piso", "backend", "14.0"])
+
+    assert saida.value.code != 0
+    assert "X.Y.Z" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(("argumentos", "mensagem"), [
     (["pasta/backend", "--tickio-sistema-id", "42"], "nome simples"),
     (["backend", "--tickio-sistema-id", "0"], "inteiro positivo"),
@@ -690,3 +709,29 @@ def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
     saida = capsys.readouterr().out
     assert "[CONFLITANTE]" in saida
     assert "depende" not in saida
+
+
+def test_verificar_nao_busca_no_tickio_versao_abaixo_do_piso_do_repo(
+    bordas, tmp_path, monkeypatch
+):
+    _, estado = bordas
+    estado.definir_piso("vendabemweb", "13.34.0")
+    buscadas: list[str] = []
+
+    @dataclass
+    class TickioSpy:
+        base_url: str
+        usuario: str
+        senha: str
+        sistema_id: int
+
+        def fetch(self, versao: str) -> list[str]:
+            buscadas.append(versao)
+            return []
+
+    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
+
+    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    # 13.33.0 esta aberta e seria fonte com o piso padrao
+    assert buscadas == ["13.34.0"]

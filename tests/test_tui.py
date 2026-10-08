@@ -2447,3 +2447,85 @@ def test_renderizar_chamado_mostra_o_descendente_no_topo():
     texto = _texto(renderizar_chamado(chamado))
 
     assert texto.index("Commit novo") < texto.index("Commit antigo")
+
+
+def test_descobrir_repos_carrega_o_piso_do_estado(tmp_path):
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", piso_versao="14.0.0")})
+
+    assert [o.piso_versao for o in descobrir_repos(estado, "")] == ["14.0.0"]
+
+
+def _app_de_piso(definir) -> MotorTUI:
+    return MotorTUI(
+        carregar_repos=lambda: [
+            RepoOption(nome="alpha", caminho="/projetos/alpha", piso_versao="13.0.0")
+        ],
+        carregar_versoes=lambda opcao: [],
+        executar=_nunca_executa,
+        definir_piso=definir,
+    )
+
+
+async def _abrir_piso(app: MotorTUI, pilot) -> None:
+    await app.workers.wait_for_complete()
+    app.query_one("#repo", Select).value = app.query_one("#repo", Select)._options[1][1]
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.press("p")
+    await pilot.pause()
+
+
+def test_app_piso_parte_do_atual_grava_e_reabre_com_o_novo():
+    chamadas: list[tuple[str, str]] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_de_piso(lambda nome, piso: chamadas.append((nome, piso)))
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_piso(app, pilot)
+            campo = app.screen.query_one("#piso-versao", Input)
+            assert campo.value == "13.0.0"
+            campo.value = "14.0.0"
+            await pilot.click("#piso-salvar")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert chamadas == [("alpha", "14.0.0")]
+            assert "14.0.0" in _texto(app.query_one("#resultado", Static).content)
+            # sem recarregar a lista: o repo continua selecionado
+            await pilot.press("p")
+            await pilot.pause()
+            assert app.screen.query_one("#piso-versao", Input).value == "14.0.0"
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_piso_recusa_formato_invalido_e_mantem_modal():
+    def definir(nome: str, piso: str) -> None:
+        raise AssertionError("piso invalido nao pode chegar ao banco")
+
+    async def executar_fluxo() -> None:
+        app = _app_de_piso(definir)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_piso(app, pilot)
+            app.screen.query_one("#piso-versao", Input).value = "14.0"
+            await pilot.click("#piso-salvar")
+            await pilot.pause()
+
+            assert isinstance(app.screen, tui.PisoModal)
+            assert "X.Y.Z" in _texto(app.screen.query_one("#piso-erro", Static).content)
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_piso_sem_repo_selecionado_nao_abre():
+    async def executar_fluxo() -> None:
+        app = _app_de_piso(lambda nome, piso: None)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("p")
+            await pilot.pause()
+
+            assert not isinstance(app.screen, tui.PisoModal)
+
+    asyncio.run(executar_fluxo())

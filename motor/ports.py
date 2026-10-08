@@ -269,6 +269,10 @@ class EstadoRepo(Protocol):
         diferente fragmenta o estado."""
         ...
 
+    def definir_piso(self, nome: str, piso_versao: str, /) -> None:
+        """Troca o piso de versao do repo. NaoEncontrado se desconhecido."""
+        ...
+
     def listar_repos(self) -> list[RepoInfo]:
         """Repos canonicos cadastrados, em ordem de nome; aliases nao entram."""
         ...

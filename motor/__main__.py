@@ -48,6 +48,7 @@ from motor.montagem import (
     montar_deps,
     validar_nome_repo,
     validar_sistema_id,
+    validar_versao,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -160,6 +161,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_adicionar.add_argument(
         "--tickio-sistema-id", required=True, type=_tipo_cli(validar_sistema_id)
     )
+    p_piso = acoes_repo.add_parser(
+        "piso",
+        help="menor versao cujas tarefas o verificar busca no Tickio",
+    )
+    p_piso.add_argument("nome", help="nome ou alias do repo")
+    p_piso.add_argument("versao", type=_tipo_cli(validar_versao), help="X.Y.Z")
 
     return parser
 
@@ -407,9 +414,12 @@ def main(argv: list[str] | None = None) -> None:
 
         if args.comando == "repo":
             with abrir_sessao() as sessao:
-                PostgresEstado(sessao=sessao).registrar_repo(
-                    args.nome, args.tickio_sistema_id
-                )
+                estado = PostgresEstado(sessao=sessao)
+                if args.acao_repo == "piso":
+                    estado.definir_piso(args.nome, args.versao)
+                    print(f"repo '{args.nome}': piso {args.versao}")
+                    return
+                estado.registrar_repo(args.nome, args.tickio_sistema_id)
             print(f"repo '{args.nome}' adicionado")
             return
 

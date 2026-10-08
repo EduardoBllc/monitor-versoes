@@ -70,13 +70,20 @@ def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
     return sorted(set(todas) - set(tags), key=chave)
 
 
-def fontes_de_alvo(alvo: str, candidatas: list[str]) -> list[str]:
-    """Versoes cujas tarefas caem no alvo: candidatas entre 13.0.0 e o alvo.
+PISO_PADRAO = "13.0.0"
+
+
+def fontes_de_alvo(
+    alvo: str, candidatas: list[str], piso: str = PISO_PADRAO
+) -> list[str]:
+    """Versoes cujas tarefas caem no alvo: candidatas entre o piso e o alvo.
 
     E a regra de distribuicao vista pelo lado da versao (spec §2). Quem monta
     `candidatas` e o chamador — abertas mais o que `liberadas_no_alvo` devolve.
+    O piso e por repo (`repo.piso_versao`): descarta branch legada sem tag, que
+    o Tickio nao conhece e responderia 404.
     """
-    corte = chave("13.0.0")
+    corte = chave(piso)
     k = chave(alvo)
     return [v for v in candidatas if corte <= chave(v) <= k]
 

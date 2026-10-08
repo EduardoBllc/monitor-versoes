@@ -108,6 +108,22 @@ def test_registrar_repo_o_torna_resolvivel(estado):
     )
 
 
+def test_repo_nasce_com_o_piso_padrao(estado):
+    # no Postgres, prova o server_default: a semente acima nao passa piso
+    assert estado.resolver_repo(REPO).piso_versao == "13.0.0"
+
+
+def test_definir_piso_pelo_alias_altera_o_canonico(estado):
+    estado.definir_piso(ALIAS, "14.0.0")
+
+    assert estado.resolver_repo(REPO).piso_versao == "14.0.0"
+
+
+def test_definir_piso_de_repo_desconhecido(estado):
+    with pytest.raises(NaoEncontrado):
+        estado.definir_piso("nao-existe", "14.0.0")
+
+
 def test_registrar_repo_recusa_nome_duplicado(estado):
     with pytest.raises(RecusaDeInvariante):
         estado.registrar_repo(REPO, 99)

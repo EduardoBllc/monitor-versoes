@@ -194,7 +194,10 @@ def verificar(
         # e traceback que o autor deste bug precisa ver.
         raise AssertionError("Deps.commit_source nao montado")
     resolver = TargetResolver(
-        tasks=deps.tasks, commits=deps.commit_source, progresso=deps.progresso
+        tasks=deps.tasks,
+        commits=deps.commit_source,
+        progresso=deps.progresso,
+        piso=deps.piso_versao,
     )
     # A liberada saiu de `abertas`, mas volta como fonte quando o corte do alvo
     # nao herdou o que ela entregou (spec §2). `corte` e a data do commit-base

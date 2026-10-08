@@ -120,7 +120,7 @@ nova que abre. Visto do lado da versão, que é como o motor precisa:
 versoes_abertas(branches, tags) = branches sem tag homônima, em ordem semver
 liberadas_no_alvo(V, tags)      = { W com tag : W <= V, data_tag(W) > data(base_commit(V)) }
 candidatas(V)                   = versoes_abertas ∪ liberadas_no_alvo(V) ∪ { V }
-fontes_de_alvo(V, candidatas)   = { W em candidatas : 13.0.0 <= W <= V }   # V incluso
+fontes_de_alvo(V, candidatas)   = { W em candidatas : piso(repo) <= W <= V }   # V incluso; piso padrão 13.0.0
 alvo(V) = ∪ tickio.fetch(W), para todo W em fontes_de_alvo(V, candidatas)
 ```
 

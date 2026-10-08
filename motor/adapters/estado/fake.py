@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from motor.domain.types import (
     Atribuicao,
@@ -51,6 +51,10 @@ class FakeEstado:
                 f"--tickio-sistema-id <id>"
             )
         return info
+
+    def definir_piso(self, nome: str, piso_versao: str, /) -> None:
+        info = self.resolver_repo(nome)
+        self.repos[info.nome] = replace(info, piso_versao=piso_versao)
 
     def listar_repos(self) -> list[RepoInfo]:
         return [self.repos[nome] for nome in sorted(self.repos)]

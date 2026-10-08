@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from motor.domain.types import Alvo, TaskTarget
-from motor.domain.version import fontes_de_alvo
+from motor.domain.version import PISO_PADRAO, fontes_de_alvo
 from motor.errors import MotorError
 from motor.ports import CommitSource, TaskSource
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -16,6 +16,7 @@ class TargetResolver:
     tasks: TaskSource
     commits: CommitSource
     progresso: RelatorProgresso = silencioso
+    piso: str = PISO_PADRAO
 
     def resolve(
         self,
@@ -37,7 +38,7 @@ class TargetResolver:
         marcada_de: dict[str, str] = {}
         ambiguas: list[str] = []
 
-        fontes = fontes_de_alvo(alvo, candidatas)
+        fontes = fontes_de_alvo(alvo, candidatas, self.piso)
         for indice, v in enumerate(fontes, start=1):
             self.progresso(
                 Progresso("chamados marcados no Tickio", indice, len(fontes))
