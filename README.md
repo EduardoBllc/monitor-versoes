@@ -1,110 +1,121 @@
 # monitor-versoes
 
-Monta e audita as branches de versão de release dos repos do VendaBem, cruzando o que o
-Tickio marcou, o que o estado declarou e o que está de fato aplicado no git.
+Ferramenta CLI-first para montar e auditar branches de versão de release. Responde a uma
+pergunta só: _"esta versão está com **todos** os commits que deveria?"_.
 
-Desenho e as decisões por trás dele: [docs/design.md](docs/design.md).
-Armadilhas deste ambiente de desenvolvimento: [.claude/CLAUDE.md](.claude/CLAUDE.md).
+A dificuldade é que versões são montadas por cherry-pick, e cherry-pick troca o hash —
+comparar hashes não responde nada. O `motor` cruza três fontes:
 
-## Os dois ambientes
+| Fonte | Representa |
+| --- | --- |
+| **rastreador de tasks** (Tickio, ou lista manual) | o que _deveria_ estar na versão |
+| **estado** (Postgres) | o que a ferramenta _declarou_ ter colocado |
+| **git** (trailer do `cherry-pick -x`) | o que está _de fato_ aplicado |
 
-Tudo é **produção por padrão**: o CLI, o `compose.yml` e o Alembic leem `.env`.
-Desenvolvimento é sempre explícito.
+A versão só fica verde quando as três concordam. O porquê de cada decisão está em
+[docs/design.md](docs/design.md).
 
-| | CLI | `docker compose` / Alembic |
-| --- | --- | --- |
-| padrão | **produção** (`.env`, porta 5433) | **produção** (`.env`, porta 5433) |
-| o outro | `--env development` | `--env-file .env.development` / sourcing (abaixo) |
+## Premissas
 
-O `.env.development` é o ambiente da suíte automatizada — o `tests/conftest.py` o carrega na
-coleta. Fora dela, só entra com `--env development`.
+A ferramenta assume um fluxo de release específico — se o seu for diferente, ela não serve
+sem adaptação:
 
-## Setup
+- **Uma versão é uma branch** com o número dela; ao ser liberada, o HEAD recebe uma tag
+  homônima, criada pelo processo de release (a ferramenta só lê).
+- **Esquema de versão fixo:** `X.0.0` sai de `master`, `X.Y.0` da versão ajustada anterior,
+  `X.Y.Z` de qualquer versão anterior.
+- **Commits citam a task** na mensagem como `ch<num>`.
+- **Build está fora:** a ferramenta monta e verifica, não constrói.
+
+## Requisitos
+
+- Python 3.14 e [uv](https://docs.astral.sh/uv/)
+- git
+- Docker (para o Postgres do estado)
+
+## Instalação
 
 ```bash
 uv sync --all-extras
 cp .env.example .env
-cp .env.development.example .env.development
+docker compose up -d
+uv run alembic upgrade head
 ```
 
-Banco de **desenvolvimento** — só com `--env development`. A suíte não precisa dele:
-sobe o próprio Postgres efêmero (ver [Testes](#testes)).
+Preencha o `.env`: credenciais do Tickio, `PROJECTS_DIR` (raiz onde `--repo <nome>` é
+procurado) e, opcionalmente, as do Bitbucket. Cada variável está comentada em
+[.env.example](.env.example).
+
+Cadastre cada repositório antes do primeiro comando nele:
 
 ```bash
+uv run motor repo adicionar meu-repo --tickio-sistema-id 7
+```
+
+## Uso
+
+```bash
+uv run motor verificar 13.34.0 --repo meu-repo             # verde? tasks, faltantes
+uv run motor verificar 13.34.0 --repo meu-repo --auditar   # versão liberada, sem escrever
+uv run motor consulta  13.34.0 --repo meu-repo             # snapshot salvo, sem recalcular
+uv run motor criar     13.35.0 --repo meu-repo             # cria a branch e compõe
+uv run motor atualizar 13.35.0 --repo meu-repo             # aplica os commits faltantes
+uv run motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
+uv run motor atualizar 13.35.0 --repo meu-repo --abort
+uv run motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
+uv run motor tui                                           # interface interativa
+```
+
+Todos os comandos de versão aceitam `--repo` (path, ou nome dentro de `PROJECTS_DIR`),
+`--debug`, `--sem-progresso`, `--task-source` e `--lista`. `uv run motor <comando> -h` lista
+o resto.
+
+### Fontes de tasks e de commits
+
+- **Tasks:** Tickio por padrão. Sem ele, `--task-source manual --lista arquivo.txt` lê um
+  número de task por linha (`#` comenta).
+- **Commits:** com `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` (ou `--bitbucket-token` /
+  `--bitbucket-email`), os commits de cada task vêm dos PRs do Bitbucket; o grep por
+  `ch<num>` em `master` fica como fallback. Sem credenciais, só o grep.
+
+### Worktrees mantidas em disco
+
+Cada operação levanta a versão numa worktree em `<repo>-worktrees/`. `WORKTREES_MANTIDAS`
+(default **3**) diz quantas ficam em disco para o próximo comando reusar em vez de refazer o
+checkout; `0` descarta a cada run.
+
+A eviction é por uso mais recente e nunca leva trabalho embora: worktree com alteração não
+commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pulada.
+
+## Desenvolvimento
+
+Tudo é **produção por padrão**: CLI, `compose.yml` e Alembic leem `.env`. O ambiente de
+desenvolvimento (`.env.development`, porta 5434) é sempre explícito:
+
+```bash
+cp .env.development.example .env.development
 docker compose --env-file .env.development up -d
-set -a; . ./.env.development; set +a; ./.venv/bin/python -m alembic upgrade head
+set -a; . ./.env.development; set +a; uv run alembic upgrade head
+uv run motor --env development verificar 13.34.0 --repo meu-repo
 ```
 
 O `set -a` é o que redireciona o Alembic: o `load_dotenv()` dele não sobrescreve variável já
-presente no ambiente, então as do `.env.development` ganham.
+presente no ambiente.
 
-Banco de **produção**:
-
-```bash
-docker compose up -d
-./.venv/bin/python -m alembic upgrade head
-```
-
-Cadastre cada repo antes do primeiro comando nele, em cada ambiente:
+### Testes e tipos
 
 ```bash
-uv run motor repo adicionar vendabemweb --tickio-sistema-id 7
-uv run motor --env development repo adicionar vendabemweb --tickio-sistema-id 7
+uv run pytest
+uv run mypy
 ```
 
-## Comandos
+Os dois são o portão — não há CI. A suíte roda sem git, sem rede e sem banco de pé: os testes
+marcados `integracao` sobem um Postgres efêmero via testcontainers, migram e o derrubam no
+fim (~9s; sem Docker, pulam). A URL vem do container, nunca do ambiente, então o `TRUNCATE`
+dos testes não alcança o banco do `.env`.
 
-Todos aceitam `--repo` (path do repo, ou nome dentro de `PROJECTS_DIR`), `--debug`,
-`--sem-progresso`, `--task-source tickio|manual` e `--lista`.
+Armadilhas conhecidas do ambiente: [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
-```bash
-uv run motor verificar 13.34.0 --repo vendabemweb    # status: verde, tasks, faltantes
-uv run motor verificar 13.34.0 --repo vendabemweb --auditar   # versão liberada, sem escrever
-uv run motor consulta  13.34.0 --repo vendabemweb    # snapshot salvo, sem recalcular
-uv run motor criar     13.35.0 --repo vendabemweb    # cria a branch e compõe
-uv run motor atualizar 13.35.0 --repo vendabemweb    # aplica os commits faltantes
-uv run motor atualizar 13.35.0 --repo vendabemweb --continue   # após resolver conflito
-uv run motor atualizar 13.35.0 --repo vendabemweb --abort
-uv run motor reconstruir-estado 13.35.0 --repo vendabemweb     # recuperação
-uv run motor tui                                     # interface interativa
-```
+## Licença
 
-`uv run motor <comando> -h` lista as flags daquele comando. Em desenvolvimento, `--env
-development` vem antes do comando: `uv run motor --env development verificar …`.
-
-A descoberta de commits por PR do Bitbucket é opcional: com `BITBUCKET_TOKEN` e
-`BITBUCKET_EMAIL` no ambiente (ou `--bitbucket-token`/`--bitbucket-email`), ela entra como
-fonte primária e o grep em `master` fica como fallback.
-
-## Worktrees mantidas em disco
-
-Levantar a worktree de uma versão é um checkout inteiro — depois do `fetch`, a espera mais
-longa de um comando. `WORKTREES_MANTIDAS` (default **3**) diz quantas ficam em disco depois
-da operação, em `<repo>-worktrees/`: o comando seguinte na mesma versão reusa o diretório em
-vez de refazer o checkout. `WORKTREES_MANTIDAS=0` volta ao comportamento de descartar a cada
-run. Vale para o CLI e para a TUI — as duas leem o mesmo arquivo de ambiente.
-
-A eviction é por **uso mais recente**, registrado em `<repo>-worktrees/.motor-mru`; sem esse
-arquivo, cai para ordem de versão decrescente. Nunca leva trabalho embora: worktree com
-alteração não commitada ou cherry-pick pendente (um `atualizar` bloqueado esperando
-`--continue`) é pulada. Commit local não entra na conta — `git worktree remove` desanexa o
-checkout e a branch continua em `refs/heads`.
-
-## Testes
-
-```bash
-./.venv/bin/python -m pytest
-```
-
-Roda sem git, sem rede e sem banco de pé. Os testes marcados `integracao` sobem um Postgres
-**efêmero** via testcontainers na primeira vez que algum deles pede banco, aplicam `alembic
-upgrade head` nele e o derrubam no fim da sessão — não fica banco de teste ligado fora da
-rodada. Sem Docker, pulam.
-
-Custo: ~9s na rodada completa, entre subir o container e migrar. A primeira rodada numa
-máquina nova é bem mais lenta, porque puxa as imagens `postgres:18-alpine` e
-`testcontainers/ryuk`.
-
-A URL da fixture vem do container, **nunca do ambiente**. É o que garante que o `TRUNCATE` das
-sete tabelas não alcance produção mesmo com `.env` apontado para lá — antes isso dependia de
-uma checagem que comparava as variáveis com as do `.env.development`.
+[MIT](LICENSE)
