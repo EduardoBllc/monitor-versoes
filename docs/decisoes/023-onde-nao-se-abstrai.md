@@ -16,5 +16,6 @@
   é desprezível para uso sob demanda, e esse gate trava rebuild e congelamento: dado stale
   aqui permitiria escrever numa versão já liberada — mais perigoso que uma chamada de rede a
   mais.
-- **Sem trigger na tabela `versao`** — limitação conhecida, não simplicidade deliberada
+- **Sem trigger na tabela `versao`** — deliberado: zerar `liberada_em` é a via de escape
+  do operador, e uma trigger ali arriscaria travar o próprio upsert que registra a versão
   ([011](011-congelamento-no-banco.md)).
