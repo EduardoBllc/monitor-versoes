@@ -102,6 +102,23 @@ RepoRegistrar = Callable[[str, int], None]
 PisoDefiner = Callable[[str, str], None]
 
 
+@dataclass(frozen=True)
+class Runners:
+    """O que a TUI chama para falar com o motor. Os opcionais ausentes deixam
+    a acao correspondente indisponivel na tela."""
+
+    carregar_repos: RepoLoader
+    carregar_versoes: VersionLoader
+    executar: VerifyRunner
+    atualizar_repo: UpdateRunner | None = None
+    continuar_repo: ContinueRunner | None = None
+    abortar_repo: AbortRunner | None = None
+    consultar_versao: ConsultaRunner | None = None
+    registrar_repo: RepoRegistrar | None = None
+    criar_repo: CriarRunner | None = None
+    definir_piso: PisoDefiner | None = None
+
+
 class ResultadoModal(ModalScreen[None]):
     """Resultado de verificar/atualizar por cima da lista de chamados.
 
@@ -564,35 +581,22 @@ class MotorTUI(App[None]):
     #consulta-detalhe { width: 1fr; }
     """
 
-    def __init__(
-        self,
-        carregar_repos: RepoLoader,
-        carregar_versoes: VersionLoader,
-        executar: VerifyRunner,
-        atualizar_repo: UpdateRunner | None = None,
-        continuar_repo: ContinueRunner | None = None,
-        abortar_repo: AbortRunner | None = None,
-        consultar_versao: ConsultaRunner | None = None,
-        registrar_repo: RepoRegistrar | None = None,
-        criar_repo: CriarRunner | None = None,
-        definir_piso: PisoDefiner | None = None,
-        slot: SlotProgresso | None = None,
-    ) -> None:
+    def __init__(self, runners: Runners, slot: SlotProgresso | None = None) -> None:
         super().__init__()
         # Compartilhado com os runners (ver run_tui): eles relatam de dentro da
         # thread do worker, esta classe so amostra na thread principal.
         self._slot = slot or SlotProgresso()
         self._painel_progresso: PainelProgresso | None = None
-        self._carregar_repos = carregar_repos
-        self._carregar_versoes = carregar_versoes
-        self._executar = executar
-        self._atualizar = atualizar_repo
-        self._continuar = continuar_repo
-        self._abortar = abortar_repo
-        self._consultar = consultar_versao
-        self._registrar = registrar_repo
-        self._criar = criar_repo
-        self._definir_piso = definir_piso
+        self._carregar_repos = runners.carregar_repos
+        self._carregar_versoes = runners.carregar_versoes
+        self._executar = runners.executar
+        self._atualizar = runners.atualizar_repo
+        self._continuar = runners.continuar_repo
+        self._abortar = runners.abortar_repo
+        self._consultar = runners.consultar_versao
+        self._registrar = runners.registrar_repo
+        self._criar = runners.criar_repo
+        self._definir_piso = runners.definir_piso
         # Piso vigente por repo. Fica aqui e nao no RepoOption do Select: trocar
         # o piso nao recarrega a lista, que zeraria a selecao de repo e versao.
         self._pisos: dict[str, str] = {}
@@ -1457,16 +1461,18 @@ def run_tui() -> None:
     # progresso existe.
     slot = SlotProgresso()
     MotorTUI(
-        partial(_repos_do_ambiente, progresso=slot.relatar),
-        partial(_versoes_do_repo, progresso=slot.relatar),
-        partial(_verificar_repo, progresso=slot.relatar),
-        partial(_atualizar_repo, progresso=slot.relatar),
-        partial(_continuar_repo, progresso=slot.relatar),
-        partial(_abortar_repo, progresso=slot.relatar),
-        partial(_consultar_repo, progresso=slot.relatar),
-        _registrar_no_banco,
-        partial(_criar_repo, progresso=slot.relatar),
-        _definir_piso_no_banco,
+        Runners(
+            partial(_repos_do_ambiente, progresso=slot.relatar),
+            partial(_versoes_do_repo, progresso=slot.relatar),
+            partial(_verificar_repo, progresso=slot.relatar),
+            partial(_atualizar_repo, progresso=slot.relatar),
+            partial(_continuar_repo, progresso=slot.relatar),
+            partial(_abortar_repo, progresso=slot.relatar),
+            partial(_consultar_repo, progresso=slot.relatar),
+            _registrar_no_banco,
+            partial(_criar_repo, progresso=slot.relatar),
+            _definir_piso_no_banco,
+        ),
         slot=slot,
     ).run()
 
@@ -1587,23 +1593,50 @@ def _faltantes(status: VersionStatus) -> Group | None:
     return _commits_agrupados(status.faltantes, estados)
 
 
+def _cabecalho_atualizacao(status: AtualizarStatus) -> Text:
+    if status == AtualizarStatus.BLOCKED:
+        return Text("● Atualização bloqueada", style="bold red")
+    if status == AtualizarStatus.VAZIO:
+        return Text("● Resolução sem alteração", style="bold yellow")
+    return Text("● Atualização concluída", style="bold green")
+
+
+def _pick_pendente(resultado: AtualizarResult) -> list[RenderableType]:
+    """O que o operador precisa para decidir o pick que ficou aberto."""
+    if resultado.status == AtualizarStatus.BLOCKED:
+        return [
+            Text(f"Commit: {resultado.blocked_commit[:8]}"),
+            Text("Arquivos em conflito:"),
+            *(Text(f"  {caminho}") for caminho in resultado.arquivos_conflito),
+            Text(
+                "Resolva os arquivos e retome em Continuar (u), "
+                "ou descarte em Abortar (a).",
+                style="bold yellow",
+            ),
+        ]
+    if resultado.status == AtualizarStatus.VAZIO:
+        return [
+            Text(f"Commit: {resultado.blocked_commit[:8]}"),
+            Text(
+                "A resolução não deixou alteração nenhuma no alvo. "
+                "Registrar vazio (u) entra com um commit vazio, com o trailer -x; "
+                "Abortar (a) descarta o commit.",
+                style="bold yellow",
+            ),
+        ]
+    return []
+
+
 def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
-    bloqueada = resultado.status == AtualizarStatus.BLOCKED
-    vazia = resultado.status == AtualizarStatus.VAZIO
-    if bloqueada:
-        cabecalho = Text("● Atualização bloqueada", style="bold red")
-    elif vazia:
-        cabecalho = Text("● Resolução sem alteração", style="bold yellow")
-    else:
-        cabecalho = Text("● Atualização concluída", style="bold green")
-    partes: list[RenderableType] = [cabecalho]
+    pick_pendente = _pick_pendente(resultado)
+    partes: list[RenderableType] = [_cabecalho_atualizacao(resultado.status)]
     aplicados = _commits_agrupados(
         resultado.aplicados,
         {commit.hash_origem: "APLICADO" for commit in resultado.aplicados},
     )
     if aplicados is not None:
         partes.append(aplicados)
-    elif not bloqueada and not vazia:
+    elif not pick_pendente:
         partes.append(Text("Branch já estava atualizada.", style="dim"))
     if resultado.vazios:
         hashes = ", ".join(commit.hash_origem[:8] for commit in resultado.vazios)
@@ -1621,27 +1654,7 @@ def renderizar_atualizacao(resultado: AtualizarResult) -> Group:
                 style="dim",
             )
         )
-    if bloqueada:
-        partes.append(Text(f"Commit: {resultado.blocked_commit[:8]}"))
-        partes.append(Text("Arquivos em conflito:"))
-        partes.extend(Text(f"  {caminho}") for caminho in resultado.arquivos_conflito)
-        partes.append(
-            Text(
-                "Resolva os arquivos e retome em Continuar (u), "
-                "ou descarte em Abortar (a).",
-                style="bold yellow",
-            )
-        )
-    if vazia:
-        partes.append(Text(f"Commit: {resultado.blocked_commit[:8]}"))
-        partes.append(
-            Text(
-                "A resolução não deixou alteração nenhuma no alvo. "
-                "Registrar vazio (u) entra com um commit vazio, com o trailer -x; "
-                "Abortar (a) descarta o commit.",
-                style="bold yellow",
-            )
-        )
+    partes.extend(pick_pendente)
     if resultado.status_versao is not None:
         alertas = _alertas(resultado.status_versao)
         if alertas is not None:
