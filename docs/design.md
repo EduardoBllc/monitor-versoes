@@ -9,11 +9,11 @@ Uma versão de release é uma **branch**; quando é liberada, o HEAD dela recebe
 homônima. Quem cria a tag é o processo de release, externo — a ferramenta apenas **lê** a tag
 existente. Três tipos, pelo número:
 
-| Tipo                    | Número  | Sai de                          |
-| ----------------------- | ------- | ------------------------------- |
-| Fechada                 | `X.0.0` | `master`                        |
-| Ajustada                | `X.Y.0` | fechada ou ajustada anterior    |
-| Específica de cliente   | `X.Y.Z` | qualquer versão anterior        |
+| Tipo                  | Número  | Sai de                       |
+| --------------------- | ------- | ---------------------------- |
+| Fechada               | `X.0.0` | `master`                     |
+| Ajustada              | `X.Y.0` | fechada ou ajustada anterior |
+| Específica de cliente | `X.Y.Z` | qualquer versão anterior     |
 
 A pergunta que a ferramenta responde é sempre a mesma: _"esta versão está com **todos** os
 commits que deveria?"_. E ela é difícil por um motivo só: **cherry-pick troca o hash**.
@@ -27,11 +27,11 @@ Checagens ortogonais: rodar as duas.
 
 Como o hash muda, a presença é respondida cruzando três camadas:
 
-| Fonte                  | Representa                                            | Muda quando                                       |
-| ---------------------- | ----------------------------------------------------- | ------------------------------------------------- |
-| **Tickio**             | o que _deveria_ estar (alvo)                          | task marcada para uma versão (§4)                 |
-| **estado (Postgres)**  | o que o tool _declarou_ colocar (intenção auditável)  | `verificar`/`atualizar` sobrescrevem; versão liberada nunca muda (§6) |
-| **git (trailer `-x`)** | o que está _fisicamente_ aplicado (prova)             | um cherry-pick acontece                           |
+| Fonte                  | Representa                                           | Muda quando                                                           |
+| ---------------------- | ---------------------------------------------------- | --------------------------------------------------------------------- |
+| **Tickio**             | o que _deveria_ estar (alvo)                         | task marcada para uma versão (§4)                                     |
+| **estado (Postgres)**  | o que o tool _declarou_ colocar (intenção auditável) | `verificar`/`atualizar` sobrescrevem; versão liberada nunca muda (§6) |
+| **git (trailer `-x`)** | o que está _fisicamente_ aplicado (prova)            | um cherry-pick acontece                                               |
 
 Verde só quando `Tickio = estado = git`. Cada camada pega o que a outra não pega:
 
@@ -148,7 +148,7 @@ commit por commit o que de fato falta.
 
 **Ancestralidade de branch não serve como teste aqui.** Cherry-pick troca o hash, então a tag
 de uma release branch praticamente nunca é ancestral de uma `X.0.0` — testar isso puxaria
-*toda* liberada desde a `13.0.0` para o alvo de cada versão fechada.
+_toda_ liberada desde a `13.0.0` para o alvo de cada versão fechada.
 
 **Custo aceito: liberada que o motor nunca operou fica fora.** Sem linha no estado ela não tem
 base gravada nem snapshot a proteger, e o motor não paga leitura de git pela tag dela — o que
@@ -261,8 +261,8 @@ protegidas; a tabela que as trava não é.
 | Caso                                  | Sinal                     | Ação                                                          |
 | ------------------------------------- | ------------------------- | ------------------------------------------------------------- |
 | Task nova marcada p/ versão           | em Tickio, fora do estado | aplica + registra                                             |
-| Task desmarcada do alvo               | no estado, fora do Tickio | **avisa**; remoção é decisão humana (reverter é destrutivo)    |
-| Commit do estado sumiu                | no estado, fora do git    | **alerta forte** — estado corrompido/rebase; não auto-corrige  |
+| Task desmarcada do alvo               | no estado, fora do Tickio | **avisa**; remoção é decisão humana (reverter é destrutivo)   |
+| Commit do estado sumiu                | no estado, fora do git    | **alerta forte** — estado corrompido/rebase; não auto-corrige |
 | Pick manual sem o tool                | no git, fora do estado    | **avisa**; oferece regularizar o estado                       |
 | Grep pegou commit que não deve entrar | candidato                 | vira exclusão, com motivo                                     |
 
@@ -370,7 +370,7 @@ front-ends, "montar no chamador" precisa de um lugar só — e esse lugar não �
 montagem tocasse a rede ou o git, todo comando pagaria por elas, e um clone sem `origin`
 passaria a falhar antes de começar. Por isso o `workspace/repo` do Bitbucket sai do remote na
 primeira busca, dentro do adapter, e não na construção. Única exceção deliberada:
-`resolver_repo`, porque o nome canônico e o `tickio_sistema_id` decidem *como* montar o resto.
+`resolver_repo`, porque o nome canônico e o `tickio_sistema_id` decidem _como_ montar o resto.
 
 Consequência de teste: as bordas de I/O se trocam em `motor.montagem`, não no front-end. Um
 `monkeypatch` no módulo do CLI não alcança mais a montagem da TUI, e é justamente esse o
