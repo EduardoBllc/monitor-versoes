@@ -63,11 +63,17 @@ ignore_missing_imports = true
 [tool.ruff]
 target-version = "py314"
 
-# Fora daqui ficam as regras de complexidade (C901, PLR09xx, PLR1702): ligam em
-# issue propria, depois das refatoracoes.
+# PLR1702 e preview; explicit-preview-rules liga so ela, nao toda regra preview
+# que caiba nos prefixos do select.
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "B", "UP", "I", "SIM", "RUF", "PLW", "PLR2004"]
+preview = true
+explicit-preview-rules = true
+select = [
+    "E4", "E7", "E9", "F", "B", "UP", "I", "SIM", "RUF", "PLW", "PLR2004",
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR1702",
+]
 
 # Numero literal em assert de teste e o valor esperado, nao numero magico.
+# Fixture do pytest entra como argumento: contar argumentos ali nao mede complexidade.
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLR2004"]
+"tests/**" = ["PLR2004", "PLR0913"]
