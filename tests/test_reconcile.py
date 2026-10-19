@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from motor.domain.reconcile import (
+    FatosDoGit,
     atribuicoes_de,
     diff_tasks,
     filtrar_excluidos,
@@ -58,7 +59,9 @@ def test_reconciliar_verde_quando_tudo_bate():
     anteriores = [
         Atribuicao(chamado="1", marcada="13.34.0", estado="aplicado", commits=["aaa"])
     ]
-    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+    status = reconciliar(
+        alvo, anteriores, {}, FatosDoGit({"aaa": Presence.TRAILER}, [], [])
+    )
 
     assert status.verde is True
     assert status.faltantes == []
@@ -69,7 +72,9 @@ def test_reconciliar_nao_fica_verde_com_tarefa_ambigua():
     anteriores = [
         Atribuicao(chamado="1", marcada="13.34.0", estado="aplicado", commits=["aaa"])
     ]
-    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+    status = reconciliar(
+        alvo, anteriores, {}, FatosDoGit({"aaa": Presence.TRAILER}, [], [])
+    )
 
     assert status.verde is False
     assert status.tasks_ambiguas == ["1"]
@@ -77,9 +82,9 @@ def test_reconciliar_nao_fica_verde_com_tarefa_ambigua():
 
 def test_reconciliar_acusa_tarefa_sem_commit_e_aceita_sem_entrega():
     alvo = Alvo(tasks=_alvo(**{"1": []}))
-    assert reconciliar(alvo, [], {}, {}, [], []).tasks_sem_commits == ["1"]
+    assert reconciliar(alvo, [], {}, FatosDoGit({}, [], [])).tasks_sem_commits == ["1"]
 
-    reconhecida = reconciliar(alvo, [], {"1": "so backend"}, {}, [], [])
+    reconhecida = reconciliar(alvo, [], {"1": "so backend"}, FatosDoGit({}, [], []))
     assert reconhecida.tasks_sem_commits == []
 
 
@@ -93,7 +98,9 @@ def test_reconciliar_reprova_e_reporta_tarefa_nova_e_removida():
     anteriores = [
         Atribuicao(chamado="2", marcada="13.34.0", estado="aplicado", commits=[])
     ]
-    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+    status = reconciliar(
+        alvo, anteriores, {}, FatosDoGit({"aaa": Presence.TRAILER}, [], [])
+    )
 
     assert status.tasks_novas == ["1"]
     assert status.tasks_removidas == ["2"]
@@ -109,7 +116,7 @@ def test_reconciliar_repassa_conflitantes_e_suspeitos_de_conteudo():
     alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
     aaa = CommitRef(hash_origem="aaa", chamado="1")
 
-    status = reconciliar(alvo, [], {}, {}, [aaa], [aaa])
+    status = reconciliar(alvo, [], {}, FatosDoGit({}, [aaa], [aaa]))
 
     assert status.conflitantes == [aaa]
     assert status.suspeitos_conteudo == [aaa]
@@ -124,7 +131,9 @@ def test_reconciliar_acusa_commit_que_sumiu_do_git():
             chamado="1", marcada="13.34.0", estado="aplicado", commits=["aaa", "sumido"]
         )
     ]
-    status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
+    status = reconciliar(
+        alvo, anteriores, {}, FatosDoGit({"aaa": Presence.TRAILER}, [], [])
+    )
 
     assert status.estado_integro is False
     assert status.commits_sumidos == ["sumido"]
@@ -156,13 +165,15 @@ def test_reconciliar_nao_confunde_pendente_com_commit_sumido():
     )
 
     # metade 1: pendente ausente do alvo nao e "sumido" — nao foi aplicado ainda
-    so_pendente = reconciliar(alvo, [pendente], {"2": "sem entrega"}, {}, [], [])
+    so_pendente = reconciliar(
+        alvo, [pendente], {"2": "sem entrega"}, FatosDoGit({}, [], [])
+    )
     assert so_pendente.commits_sumidos == []
     assert so_pendente.estado_integro is True
 
     # metade 2: aplicado que desapareceu do git segue sendo sumido
     com_sumido = reconciliar(
-        alvo, [pendente, aplicado_sumido], {"2": "sem entrega"}, {}, [], []
+        alvo, [pendente, aplicado_sumido], {"2": "sem entrega"}, FatosDoGit({}, [], [])
     )
     assert com_sumido.commits_sumidos == ["bbb"]
     assert com_sumido.estado_integro is False
@@ -180,10 +191,12 @@ def test_reconciliar_repassa_os_culpados_pelo_conflito():
         alvo,
         [],
         {},
-        {"aaa": Presence.AUSENTE},
-        [conflitante],
-        [],
-        conflito_causado_por={"aaa": ["200", "300"]},
+        FatosDoGit(
+            {"aaa": Presence.AUSENTE},
+            [conflitante],
+            [],
+            conflito_causado_por={"aaa": ["200", "300"]},
+        ),
     )
 
     assert status.conflito_causado_por == {"aaa": ["200", "300"]}
@@ -191,6 +204,6 @@ def test_reconciliar_repassa_os_culpados_pelo_conflito():
 
 def test_reconciliar_sem_culpados_deixa_o_dicionario_vazio():
     alvo = Alvo(tasks=_alvo(**{"400": ["aaa"]}))
-    status = reconciliar(alvo, [], {}, {"aaa": Presence.AUSENTE}, [], [])
+    status = reconciliar(alvo, [], {}, FatosDoGit({"aaa": Presence.AUSENTE}, [], []))
 
     assert status.conflito_causado_por == {}
