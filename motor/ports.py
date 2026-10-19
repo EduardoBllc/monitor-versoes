@@ -184,7 +184,9 @@ class GitRepo(Protocol):
         """Aberta cherry-pick."""
         ...
 
-    def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
+    def predict_merge(
+        self, parent: str, branch_tip: str, commit: str, /
+    ) -> MergePrediction:
         """Prevê merge."""
         ...
 
@@ -309,7 +311,9 @@ class EstadoRepo(Protocol):
         """chamado -> motivo."""
         ...
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(
+        self, repo: str, pr_ids: list[int], /
+    ) -> dict[int, list[CommitRef]]:
         """Commits em cache das PRs pedidas, ordenados por data.
 
         PR ausente do dict = nunca consultada, e a fonte tem que ir na API.

@@ -51,9 +51,7 @@ def diff_tasks(
     return sorted(novas), sorted(removidas)
 
 
-def atribuicoes_de(
-    alvo: TargetSet, presentes: dict[str, Presence]
-) -> list[Atribuicao]:
+def atribuicoes_de(alvo: TargetSet, presentes: dict[str, Presence]) -> list[Atribuicao]:
     """Projeta o alvo resolvido no formato que vai para o estado."""
     return [
         Atribuicao(

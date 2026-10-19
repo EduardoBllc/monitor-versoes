@@ -19,12 +19,15 @@ def _commit(hash_: str, chamado: str) -> CommitRef:
 
 def test_resolve_une_as_versoes_abertas_menores_ou_iguais():
     # Cenario da spec §2 passo 2: ch123123 marcada p/ 13.33.1 cai na 14.0.0.
-    tasks = FakeTaskSource(chamados={"13.33.1": ["123123"], "13.34.0": ["123456"],
-                                     "14.0.0": []})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [_commit("aaa", "123123")],
-        "123456": [_commit("bbb", "123456")],
-    })
+    tasks = FakeTaskSource(
+        chamados={"13.33.1": ["123123"], "13.34.0": ["123456"], "14.0.0": []}
+    )
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [_commit("aaa", "123123")],
+            "123456": [_commit("bbb", "123456")],
+        }
+    )
     resolver = TargetResolver(tasks=tasks, commits=commits)
 
     alvo = resolver.resolve("14.0.0", ["13.33.1", "13.34.0", "14.0.0"])

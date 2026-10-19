@@ -11,6 +11,7 @@ Revises: b1f2c3d4e5a6
 Create Date: 2026-10-08
 
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -25,9 +26,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         "repo",
-        sa.Column(
-            "piso_versao", sa.String(), nullable=False, server_default="13.0.0"
-        ),
+        sa.Column("piso_versao", sa.String(), nullable=False, server_default="13.0.0"),
     )
     # Mesmo motivo de ck_versao_tipo: o schema e corrigido via psql, e um piso
     # digitado errado so estouraria no proximo verificar, longe da causa.

@@ -181,7 +181,14 @@ def test_git_subprocess_search_commits_ignora_merge(tmp_path):
     _run_git(dir_, "commit", "-m", "ch256308. corrige algo")
 
     _run_git(dir_, "checkout", "master")
-    _run_git(dir_, "merge", "--no-ff", "VB-2687", "-m", "Merged in VB-2687 (pull request #948)")
+    _run_git(
+        dir_,
+        "merge",
+        "--no-ff",
+        "VB-2687",
+        "-m",
+        "Merged in VB-2687 (pull request #948)",
+    )
 
     g = new_git_subprocess(dir_)
     candidatos = g.search_commits(["ch256308", "VB-2687"], "master")
@@ -227,7 +234,10 @@ def test_quadros_separa_por_cr_e_traduz_a_fase():
     fetch inteiro como uma linha so e o painel nunca sairia do zero.
     """
     r, w = os.pipe()
-    os.write(w, b"remote: Counting objects:  25% (1/4)\rremote: Counting objects: 100% (4/4)\n")
+    os.write(
+        w,
+        b"remote: Counting objects:  25% (1/4)\rremote: Counting objects: 100% (4/4)\n",
+    )
     os.write(w, b"Receiving objects:  50% (3/6)\rFrom /tmp/origem\n")
     # O checkout do `worktree add` conta arquivo, e num pipe, sem --progress.
     os.write(w, b"Updating files:  97% (29100/30000)\r")
@@ -272,7 +282,9 @@ def test_git_subprocess_fetch_relata_o_progresso(tmp_path):
     )
 
 
-def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(tmp_path):
+def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
+    tmp_path,
+):
     """`git fetch origin` cria refs/remotes/origin/X e NENHUM head local (tag
     chega por tag-following, branch nao). Sem refs/remotes/ na varredura, uma
     versao aberta e empurrada de outra maquina fica invisivel mesmo depois do
@@ -491,11 +503,15 @@ def test_git_subprocess_list_version_tags(tmp_path):
 
     # Branch+tag aparecem em ambos, mas list_version_tags deve devolver exatamente uma vez
     assert "13.36.0" in branches, f"13.36.0 deve estar em branches: {branches!r}"
-    assert tags.count("13.36.0") == 1, f"13.36.0 deve aparecer exatamente uma vez em tags: {tags!r}"
+    assert tags.count("13.36.0") == 1, (
+        f"13.36.0 deve aparecer exatamente uma vez em tags: {tags!r}"
+    )
 
     # Non-version tags nao aparecem em nenhum
     assert "v1.0" not in tags, f"tag v1.0 nao deve estar em tags: {tags!r}"
-    assert "release-2024-01" not in tags, f"tag release-2024-01 nao deve estar em tags: {tags!r}"
+    assert "release-2024-01" not in tags, (
+        f"tag release-2024-01 nao deve estar em tags: {tags!r}"
+    )
     assert "v1.0" not in branches, f"tag v1.0 nao deve estar em branches: {branches!r}"
 
 
@@ -532,7 +548,9 @@ def test_git_subprocess_cherry_pick_x_rerere_auto_resolvido(tmp_path):
 
     # 1a tentativa: conflito real, resolvido a mao - grava a resolucao no rerere.
     g.worktree_add("13.7.0", base_hash)
-    g.write_file("13.7.0", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y")
+    g.write_file(
+        "13.7.0", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y"
+    )
 
     outcome = g.cherry_pick_x(commit_x)
     assert outcome == CherryPickOutcome.CONFLITO
@@ -547,14 +565,18 @@ def test_git_subprocess_cherry_pick_x_rerere_auto_resolvido(tmp_path):
     # deve resolver e re-stagear o arquivo sozinho, mas o cherry-pick continua
     # pendente (git nao chama --continue por conta propria).
     g.worktree_add("13.7.1", base_hash)
-    g.write_file("13.7.1", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y")
+    g.write_file(
+        "13.7.1", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y"
+    )
 
     outcome2 = g.cherry_pick_x(commit_x)
-    assert (
-        outcome2 == CherryPickOutcome.CONFLITO
-    ), "outcome2 deveria ser Conflito (git ainda espera --continue mesmo com rerere resolvendo)"
+    assert outcome2 == CherryPickOutcome.CONFLITO, (
+        "outcome2 deveria ser Conflito (git ainda espera --continue mesmo com rerere resolvendo)"
+    )
     paths2 = g.conflicted_paths()
-    assert paths2 == [], f"esperava rerere ter resolvido e deixado ConflictedPaths vazio, veio {paths2}"
+    assert paths2 == [], (
+        f"esperava rerere ter resolvido e deixado ConflictedPaths vazio, veio {paths2}"
+    )
     _, pendente = g.pending_cherry_pick()
     assert pendente, "esperava cherry-pick pendente apos rerere auto-resolver"
 
@@ -603,6 +625,7 @@ def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_
     conjunto aberto, o `inferir_base` a escolheria como base e ela falharia a
     resolver — erro limpo, mas desconcertante, e uma versao fantasma no alvo.
     """
+
     def _repo_com_branch(caminho, branch=None):
         caminho.mkdir()
         _run_git(str(caminho), "init", "-b", "master")
@@ -734,7 +757,9 @@ def test_culpados_por_linha_com_insercao_pura(tmp_path):
     assert "ch200" in msgs[0]
 
 
-def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(tmp_path):
+def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(
+    tmp_path,
+):
     """Conflito add/add: o commit *cria* o arquivo, entao ele nao existe no
     parent e nao ha linha a rastrear. O culpado e quem o apagou no meio.
     """
@@ -1035,7 +1060,9 @@ def test_git_subprocess_cherry_pick_x_vazio_quando_o_conteudo_ja_esta_no_alvo(tm
     assert g.cherry_pick_x(commit) == CherryPickOutcome.VAZIO
     assert g.conflicted_paths() == []
     _, pendente = g.pending_cherry_pick()
-    assert pendente, "o pick vazio fica aberto ate alguem decidir (o git nao fecha sozinho)"
+    assert pendente, (
+        "o pick vazio fica aberto ate alguem decidir (o git nao fecha sozinho)"
+    )
 
     g.commit_pick_vazio()
 
@@ -1069,7 +1096,9 @@ def test_git_subprocess_continue_cherry_pick_vazio_quando_a_resolucao_zera_o_dif
     commit_x = g.resolve_ref("master")
 
     g.worktree_add("13.7.0", base_hash)
-    g.write_file("13.7.0", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y")
+    g.write_file(
+        "13.7.0", "arquivo.txt", b"linha1\nlinha2-Y\nlinha3\n", "muda linha2 para Y"
+    )
 
     assert g.cherry_pick_x(commit_x) == CherryPickOutcome.CONFLITO
     assert g.conflicted_paths() != [], "esperava conflito real antes da resolucao"

@@ -50,10 +50,13 @@ def test_task_source_default_e_tickio():
     assert args.fonte_flag == "tickio"
 
 
-@pytest.mark.parametrize(("argv", "arquivo"), [
-    (["tui"], ".env"),
-    (["--env", "development", "tui"], ".env.development"),
-])
+@pytest.mark.parametrize(
+    ("argv", "arquivo"),
+    [
+        (["tui"], ".env"),
+        (["--env", "development", "tui"], ".env.development"),
+    ],
+)
 def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
     chamadas: list[str] = []
     ambientes: list[str] = []
@@ -81,13 +84,14 @@ def test_help_descreve_as_acoes_da_tui():
     assert "consulta, verificacao e atualizacao" in ajuda
 
 
-@pytest.mark.parametrize(("argv", "arquivo"), [
-    (["--help"], ".env"),
-    (["--env", "development", "--help"], ".env.development"),
-])
-def test_main_carrega_o_ambiente_escolhido_antes_do_parser(
-    monkeypatch, argv, arquivo
-):
+@pytest.mark.parametrize(
+    ("argv", "arquivo"),
+    [
+        (["--help"], ".env"),
+        (["--env", "development", "--help"], ".env.development"),
+    ],
+)
+def test_main_carrega_o_ambiente_escolhido_antes_do_parser(monkeypatch, argv, arquivo):
     chamadas = []
 
     def carregar(caminho=None, **opcoes):
@@ -109,8 +113,16 @@ def test_fonte_de_tasks_disponivel_em_todos_os_subcomandos():
     # AttributeError com traceback, nao mensagem.
     for comando in ("verificar", "criar", "atualizar", "reconstruir-estado"):
         args = _build_parser().parse_args(
-            [comando, "13.34.0", "--repo", "/tmp",
-             "--task-source", "manual", "--lista", "x.txt"]
+            [
+                comando,
+                "13.34.0",
+                "--repo",
+                "/tmp",
+                "--task-source",
+                "manual",
+                "--lista",
+                "x.txt",
+            ]
         )
         assert (args.fonte_flag, args.lista_manual) == ("manual", "x.txt")
 
@@ -162,10 +174,13 @@ def test_repo_piso_recusa_versao_fora_do_formato(capsys):
     assert "X.Y.Z" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(("argumentos", "mensagem"), [
-    (["pasta/backend", "--tickio-sistema-id", "42"], "nome simples"),
-    (["backend", "--tickio-sistema-id", "0"], "inteiro positivo"),
-])
+@pytest.mark.parametrize(
+    ("argumentos", "mensagem"),
+    [
+        (["pasta/backend", "--tickio-sistema-id", "42"], "nome simples"),
+        (["backend", "--tickio-sistema-id", "0"], "inteiro positivo"),
+    ],
+)
 def test_repo_adicionar_recusa_argumentos_invalidos(argumentos, mensagem, capsys):
     with pytest.raises(SystemExit) as saida:
         _build_parser().parse_args(["repo", "adicionar", *argumentos])
@@ -210,12 +225,14 @@ def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
     construcao — e um snapshot vazio ainda diria "verde: True", porque all([])
     e True. Esta e a unica superficie de leitura do que so o banco registra.
     """
-    imprimir_status(VersionStatus(
-        verde=True,
-        estado_integro=True,
-        liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
-        chamados=["255514", "256308"],
-    ))
+    imprimir_status(
+        VersionStatus(
+            verde=True,
+            estado_integro=True,
+            liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
+            chamados=["255514", "256308"],
+        )
+    )
 
     saida = capsys.readouterr().out
     assert "liberada em 2026-08-07 14:22" in saida
@@ -234,15 +251,17 @@ def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
     reescrito debaixo de um commit ja aplicado, e o verificar ja sobrescreveu a
     linha de estado que guardava a evidencia.
     """
-    imprimir_atualizacao(AtualizarResult(
-        status=AtualizarStatus.DONE,
-        status_versao=VersionStatus(
-            estado_integro=False,
-            tasks_ambiguas=["123456"],
-            tasks_sem_commits=["999111"],
-            commits_sumidos=["deadbeefcafe"],
-        ),
-    ))
+    imprimir_atualizacao(
+        AtualizarResult(
+            status=AtualizarStatus.DONE,
+            status_versao=VersionStatus(
+                estado_integro=False,
+                tasks_ambiguas=["123456"],
+                tasks_sem_commits=["999111"],
+                commits_sumidos=["deadbeefcafe"],
+            ),
+        )
+    )
 
     saida = capsys.readouterr().out
     assert "123456" in saida and "mais de uma versao" in saida
@@ -288,8 +307,11 @@ def bordas(monkeypatch):
     estado = FakeEstado(
         repos={"vendabemweb": RepoInfo(nome="vendabemweb", tickio_sistema_id=7)}
     )
-    for var, valor in (("TICKIO_BASE_URL", "http://tickio.exemplo"),
-                       ("TICKIO_USER", "u"), ("TICKIO_PASSWORD", "p")):
+    for var, valor in (
+        ("TICKIO_BASE_URL", "http://tickio.exemplo"),
+        ("TICKIO_USER", "u"),
+        ("TICKIO_PASSWORD", "p"),
+    ):
         monkeypatch.setenv(var, valor)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
@@ -302,8 +324,18 @@ def test_verificar_ponta_a_ponta_com_lista_manual(bordas, tmp_path, capsys):
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
-    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path),
-          "--task-source", "manual", "--lista", str(lista)])
+    main(
+        [
+            "verificar",
+            "13.34.0",
+            "--repo",
+            _repo_dir(tmp_path),
+            "--task-source",
+            "manual",
+            "--lista",
+            str(lista),
+        ]
+    )
 
     saida = capsys.readouterr().out
     assert "verde:" in saida
@@ -313,9 +345,7 @@ def test_verificar_ponta_a_ponta_com_lista_manual(bordas, tmp_path, capsys):
     assert git.fetched == ["origin"]
 
 
-def test_verificar_auditar_exibe_faltantes_de_versao_liberada(
-    bordas, tmp_path, capsys
-):
+def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, capsys):
     git, estado = bordas
     git.tags["13.34.0"] = True
     estado.registrar_versao(
@@ -331,10 +361,19 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
-    main([
-        "verificar", "13.34.0", "--repo", _repo_dir(tmp_path),
-        "--task-source", "manual", "--lista", str(lista), "--auditar",
-    ])
+    main(
+        [
+            "verificar",
+            "13.34.0",
+            "--repo",
+            _repo_dir(tmp_path),
+            "--task-source",
+            "manual",
+            "--lista",
+            str(lista),
+            "--auditar",
+        ]
+    )
 
     saida = capsys.readouterr().out
     assert "auditoria da tag 13.34.0" in saida
@@ -349,8 +388,18 @@ def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
     lista = tmp_path / "lista.txt"
     lista.write_text("", encoding="utf-8")
 
-    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path, "vbweb"),
-          "--task-source", "manual", "--lista", str(lista)])
+    main(
+        [
+            "verificar",
+            "13.34.0",
+            "--repo",
+            _repo_dir(tmp_path, "vbweb"),
+            "--task-source",
+            "manual",
+            "--lista",
+            str(lista),
+        ]
+    )
 
     # gravou sob o nome canonico, nao sob o basename do diretorio
     assert ("vendabemweb", "13.34.0") in estado.versoes
@@ -402,7 +451,9 @@ def test_reconstruir_estado_ponta_a_ponta(bordas, tmp_path, capsys):
 
 def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, capsys):
     git, estado = bordas
-    git.add_commit("c0ffee123456", "a0", "Título " + "longo " * 30 + "\ncorpo oculto", D)
+    git.add_commit(
+        "c0ffee123456", "a0", "Título " + "longo " * 30 + "\ncorpo oculto", D
+    )
     estado.registrar_versao(
         "vendabemweb",
         VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA),
@@ -434,8 +485,18 @@ def test_criar_ponta_a_ponta(bordas, tmp_path, capsys):
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
-    main(["criar", "13.35.0", "--repo", _repo_dir(tmp_path),
-          "--task-source", "manual", "--lista", str(lista)])
+    main(
+        [
+            "criar",
+            "13.35.0",
+            "--repo",
+            _repo_dir(tmp_path),
+            "--task-source",
+            "manual",
+            "--lista",
+            str(lista),
+        ]
+    )
 
     saida = capsys.readouterr().out
     assert "cherry-picks aplicados" in saida
@@ -485,8 +546,16 @@ def test_worktrees_mantidas_invalido_sai_1(bordas, tmp_path, caplog, monkeypatch
 
 def test_manual_sem_lista_sai_1(bordas, tmp_path, capsys):
     with pytest.raises(SystemExit) as saida:
-        main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path),
-              "--task-source", "manual"])
+        main(
+            [
+                "verificar",
+                "13.34.0",
+                "--repo",
+                _repo_dir(tmp_path),
+                "--task-source",
+                "manual",
+            ]
+        )
 
     assert saida.value.code == 1
     assert "--lista" in capsys.readouterr().err
@@ -506,12 +575,15 @@ def test_erro_operacional_sai_1_sem_traceback(bordas, tmp_path, monkeypatch, cap
     assert "Traceback" not in caplog.text
 
 
-def test_erro_com_nota_mostra_contexto_e_causa_na_linha(bordas, tmp_path, monkeypatch, caplog):
+def test_erro_com_nota_mostra_contexto_e_causa_na_linha(
+    bordas, tmp_path, monkeypatch, caplog
+):
     """__notes__ so aparece em traceback renderizado, e MotorError nunca
     renderiza traceback aqui — sem concatenar a nota na linha visivel, o
     contexto que os services agregam via add_note (task 7) se perdia por
     completo para o operador.
     """
+
     def sem_banco():
         erro = MotorError("Tickio respondeu 503")
         erro.add_note("buscando tasks da versao 13.34.0")
@@ -540,8 +612,9 @@ def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
     assert "Traceback" in caplog.text
 
 
-def test_main_nao_repovoa_variavel_que_o_teste_apagou(bordas, tmp_path, monkeypatch,
-                                                      caplog):
+def test_main_nao_repovoa_variavel_que_o_teste_apagou(
+    bordas, tmp_path, monkeypatch, caplog
+):
     """Pina a guarda estrutural do "sem rede" (fixture _sem_dotenv_dentro_do_main
     no conftest): sem ela, o load_dotenv() de dentro do main() traz de volta toda
     variavel que o teste apagou — foi assim que um teste de credencial ausente
@@ -571,8 +644,9 @@ def test_main_nao_repovoa_variavel_que_o_teste_apagou(bordas, tmp_path, monkeypa
     assert "TICKIO_USER" not in os.environ, "load_dotenv() rodou dentro do main()"
 
 
-def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(bordas, tmp_path, monkeypatch,
-                                                       caplog):
+def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(
+    bordas, tmp_path, monkeypatch, caplog
+):
     # vazio e nao delenv: a variavel ausente e o outro teste; aqui o que importa
     # e a mensagem nomear a variavel.
     monkeypatch.setenv("TICKIO_BASE_URL", "")
@@ -588,10 +662,13 @@ def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(bordas, tmp_path, monkeyp
     assert "faltando no .env: TICKIO_BASE_URL" in caplog.text
 
 
-@pytest.mark.parametrize("comando,esperado", [
-    (["atualizar", "13.34.0", "--abort"], "abortado"),
-    (["reconstruir-estado", "13.34.0"], "status: DONE"),
-])
+@pytest.mark.parametrize(
+    "comando,esperado",
+    [
+        (["atualizar", "13.34.0", "--abort"], "abortado"),
+        (["reconstruir-estado", "13.34.0"], "status: DONE"),
+    ],
+)
 def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
     bordas, tmp_path, monkeypatch, capsys, comando, esperado
 ):
@@ -611,8 +688,9 @@ def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
     assert esperado in capsys.readouterr().out
 
 
-def test_lista_manual_nao_exige_variavel_do_tickio(bordas, tmp_path, monkeypatch,
-                                                   capsys):
+def test_lista_manual_nao_exige_variavel_do_tickio(
+    bordas, tmp_path, monkeypatch, capsys
+):
     # TICKIO_USER/TICKIO_PASSWORD sao vazios no .env.example: quem usa --lista
     # nao pode ser obrigado a preencher.
     for var in ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD"):
@@ -620,8 +698,18 @@ def test_lista_manual_nao_exige_variavel_do_tickio(bordas, tmp_path, monkeypatch
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
-    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path),
-          "--task-source", "manual", "--lista", str(lista)])
+    main(
+        [
+            "verificar",
+            "13.34.0",
+            "--repo",
+            _repo_dir(tmp_path),
+            "--task-source",
+            "manual",
+            "--lista",
+            str(lista),
+        ]
+    )
 
     assert "verde:" in capsys.readouterr().out
 
@@ -680,17 +768,21 @@ def test_resolver_repo_nao_encontrado(tmp_path, monkeypatch):
 
 
 def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):
-    """"[CONFLITANTE]" sozinho diz que o commit trava, nao de que alteracao ele
+    """ "[CONFLITANTE]" sozinho diz que o commit trava, nao de que alteracao ele
     depende. Nomear os chamados e o que permite decidir entre puxar a
     dependencia para esta versao ou devolver o chamado.
     """
-    faltante = CommitRef(hash_origem="a0a0a0a0a0", chamado="255514", msg="ch255514 alfa")
-    imprimir_status(VersionStatus(
-        estado_integro=True,
-        faltantes=[faltante],
-        conflitantes=[faltante],
-        conflito_causado_por={"a0a0a0a0a0": ["255101", "254800"]},
-    ))
+    faltante = CommitRef(
+        hash_origem="a0a0a0a0a0", chamado="255514", msg="ch255514 alfa"
+    )
+    imprimir_status(
+        VersionStatus(
+            estado_integro=True,
+            faltantes=[faltante],
+            conflitantes=[faltante],
+            conflito_causado_por={"a0a0a0a0a0": ["255101", "254800"]},
+        )
+    )
 
     saida = capsys.readouterr().out
     assert "CONFLITANTE" in saida
@@ -699,12 +791,16 @@ def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):
 
 
 def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
-    faltante = CommitRef(hash_origem="a0a0a0a0a0", chamado="255514", msg="ch255514 alfa")
-    imprimir_status(VersionStatus(
-        estado_integro=True,
-        faltantes=[faltante],
-        conflitantes=[faltante],
-    ))
+    faltante = CommitRef(
+        hash_origem="a0a0a0a0a0", chamado="255514", msg="ch255514 alfa"
+    )
+    imprimir_status(
+        VersionStatus(
+            estado_integro=True,
+            faltantes=[faltante],
+            conflitantes=[faltante],
+        )
+    )
 
     saida = capsys.readouterr().out
     assert "[CONFLITANTE]" in saida

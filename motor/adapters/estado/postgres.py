@@ -70,9 +70,7 @@ class PostgresEstado:
         )
         if ja_cadastrado:
             raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
-        self.sessao.add(
-            models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id)
-        )
+        self.sessao.add(models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id))
         self._commit()
 
     def resolver_repo(self, basename: str, /) -> RepoInfo:
@@ -164,7 +162,9 @@ class PostgresEstado:
         for linha in self._scalars(
             select(models.AtribuicaoCommit)
             .where(models.AtribuicaoCommit.versao_id == versao_id)
-            .order_by(models.AtribuicaoCommit.chamado, models.AtribuicaoCommit.hash_origem)
+            .order_by(
+                models.AtribuicaoCommit.chamado, models.AtribuicaoCommit.hash_origem
+            )
         ):
             commits.setdefault(linha.chamado, []).append(linha.hash_origem)
         return [
@@ -258,7 +258,9 @@ class PostgresEstado:
             )
         }
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(
+        self, repo: str, pr_ids: list[int], /
+    ) -> dict[int, list[CommitRef]]:
         repo_id = self._repo_id(repo)
         achados: dict[int, list[CommitRef]] = {}
         for linha in self._scalars(
@@ -426,8 +428,7 @@ class PostgresEstado:
         sqlstate = getattr(e.orig, "sqlstate", None)
         if sqlstate == ERRCODE_VERSAO_CONGELADA or (
             # fallback para banco que ainda nao rodou a migracao do errcode
-            sqlstate is not None
-            and "imutavel" in str(e.orig)
+            sqlstate is not None and "imutavel" in str(e.orig)
         ):
             raise RecusaDeInvariante(
                 "versao liberada e imutavel — remarque a tarefa para a proxima versao"

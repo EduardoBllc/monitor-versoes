@@ -26,14 +26,24 @@ D1 = D + datetime.timedelta(minutes=1)
 
 UM = {
     "255514": [
-        CommitRef(hash_origem="a0", parent="m0", chamado="255514", commit_date=D,
-                  msg="ch255514 corrige logs")
+        CommitRef(
+            hash_origem="a0",
+            parent="m0",
+            chamado="255514",
+            commit_date=D,
+            msg="ch255514 corrige logs",
+        )
     ]
 }
 DOIS = UM | {
     "255515": [
-        CommitRef(hash_origem="a1", parent="a0", chamado="255515", commit_date=D1,
-                  msg="ch255515 outra correcao")
+        CommitRef(
+            hash_origem="a1",
+            parent="a0",
+            chamado="255515",
+            commit_date=D1,
+            msg="ch255515 outra correcao",
+        )
     ]
 }
 
@@ -98,11 +108,19 @@ def test_atualizar_aplica_tudo():
 
     resultado = atualizar(_deps(g, estado, ["255514"], UM), "13.7.0")
 
-    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, (
+        f"status = {resultado.status!r}, quer DONE"
+    )
     assert [c.hash_origem for c in resultado.aplicados] == ["a0"]
-    assert g.remotes.get("13.7.0") is True, "esperava push apos lote fechar sem conflito"
-    assert g.removed_worktrees == ["13.7.0"], "esperava worktree removida apos lote fechar sem conflito"
-    assert "13.7.0" in g.branches, "worktree_remove nao pode apagar a branch, so o checkout local"
+    assert g.remotes.get("13.7.0") is True, (
+        "esperava push apos lote fechar sem conflito"
+    )
+    assert g.removed_worktrees == ["13.7.0"], (
+        "esperava worktree removida apos lote fechar sem conflito"
+    )
+    assert "13.7.0" in g.branches, (
+        "worktree_remove nao pode apagar a branch, so o checkout local"
+    )
     # o verificar gravou 'pendente' (a presenca dele e de ANTES dos picks); e o
     # atualizar que regrava 'aplicado' no fim do lote.
     assert [
@@ -121,7 +139,9 @@ def test_atualizar_nao_marca_como_aplicada_tarefa_sem_commit():
 
     resultado = atualizar(_deps(g, estado, ["255514", "999999"], UM), "13.7.0")
 
-    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, (
+        f"status = {resultado.status!r}, quer DONE"
+    )
     assert [(a.chamado, a.estado) for a in estado.atribuicoes("r", "13.7.0")] == [
         ("255514", "aplicado"),
         ("999999", "pendente"),
@@ -159,13 +179,15 @@ def test_atualizar_para_em_conflito():
 
     resultado = atualizar(_deps(g, estado, ["255514"], UM), "13.7.0")
 
-    assert (
-        resultado.status == AtualizarStatus.BLOCKED
-    ), f"status = {resultado.status!r}, quer BLOCKED"
+    assert resultado.status == AtualizarStatus.BLOCKED, (
+        f"status = {resultado.status!r}, quer BLOCKED"
+    )
     assert resultado.blocked_commit == "a0", (
         f"blocked_commit = {resultado.blocked_commit!r}, quer a0"
     )
-    assert "13.7.0" not in g.remotes, "nao esperava push com lote bloqueado por conflito"
+    assert "13.7.0" not in g.remotes, (
+        "nao esperava push com lote bloqueado por conflito"
+    )
     assert g.removed_worktrees == [], (
         "nao esperava remover a worktree com lote bloqueado - --continue precisa dela"
     )
@@ -193,7 +215,9 @@ def test_atualizar_abort_remove_worktree():
     atualizar_abort(deps, "13.7.0")
 
     assert g.removed_worktrees == ["13.7.0"], "esperava worktree removida apos abort"
-    assert "13.7.0" in g.branches, "worktree_remove nao pode apagar a branch, so o checkout local"
+    assert "13.7.0" in g.branches, (
+        "worktree_remove nao pode apagar a branch, so o checkout local"
+    )
 
 
 def test_atualizar_continue_conclui_o_lote():
@@ -205,11 +229,15 @@ def test_atualizar_continue_conclui_o_lote():
 
     resultado = atualizar_continue(deps, "13.7.0")
 
-    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, (
+        f"status = {resultado.status!r}, quer DONE"
+    )
     assert [(a.chamado, a.estado) for a in estado.atribuicoes("r", "13.7.0")] == [
         ("255514", "aplicado")
     ]
-    assert g.remotes.get("13.7.0") is True, "esperava push apos o lote fechar no continue"
+    assert g.remotes.get("13.7.0") is True, (
+        "esperava push apos o lote fechar no continue"
+    )
 
 
 def test_atualizar_continue_preserva_os_commits_do_lote_anterior():
@@ -224,13 +252,16 @@ def test_atualizar_continue_preserva_os_commits_do_lote_anterior():
     deps = _deps(g, estado, ["255514", "255515"], DOIS)
 
     resultado = atualizar(deps, "13.7.0")
-    assert (resultado.status, resultado.blocked_commit) == (AtualizarStatus.BLOCKED, "a1"), (
-        f"resultado inicial = {resultado!r}, quer BLOCKED em a1"
-    )
+    assert (resultado.status, resultado.blocked_commit) == (
+        AtualizarStatus.BLOCKED,
+        "a1",
+    ), f"resultado inicial = {resultado!r}, quer BLOCKED em a1"
 
     resultado = atualizar_continue(deps, "13.7.0")
 
-    assert resultado.status == AtualizarStatus.DONE, f"status = {resultado.status!r}, quer DONE"
+    assert resultado.status == AtualizarStatus.DONE, (
+        f"status = {resultado.status!r}, quer DONE"
+    )
     assert [
         (a.chamado, a.estado, a.commits) for a in estado.atribuicoes("r", "13.7.0")
     ] == [
@@ -271,8 +302,13 @@ def test_atualizar_continue_recusa_versao_com_tag():
 def test_atualizar_recusa_versao_com_tag():
     git = FakeGit(branches={"13.34.0": "b1"}, tags={"13.34.0": True})
     estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
-    deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r",
-                commit_source=FakeCommitSource())
+    deps = Deps(
+        git=git,
+        tasks=FakeTaskSource(),
+        estado=estado,
+        repo="r",
+        commit_source=FakeCommitSource(),
+    )
 
     with pytest.raises(RecusaDeInvariante):
         atualizar(deps, "13.34.0")
@@ -289,8 +325,15 @@ def test_atualizar_busca_antes_de_ler_a_tag():
     """
     g = _git(classe=_GitQueTagueiaNoFetch)
     estado = _estado()
-    estado.registrar_versao("r", VersaoInfo(numero="13.7.0", tipo=VersionType.AJUSTADA,
-                                            base_ref="13.6.0", base_commit="m0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.7.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.6.0",
+            base_commit="m0",
+        ),
+    )
 
     with pytest.raises(RecusaDeInvariante):
         atualizar(_deps(g, estado, ["255514"], UM), "13.7.0")
@@ -420,8 +463,13 @@ def test_atualizar_aplica_na_ordem_do_grafo_nao_da_data_do_autor():
     g.set_branch("13.7.0", "m0")
     commits = {
         "257911": [
-            CommitRef(hash_origem=c.hash, parent=c.parent, chamado="257911",
-                      commit_date=c.date, msg=c.msg)
+            CommitRef(
+                hash_origem=c.hash,
+                parent=c.parent,
+                chamado="257911",
+                commit_date=c.date,
+                msg=c.msg,
+            )
             for c in (g.commits["r1"], g.commits["p1272"], g.commits["r2"])
         ]
     }

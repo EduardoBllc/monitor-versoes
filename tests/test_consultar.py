@@ -12,8 +12,13 @@ from motor.engine.deps import Deps
 
 
 def _deps(git: FakeGit, estado: FakeEstado) -> Deps:
-    return Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r",
-                commit_source=FakeCommitSource())
+    return Deps(
+        git=git,
+        tasks=FakeTaskSource(),
+        estado=estado,
+        repo="r",
+        commit_source=FakeCommitSource(),
+    )
 
 
 def _estado(atribuicoes: list[Atribuicao]) -> FakeEstado:
@@ -31,11 +36,13 @@ def test_ordena_pelo_commit_de_origem_mais_adiante_no_grafo():
     git.add_commit("a1", "", "ch9 antigo", datetime.datetime(2026, 3, 1))
     git.add_commit("c1", "a1", "ch100 meio", datetime.datetime(2026, 2, 1))
     git.add_commit("b1", "c1", "ch25 novo", datetime.datetime(2026, 1, 1))
-    estado = _estado([
-        Atribuicao(chamado="9", marcada="13.34.0", commits=["a1"]),
-        Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
-        Atribuicao(chamado="100", marcada="13.34.0", commits=["c1"]),
-    ])
+    estado = _estado(
+        [
+            Atribuicao(chamado="9", marcada="13.34.0", commits=["a1"]),
+            Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
+            Atribuicao(chamado="100", marcada="13.34.0", commits=["c1"]),
+        ]
+    )
 
     assert [c.chamado for c in consultar(_deps(git, estado), "13.34.0")] == [
         "25",
@@ -49,10 +56,12 @@ def test_chamado_usa_o_commit_mais_novo_que_tem():
     git.add_commit("a1", "", "ch9 um", datetime.datetime(2026, 1, 1))
     git.add_commit("b1", "a1", "ch25 so", datetime.datetime(2026, 3, 1))
     git.add_commit("a2", "b1", "ch9 dois", datetime.datetime(2026, 2, 1))
-    estado = _estado([
-        Atribuicao(chamado="9", marcada="13.34.0", commits=["a1", "a2"]),
-        Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
-    ])
+    estado = _estado(
+        [
+            Atribuicao(chamado="9", marcada="13.34.0", commits=["a1", "a2"]),
+            Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
+        ]
+    )
 
     assert [c.chamado for c in consultar(_deps(git, estado), "13.34.0")] == ["9", "25"]
 
@@ -61,10 +70,12 @@ def test_commit_sem_meta_vai_para_o_fim():
     # Hash ausente no git nao tem posicao no grafo.
     git = FakeGit()
     git.add_commit("b1", "", "ch25 so", datetime.datetime(2026, 3, 1))
-    estado = _estado([
-        Atribuicao(chamado="9", marcada="13.34.0", commits=["sumido"]),
-        Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
-    ])
+    estado = _estado(
+        [
+            Atribuicao(chamado="9", marcada="13.34.0", commits=["sumido"]),
+            Atribuicao(chamado="25", marcada="13.34.0", commits=["b1"]),
+        ]
+    )
 
     resultado = consultar(_deps(git, estado), "13.34.0")
 
@@ -78,9 +89,11 @@ def test_commits_do_chamado_saem_na_ordem_do_grafo():
     git = FakeGit()
     git.add_commit("z-pai", "", "ch9 pai", datetime.datetime(2026, 5, 1))
     git.add_commit("a-filho", "z-pai", "ch9 filho", datetime.datetime(2026, 1, 1))
-    estado = _estado([
-        Atribuicao(chamado="9", marcada="13.34.0", commits=["a-filho", "z-pai"]),
-    ])
+    estado = _estado(
+        [
+            Atribuicao(chamado="9", marcada="13.34.0", commits=["a-filho", "z-pai"]),
+        ]
+    )
 
     [chamado] = consultar(_deps(git, estado), "13.34.0")
 

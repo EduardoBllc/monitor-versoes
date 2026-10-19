@@ -11,13 +11,17 @@ from motor.services.base_resolver import BaseResolver
 
 def test_base_resolver_resolve():
     g = FakeGit()
-    g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc))
+    g.add_commit(
+        "hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc)
+    )
     g.set_branch("13.6.0", "hash136")
 
     resolver = BaseResolver(git=g)
     base = resolver.resolve("13.7.0")
 
-    assert base.ref == "13.6.0" and base.commit == "hash136", f"base = {base!r}, quer ref=13.6.0 commit=hash136"
+    assert base.ref == "13.6.0" and base.commit == "hash136", (
+        f"base = {base!r}, quer ref=13.6.0 commit=hash136"
+    )
 
 
 def test_base_resolver_usa_a_ref_de_rastreamento_quando_nao_ha_head_local():
@@ -28,7 +32,9 @@ def test_base_resolver_usa_a_ref_de_rastreamento_quando_nao_ha_head_local():
     segunda tentativa a base correta viraria erro.
     """
     g = FakeGit(remote_refs={"13.6.0": "hash136"})
-    g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc))
+    g.add_commit(
+        "hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc)
+    )
 
     base = BaseResolver(git=g).resolve("13.7.0")
 
@@ -49,7 +55,9 @@ def test_base_resolver_prefere_o_head_local_a_ref_de_rastreamento():
         remote_refs={"13.6.0": "remoto136"},
     )
     for h in ("local136", "remoto136"):
-        g.add_commit(h, "", f"base 13.6.0 em {h}", datetime.datetime.now(datetime.timezone.utc))
+        g.add_commit(
+            h, "", f"base 13.6.0 em {h}", datetime.datetime.now(datetime.timezone.utc)
+        )
 
     base = BaseResolver(git=g).resolve("13.7.0")
 

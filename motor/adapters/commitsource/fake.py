@@ -16,6 +16,4 @@ class FakeCommitSource:
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         if self.err is not None:
             raise self.err
-        return {
-            c: self.por_chamado[c] for c in chamados if self.por_chamado.get(c)
-        }
+        return {c: self.por_chamado[c] for c in chamados if self.por_chamado.get(c)}

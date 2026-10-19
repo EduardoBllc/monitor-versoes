@@ -60,7 +60,10 @@ def _culpados_do_conflito(
             if c.hash_origem in ja_simulados:
                 continue
             # Culpado que ja esta no alvo nao pode ser a causa da divergencia.
-            if oracle.presente(c.hash_origem, base_commit, ref_alvo) != Presence.AUSENTE:
+            if (
+                oracle.presente(c.hash_origem, base_commit, ref_alvo)
+                != Presence.AUSENTE
+            ):
                 continue
             ch = extrair_chamado(c.msg)
             if ch is not None:
@@ -210,9 +213,7 @@ def verificar(
     resultado = resolver.resolve(versao, candidatas, liberadas=frozenset(tags))
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
-    alvo = filtrar_excluidos(
-        resultado.tasks, deps.estado.exclusoes(deps.repo), versao
-    )
+    alvo = filtrar_excluidos(resultado.tasks, deps.estado.exclusoes(deps.repo), versao)
 
     # ANTES de sobrescrever: e o que detecta tarefa desmarcada no Tickio.
     anteriores = deps.estado.atribuicoes(deps.repo, versao)
@@ -263,15 +264,14 @@ def verificar(
     # tambem esta faltando, embora o pai seja aplicado antes dele.
     tip = deps.git.resolve_ref(ref_alvo)
     candidatos = ordem_de_aplicacao(
-        deps, [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito]
+        deps,
+        [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
     )
     conflitantes: list[CommitRef] = []
     conflito_causado_por: dict[str, list[str]] = {}
     ja_simulados: set[str] = set()
     for indice, c in enumerate(candidatos, start=1):
-        deps.progresso(
-            Progresso("simulando conflitos", indice, len(candidatos))
-        )
+        deps.progresso(Progresso("simulando conflitos", indice, len(candidatos)))
         if presentes[c.hash_origem] != Presence.AUSENTE:
             continue
         meta = deps.git.commit_meta(c.hash_origem)

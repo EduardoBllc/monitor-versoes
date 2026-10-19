@@ -362,9 +362,7 @@ def test_commits_de_pr_vem_ordenados_por_data(estado):
     # o adapter real usa ORDER BY; sem ordenar, o fake devolveria ordem de
     # insercao por acidente e a suite ficaria verde num contrato que o banco
     # nao cumpre.
-    estado.gravar_commits_de_pr(
-        REPO, {7: [_cr("bbb", quando=9), _cr("aaa", quando=2)]}
-    )
+    estado.gravar_commits_de_pr(REPO, {7: [_cr("bbb", quando=9), _cr("aaa", quando=2)]})
     assert [c.hash_origem for c in estado.commits_de_pr(REPO, [7])[7]] == [
         "aaa",
         "bbb",
@@ -407,7 +405,9 @@ def test_nenhuma_assercao_casa_substring_de_mensagem():
 # -- indice de PRs e marca da varredura ----------------------------------------
 
 
-def _pr(pr_id: int, titulo: str = "ch1 fix", branch: str = "b", dia: int = 1) -> PrIndex:
+def _pr(
+    pr_id: int, titulo: str = "ch1 fix", branch: str = "b", dia: int = 1
+) -> PrIndex:
     return PrIndex(
         pr_id=pr_id,
         titulo=titulo,

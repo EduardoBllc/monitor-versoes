@@ -72,12 +72,12 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
         # Mesma regra do verificar: a base gravada manda.
         base_commit = info.base_commit
 
-    deps.progresso(
-        Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git")
-    )
+    deps.progresso(Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git"))
     atribuicoes, orfaos = reconstruir_atribuicoes(deps.git, base_commit, versao)
     deps.estado.substituir_atribuicoes(deps.repo, versao, atribuicoes)
 
     if orfaos:
-        return ReconstructResult(status=ReconstructStatus.PENDING_JUDGMENT, orfaos=orfaos)
+        return ReconstructResult(
+            status=ReconstructStatus.PENDING_JUDGMENT, orfaos=orfaos
+        )
     return ReconstructResult(status=ReconstructStatus.DONE)

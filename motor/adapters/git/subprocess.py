@@ -21,7 +21,12 @@ from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef
 from motor.domain.version import worktrees_a_remover
-from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado, RespostaInvalida
+from motor.errors import (
+    BackendIndisponivel,
+    MotorError,
+    NaoEncontrado,
+    RespostaInvalida,
+)
 from motor.ports import CherryPickOutcome, MergePrediction
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -38,6 +43,7 @@ def _cronometrar(*args: str) -> Iterator[None]:
         yield
     finally:
         logger.debug("git %s: %.3fs", " ".join(args), time.monotonic() - inicio)
+
 
 #: Hashes por chamada de `commits_meta`. Existe pelo limite de tamanho de
 #: linha de comando do SO (ARG_MAX): 500 hashes de 40 caracteres dao ~20 KB,
@@ -175,7 +181,9 @@ def _parse_log(out: str) -> list[CommitRef]:
             data = datetime.datetime.fromisoformat(campos[1])
         except ValueError as e:
             raise RespostaInvalida(f"parseando data do commit {campos[0]}: {e}") from e
-        resultado.append(CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2]))
+        resultado.append(
+            CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2])
+        )
     return resultado
 
 
@@ -269,7 +277,7 @@ class GitSubprocess:
         try:
             with open(self._caminho_mru(), encoding="utf-8") as f:
                 return [linha.strip() for linha in f if linha.strip()]
-        except (OSError, UnicodeDecodeError):
+        except OSError, UnicodeDecodeError:
             return []
 
     def _caminho_mru(self) -> str:
@@ -303,7 +311,9 @@ class GitSubprocess:
             proc = _rodar_git(["git", *args], cwd=dir_)
         if proc.returncode != 0:
             saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
-            raise MotorError(f"git {' '.join(args)}: exit status {proc.returncode}: {saida}")
+            raise MotorError(
+                f"git {' '.join(args)}: exit status {proc.returncode}: {saida}"
+            )
 
     def _run_progresso(self, dir_: str, *args: str) -> None:
         """`_run` que relata as fases pelo caminho.
@@ -416,7 +426,9 @@ class GitSubprocess:
             parent = self._output(self.repo_path, "rev-parse", hash + "^")
         except MotorError:
             parent = ""
-        return CommitRef(hash_origem=campos[0], commit_date=data, msg=campos[2], parent=parent)
+        return CommitRef(
+            hash_origem=campos[0], commit_date=data, msg=campos[2], parent=parent
+        )
 
     def commits_meta(self, hashes: list[str], /) -> dict[str, CommitRef]:
         # `--no-walk=unsorted` para nao andar pelos ancestrais e devolver so os
@@ -592,9 +604,7 @@ class GitSubprocess:
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
         with _cronometrar("cherry-pick", "--continue"):
-            proc = _rodar_git(
-                ["git", "cherry-pick", "--continue"], cwd=dir_, env=env
-            )
+            proc = _rodar_git(["git", "cherry-pick", "--continue"], cwd=dir_, env=env)
         if proc.returncode == 0:
             return CherryPickOutcome.APLICADO
         # Resolucao que zerou o diff: o --continue nunca fecha esse pick, por
@@ -605,7 +615,9 @@ class GitSubprocess:
         if pendente and self._conflito_ou_vazio(dir_) == CherryPickOutcome.VAZIO:
             return CherryPickOutcome.VAZIO
         saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
-        raise MotorError(f"git cherry-pick --continue: exit status {proc.returncode}: {saida}")
+        raise MotorError(
+            f"git cherry-pick --continue: exit status {proc.returncode}: {saida}"
+        )
 
     def commit_pick_vazio(self) -> None:
         """`git commit --allow-empty` do pick pendente.
@@ -637,8 +649,16 @@ class GitSubprocess:
     def abort_cherry_pick(self) -> None:
         self._run(self._worktree_dir(self._current_branch), "cherry-pick", "--abort")
 
-    def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
-        args = ("merge-tree", "--write-tree", f"--merge-base={parent}", branch_tip, commit)
+    def predict_merge(
+        self, parent: str, branch_tip: str, commit: str, /
+    ) -> MergePrediction:
+        args = (
+            "merge-tree",
+            "--write-tree",
+            f"--merge-base={parent}",
+            branch_tip,
+            commit,
+        )
         with _cronometrar(*args):
             proc = _rodar_git(["git", *args], cwd=self.repo_path)
         if proc.returncode == 0:
@@ -649,7 +669,9 @@ class GitSubprocess:
             )
         saida = _saida_git_publica((proc.stdout or "") + (proc.stderr or ""))
         if proc.returncode == 1:
-            return MergePrediction(conflita=True, arquivos_conflito=_parse_conflict_files(saida))
+            return MergePrediction(
+                conflita=True, arquivos_conflito=_parse_conflict_files(saida)
+            )
         raise MotorError(
             f"git merge-tree --write-tree --merge-base={parent} {branch_tip} {commit}: "
             f"exit status {proc.returncode}: {saida}"
@@ -658,7 +680,9 @@ class GitSubprocess:
     def culpados_por_linha(
         self, base: str, parent: str, commit: str, arquivos: list[str], /
     ) -> dict[str, list[CommitRef]]:
-        formato = f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}"
+        formato = (
+            f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}"
+        )
         resultado: dict[str, list[CommitRef]] = {}
         for arquivo in arquivos:
             diff = self._output(
@@ -675,7 +699,12 @@ class GitSubprocess:
                 # o apagou.
                 commits = _parse_log(
                     self._output(
-                        self.repo_path, "log", formato, f"{base}..{parent}", "--", arquivo
+                        self.repo_path,
+                        "log",
+                        formato,
+                        f"{base}..{parent}",
+                        "--",
+                        arquivo,
                     )
                 )
             else:
@@ -692,9 +721,7 @@ class GitSubprocess:
 
     def worktree_add(self, branch: str, base: str, /) -> None:
         dir_ = self._worktree_dir(branch)
-        self._run_progresso(
-            self.repo_path, "worktree", "add", "-b", branch, dir_, base
-        )
+        self._run_progresso(self.repo_path, "worktree", "add", "-b", branch, dir_, base)
         self._registrar_uso(branch)
         self._current_branch = branch
 
@@ -779,7 +806,9 @@ class GitSubprocess:
         # --force: descarta o cruft nao rastreado que bloquearia a remocao. O
         # `_descartavel` ja garantiu que nao ha alteracao rastreada nem
         # cherry-pick pendente para levar embora junto.
-        self._run(self.repo_path, "worktree", "remove", "--force", self._worktree_dir(branch))
+        self._run(
+            self.repo_path, "worktree", "remove", "--force", self._worktree_dir(branch)
+        )
 
     def tag_exists(self, tag: str, /) -> bool:
         out = self._output(self.repo_path, "tag", "-l", tag)
@@ -861,9 +890,7 @@ class GitSubprocess:
         return sorted(nomes)
 
     def read_file(self, branch: str, path: str, /) -> bytes:
-        proc = _rodar_git_bytes(
-            ["git", "show", f"{branch}:{path}"], cwd=self.repo_path
-        )
+        proc = _rodar_git_bytes(["git", "show", f"{branch}:{path}"], cwd=self.repo_path)
         if proc.returncode != 0:
             raise MotorError(
                 f"git show {branch}:{path}: exit status {proc.returncode}: "

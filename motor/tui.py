@@ -96,6 +96,8 @@ class ContinueRunner(Protocol):
     def __call__(
         self, repo: RepoOption, versao: str, /, *, allow_empty: bool = False
     ) -> AtualizarResult: ...
+
+
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 RepoRegistrar = Callable[[str, int], None]
 PisoDefiner = Callable[[str, str], None]
@@ -745,9 +747,7 @@ class MotorTUI(App[None]):
         if not self._pode_atualizar():
             faltantes = 0
         atualizar_botao = self.query_one("#atualizar", Button)
-        atualizar_botao.label = (
-            f"Atualizar · {faltantes}" if faltantes else "Atualizar"
-        )
+        atualizar_botao.label = f"Atualizar · {faltantes}" if faltantes else "Atualizar"
         atualizar_botao.variant = "warning" if faltantes else "default"
         self.query_one("#verificar", Button).variant = (
             "default" if faltantes else "primary"
@@ -942,9 +942,7 @@ class MotorTUI(App[None]):
             self._erro("checkout local não encontrado")
             self._bloquear(False)
             return
-        self._exibir_resultado(
-            f"Carregando versões de {self._repo.nome}…"
-        )
+        self._exibir_resultado(f"Carregando versões de {self._repo.nome}…")
         self._ocupar_resultado()
         self._bloquear(True)
         self.carregar_versoes_worker(self._repo, self._geracao_versoes)
@@ -1338,9 +1336,7 @@ def descobrir_repos(
                 except NaoEncontrado:
                     continue
             atual = encontrados.get(info.nome)
-            if atual is None or (
-                caminho.name == info.nome and atual.name != info.nome
-            ):
+            if atual is None or (caminho.name == info.nome and atual.name != info.nome):
                 encontrados[info.nome] = caminho
 
     return [
@@ -1359,15 +1355,11 @@ def descobrir_versoes(
     progresso(Progresso("buscando refs do origin"))
     git.fetch("origin")
     tags = set(git.list_version_tags())
-    numeros = sorted(
-        set(git.list_version_branches()), key=chave, reverse=True
-    )
+    numeros = sorted(set(git.list_version_branches()), key=chave, reverse=True)
     return [VersionOption(numero, numero in tags) for numero in numeros]
 
 
-def _repos_do_ambiente(
-    *, progresso: RelatorProgresso = silencioso
-) -> list[RepoOption]:
+def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
     with abrir_sessao() as sessao:
         return descobrir_repos(
             PostgresEstado(sessao=sessao),
@@ -1670,7 +1662,9 @@ def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
         if status.chamados:
             partes.append(Text(f"Chamados: {', '.join(status.chamados)}"))
     elif auditado:
-        partes.append(Text("AUDITORIA DA TAG — snapshot não alterado", style="bold cyan"))
+        partes.append(
+            Text("AUDITORIA DA TAG — snapshot não alterado", style="bold cyan")
+        )
     titulo = "VERDE" if status.verde else "● Pendências encontradas"
     estilo = "bold green" if status.verde else "bold yellow"
     partes.extend([Text(titulo, style=estilo), _resumo(status)])

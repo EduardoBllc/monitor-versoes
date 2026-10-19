@@ -102,14 +102,18 @@ class TickioRest:
         try:
             corpo = resp.json()
         except ValueError as e:
-            raise RespostaInvalida(f"autenticando no Tickio: decodificando resposta: {e}") from e
+            raise RespostaInvalida(
+                f"autenticando no Tickio: decodificando resposta: {e}"
+            ) from e
 
         # str() e não cast(): o corpo vem de JSON de terceiro, e um `access`
         # numerico ou nulo entraria no header Authorization como o repr do
         # objeto. A checagem de vazio abaixo pega os dois casos.
         access = str((corpo or {}).get("access", "") or "")
         if not access:
-            raise RespostaInvalida("autenticando no Tickio: resposta sem campo 'access'")
+            raise RespostaInvalida(
+                "autenticando no Tickio: resposta sem campo 'access'"
+            )
         self._access = access
         return access
 
@@ -129,12 +133,16 @@ def _extrair_chamados(corpo: object) -> list[str]:
         elif "results" in corpo:
             itens = corpo["results"]
         else:
-            raise RespostaInvalida(f"resposta do Tickio em formato inesperado: {corpo!r}")
+            raise RespostaInvalida(
+                f"resposta do Tickio em formato inesperado: {corpo!r}"
+            )
     else:
         itens = corpo
 
     if not isinstance(itens, list):
-        raise RespostaInvalida(f"resposta do Tickio em formato inesperado: {type(corpo)}")
+        raise RespostaInvalida(
+            f"resposta do Tickio em formato inesperado: {type(corpo)}"
+        )
 
     chamados: list[str] = []
     for item in itens:
@@ -143,6 +151,8 @@ def _extrair_chamados(corpo: object) -> list[str]:
         else:
             valor = item
         if valor is None:
-            raise RespostaInvalida(f"item sem numero de chamado na resposta do Tickio: {item!r}")
+            raise RespostaInvalida(
+                f"item sem numero de chamado na resposta do Tickio: {item!r}"
+            )
         chamados.append(str(valor))
     return chamados

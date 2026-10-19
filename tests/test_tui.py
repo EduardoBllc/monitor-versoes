@@ -90,7 +90,9 @@ def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
     assert [opcao.caminho for opcao in opcoes] == [None, None, None]
 
 
-def test_descobrir_repos_ignora_naoencontrado_mesmo_sem_a_palavra_desconhecido(tmp_path):
+def test_descobrir_repos_ignora_naoencontrado_mesmo_sem_a_palavra_desconhecido(
+    tmp_path,
+):
     """Ramifica por TIPO (NaoEncontrado), nao por substring 'desconhecido' na
     mensagem: um adapter de terceiro correto, que levanta NaoEncontrado num
     idioma diferente, nao pode reprovar aqui.
@@ -154,23 +156,17 @@ def test_app_exibe_loading_enquanto_carrega_repos():
 
 
 def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
-    estado = FakeEstado(
-        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
-    )
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
     checkout = _checkout(tmp_path, "alpha")
     monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
 
-    assert tui._repos_do_ambiente() == [
-        RepoOption(nome="alpha", caminho=str(checkout))
-    ]
+    assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=str(checkout))]
 
 
 def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch):
-    estado = FakeEstado(
-        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
-    )
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
     _checkout(tmp_path, "alpha")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("PROJECTS_DIR", raising=False)
@@ -223,13 +219,9 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
     assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
 
 
-def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
-    tmp_path, monkeypatch
-):
+def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(tmp_path, monkeypatch):
     checkout = _checkout(tmp_path, "alpha")
-    estado = FakeEstado(
-        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
-    )
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
     capturado: dict[str, object] = {}
 
     class TickioSpy:
@@ -277,9 +269,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
 
 def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
     checkout = _checkout(tmp_path, "alpha")
-    estado = FakeEstado(
-        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)}
-    )
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
 
@@ -506,9 +496,7 @@ def test_app_seleciona_repo_tag_e_executa_auditoria():
             await app.workers.wait_for_complete()
 
             assert chamadas == [(repo, "14.0.0", True)]
-            assert "VERDE" in _texto(
-                app.query_one("#resultado", Static).content
-            )
+            assert "VERDE" in _texto(app.query_one("#resultado", Static).content)
 
     asyncio.run(executar_fluxo())
 
@@ -692,7 +680,9 @@ def _app_para_previa(
     )
 
 
-async def _selecionar_previa(app, pilot, versao: VersionOption = _VERSAO_PREVIA) -> None:
+async def _selecionar_previa(
+    app, pilot, versao: VersionOption = _VERSAO_PREVIA
+) -> None:
     await app.workers.wait_for_complete()
     app.query_one("#repo", Select).value = _REPO_PREVIA
     await pilot.pause()
@@ -847,9 +837,7 @@ def test_app_previa_com_suspeitos_nao_pergunta_nada():
             await pilot.pause()
 
             assert not app.screen.query("#confirmar-sim")
-            assert "deadbeef" in _texto(
-                app.query_one("#resultado", Static).content
-            )
+            assert "deadbeef" in _texto(app.query_one("#resultado", Static).content)
 
     asyncio.run(executar_fluxo())
 
@@ -970,9 +958,7 @@ def test_sugerir_versoes_sem_versao_nenhuma_nao_inventa():
 def _app_criar(criar_runner, versoes: list[VersionOption] | None = None) -> MotorTUI:
     return MotorTUI(
         carregar_repos=lambda: [_REPO_PREVIA],
-        carregar_versoes=lambda opcao: (
-            [_VERSAO_PREVIA] if versoes is None else versoes
-        ),
+        carregar_versoes=lambda opcao: [_VERSAO_PREVIA] if versoes is None else versoes,
         executar=_nunca_executa,
         criar_repo=criar_runner,
     )
@@ -985,7 +971,9 @@ def test_criar_modal_previa_mostra_tipo_e_base():
     """
 
     async def executar_fluxo() -> None:
-        app = _app_criar(lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE))
+        app = _app_criar(
+            lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE)
+        )
         async with app.run_test(size=(120, 36)) as pilot:
             await _selecionar_previa(app, pilot)
 
@@ -1058,7 +1046,9 @@ def test_criar_modal_recusa_numero_que_ja_existe():
 
 def test_criar_modal_recusa_formato_invalido():
     async def executar_fluxo() -> None:
-        app = _app_criar(lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE))
+        app = _app_criar(
+            lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE)
+        )
         async with app.run_test(size=(120, 36)) as pilot:
             await _selecionar_previa(app, pilot)
 
@@ -1156,7 +1146,9 @@ def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
             carregar_repos=lambda: [_REPO_PREVIA],
             carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
             executar=_nunca_executa,
-            atualizar_repo=lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE),
+            atualizar_repo=lambda repo, numero: AtualizarResult(
+                status=AtualizarStatus.DONE
+            ),
             continuar_repo=continuar_runner,
             criar_repo=criar_runner,
         )
@@ -1604,6 +1596,7 @@ def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
     renderiza traceback aqui — sem concatenar a nota no painel, o contexto
     agregado via add_note (task 7) se perdia por completo para o operador.
     """
+
     def falhar():
         erro = MotorError("Tickio respondeu 503")
         erro.add_note("buscando tasks da versao 13.34.0")

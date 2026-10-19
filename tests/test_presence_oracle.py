@@ -69,7 +69,9 @@ def test_presence_oracle_commits_in_range_falha_trata_como_ausente():
     oracle = PresenceOracle(git=g)
     ok = oracle.presente("origem1", "13.6.0", "13.7.0")
 
-    assert ok == Presence.AUSENTE, "esperava presente=false quando commits_in_range falha"
+    assert ok == Presence.AUSENTE, (
+        "esperava presente=false quando commits_in_range falha"
+    )
 
 
 def test_presence_oracle_suspeita_por_conteudo_match_msg_e_arquivos():
@@ -81,7 +83,9 @@ def test_presence_oracle_suspeita_por_conteudo_match_msg_e_arquivos():
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("base-tip", "", "base", t0)
-    g.add_commit("alvo1", "base-tip", "fix: ch255514 corrige logs", t0)  # cherry-pick manual, conteudo divergente
+    g.add_commit(
+        "alvo1", "base-tip", "fix: ch255514 corrige logs", t0
+    )  # cherry-pick manual, conteudo divergente
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "alvo1")
     g.file_changes["origem1"] = frozenset({"a.txt"})
@@ -92,7 +96,9 @@ def test_presence_oracle_suspeita_por_conteudo_match_msg_e_arquivos():
 
     suspeita = oracle.suspeita_por_conteudo("origem1", "13.6.0", "13.7.0")
 
-    assert suspeita is not None and suspeita.hash_origem == "alvo1", f"suspeita = {suspeita!r}"
+    assert suspeita is not None and suspeita.hash_origem == "alvo1", (
+        f"suspeita = {suspeita!r}"
+    )
 
 
 def test_presence_oracle_suspeita_por_conteudo_arquivos_diferentes_nao_bate():
@@ -104,12 +110,16 @@ def test_presence_oracle_suspeita_por_conteudo_arquivos_diferentes_nao_bate():
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "alvo1")
     g.file_changes["origem1"] = frozenset({"a.txt"})
-    g.file_changes["alvo1"] = frozenset({"b.txt"})  # mensagem igual, arquivo diferente - nao e a mesma entrega
+    g.file_changes["alvo1"] = frozenset(
+        {"b.txt"}
+    )  # mensagem igual, arquivo diferente - nao e a mesma entrega
 
     oracle = PresenceOracle(git=g)
     suspeita = oracle.suspeita_por_conteudo("origem1", "13.6.0", "13.7.0")
 
-    assert suspeita is None, f"suspeita = {suspeita!r}, esperava None (arquivos divergem)"
+    assert suspeita is None, (
+        f"suspeita = {suspeita!r}, esperava None (arquivos divergem)"
+    )
 
 
 def test_presence_oracle_suspeita_por_conteudo_consumo_evita_colisao_duplicata():
@@ -120,21 +130,27 @@ def test_presence_oracle_suspeita_por_conteudo_consumo_evita_colisao_duplicata()
     g = FakeGit()
     t0 = datetime.datetime.now(datetime.timezone.utc)
     g.add_commit("origem1", "", "fix: ajuste", t0)
-    g.add_commit("origem2", "origem1", "fix: ajuste", t0)  # mesma msg, arquivos diferentes
+    g.add_commit(
+        "origem2", "origem1", "fix: ajuste", t0
+    )  # mesma msg, arquivos diferentes
     g.add_commit("base-tip", "", "base", t0)
     g.add_commit("alvo1", "base-tip", "fix: ajuste", t0)
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "alvo1")
     g.file_changes["origem1"] = frozenset({"a.txt"})
     g.file_changes["origem2"] = frozenset({"a.txt"})
-    g.file_changes["alvo1"] = frozenset({"a.txt"})  # so 1 candidato no alvo pras 2 origens
+    g.file_changes["alvo1"] = frozenset(
+        {"a.txt"}
+    )  # so 1 candidato no alvo pras 2 origens
 
     oracle = PresenceOracle(git=g)
     primeira = oracle.suspeita_por_conteudo("origem1", "13.6.0", "13.7.0")
     segunda = oracle.suspeita_por_conteudo("origem2", "13.6.0", "13.7.0")
 
     assert primeira is not None and primeira.hash_origem == "alvo1"
-    assert segunda is None, f"segunda = {segunda!r}, esperava None (candidato ja consumido)"
+    assert segunda is None, (
+        f"segunda = {segunda!r}, esperava None (candidato ja consumido)"
+    )
 
 
 def test_presence_oracle_patch_id_origem_falha_trata_como_ausente():
@@ -152,7 +168,9 @@ def test_presence_oracle_patch_id_origem_falha_trata_como_ausente():
     oracle = PresenceOracle(git=g)
     ok = oracle.presente("merge-sem-patch-id", "13.6.0", "13.7.0")
 
-    assert ok == Presence.AUSENTE, "esperava presente=false quando patch_id do hash de origem falha"
+    assert ok == Presence.AUSENTE, (
+        "esperava presente=false quando patch_id do hash de origem falha"
+    )
 
 
 class _GitQueVazaBug(FakeGit):

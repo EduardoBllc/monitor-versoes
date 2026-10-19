@@ -30,7 +30,9 @@ def test_fake_git_cherry_pick_aplica_e_encadeia_trailer():
 
     novo_tip = g.branches["13.7.0"]
     commit = g.commits[novo_tip]
-    assert commit.origem_hash == "origem1", f"origem_hash = {commit.origem_hash!r}, quer origem1"
+    assert commit.origem_hash == "origem1", (
+        f"origem_hash = {commit.origem_hash!r}, quer origem1"
+    )
 
 
 def test_fake_git_cherry_pick_conflito_e_continue():
@@ -49,7 +51,9 @@ def test_fake_git_cherry_pick_conflito_e_continue():
     assert len(paths) > 0, "esperava arquivos em conflito"
 
     hash_, ok = g.pending_cherry_pick()
-    assert ok and hash_ == "origem1", f"pending_cherry_pick = {hash_!r}, {ok}; quer origem1, True"
+    assert ok and hash_ == "origem1", (
+        f"pending_cherry_pick = {hash_!r}, {ok}; quer origem1, True"
+    )
 
     g.continue_cherry_pick()
 
@@ -99,8 +103,7 @@ def test_fake_git_merge_base_branches_divergentes():
 
 
 def test_fake_list_version_tags_so_devolve_tags():
-    git = FakeGit(branches={"13.34.0": "aaa", "14.0.0": "bbb"},
-                  tags={"13.34.0": True})
+    git = FakeGit(branches={"13.34.0": "aaa", "14.0.0": "bbb"}, tags={"13.34.0": True})
     assert git.list_version_tags() == ["13.34.0"]
 
 
@@ -114,10 +117,7 @@ def test_fake_list_version_branches_filtra_por_formato():
 def test_fake_list_version_branches_respeita_tag_false():
     # tags dict tem valores bool: True = tag existe, False = nao existe.
     # list_version_branches deve respeitar isso — versao com False nao deve aparecer.
-    git = FakeGit(
-        branches={"13.34.0": "aaa"},
-        tags={"13.33.0": True, "13.35.0": False}
-    )
+    git = FakeGit(branches={"13.34.0": "aaa"}, tags={"13.33.0": True, "13.35.0": False})
     assert git.list_version_branches() == ["13.33.0", "13.34.0"]
     assert git.list_version_tags() == ["13.33.0"]
 

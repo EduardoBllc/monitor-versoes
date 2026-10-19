@@ -43,7 +43,9 @@ def _fases(relatos: list[Progresso]) -> list[tuple[str, int, int]]:
 
 def _renderizado(renderable, *, estilos: bool = False) -> str:
     # com estilos quando o que muda e cor, nao caractere: e o caso do pulso.
-    console = Console(record=True, width=80, color_system="truecolor" if estilos else None)
+    console = Console(
+        record=True, width=80, color_system="truecolor" if estilos else None
+    )
     console.print(renderable)
     return console.export_text(styles=estilos)
 
@@ -185,7 +187,9 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
     git = FakeGit()
     git.add_commit("m0", "", "raiz", D)
     git.add_commit("a0", "m0", "ch255514 corrige logs", D)
-    git.add_commit("a1", "a0", "ch255515 outra correcao", D + datetime.timedelta(minutes=1))
+    git.add_commit(
+        "a1", "a0", "ch255515 outra correcao", D + datetime.timedelta(minutes=1)
+    )
     git.set_branch("master", "a1")
     git.set_branch("origin/master", "a1")
     git.set_branch("13.6.0", "m0")
@@ -199,13 +203,22 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
         commit_source=FakeCommitSource(
             por_chamado={
                 "255514": [
-                    CommitRef(hash_origem="a0", parent="m0", chamado="255514",
-                              commit_date=D, msg="ch255514 corrige logs")
+                    CommitRef(
+                        hash_origem="a0",
+                        parent="m0",
+                        chamado="255514",
+                        commit_date=D,
+                        msg="ch255514 corrige logs",
+                    )
                 ],
                 "255515": [
-                    CommitRef(hash_origem="a1", parent="a0", chamado="255515",
-                              commit_date=D + datetime.timedelta(minutes=1),
-                              msg="ch255515 outra correcao")
+                    CommitRef(
+                        hash_origem="a1",
+                        parent="a0",
+                        chamado="255515",
+                        commit_date=D + datetime.timedelta(minutes=1),
+                        msg="ch255515 outra correcao",
+                    )
                 ],
             }
         ),

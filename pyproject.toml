@@ -12,7 +12,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "mypy", "testcontainers[postgres]"]
+dev = [
+    "pytest",
+    "mypy",
+    "testcontainers[postgres]",
+    "ruff>=0.17.1",
+]
 
 [project.scripts]
 motor = "motor.__main__:main"
@@ -53,3 +58,15 @@ disallow_untyped_calls = false
 [[tool.mypy.overrides]]
 module = ["textual.*", "dotenv.*"]
 ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py314"
+
+# Fora daqui ficam as regras de complexidade (C901, PLR09xx, PLR1702): ligam em
+# issue propria, depois das refatoracoes.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP", "I", "SIM", "RUF", "PLW", "PLR2004"]
+
+# Numero literal em assert de teste e o valor esperado, nao numero magico.
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]
