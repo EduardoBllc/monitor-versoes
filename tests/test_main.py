@@ -40,6 +40,7 @@ from motor.domain.types import (
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
+from motor.montagem import CredenciaisBitbucket
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -754,7 +755,7 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
         estado=FakeEstado(),
         repo="r",
         commit_source=montagem.montar_commit_source(
-            _git(), token="tok123", email="dev@x.com"
+            _git(), bitbucket=CredenciaisBitbucket("tok123", "dev@x.com")
         ),
     )
 
