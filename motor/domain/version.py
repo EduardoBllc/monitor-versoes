@@ -34,7 +34,8 @@ def inferir_tipo(numero: str) -> VersionType:
 
 
 def inferir_base(numero: str, versoes_existentes: list[str]) -> str:
-    """Resolve a base de uma versao (§7). versoes_existentes e a lista de
+    """Resolve a base de uma versao (docs/decisoes/009-inferencia-de-base.md).
+    versoes_existentes e a lista de
     branches de versao ja existentes (ex.: vindas de GitRepo.list_version_branches).
     """
     x, y, z = _parse_versao(numero)
@@ -78,7 +79,8 @@ def fontes_de_alvo(
 ) -> list[str]:
     """Versoes cujas tarefas caem no alvo: candidatas entre o piso e o alvo.
 
-    E a regra de distribuicao vista pelo lado da versao (spec §2). Quem monta
+    E a regra de distribuicao vista pelo lado da versao
+    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md). Quem monta
     `candidatas` e o chamador — abertas mais o que `liberadas_no_alvo` devolve.
     O piso e por repo (`repo.piso_versao`): descarta branch legada sem tag, que
     o Tickio nao conhece e responderia 404.
@@ -93,7 +95,8 @@ def liberadas_no_alvo(
     datas_das_tags: dict[str, datetime.datetime],
     corte: datetime.datetime,
 ) -> list[str]:
-    """Liberadas que continuam sendo fonte de alvo de `alvo` (spec §2).
+    """Liberadas que continuam sendo fonte de alvo de `alvo`
+    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
 
     A liberada sai do conjunto aberto, e a premissa era que o conteudo dela
     chegava por ancestralidade da base. Isso vale para `X.Y.0` sobre

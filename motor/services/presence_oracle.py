@@ -41,12 +41,13 @@ class PresenceOracle:
     ] = field(default_factory=dict, repr=False, compare=False)
 
     def presente(self, hash_origem: str, base: str, branch: str) -> Presence:
-        """Implementa o oraculo de 3 niveis (§2): ancestral direto, trailer de
+        """Implementa o oraculo de 3 niveis (docs/decisoes/003-definicao-de-presente.md):
+        ancestral direto, trailer de
         cherry-pick, e por ultimo patch-id (fallback legado). base delimita o
         intervalo varrido pelo nivel 3 — patch-id de 39k commits e proibitivo, e
-        §2 ja escreve o nivel 3 como `base..branch`.
+        a decisao ja escreve o nivel 3 como `base..branch`.
 
-        O nivel 2 varre a branch inteira, como §2 o escreve. Limita-lo a
+        O nivel 2 varre a branch inteira, como a decisao o escreve. Limita-lo a
         `base..branch` fazia commit herdado da base aparecer como faltante: o
         commit que carrega o trailer entrou numa versao anterior, abaixo do
         corte (chamado 254994 na 14.11.0 do vendabemweb, 11 falsos faltantes).
@@ -62,14 +63,16 @@ class PresenceOracle:
         commits = self._commits_in_range(base, branch)
         if commits is None:
             # nao deu pra confirmar (ex.: objeto sumiu do historico) - trata
-            # como ausente em vez de propagar, per §2 "senao -> ausente".
+            # como ausente em vez de propagar, per "senao -> ausente"
+            # (docs/decisoes/003-definicao-de-presente.md).
             return Presence.AUSENTE
 
         patch_id_origem = self._patch_id(hash_origem)
         if patch_id_origem is None:
             # merge commit "limpo" tem diff vazio no `git show` default, git
             # patch-id nao retorna nada - nao da pra confirmar via nivel 3,
-            # trata como ausente per §2 "senao -> ausente" (simetrico ao
+            # trata como ausente per "senao -> ausente"
+            # (docs/decisoes/003-definicao-de-presente.md) (simetrico ao
             # fallback ja aplicado ao patch-id dos candidatos abaixo).
             return Presence.AUSENTE
         for c in commits:

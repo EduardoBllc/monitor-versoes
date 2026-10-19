@@ -78,7 +78,8 @@ def test_versoes_abertas_sem_nenhuma_aberta():
     assert versoes_abertas(["13.33.0"], ["13.33.0"]) == []
 
 
-# Cenario canonico da spec §2. Cada linha e um passo do fluxo real.
+# Cenario canonico da distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
+# Cada linha e um passo do fluxo real.
 CENARIO = [
     # (alvo, abertas, fontes esperadas)
     ("13.34.0", ["13.33.1", "13.34.0", "14.0.0"], ["13.33.1", "13.34.0"]),
@@ -194,7 +195,8 @@ def _quando(mes: int) -> datetime.datetime:
 
 
 def test_liberadas_no_alvo_entra_so_com_tag_posterior_ao_corte():
-    """As tres faixas tem de conviver num teste: a premissa velha do §4 era que
+    """As tres faixas tem de conviver num teste: a premissa velha
+    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md) era que
     liberada nunca conta, e ela erra so numa das faixas. Separadas, o caso que
     volta a passar sozinho e justamente o que reintroduz o bug.
     """

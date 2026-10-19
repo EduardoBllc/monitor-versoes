@@ -299,7 +299,8 @@ def _imprimir_alertas(s: VersionStatus) -> None:
 
 def imprimir_status(s: VersionStatus) -> None:
     if s.liberada_em is not None:
-        # Snapshot de versao liberada (spec §4): nada foi recalculado, e sem
+        # Snapshot de versao liberada (docs/decisoes/010-travas-publicada-e-liberada.md):
+        # nada foi recalculado, e sem
         # dizer isso a saida seria indistinguivel de uma versao verde em
         # construcao. Os chamados vem primeiro porque este e o unico lugar em
         # que se le o que so o banco registra.

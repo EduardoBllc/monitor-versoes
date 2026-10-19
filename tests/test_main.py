@@ -223,7 +223,8 @@ def test_imprimir_status_aponta_sem_entrega_no_banco(capsys):
 
 
 def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
-    """Spec §4: "se W liberada: imprime snapshot do banco e sai". Sem cabecalho
+    """Versao liberada imprime o snapshot do banco e sai
+    (docs/decisoes/010-travas-publicada-e-liberada.md). Sem cabecalho
     e sem chamados a saida sai byte-a-byte igual a de uma versao verde em
     construcao — e um snapshot vazio ainda diria "verde: True", porque all([])
     e True. Esta e a unica superficie de leitura do que so o banco registra.
@@ -290,7 +291,7 @@ def _git() -> FakeGit:
     git.add_commit("a0", "m0", "ch123456 alfa", D)
     git.set_branch("master", "a0")
     git.set_branch("origin/master", "a0")
-    # 13.33.0 e a base inferida da 13.34.0 (§7)
+    # 13.33.0 e a base inferida da 13.34.0 (docs/decisoes/009-inferencia-de-base.md)
     for versao in ("13.33.0", "13.34.0"):
         git.set_branch(versao, "m0")
     return git

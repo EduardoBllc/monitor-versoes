@@ -63,7 +63,9 @@ class FakeGit:
         default_factory=dict
     )
     commits_in_range_err: Exception | None = (
-        None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
+        # fixture: forca commits_in_range a falhar (fallback "ausente" de
+        # docs/decisoes/003-definicao-de-presente.md)
+        None
     )
     pulled: list[str] = field(
         default_factory=list

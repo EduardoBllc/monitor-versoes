@@ -153,7 +153,8 @@ class VersionStatus:
     tasks_sem_commits: list[str] = field(
         default_factory=list
     )  # tarefa no Tickio sem nenhum commit achado e nao reconhecida em sem_entrega
-    # Preenchidos so no snapshot de versao liberada (spec §4): sem eles a saida
+    # Preenchidos so no snapshot de versao liberada
+    # (docs/decisoes/010-travas-publicada-e-liberada.md): sem eles a saida
     # e byte-a-byte igual a de uma versao verde em construcao — nada de data,
     # nada de chamados — e um snapshot vazio imprime "verde: True" porque
     # all([]) e True. O operador nao conseguia distinguir "fez o trabalho" de

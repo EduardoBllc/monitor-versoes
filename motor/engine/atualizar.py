@@ -83,11 +83,12 @@ def _pick(deps: Deps, hash_origem: str) -> CherryPickOutcome:
 
 
 def atualizar(deps: Deps, versao: str) -> AtualizarResult:
-    """Aplica os commits faltantes na ordem do grafo (spec §5).
+    """Aplica os commits faltantes na ordem do grafo
+    (docs/decisoes/014-ordem-de-aplicacao-pelo-grafo.md).
 
     Versao com tag e recusada: o alvo dela congelou na liberacao, e alteracao
     na branch nao reflete no que a tag aponta. Esquecimento vai para a proxima
-    versao (spec §2).
+    versao (docs/decisoes/010-travas-publicada-e-liberada.md).
     """
     _recusar_se_liberada(deps, versao)
 
@@ -118,7 +119,8 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
         if outcome == CherryPickOutcome.CONFLITO:
             paths = deps.git.conflicted_paths()
             if len(paths) == 0:
-                # rerere.autoUpdate resolveu sozinho (§8) - segue o pick. Se a
+                # rerere.autoUpdate resolveu sozinho
+                # (docs/decisoes/013-conflito-e-checkpoint.md) - segue o pick. Se a
                 # resolucao gravada era "fica como esta no alvo", o --continue
                 # devolve VAZIO: e o julgamento que o operador ja fez na
                 # primeira vez, replayado, entao entra como commit vazio sem
@@ -151,7 +153,8 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     ]
     deps.estado.substituir_atribuicoes(deps.repo, versao, aplicadas)
 
-    # publica so apos o lote fechar sem conflito (§6, "branch compartilhada") -
+    # publica so apos o lote fechar sem conflito (branch remota trava o
+    # rebuild, docs/decisoes/010-travas-publicada-e-liberada.md) -
     # um lote BLOCKED fica so local ate resolver e rodar de novo.
     deps.progresso(Progresso("publicando na origin"))
     deps.git.push_branch("origin", versao)
@@ -171,7 +174,8 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
 def atualizar_continue(
     deps: Deps, versao: str, *, allow_empty: bool = False
 ) -> AtualizarResult:
-    """Retoma um cherry-pick resolvido manualmente (checkpoint resumivel, §8).
+    """Retoma um cherry-pick resolvido manualmente (checkpoint resumivel,
+    docs/decisoes/013-conflito-e-checkpoint.md).
 
     Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
     foram aplicados. Nao precisa reconstruir nada a mao: o `atualizar` abaixo

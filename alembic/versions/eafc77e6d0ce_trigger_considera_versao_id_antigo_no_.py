@@ -48,7 +48,7 @@ def upgrade() -> None:
     # resolve o instante no TimeZone da SESSAO de quem roda a migracao: a mesma
     # linha viraria instantes diferentes dependendo da maquina. Editar esta
     # revisao ja aplicada foi aceitavel porque as tres revisoes deste redesenho
-    # sao o schema inicial dele e nao houve dado para migrar (spec §8).
+    # sao o schema inicial dele e nao houve dado para migrar.
     op.alter_column(
         "versao",
         "liberada_em",

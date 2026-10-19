@@ -294,7 +294,8 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     chega por tag-following, branch nao). Sem refs/remotes/ na varredura, uma
     versao aberta e empurrada de outra maquina fica invisivel mesmo depois do
     fetch: `versoes_abertas` viraria uma visao local do conjunto aberto e
-    `fontes_de_alvo` omitiria essa versao em silencio (spec §2).
+    `fontes_de_alvo` omitiria essa versao em silencio
+    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
     """
     origem = tmp_path / "origem"
     origem.mkdir()

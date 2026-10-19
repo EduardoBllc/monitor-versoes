@@ -18,7 +18,8 @@ def _commit(hash_: str, chamado: str) -> CommitRef:
 
 
 def test_resolve_une_as_versoes_abertas_menores_ou_iguais():
-    # Cenario da spec §2 passo 2: ch123123 marcada p/ 13.33.1 cai na 14.0.0.
+    # Distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md):
+    # ch123123 marcada p/ 13.33.1 cai na 14.0.0.
     tasks = FakeTaskSource(
         chamados={"13.33.1": ["123123"], "13.34.0": ["123456"], "14.0.0": []}
     )
@@ -111,7 +112,8 @@ def test_resolve_nao_acusa_ambiguidade_quando_ha_liberada_no_par(
     chamados, candidatas, liberadas
 ):
     """Liberada volta a ser fonte de alvo quando a tag e posterior ao corte
-    (spec §2), mas o invariante de ambiguidade e sobre duas versoes *abertas*:
+    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md), mas o invariante de
+    ambiguidade e sobre duas versoes *abertas*:
     duas abertas competem pelo mesmo chamado, uma liberada nao compete com
     ninguem — ela ja saiu. Chamado remarcado a mao para contornar a versao
     liberada nao pode pintar a versao de vermelho.

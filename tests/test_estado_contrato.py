@@ -232,7 +232,8 @@ def test_liberada_em_sempre_volta_com_fuso(estado):
     """A coluna e timestamptz, entao o Postgres devolve com fuso mesmo recebendo
     uma data naive. O fake guardava o que recebeu.
 
-    Passou a importar: a distribuicao do §2 compara essa data com a data de um
+    Passou a importar: a distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md)
+    compara essa data com a data de um
     commit, que sempre tem fuso (`%cI`). Fake permissivo aqui e um TypeError de
     comparacao mista que so aparece em producao — o mesmo motivo pelo qual
     `FakeGit.add_commit` ja normaliza naive para UTC.

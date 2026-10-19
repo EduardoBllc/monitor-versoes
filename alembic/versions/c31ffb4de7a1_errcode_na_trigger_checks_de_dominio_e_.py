@@ -1,7 +1,7 @@
 """errcode na trigger, checks de dominio e nome da constraint de versao
 
-Tres divida registradas na §15 do desenho, todas do mesmo tipo: invariante que
-existia so em comentario ou so em texto.
+Tres dividas, todas do mesmo tipo: invariante que existia so em comentario ou
+so em texto.
 
 Revision ID: c31ffb4de7a1
 Revises: eafc77e6d0ce

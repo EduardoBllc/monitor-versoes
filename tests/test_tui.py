@@ -920,7 +920,8 @@ def test_app_previa_com_suspeitos_nao_pergunta_nada():
 
 
 def test_app_versao_liberada_nao_oferece_atualizar():
-    """Versao com tag nao aceita escrita (§6): o botao nem chega a perguntar."""
+    """Versao com tag nao aceita escrita (docs/decisoes/010-travas-publicada-e-liberada.md):
+    o botao nem chega a perguntar."""
 
     async def executar_fluxo() -> None:
         liberada = VersionOption(numero="14.0.0", liberada=True)

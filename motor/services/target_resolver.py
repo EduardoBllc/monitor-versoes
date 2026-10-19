@@ -1,4 +1,5 @@
-"""Resolucao do alvo: aplica a regra de distribuicao da spec §2."""
+"""Resolucao do alvo: aplica a regra de distribuicao de
+docs/decisoes/005-alvo-distribuicao-entre-versoes.md."""
 
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ class TargetResolver:
         com seus commits.
 
         `candidatas` sao as abertas mais as liberadas que o corte do alvo nao
-        herdou (spec §2); `liberadas` diz quais delas sao as liberadas, e serve
+        herdou (docs/decisoes/005-alvo-distribuicao-entre-versoes.md); `liberadas` diz
+        quais delas sao as liberadas, e serve
         so ao invariante de ambiguidade.
 
         Toda tarefa buscada aparece no resultado mesmo sem commit — e o que
