@@ -24,6 +24,8 @@ from motor.__main__ import (
     imprimir_status,
     main,
 )
+from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
+from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
@@ -712,6 +714,34 @@ def test_lista_manual_nao_exige_variavel_do_tickio(
     )
 
     assert "verde:" in capsys.readouterr().out
+
+
+def test_flags_do_bitbucket_vencem_o_ambiente(bordas, tmp_path, monkeypatch):
+    # a TUI prova o caminho do ambiente; este prova a flag do CLI chegando ate a
+    # fonte de PR, e vencendo o ambiente quando os dois existem.
+    monkeypatch.setenv("BITBUCKET_TOKEN", "tok-ambiente")
+    monkeypatch.setenv("BITBUCKET_EMAIL", "ambiente@x.com")
+    capturado: list[Deps] = []
+    monkeypatch.setattr(cli, "_despachar", lambda args, deps: capturado.append(deps))
+
+    main(
+        [
+            "verificar",
+            "13.34.0",
+            "--repo",
+            _repo_dir(tmp_path),
+            "--bitbucket-token",
+            "tok-flag",
+            "--bitbucket-email",
+            "flag@x.com",
+        ]
+    )
+
+    fonte = capturado[0].commit_source
+    assert isinstance(fonte, ChainCommitSource)
+    pr = fonte.sources[0]
+    assert isinstance(pr, BitbucketPRCommitSource)
+    assert (pr.token, pr.email) == ("tok-flag", "flag@x.com")
 
 
 def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
