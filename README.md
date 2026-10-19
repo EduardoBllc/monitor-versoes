@@ -58,7 +58,7 @@ em Docker (porta 5433); `make migrate` cria as tabelas.
 unset VIRTUAL_ENV          # veja a ressalva em "Uso"
 uv sync
 cp -n .env.example .env
-docker compose up -d
+docker compose up -d --wait
 uv run alembic upgrade head
 ```
 
@@ -160,7 +160,7 @@ commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pul
 
 | Sintoma | Causa e saída |
 | --- | --- |
-| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | O Postgres não está no ar. `make db` (ou `docker compose up -d`). Se acabou de subir, espere alguns segundos — o container leva um tempo até aceitar conexão. |
+| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | O Postgres não está no ar. `make db` (ou `docker compose up -d --wait`). |
 | `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração. `make migrate`. |
 | `ERROR: repo 'meu-repo' desconhecido. Cadastre com: uv run motor repo adicionar 'meu-repo' --tickio-sistema-id <id>` | O repositório não foi cadastrado. Rode o comando sugerido com o id do sistema no Tickio. |
 | `ERROR: faltando no .env: TICKIO_BASE_URL, TICKIO_USER, TICKIO_PASSWORD` | Credenciais do Tickio vazias no `.env`. Preencha, ou use `--task-source manual --lista arquivo.txt`. |
