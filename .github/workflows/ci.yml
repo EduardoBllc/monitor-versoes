@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  portao:
+    # O nome do job e o nome do check que a protecao da main exige: mudar
+    # `etapa` aqui exige atualizar o ruleset junto.
+    name: ${{ matrix.etapa }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Cada etapa reporta sozinha: um format quebrado nao esconde o pytest.
+      fail-fast: false
+      matrix:
+        include:
+          - etapa: ruff format
+            comando: ruff format --check .
+          - etapa: ruff check
+            comando: ruff check .
+          - etapa: mypy
+            comando: mypy
+          - etapa: pytest
+            # -rs lista o motivo de cada skip: integracao pulada aparece no log.
+            comando: pytest -rs
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --all-extras --locked --python 3.14
+      - run: ./.venv/bin/python -m ${{ matrix.comando }}
