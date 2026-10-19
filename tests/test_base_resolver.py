@@ -116,7 +116,8 @@ def test_base_de_versao_existente_e_o_ponto_de_corte_nao_o_tip_da_base():
     `X.0.0` sai do master, e o master anda todo dia. Resolver o nome puro dava
     o tip do momento em que o motor viu a versao pela primeira vez — na 15.0.0
     do vendabemweb, 20 dias depois do corte real. O corte e o que decide quais
-    liberadas voltam a ser fonte de alvo (`liberadas_no_alvo`, spec §2): com o
+    liberadas voltam a ser fonte de alvo (`liberadas_no_alvo`,
+    docs/decisoes/005-alvo-distribuicao-entre-versoes.md): com o
     corte 20 dias adiantado, dez versoes 14.x liberadas nesse intervalo sairam
     do alvo em silencio, levando 85 chamados junto.
     """

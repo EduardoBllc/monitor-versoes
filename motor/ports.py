@@ -242,7 +242,8 @@ class GitRepo(Protocol):
         ...
 
     def list_version_tags(self) -> list[str]:
-        """Tags no formato X.Y.Z. Versao com tag = liberada (§6)."""
+        """Tags no formato X.Y.Z. Versao com tag = liberada
+        (docs/decisoes/010-travas-publicada-e-liberada.md)."""
         ...
 
     def read_file(self, branch: str, path: str, /) -> bytes:

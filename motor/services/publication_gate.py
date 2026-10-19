@@ -1,4 +1,4 @@
-"""Travas de publicacao (spec §2, §6)."""
+"""Travas de publicacao (docs/decisoes/010-travas-publicada-e-liberada.md)."""
 
 from __future__ import annotations
 

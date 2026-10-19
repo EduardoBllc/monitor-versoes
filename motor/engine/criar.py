@@ -12,7 +12,8 @@ from motor.services.publication_gate import PublicationGate
 
 
 def criar(deps: Deps, versao: str) -> AtualizarResult:
-    """Monta uma versao do zero (spec §5). Branch nova e nao publicada.
+    """Monta uma versao do zero. Branch nova e nao publicada
+    (docs/decisoes/010-travas-publicada-e-liberada.md).
 
     So cria: recriar do zero e responsabilidade do chamador, que precisa remover
     a worktree e a branch antes de chamar de novo — `worktree_add` recusa branch

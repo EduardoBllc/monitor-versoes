@@ -65,7 +65,8 @@ def _culpados_do_conflito(
             ctx.base_commit, meta.parent, meta.hash_origem, arquivos
         )
     except MotorError as e:
-        # Mesma politica do oraculo de presenca (§2 "senao -> ausente"): o que
+        # Mesma politica do oraculo de presenca ("senao -> ausente",
+        # docs/decisoes/003-definicao-de-presente.md): o que
         # nao da pra confirmar nao derruba o resto. Atribuicao e diagnostico em
         # cima do conflito — perde-la nao pode custar o proprio conflito.
         logger.debug("atribuicao do conflito em %s falhou: %s", meta.hash_origem, e)
@@ -106,8 +107,9 @@ def _datas_das_tags(
 
     A data e a do commit apontado pela tag, nao a de agora: senao registraria
     quando o comando rodou, nao quando a versao saiu. Ela serve a dois donos — o
-    congelamento (§4) e a distribuicao (§2), que precisa saber se a liberada saiu
-    depois do corte do alvo.
+    congelamento (docs/decisoes/011-congelamento-no-banco.md) e a distribuicao
+    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md), que precisa saber se a
+    liberada saiu depois do corte do alvo.
 
     Versao ja congelada tem a data no estado e nao paga leitura no git, entao o
     conjunto de chamadas ao git aqui e o mesmo de antes desta funcao existir: so
@@ -183,7 +185,8 @@ def verificar(
     base_commit = _base_commit(deps, versao, info)
     resolver = _target_resolver(deps)
     # A liberada saiu de `abertas`, mas volta como fonte quando o corte do alvo
-    # nao herdou o que ela entregou (spec §2). `corte` e a data do commit-base
+    # nao herdou o que ela entregou (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
+    # `corte` e a data do commit-base
     # gravado — o mesmo que nao se recomputa acima, pelo mesmo motivo.
     corte = deps.git.commit_meta(base_commit).commit_date
     candidatas = sorted(
@@ -237,7 +240,8 @@ def _snapshot_congelado(
     deps: Deps, versao: str, liberada_em: datetime.datetime
 ) -> VersionStatus:
     """Versao liberada nao recalcula: o alvo dela congelou na tag. Se algo
-    ficou de fora, a tarefa e remarcada para a proxima versao (spec §2).
+    ficou de fora, a tarefa e remarcada para a proxima versao
+    (docs/decisoes/010-travas-publicada-e-liberada.md).
 
     Carrega a data de liberacao e os chamados: esta e a unica superficie de
     leitura do que so o banco registra, e sem elas o snapshot sai identico ao

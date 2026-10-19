@@ -578,7 +578,8 @@ class GitSubprocess:
         saida de git aqui quebraria em maquina que nao esta em ingles.
 
         Vazio = nenhum path em conflito E indice igual ao HEAD (nada a
-        commitar). O caminho do rerere.autoUpdate (§8) tambem nao tem path em
+        commitar). O caminho do rerere.autoUpdate (docs/decisoes/013-conflito-e-checkpoint.md)
+        tambem nao tem path em
         conflito, mas deixa a resolucao staged, entao o diff contra o HEAD nao e
         vazio e ele continua CONFLITO — que e o que o `atualizar` espera para
         chamar o --continue.
@@ -798,7 +799,9 @@ class GitSubprocess:
             logger.debug("worktree %s sem diretorio, pulando no gc", branch)
             return False
         if self._pendencia_pick(dir_)[1]:
-            return False  # checkpoint resumivel de um atualizar BLOCKED (§8)
+            # checkpoint resumivel de um atualizar BLOCKED
+            # (docs/decisoes/013-conflito-e-checkpoint.md)
+            return False
         try:
             # -uno: cruft nao rastreado (deps instaladas, .env) e justamente o
             # que o --force existe para descartar - nao pode prender a worktree
@@ -860,7 +863,8 @@ class GitSubprocess:
         # fetch origin` cria refs/remotes/origin/X e NENHUM head local, entao
         # uma versao aberta e empurrada de outra maquina so aparece por ai —
         # sem isso `versoes_abertas` seria uma visao local do conjunto aberto e
-        # `fontes_de_alvo` omitiria essa versao em silencio (spec §2).
+        # `fontes_de_alvo` omitiria essa versao em silencio
+        # (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
         # `versoes_abertas = todas - tags` continua excluindo as liberadas.
         # Preco aceito: refs/remotes/origin/X velho de branch apagada e nunca
         # liberada le como aberta ate alguem rodar `git fetch --prune`.

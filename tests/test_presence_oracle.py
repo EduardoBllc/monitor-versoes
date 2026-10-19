@@ -54,7 +54,8 @@ def test_presence_oracle_ausente():
 
 
 def test_presence_oracle_commits_in_range_falha_trata_como_ausente():
-    """Cobre o fallback do §2 ("senao -> ausente"): se commits_in_range nao
+    """Cobre o fallback "senao -> ausente" (docs/decisoes/003-definicao-de-presente.md):
+    se commits_in_range nao
     consegue confirmar (ex.: o objeto sumiu do historico, git levanta erro),
     presente deve reportar ausente sem propagar o erro.
     """
@@ -196,7 +197,8 @@ def test_excecao_fora_do_contrato_propaga_em_vez_de_virar_ausente():
 
 def test_motorerror_do_adapter_continua_degradando_para_ausente():
     """O outro lado: erro DENTRO do contrato continua sendo tratado como
-    "nao deu para confirmar", per a secao 2 do desenho ("senao -> ausente").
+    "nao deu para confirmar", per "senao -> ausente"
+    (docs/decisoes/003-definicao-de-presente.md).
     """
 
     class _GitQueFalhaNoContrato(FakeGit):
@@ -215,7 +217,8 @@ def test_presence_oracle_trailer_abaixo_da_base_conta_como_presente():
     """Regressao (chamado 254994 na 14.11.0 do vendabemweb): commit
     cherry-pickado numa versao ANTERIOR e herdado pela base aparecia como
     faltante — o nivel 2 varria so `base..branch`, e o commit com o trailer
-    fica abaixo da base. §2 nao limita o nivel 2 a range nenhum: o trailer
+    fica abaixo da base. docs/decisoes/003-definicao-de-presente.md nao limita o nivel 2
+    a range nenhum: o trailer
     prova que a entrega esta fisicamente na branch, venha de onde vier.
     """
     g = FakeGit()

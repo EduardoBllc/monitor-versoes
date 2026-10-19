@@ -145,7 +145,8 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
     # devolve o snapshot congelado, nao recalcula
     assert status.verde is True
     assert status.tasks_novas == []
-    # e o snapshot carrega o que so o banco registra (spec §4): sem a data e os
+    # e o snapshot carrega o que so o banco registra
+    # (docs/decisoes/010-travas-publicada-e-liberada.md): sem a data e os
     # chamados a saida sai byte-a-byte igual a de uma versao verde em
     # construcao, e um snapshot vazio imprime "verde: True" porque all([]) e
     # True — o operador nao distingue "fez o trabalho" de "nao recalculou".
@@ -752,10 +753,11 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
     assert git.removed_worktrees == []
 
 
-# --- distribuicao a partir de versao liberada (spec §2) ---------------------
+# --- distribuicao a partir de versao liberada ---------------------------------
+# (docs/decisoes/005-alvo-distribuicao-entre-versoes.md)
 #
 # O corte da 15.0.0 e m0. A entrega da 14.6.0 entrou no master DEPOIS disso
-# (m1), entao a premissa antiga do §2 — "conteudo da liberada chega por
+# (m1), entao a premissa antiga da decisao — "conteudo da liberada chega por
 # ancestralidade da base" — e falsa aqui: a base de uma X.0.0 e o master no
 # ponto de corte, nao o master de agora.
 
