@@ -58,7 +58,7 @@ class RespostaInvalida(MotorError):
 
     JSON que nao casa nenhuma forma esperada, data impossivel de parsear, saida
     de git em formato inesperado, coluna com valor fora do dominio. E a
-    categoria da secao 10 do desenho — o corpo de resposta do Tickio nunca foi
+    categoria da issue #42 — o corpo de resposta do Tickio nunca foi
     observado — e a que um adapter de terceiro mais usa.
     """
 

@@ -158,8 +158,8 @@ def test_repr_nao_vaza_senha_nem_jwt():
 
 
 def test_formato_inesperado_e_resposta_invalida_nao_backend_fora():
-    """A secao 10 do desenho registra que o corpo de resposta do Tickio nunca
-    foi observado. Distinguir "respondeu lixo" de "nao respondeu" e o que
+    """A issue #42 registra que o corpo de resposta do Tickio nunca foi
+    observado. Distinguir "respondeu lixo" de "nao respondeu" e o que
     permite ao operador saber se o problema e rede ou contrato.
     """
     with pytest.raises(RespostaInvalida):
