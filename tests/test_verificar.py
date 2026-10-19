@@ -233,6 +233,17 @@ def test_auditar_recusa_versao_ainda_aberta():
         )
 
 
+def test_auditar_recusa_versao_liberada_que_o_estado_nao_registrou():
+    git = _git(tags={"13.34.0": True})
+
+    with pytest.raises(ErroDeEntrada, match="registrada no estado"):
+        verificar(
+            _deps(git, FakeTaskSource(), FakeCommitSource(), _estado_com_repo()),
+            "13.34.0",
+            auditar=True,
+        )
+
+
 def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
     """Invariante documentada em VersionStatus: `conflitantes` e subconjunto de
     `faltantes` (lado alvo), nunca de `commits_sumidos`. Commit que so o estado
@@ -538,6 +549,44 @@ def test_verificar_atribui_o_conflito_ao_chamado_culpado():
     status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 
     assert [c.hash_origem for c in status.conflitantes] == ["a0"]
+    assert status.conflito_causado_por == {"a0": ["200"]}
+
+
+def test_verificar_ignora_culpado_sem_chamado_na_mensagem():
+    """Linha mexida por commit sem chamado nao vira culpado: nao ha o que o
+    operador buscar. O culpado com chamado no mesmo arquivo continua contando.
+    """
+    git = _git()
+    git.add_commit("c200", "m0", "fix: ch200 mexe a mesma linha", D)
+    git.add_commit("s0", "m0", "refactor sem chamado", D)
+    git.merge_predictions["a0"] = MergePrediction(
+        conflita=True, arquivos_conflito=["a.txt"]
+    )
+    git.culpados_por_linha_por_commit["a0"] = {
+        "a.txt": [
+            CommitRef(hash_origem="s0", msg="refactor sem chamado"),
+            CommitRef(hash_origem="c200", msg="fix: ch200 mexe a mesma linha"),
+        ]
+    }
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
     assert status.conflito_causado_por == {"a0": ["200"]}
 
 
