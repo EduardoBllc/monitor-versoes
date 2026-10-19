@@ -1,0 +1,19 @@
+repos:
+  # rev alinhado ao ruff do uv.lock: hook e portão têm de concordar.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff-format
+      - id: ruff-check
+
+  # Não usar mirrors-mypy: roda isolado, sem as dependências do projeto, e a
+  # conformidade das portas (tests/test_conformidade.py) perde o sentido.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: ./.venv/bin/python -m mypy
+        language: system
+        # Mudança só no pyproject (config do mypy, versão de dependência) também muda o resultado.
+        always_run: true
+        pass_filenames: false
