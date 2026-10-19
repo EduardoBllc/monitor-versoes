@@ -75,7 +75,7 @@ def test_sessao_postgres_ignora_o_ambiente(monkeypatch, request):
 # -- worktrees mantidas -------------------------------------------------------
 #
 # setenv("") em vez de delenv: e o que um `.env` com a linha vazia produz, e a
-# disciplina do conftest para variavel "ausente" (ver .claude/CLAUDE.md).
+# disciplina do conftest para variavel "ausente" (ver docs/padroes/testes.md).
 
 
 def test_worktrees_mantidas_default_quando_ausente(monkeypatch):

@@ -48,11 +48,6 @@ _find_*.py
 
 .rtk
 
-# Excluir apenas o arquivo raiz, mantendo a pasta .claude e seu conteúdo, 
-# para possibitlitar que o CLAUDE.md criado pelo `rtk init` seja ignorado
-CLAUDE.md
-!.claude/CLAUDE.md
-
 # Wortkrees do Claude
 .claude/worktrees/*
 
@@ -65,7 +60,6 @@ docs/superpowers/*
 # Arquivos 
 .worktrees/
 
-/CLAUDE.md
 .rtk
 
 .claude/worktrees
