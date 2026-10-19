@@ -27,30 +27,95 @@ sem adaptação:
 - **Commits citam a task** na mensagem como `ch<num>`.
 - **Build está fora:** a ferramenta monta e verifica, não constrói.
 
-## Requisitos
+## Pré-requisitos
 
-- Python 3.14 e [uv](https://docs.astral.sh/uv/)
-- git
-- Docker (para o Postgres do estado)
+| Ferramenta | Para quê | Instalação |
+| --- | --- | --- |
+| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| [Docker](https://docs.docker.com/engine/install/) com Compose | Postgres do estado | Linux: `curl -fsSL https://get.docker.com \| sh`; macOS: [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) |
+| git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install` |
+| make | atalhos da instalação (opcional — veja "sem make") | Debian/Ubuntu: `sudo apt install make`; macOS: `xcode-select --install` |
+
+É preciso clonar o repositório: as migrações do banco (`alembic/`) não vão no pacote, então
+`uv tool install` não basta.
 
 ## Instalação
 
 ```bash
-uv sync --all-extras
-cp .env.example .env
+git clone https://github.com/EduardoBllc/monitor-versoes.git
+cd monitor-versoes
+make install && make db && make migrate
+```
+
+`make install` instala as dependências e cria o `.env` a partir do
+[.env.example](.env.example) (sem sobrescrever um que já exista); `make db` sobe o Postgres
+em Docker (porta 5433); `make migrate` cria as tabelas.
+
+<details>
+<summary>Sem make</summary>
+
+```bash
+unset VIRTUAL_ENV          # veja a ressalva em "Uso"
+uv sync
+cp -n .env.example .env
 docker compose up -d
 uv run alembic upgrade head
 ```
 
-Preencha o `.env`: credenciais do Tickio, `PROJECTS_DIR` (raiz onde `--repo <nome>` é
-procurado) e, opcionalmente, as do Bitbucket. Cada variável está comentada em
-[.env.example](.env.example).
+</details>
 
-Cadastre cada repositório antes do primeiro comando nele:
+### Configurar o `.env`
+
+Preencha no `.env`:
+
+- `TICKIO_BASE_URL`, `TICKIO_USER`, `TICKIO_PASSWORD` — de onde vêm as tasks de cada versão.
+  Dispensáveis se você só usar `--task-source manual`.
+- `PROJECTS_DIR` — raiz onde `--repo <nome>` é procurado (com `PROJECTS_DIR=/home/voce/Projetos`,
+  `--repo meu-repo` é `/home/voce/Projetos/meu-repo`; use path absoluto, `~` não é expandido). Sem ela, passe o path em `--repo`.
+- `BITBUCKET_TOKEN`, `BITBUCKET_EMAIL` — opcionais; veja "Fontes de tasks e de commits".
+
+As variáveis `DATABASE_*` já apontam para o Postgres do `make db`. Cada variável está
+comentada no [.env.example](.env.example).
+
+### Cadastrar os repositórios
+
+Cada repositório é cadastrado uma vez, antes do primeiro comando nele, com o id do sistema
+correspondente no Tickio:
 
 ```bash
 uv run motor repo adicionar meu-repo --tickio-sistema-id 7
 ```
+
+O nome é o do diretório do repositório (o basename do path de `--repo`).
+
+## Verificar que funcionou
+
+1. O CLI responde:
+
+   ```console
+   $ uv run motor --help
+   usage: motor [-h] [--env {development,production}] comando ...
+   ...
+   ```
+
+2. O banco está migrado — a linha termina em `(head)` (o hash muda conforme a versão):
+
+   ```console
+   $ uv run alembic current
+   ...
+   d4e7a9b2c1f0 (head)
+   ```
+
+   Saída vazia (só as linhas `INFO`) é banco no ar mas sem migração: rode `make migrate`.
+
+3. O repositório está cadastrado:
+
+   ```console
+   $ uv run motor repo adicionar meu-repo --tickio-sistema-id 7
+   repo 'meu-repo' adicionado
+   ```
+
+   `ERROR: repo 'meu-repo' ja cadastrado` também serve: o banco responde e o repo está lá.
 
 ## Uso
 
@@ -65,6 +130,10 @@ uv run motor atualizar 13.35.0 --repo meu-repo --abort
 uv run motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
 uv run motor tui                                           # interface interativa
 ```
+
+> **Ressalva:** se o shell tiver um `VIRTUAL_ENV` ativo de outro projeto, o `uv run` pode usar
+> o interpretador dele e o `motor` falha ao importar. Rode `unset VIRTUAL_ENV` (ou
+> `deactivate`) antes; os alvos do `make` já fazem isso.
 
 Todos os comandos de versão aceitam `--repo` (path, ou nome dentro de `PROJECTS_DIR`),
 `--debug`, `--sem-progresso`, `--task-source` e `--lista`. `uv run motor <comando> -h` lista
@@ -87,43 +156,20 @@ checkout; `0` descarta a cada run.
 A eviction é por uso mais recente e nunca leva trabalho embora: worktree com alteração não
 commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pulada.
 
-## Desenvolvimento
-
-Tudo é **produção por padrão**: CLI, `compose.yml` e Alembic leem `.env`. O ambiente de
-desenvolvimento (`.env.development`, porta 5434) é sempre explícito:
-
-```bash
-cp .env.development.example .env.development
-docker compose --env-file .env.development up -d
-set -a; . ./.env.development; set +a; uv run alembic upgrade head
-uv run motor --env development verificar 13.34.0 --repo meu-repo
-```
-
-O `set -a` é o que redireciona o Alembic: o `load_dotenv()` dele não sobrescreve variável já
-presente no ambiente.
-
-### Testes e tipos
-
-```bash
-uv run ruff format --check . && uv run ruff check .
-uv run mypy
-uv run pytest
-```
-
-Os três são o portão — não há CI. O `mypy` lê `files`/strict do `pyproject.toml`: `motor/`
-em `--strict`, `tests/` sem a exigência de assinatura nas funções de teste. A suíte roda sem git, sem rede e sem banco de pé: os testes
-marcados `integracao` sobem um Postgres efêmero via testcontainers, migram e o derrubam no
-fim (~9s; sem Docker, pulam). A URL vem do container, nunca do ambiente, então o `TRUNCATE`
-dos testes não alcança o banco do `.env`.
-
-### Problemas comuns
+## Problemas comuns
 
 | Sintoma | Causa e saída |
 | --- | --- |
-| `uv run pytest` morre na coleta com `SyntaxError: future feature annotations is not defined` | Um `VIRTUAL_ENV` de outro projeto (Python antigo) vazou para o shell e o `uv` o prefere ao `.venv`. Não é erro de código: `unset VIRTUAL_ENV`, ou chame `./.venv/bin/python -m pytest` (idem `mypy`, `ruff`, `alembic`). Sem `.venv`: `unset VIRTUAL_ENV; uv sync --all-extras`. |
-| `docker compose up -d` subiu, mas não é o banco de desenvolvimento | Sem `--env-file`, o compose lê `.env` (produção, porta 5433). Desenvolvimento é `--env-file .env.development` (porta 5434). |
-| `alembic upgrade head` migrou o banco errado | O `load_dotenv()` do Alembic não sobrescreve variável já presente no ambiente — e sem nada exportado lê `.env`. Exporte o ambiente desejado antes, com `set -a; . ./.env.development; set +a`. |
+| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | O Postgres não está no ar. `make db` (ou `docker compose up -d`). Se acabou de subir, espere alguns segundos — o container leva um tempo até aceitar conexão. |
+| `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração. `make migrate`. |
+| `ERROR: repo 'meu-repo' desconhecido. Cadastre com: uv run motor repo adicionar 'meu-repo' --tickio-sistema-id <id>` | O repositório não foi cadastrado. Rode o comando sugerido com o id do sistema no Tickio. |
+| `ERROR: faltando no .env: TICKIO_BASE_URL, TICKIO_USER, TICKIO_PASSWORD` | Credenciais do Tickio vazias no `.env`. Preencha, ou use `--task-source manual --lista arquivo.txt`. |
+| `--repo nao encontrado: tentou 'meu-repo' e '(PROJECTS_DIR nao setada)'` | `--repo` não é um path existente e `PROJECTS_DIR` está vazia. Preencha `PROJECTS_DIR` no `.env` ou passe o path do repositório. |
+| `--repo nao encontrado: tentou 'meu-repo' e '/home/voce/Projetos/meu-repo'` | O diretório não existe dentro de `PROJECTS_DIR`. Confira o nome e o valor da variável. |
+| `uv run motor` falha na importação, com erro de sintaxe ou do Python errado | Um `VIRTUAL_ENV` de outro projeto ativo no shell. `unset VIRTUAL_ENV` (ou `deactivate`) e repita. |
 
-## Licença
+## Próximos passos
 
-[MIT](LICENSE)
+- [docs/decisoes/](docs/decisoes/README.md) — o porquê de cada decisão do projeto.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — ambiente de desenvolvimento, verificações e fluxo de PR.
+- Licença: [MIT](LICENSE).
