@@ -34,7 +34,7 @@ from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 # Corpo de JSON da API: dict de chaves str para qualquer coisa. Nao e um dict
-# tipado — a §10 do desenho registra que o contrato ainda nao foi observado.
+# tipado — a issue #42 registra que o contrato ainda nao foi observado.
 JSON = dict[str, Any]
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"

@@ -13,7 +13,7 @@ comparar hashes não responde nada. O `motor` cruza três fontes:
 | **git** (trailer do `cherry-pick -x`) | o que está _de fato_ aplicado |
 
 A versão só fica verde quando as três concordam. O porquê de cada decisão está em
-[docs/design.md](docs/design.md).
+[docs/decisoes/](docs/decisoes/README.md).
 
 ## Premissas
 

@@ -867,7 +867,7 @@ def test_worktree_gc_le_o_mru_gravado_por_outra_instancia(tmp_path):
 
 
 def test_worktree_gc_nao_remove_worktree_com_cherry_pick_pendente(tmp_path):
-    """Checkpoint resumivel (design.md §8): dentro dessa worktree pode haver
+    """Checkpoint resumivel (docs/decisoes/013-conflito-e-checkpoint.md): dentro dessa worktree pode haver
     resolucao manual de conflito que so existe ali."""
     repo = _repo_para_gc(tmp_path)
     g = new_git_subprocess(repo)
