@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+from functools import partial
 from pathlib import Path
 from threading import Event
 from typing import cast
@@ -464,6 +465,68 @@ def test_renderizar_atualizacao_bloqueada_orienta_continuacao():
     assert "deadbeef" in texto
     assert "motor/tui.py" in texto and "tests/test_tui.py" in texto
     assert "Continuar" in texto and "Abortar" in texto
+
+
+def test_renderizar_atualizacao_mostra_ja_presentes_e_alertas_da_versao():
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(
+                status=AtualizarStatus.DONE,
+                ja_presentes=3,
+                status_versao=VersionStatus(
+                    verde=False, estado_integro=True, tasks_sem_commits=["255514"]
+                ),
+            )
+        )
+    )
+
+    assert "Branch já estava atualizada" in texto
+    assert "3 commits já presentes no histórico" in texto
+    assert "Chamados sem commits: 255514" in texto
+
+
+def test_renderizar_atualizacao_omite_alertas_de_versao_sem_pendencia():
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(
+                status=AtualizarStatus.DONE,
+                status_versao=VersionStatus(verde=True, estado_integro=True),
+            )
+        )
+    )
+
+    assert "Atualização concluída" in texto
+    assert "Chamados" not in texto
+    assert "já presentes" not in texto
+
+
+def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
+    apps: list[MotorTUI] = []
+
+    def capturar(app: MotorTUI) -> None:
+        apps.append(app)
+
+    monkeypatch.setattr(MotorTUI, "run", capturar)
+
+    tui.run_tui()
+
+    [app] = apps
+    assert app._registrar is tui._registrar_no_banco
+    assert app._definir_piso is tui._definir_piso_no_banco
+    ligados = {
+        tui._repos_do_ambiente: app._carregar_repos,
+        tui._versoes_do_repo: app._carregar_versoes,
+        tui._verificar_repo: app._executar,
+        tui._atualizar_repo: app._atualizar,
+        tui._continuar_repo: app._continuar,
+        tui._abortar_repo: app._abortar,
+        tui._consultar_repo: app._consultar,
+        tui._criar_repo: app._criar,
+    }
+    for alvo, runner in ligados.items():
+        assert isinstance(runner, partial)
+        assert runner.func is alvo
+        assert runner.keywords == {"progresso": app._slot.relatar}
 
 
 def test_app_seleciona_repo_tag_e_executa_auditoria():
