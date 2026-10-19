@@ -38,12 +38,24 @@ def test_substituir_atribuicoes_sobrescreve():
     estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
     estado.registrar_versao("r", _info("13.34.0"))
 
-    estado.substituir_atribuicoes("r", "13.34.0", [
-        Atribuicao(chamado="1", marcada="13.34.0", estado="pendente", commits=["a"]),
-    ])
-    estado.substituir_atribuicoes("r", "13.34.0", [
-        Atribuicao(chamado="2", marcada="13.34.0", estado="aplicado", commits=["b"]),
-    ])
+    estado.substituir_atribuicoes(
+        "r",
+        "13.34.0",
+        [
+            Atribuicao(
+                chamado="1", marcada="13.34.0", estado="pendente", commits=["a"]
+            ),
+        ],
+    )
+    estado.substituir_atribuicoes(
+        "r",
+        "13.34.0",
+        [
+            Atribuicao(
+                chamado="2", marcada="13.34.0", estado="aplicado", commits=["b"]
+            ),
+        ],
+    )
 
     assert [a.chamado for a in estado.atribuicoes("r", "13.34.0")] == ["2"]
 
@@ -80,10 +92,10 @@ def test_marcar_liberadas_nao_reescreve_data_ja_gravada():
     # data naive aqui compararia contra a normalizada e o teste falaria de fuso
     # em vez de falar de sobrescrita. O fuso tem contrato proprio, em
     # tests/test_estado_contrato.py.
-    primeira = datetime.datetime(2026, 8, 1, tzinfo=datetime.timezone.utc)
+    primeira = datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC)
     estado.marcar_liberadas("r", {"13.34.0": primeira})
     estado.marcar_liberadas(
-        "r", {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)}
+        "r", {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)}
     )
     gravada = estado.versao("r", "13.34.0")
     assert gravada is not None
@@ -97,8 +109,12 @@ def test_registrar_versao_nao_sobrescreve_a_base_ja_gravada():
     estado.registrar_versao("r", _info("14.0.0"))
     estado.registrar_versao(
         "r",
-        VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                   base_ref="master", base_commit="OUTRO"),
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="OUTRO",
+        ),
     )
     gravada = estado.versao("r", "14.0.0")
     assert gravada is not None

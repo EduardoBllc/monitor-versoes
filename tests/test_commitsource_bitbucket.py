@@ -20,9 +20,8 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.errors import MotorError
 from motor.domain.types import RepoInfo
-from motor.errors import ErroDeEntrada, RespostaInvalida
+from motor.errors import ErroDeEntrada, MotorError, RespostaInvalida
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
@@ -42,14 +41,12 @@ def test_parse_workspace_repo(url, esperado):
     assert parse_workspace_repo(url) == esperado
 
 
-def _git_com_master(
-    *hashes_na_master: str, classe: type[FakeGit] = FakeGit
-) -> FakeGit:
+def _git_com_master(*hashes_na_master: str, classe: type[FakeGit] = FakeGit) -> FakeGit:
     # encadeia os hashes numa branch master (o primeiro e a raiz). As duas refs
     # no mesmo tip: e o que um clone recem-fetchado tem, e a fonte le a de
     # rastreamento.
     g = classe()
-    t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     anterior = ""
     for h in hashes_na_master:
         g.add_commit(h, anterior, f"commit {h}", t0)
@@ -61,7 +58,9 @@ def _git_com_master(
 
 def _fonte(handler, git: FakeGit, estado=None) -> BitbucketPRCommitSource:
     estado = _estado_vazio() if estado is None else estado
-    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://testserver")
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://testserver"
+    )
     return BitbucketPRCommitSource(
         base_url="http://testserver",
         token="tok123",
@@ -110,11 +109,27 @@ def _handler_pr(
 
 def test_pr_titulo_prefixo_so_commits_na_master():
     g = _git_com_master("c1")  # c1 na master, c2 nao
-    prs = [{"id": 1, "title": "ch255514 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
+    prs = [
+        {
+            "id": 1,
+            "title": "ch255514 corrige logs",
+            "source": {"branch": {"name": "feature/x"}},
+        }
+    ]
     commits = {
         1: [
-            {"hash": "c1", "date": "2024-01-02T10:00:00+00:00", "message": "fix logs", "parents": [{"hash": "p1"}]},
-            {"hash": "c2", "date": "2024-01-03T10:00:00+00:00", "message": "wip", "parents": [{"hash": "c1"}]},
+            {
+                "hash": "c1",
+                "date": "2024-01-02T10:00:00+00:00",
+                "message": "fix logs",
+                "parents": [{"hash": "p1"}],
+            },
+            {
+                "hash": "c2",
+                "date": "2024-01-03T10:00:00+00:00",
+                "message": "wip",
+                "parents": [{"hash": "c1"}],
+            },
         ]
     }
     fonte = _fonte(_handler_pr(prs, commits), g)
@@ -137,12 +152,28 @@ def test_pr_conta_commit_que_so_chegou_no_origin_master():
     le origin/master, via a segunda.
     """
     g = _git_com_master("c1")
-    g.add_commit("c2", "c1", "commit c2", datetime.datetime(2024, 1, 2, tzinfo=datetime.timezone.utc))
+    g.add_commit(
+        "c2",
+        "c1",
+        "commit c2",
+        datetime.datetime(2024, 1, 2, tzinfo=datetime.UTC),
+    )
     g.set_branch("origin/master", "c2")  # local `master` fica em c1
-    prs = [{"id": 1174, "title": "ch257270 - ajusta", "source": {"branch": {"name": "feature/x"}}}]
+    prs = [
+        {
+            "id": 1174,
+            "title": "ch257270 - ajusta",
+            "source": {"branch": {"name": "feature/x"}},
+        }
+    ]
     commits = {
         1174: [
-            {"hash": "c2", "date": "2024-01-02T10:00:00+00:00", "message": "ajusta", "parents": [{"hash": "c1"}]},
+            {
+                "hash": "c2",
+                "date": "2024-01-02T10:00:00+00:00",
+                "message": "ajusta",
+                "parents": [{"hash": "c1"}],
+            },
         ]
     }
     fonte = _fonte(_handler_pr(prs, commits), g)
@@ -154,8 +185,23 @@ def test_pr_conta_commit_que_so_chegou_no_origin_master():
 
 def test_pr_casa_por_nome_da_branch():
     g = _git_com_master("c1")
-    prs = [{"id": 7, "title": "corrige logs", "source": {"branch": {"name": "bugfix/ch255514-logs"}}}]
-    commits = {7: [{"hash": "c1", "date": "2024-01-02T10:00:00+00:00", "message": "fix", "parents": []}]}
+    prs = [
+        {
+            "id": 7,
+            "title": "corrige logs",
+            "source": {"branch": {"name": "bugfix/ch255514-logs"}},
+        }
+    ]
+    commits = {
+        7: [
+            {
+                "hash": "c1",
+                "date": "2024-01-02T10:00:00+00:00",
+                "message": "fix",
+                "parents": [],
+            }
+        ]
+    }
     fonte = _fonte(_handler_pr(prs, commits), g)
 
     resultado = fonte.resolve(["255514"])
@@ -166,23 +212,56 @@ def test_pr_casa_por_nome_da_branch():
 def test_pr_titulo_que_nao_comeca_com_o_termo_e_ignorado():
     # titulo CONTEM ch255514 mas nao COMECA com ele, e branch nao bate: ignora.
     g = _git_com_master("c1")
-    prs = [{"id": 3, "title": "fix relacionado a ch255514", "source": {"branch": {"name": "feature/x"}}}]
-    commits = {3: [{"hash": "c1", "date": "2024-01-02T10:00:00+00:00", "message": "fix", "parents": []}]}
+    prs = [
+        {
+            "id": 3,
+            "title": "fix relacionado a ch255514",
+            "source": {"branch": {"name": "feature/x"}},
+        }
+    ]
+    commits = {
+        3: [
+            {
+                "hash": "c1",
+                "date": "2024-01-02T10:00:00+00:00",
+                "message": "fix",
+                "parents": [],
+            }
+        ]
+    }
     fonte = _fonte(_handler_pr(prs, commits), g)
 
     resultado = fonte.resolve(["255514"])
 
-    assert resultado == {}, f"PR sem prefixo/branch batendo nao deveria contar: {resultado!r}"
+    assert resultado == {}, (
+        f"PR sem prefixo/branch batendo nao deveria contar: {resultado!r}"
+    )
 
 
 def test_pr_ignora_merge_commit():
     # commit com 2 pais e merge: cherry-pick -x sem -m falha, entao nao entra na lista.
     g = _git_com_master("c1")
-    prs = [{"id": 1, "title": "ch255514 corrige logs", "source": {"branch": {"name": "feature/x"}}}]
+    prs = [
+        {
+            "id": 1,
+            "title": "ch255514 corrige logs",
+            "source": {"branch": {"name": "feature/x"}},
+        }
+    ]
     commits = {
         1: [
-            {"hash": "merge1", "date": "2024-01-02T10:00:00+00:00", "message": "merge", "parents": [{"hash": "a"}, {"hash": "b"}]},
-            {"hash": "c1", "date": "2024-01-03T10:00:00+00:00", "message": "fix", "parents": [{"hash": "p1"}]},
+            {
+                "hash": "merge1",
+                "date": "2024-01-02T10:00:00+00:00",
+                "message": "merge",
+                "parents": [{"hash": "a"}, {"hash": "b"}],
+            },
+            {
+                "hash": "c1",
+                "date": "2024-01-03T10:00:00+00:00",
+                "message": "fix",
+                "parents": [{"hash": "p1"}],
+            },
         ]
     }
     fonte = _fonte(_handler_pr(prs, commits), g)
@@ -198,7 +277,9 @@ def test_chamado_sem_pr_correspondente_e_omitido():
 
     resultado = fonte.resolve(["255514"])
 
-    assert resultado == {}, "chamado sem PR correspondente nao deveria aparecer no resultado"
+    assert resultado == {}, (
+        "chamado sem PR correspondente nao deveria aparecer no resultado"
+    )
 
 
 # -- JSON fora de forma nao pode escapar como AttributeError -----------------
@@ -356,9 +437,7 @@ def _pr(
     }
 
 
-def _commit_bruto(
-    hash_: str, dia: int = 2, parents: list[str] | None = None
-) -> JSON:
+def _commit_bruto(hash_: str, dia: int = 2, parents: list[str] | None = None) -> JSON:
     return {
         "hash": hash_,
         "date": f"2024-01-{dia:02d}T10:00:00+00:00",
@@ -413,7 +492,10 @@ def test_pr_nova_no_mesmo_chamado_ainda_e_buscada():
     # o buraco que este desenho evita: cache por PR, nao por chamado.
     estado = _estado_vazio()
     g = _git_com_master("c1", "c2")
-    commits = {7: [_commit_bruto("c1")], 9: [_commit_bruto("c2", dia=5, parents=["c1"])]}
+    commits = {
+        7: [_commit_bruto("c1")],
+        9: [_commit_bruto("c2", dia=5, parents=["c1"])],
+    }
 
     _fonte(_handler_pr([_pr(7)], commits), g, estado).resolve(["255514"])
     # PR 9 mergeada depois, no MESMO chamado
@@ -459,7 +541,9 @@ def test_merge_commit_nao_entra_no_cache():
 def _removido_sem_estado_a_fonte_funciona_igual():
     # `estado=None` e o caminho de quem monta a fonte sem banco: sem cache,
     # mesmo resultado.
-    fonte = _fonte(_handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"))
+    fonte = _fonte(
+        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1")
+    )
 
     assert [c.hash_origem for c in fonte.resolve(["255514"])["255514"]] == ["c1"]
 
@@ -549,7 +633,10 @@ def test_chamado_com_prefixo_maior_nao_casa_na_branch():
 def test_pr_nova_aparece_na_varredura_seguinte():
     estado = _estado_vazio()
     g = _git_com_master("c1", "c2")
-    commits = {7: [_commit_bruto("c1")], 9: [_commit_bruto("c2", dia=5, parents=["c1"])]}
+    commits = {
+        7: [_commit_bruto("c1")],
+        9: [_commit_bruto("c2", dia=5, parents=["c1"])],
+    }
 
     _fonte(_handler_pr([_pr(7)], commits), g, estado).resolve(["255514"])
     resultado = _fonte(_handler_pr([_pr(9, dia=20)], commits), g, estado).resolve(

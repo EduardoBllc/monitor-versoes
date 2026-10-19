@@ -21,7 +21,9 @@ class PresenceOracle:
     _commits_in_range_cache: dict[tuple[str, str], list[CommitRef] | None] = field(
         default_factory=dict, repr=False, compare=False
     )
-    _patch_id_cache: dict[str, str | None] = field(default_factory=dict, repr=False, compare=False)
+    _patch_id_cache: dict[str, str | None] = field(
+        default_factory=dict, repr=False, compare=False
+    )
     # branch -> commits da branch INTEIRA que carregam trailer de cherry-pick.
     # Uma varredura por branch (`git log --grep`, ~0,2s em 39k commits) que o
     # lote de candidatos reusa.
@@ -34,9 +36,9 @@ class PresenceOracle:
     # (base, branch) -> chave (msg, arquivos) -> fila de candidatos do alvo ainda
     # nao consumidos. Consumo (pop) evita que 2 commits de origem com msg+arquivos
     # identicos (comum dentro da mesma PR) colidam no mesmo candidato do alvo.
-    _por_msg_arquivos_cache: dict[tuple[str, str], dict[tuple[str, frozenset[str]], list[CommitRef]]] = field(
-        default_factory=dict, repr=False, compare=False
-    )
+    _por_msg_arquivos_cache: dict[
+        tuple[str, str], dict[tuple[str, frozenset[str]], list[CommitRef]]
+    ] = field(default_factory=dict, repr=False, compare=False)
 
     def presente(self, hash_origem: str, base: str, branch: str) -> Presence:
         """Implementa o oraculo de 3 niveis (§2): ancestral direto, trailer de
@@ -98,7 +100,9 @@ class PresenceOracle:
             for h, p in presentes.items()
         )
 
-    def suspeita_por_conteudo(self, hash_origem: str, base: str, branch: str) -> CommitRef | None:
+    def suspeita_por_conteudo(
+        self, hash_origem: str, base: str, branch: str
+    ) -> CommitRef | None:
         """Nivel 4 (fora do oraculo de presenca formal - so alerta, nao conta
         como presente): cherry-pick manual sem -x cujo conteudo foi alterado na
         resolucao do conflito muda o patch-id, entao o nivel 3 nao pega. Aqui
@@ -158,7 +162,9 @@ class PresenceOracle:
         chave = (base, branch)
         if chave not in self._commits_in_range_cache:
             try:
-                self._commits_in_range_cache[chave] = self.git.commits_in_range(base, branch)
+                self._commits_in_range_cache[chave] = self.git.commits_in_range(
+                    base, branch
+                )
             except MotorError:
                 self._commits_in_range_cache[chave] = None
         return self._commits_in_range_cache[chave]

@@ -9,7 +9,9 @@ CHAMADOS = ["100", "200"]
 
 def test_primeira_fonte_com_commits_ganha_a_task():
     primaria = FakeCommitSource(por_chamado={"100": [CommitRef(hash_origem="pr-100")]})
-    secundaria = FakeCommitSource(por_chamado={"100": [CommitRef(hash_origem="grep-100")]})
+    secundaria = FakeCommitSource(
+        por_chamado={"100": [CommitRef(hash_origem="grep-100")]}
+    )
 
     chain = ChainCommitSource(sources=[primaria, secundaria])
     resultado = chain.resolve(CHAMADOS)
@@ -21,7 +23,9 @@ def test_primeira_fonte_com_commits_ganha_a_task():
 
 def test_cai_para_proxima_fonte_quando_primeira_nao_acha():
     primaria = FakeCommitSource(por_chamado={"100": [CommitRef(hash_origem="pr-100")]})
-    secundaria = FakeCommitSource(por_chamado={"200": [CommitRef(hash_origem="grep-200")]})
+    secundaria = FakeCommitSource(
+        por_chamado={"200": [CommitRef(hash_origem="grep-200")]}
+    )
 
     chain = ChainCommitSource(sources=[primaria, secundaria])
     resultado = chain.resolve(CHAMADOS)

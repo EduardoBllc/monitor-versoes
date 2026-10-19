@@ -37,9 +37,7 @@ class FakeEstado:
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         if nome in self.repos or nome in self.aliases:
             raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
-        self.repos[nome] = RepoInfo(
-            nome=nome, tickio_sistema_id=tickio_sistema_id
-        )
+        self.repos[nome] = RepoInfo(nome=nome, tickio_sistema_id=tickio_sistema_id)
 
     def resolver_repo(self, basename: str, /) -> RepoInfo:
         nome = self.aliases.get(basename, basename)
@@ -72,7 +70,7 @@ class FakeEstado:
         self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         self._exigir_repo(repo)
-        for numero, quando in liberadas.items():
+        for numero, recebida in liberadas.items():
             atual = self.versoes.get((repo, numero))
             if atual is None or atual.liberada_em is not None:
                 continue
@@ -81,8 +79,9 @@ class FakeEstado:
             # Guardar o que veio deixaria a suite verde numa comparacao mista
             # que estoura so em producao — a distribuicao do §2 compara esta
             # data com a data de um commit, que sempre tem fuso.
+            quando = recebida
             if quando.tzinfo is None:
-                quando = quando.replace(tzinfo=datetime.timezone.utc)
+                quando = quando.replace(tzinfo=datetime.UTC)
             self.versoes[(repo, numero)] = VersaoInfo(
                 numero=atual.numero,
                 tipo=atual.tipo,
@@ -139,7 +138,9 @@ class FakeEstado:
         self._exigir_repo(repo)
         return dict(self._sem_entrega.get(repo, {}))
 
-    def commits_de_pr(self, repo: str, pr_ids: list[int], /) -> dict[int, list[CommitRef]]:
+    def commits_de_pr(
+        self, repo: str, pr_ids: list[int], /
+    ) -> dict[int, list[CommitRef]]:
         self._exigir_repo(repo)
         achados: dict[int, list[CommitRef]] = {}
         for pr_id in pr_ids:

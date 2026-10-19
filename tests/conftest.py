@@ -78,8 +78,9 @@ def _postgres_efemero() -> Iterator[Any]:
         # versao nascem em migration, nao no metadata. Com create_all o schema
         # sobe sem elas e os testes de trigger falham dizendo "escrita
         # permitida" — sintoma que nao aponta para a causa.
-        from alembic import command
         from alembic.config import Config
+
+        from alembic import command
 
         command.upgrade(Config(str(RAIZ / "alembic.ini")), "head")
         yield container

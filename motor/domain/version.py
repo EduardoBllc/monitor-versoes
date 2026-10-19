@@ -10,7 +10,7 @@ from motor.errors import ErroDeEntrada, NaoEncontrado
 
 def _parse_versao(numero: str) -> tuple[int, int, int]:
     partes = numero.split(".")
-    if len(partes) != 3:
+    if len(partes) != 3:  # noqa: PLR2004 - X.Y.Z
         raise ErroDeEntrada(f'versao "{numero}": esperado formato X.Y.Z')
     nums = []
     for p in partes:

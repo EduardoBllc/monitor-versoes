@@ -60,11 +60,7 @@ class TargetResolver:
                 # Sem esse recorte, todo chamado remarcado a mao para contornar
                 # uma liberada passaria a pintar a versao de vermelho.
                 anterior = marcada_de.get(ch, v)
-                if (
-                    anterior != v
-                    and anterior not in liberadas
-                    and v not in liberadas
-                ):
+                if anterior != v and anterior not in liberadas and v not in liberadas:
                     ambiguas.append(ch)
                 # last-writer-wins: se o chamado e ambiguo, este valor nao
                 # significa nada — a versao ja vai reprovar por causa da

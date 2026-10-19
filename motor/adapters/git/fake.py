@@ -50,7 +50,9 @@ class FakeGit:
     # no mesmo hash, reproduz o caso real de "resolvi o conflito e nao sobrou
     # diff": o pick da CONFLITO e o --continue devolve VAZIO.
     vazio_on: dict[str, bool] = field(default_factory=dict)
-    file_changes: dict[str, frozenset[str]] = field(default_factory=dict)  # fixture: arquivos alterados por commit (nivel 4)
+    file_changes: dict[str, frozenset[str]] = field(
+        default_factory=dict
+    )  # fixture: arquivos alterados por commit (nivel 4)
     # fixture: patch-id por commit; ausente = "patchid-<hash>". Existe porque
     # dois commits distintos com o MESMO patch (branch rebasada e depois
     # mergeada de volta) e caso real, e o default por hash nao o representa.
@@ -60,10 +62,18 @@ class FakeGit:
     culpados_por_linha_por_commit: dict[str, dict[str, list[CommitRef]]] = field(
         default_factory=dict
     )
-    commits_in_range_err: Exception | None = None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
-    pulled: list[str] = field(default_factory=list)  # espiao de teste: branches que sofreram pull_branch
-    fetched: list[str] = field(default_factory=list)  # espiao de teste: remotos que sofreram fetch
-    removed_worktrees: list[str] = field(default_factory=list)  # espiao de teste: branches com worktree removida
+    commits_in_range_err: Exception | None = (
+        None  # fixture: forca commits_in_range a falhar (§2 fallback "ausente")
+    )
+    pulled: list[str] = field(
+        default_factory=list
+    )  # espiao de teste: branches que sofreram pull_branch
+    fetched: list[str] = field(
+        default_factory=list
+    )  # espiao de teste: remotos que sofreram fetch
+    removed_worktrees: list[str] = field(
+        default_factory=list
+    )  # espiao de teste: branches com worktree removida
     # Worktrees "em disco" por uso recente, mais recente primeiro — o que o
     # adapter real guarda no arquivo .motor-mru. Serve de `existentes` e de
     # `mru` ao mesmo tempo: no fake nao ha worktree que o motor nao criou.
@@ -73,7 +83,9 @@ class FakeGit:
     _pending_pick: str = ""
     _conflicted: list[str] = field(default_factory=list)
 
-    def add_commit(self, hash: str, parent: str, msg: str, date: datetime.datetime) -> None:
+    def add_commit(
+        self, hash: str, parent: str, msg: str, date: datetime.datetime
+    ) -> None:
         """Registra um commit direto no grafo (fixture de teste).
 
         Data naive vira UTC: o adapter real le %cI, que sempre tem fuso, e um
@@ -81,7 +93,7 @@ class FakeGit:
         em producao.
         """
         if date.tzinfo is None:
-            date = date.replace(tzinfo=datetime.timezone.utc)
+            date = date.replace(tzinfo=datetime.UTC)
         self.commits[hash] = FakeCommit(hash=hash, parent=parent, msg=msg, date=date)
 
     def set_branch(self, branch: str, hash: str) -> None:
@@ -134,7 +146,12 @@ class FakeGit:
                 # casefold em par com o `-i` do adapter real.
                 if p != "" and p.casefold() in c.msg.casefold():
                     resultado.append(
-                        CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
+                        CommitRef(
+                            hash_origem=c.hash,
+                            parent=c.parent,
+                            msg=c.msg,
+                            commit_date=c.date,
+                        )
                     )
                     break
             h = c.parent
@@ -150,7 +167,11 @@ class FakeGit:
             c = self.commits.get(h)
             if c is None:
                 break
-            resultado.append(CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date))
+            resultado.append(
+                CommitRef(
+                    hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date
+                )
+            )
             h = c.parent
         return resultado
 
@@ -158,13 +179,17 @@ class FakeGit:
         c = self.commits.get(hash)
         if c is None:
             raise NaoEncontrado(f"commit {hash} nao encontrado")
-        return CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
+        return CommitRef(
+            hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date
+        )
 
     def commits_meta(self, hashes: list[str], /) -> dict[str, CommitRef]:
         # Hash ausente falta no retorno, nao levanta: e o git com
         # --ignore-missing, nao um commit_meta em laco.
         return {
-            c.hash: CommitRef(hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date)
+            c.hash: CommitRef(
+                hash_origem=c.hash, parent=c.parent, msg=c.msg, commit_date=c.date
+            )
             for h in hashes
             if (c := self.commits.get(h)) is not None
         }
@@ -193,7 +218,7 @@ class FakeGit:
     def resolve_ref(self, ref: str, /) -> str:
         if (m := _PREFIXO_REF_REMOTA.match(ref)) is not None:
             # So a ref qualificada resolve, como no git de verdade.
-            remota = self.remote_refs.get(ref[m.end():])
+            remota = self.remote_refs.get(ref[m.end() :])
             if remota is None:
                 raise NaoEncontrado(f"ref {ref} nao encontrada")
             return remota
@@ -281,7 +306,9 @@ class FakeGit:
         self._pending_pick = ""
         self._conflicted = []
 
-    def predict_merge(self, parent: str, branch_tip: str, commit: str, /) -> MergePrediction:
+    def predict_merge(
+        self, parent: str, branch_tip: str, commit: str, /
+    ) -> MergePrediction:
         pred = self.merge_predictions.get(
             commit, MergePrediction(conflita=False, arquivos_conflito=[])
         )
@@ -358,9 +385,7 @@ class FakeGit:
 
     def list_version_tags(self) -> list[str]:
         return sorted(
-            t
-            for t, existe in self.tags.items()
-            if existe and _PADRAO_VERSAO.match(t)
+            t for t, existe in self.tags.items() if existe and _PADRAO_VERSAO.match(t)
         )
 
     def read_file(self, branch: str, path: str, /) -> bytes:
@@ -372,7 +397,9 @@ class FakeGit:
             raise NaoEncontrado(f"arquivo {path} nao encontrado em {branch}")
         return conteudo
 
-    def write_file(self, branch: str, path: str, content: bytes, mensagem_commit: str, /) -> None:
+    def write_file(
+        self, branch: str, path: str, content: bytes, mensagem_commit: str, /
+    ) -> None:
         if branch not in self.files:
             self.files[branch] = {}
         self.files[branch][path] = content

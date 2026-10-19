@@ -19,9 +19,9 @@ Auth: Authorization: Basic base64(email:token). Paginação pelo campo `next`.
 from __future__ import annotations
 
 import base64
+import contextlib
 import datetime
 import re
-import contextlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -153,7 +153,7 @@ class BitbucketPRCommitSource:
         # Marca = inicio da varredura, nao o maior `updated_on` visto. PR
         # mergeada DURANTE esta varredura pode nao aparecer nela; com o inicio
         # como marca, o `updated_on` dela e maior e a proxima janela a pega.
-        inicio = datetime.datetime.now(datetime.timezone.utc)
+        inicio = datetime.datetime.now(datetime.UTC)
         marca = self.estado.marca_varredura(self.repo_estado)
 
         params: dict[str, object] = {
@@ -171,7 +171,10 @@ class BitbucketPRCommitSource:
 
         # Extrai (e valida a forma) antes de filtrar: `pr.get("id")` num item
         # que nao e dict estouraria AttributeError cru, escapando do contrato.
-        indices = [self._para_pr_index(pr) for pr in self._paginar(client, self._prs_url(), params)]
+        indices = [
+            self._para_pr_index(pr)
+            for pr in self._paginar(client, self._prs_url(), params)
+        ]
         prs = [indice for indice in indices if indice.pr_id]
         # Indice e marca na mesma escrita: paginacao que levantou no meio nunca
         # chega aqui, entao a marca nao avanca por cima de um indice furado.
@@ -243,7 +246,9 @@ class BitbucketPRCommitSource:
             raise RespostaInvalida(f"PR do Bitbucket em formato inesperado: {pr!r}")
         titulo = pr.get("title") or ""
         if not isinstance(titulo, str):
-            raise RespostaInvalida(f"title da PR do Bitbucket em formato inesperado: {titulo!r}")
+            raise RespostaInvalida(
+                f"title da PR do Bitbucket em formato inesperado: {titulo!r}"
+            )
         bruto = pr.get("updated_on", "")
         try:
             quando = datetime.datetime.fromisoformat(bruto) if bruto else SEM_DATA
@@ -285,19 +290,23 @@ class BitbucketPRCommitSource:
         """Itera os `values` de uma resposta paginada, seguindo `next`."""
         while url:
             try:
-                resp = client.get(url, params=params, headers={"Authorization": self._auth_header()})
+                resp = client.get(
+                    url, params=params, headers={"Authorization": self._auth_header()}
+                )
             except httpx.InvalidURL as e:
                 raise ErroDeEntrada(f"URL do Bitbucket invalida: {url!r}: {e}") from e
             except httpx.HTTPError as e:
                 raise BackendIndisponivel(f"chamando Bitbucket {url}: {e}") from e
-            if resp.status_code != 200:
+            if resp.status_code != httpx.codes.OK:
                 raise BackendIndisponivel(
                     f"Bitbucket respondeu {resp.status_code} em {url}: {resp.text}"
                 )
             try:
                 corpo = resp.json()
             except ValueError as e:
-                raise RespostaInvalida(f"decodificando resposta do Bitbucket em {url}: {e}") from e
+                raise RespostaInvalida(
+                    f"decodificando resposta do Bitbucket em {url}: {e}"
+                ) from e
             if not isinstance(corpo, dict):
                 raise RespostaInvalida(
                     f"resposta do Bitbucket em formato inesperado em {url}: {corpo!r}"

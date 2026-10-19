@@ -107,7 +107,9 @@ def test_deadlock_nao_e_reportado_como_banco_inacessivel():
     erro de execucao. Mandar o operador subir container que ja esta de pe.
     """
     sessao = _SessaoQueFalha(
-        OperationalError("update ...", None, _OrigComSqlstate("deadlock detected", "40P01"))
+        OperationalError(
+            "update ...", None, _OrigComSqlstate("deadlock detected", "40P01")
+        )
     )
 
     with pytest.raises(MotorError) as e:
@@ -133,7 +135,9 @@ def test_congelamento_identificado_pelo_errcode_nao_pelo_texto():
         )
     )
 
-    with pytest.raises(RecusaDeInvariante, match="remarque a tarefa para a proxima versao"):
+    with pytest.raises(
+        RecusaDeInvariante, match="remarque a tarefa para a proxima versao"
+    ):
         PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
 
 

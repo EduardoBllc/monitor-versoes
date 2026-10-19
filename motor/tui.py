@@ -6,21 +6,21 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Protocol
-
-from sqlalchemy.orm import Session
+from typing import ClassVar, Protocol
 
 from rich import box
-from rich.console import RenderableType
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar as BarraRich
 from rich.table import Table
 from rich.text import Text
+from sqlalchemy.orm import Session
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import BindingType
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
+from textual.visual import VisualType
 from textual.widget import Widget
 from textual.widgets import (
     Button,
@@ -32,7 +32,6 @@ from textual.widgets import (
     Select,
     Static,
 )
-from textual.visual import VisualType
 from textual.widgets.option_list import Option
 
 from motor.adapters.estado.postgres import PostgresEstado
@@ -96,6 +95,8 @@ class ContinueRunner(Protocol):
     def __call__(
         self, repo: RepoOption, versao: str, /, *, allow_empty: bool = False
     ) -> AtualizarResult: ...
+
+
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 RepoRegistrar = Callable[[str, int], None]
 PisoDefiner = Callable[[str, str], None]
@@ -108,7 +109,7 @@ class ResultadoModal(ModalScreen[None]):
     exigir uma troca de versao para reconstrui-la.
     """
 
-    BINDINGS = [("escape,enter,q", "dismiss", "Fechar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape,enter,q", "dismiss", "Fechar")]
     DEFAULT_CSS = """
     ResultadoModal { align: center middle; }
     ResultadoModal > VerticalScroll {
@@ -138,7 +139,7 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
     caminho de erro normal do app, com o modal ja fechado.
     """
 
-    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
     DEFAULT_CSS = """
     CadastroModal { align: center middle; }
     CadastroModal > Vertical {
@@ -197,7 +198,7 @@ class PisoModal(ModalScreen["str | None"]):
     erro normal do app, como no cadastro.
     """
 
-    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
     DEFAULT_CSS = """
     PisoModal { align: center middle; }
     PisoModal > Vertical {
@@ -262,7 +263,7 @@ class AbortarModal(ModalScreen[bool]):
     operador. O resto do app so escreve o que da para refazer sozinho.
     """
 
-    BINDINGS = [("escape", "recusar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "recusar", "Cancelar")]
     DEFAULT_CSS = """
     AbortarModal { align: center middle; }
     AbortarModal > Vertical {
@@ -308,7 +309,7 @@ class ConfirmarModal(ModalScreen[bool]):
     momento em que ele decide, nao num modal que ele fechou dois cliques atras.
     """
 
-    BINDINGS = [("escape", "recusar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "recusar", "Cancelar")]
     DEFAULT_CSS = """
     ConfirmarModal { align: center middle; }
     ConfirmarModal > Vertical {
@@ -378,7 +379,7 @@ class CriarModal(ModalScreen["str | None"]):
     branch, e a branch e justamente o que ainda nao existe.
     """
 
-    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
     DEFAULT_CSS = """
     CriarModal { align: center middle; }
     CriarModal > Vertical {
@@ -533,7 +534,7 @@ class PainelProgresso(Static):
 
 
 class MotorTUI(App[None]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         ("q", "quit", "Sair"),
         ("v", "verificar", "Verificar"),
         ("u", "atualizar", "Atualizar"),
@@ -745,9 +746,7 @@ class MotorTUI(App[None]):
         if not self._pode_atualizar():
             faltantes = 0
         atualizar_botao = self.query_one("#atualizar", Button)
-        atualizar_botao.label = (
-            f"Atualizar · {faltantes}" if faltantes else "Atualizar"
-        )
+        atualizar_botao.label = f"Atualizar · {faltantes}" if faltantes else "Atualizar"
         atualizar_botao.variant = "warning" if faltantes else "default"
         self.query_one("#verificar", Button).variant = (
             "default" if faltantes else "primary"
@@ -942,9 +941,7 @@ class MotorTUI(App[None]):
             self._erro("checkout local não encontrado")
             self._bloquear(False)
             return
-        self._exibir_resultado(
-            f"Carregando versões de {self._repo.nome}…"
-        )
+        self._exibir_resultado(f"Carregando versões de {self._repo.nome}…")
         self._ocupar_resultado()
         self._bloquear(True)
         self.carregar_versoes_worker(self._repo, self._geracao_versoes)
@@ -1338,9 +1335,7 @@ def descobrir_repos(
                 except NaoEncontrado:
                     continue
             atual = encontrados.get(info.nome)
-            if atual is None or (
-                caminho.name == info.nome and atual.name != info.nome
-            ):
+            if atual is None or (caminho.name == info.nome and atual.name != info.nome):
                 encontrados[info.nome] = caminho
 
     return [
@@ -1359,15 +1354,11 @@ def descobrir_versoes(
     progresso(Progresso("buscando refs do origin"))
     git.fetch("origin")
     tags = set(git.list_version_tags())
-    numeros = sorted(
-        set(git.list_version_branches()), key=chave, reverse=True
-    )
+    numeros = sorted(set(git.list_version_branches()), key=chave, reverse=True)
     return [VersionOption(numero, numero in tags) for numero in numeros]
 
 
-def _repos_do_ambiente(
-    *, progresso: RelatorProgresso = silencioso
-) -> list[RepoOption]:
+def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
     with abrir_sessao() as sessao:
         return descobrir_repos(
             PostgresEstado(sessao=sessao),
@@ -1483,7 +1474,7 @@ def run_tui() -> None:
 def _resumo(status: VersionStatus) -> Text:
     return Text.assemble(
         ("Escopo ", "dim"),
-        (f"+{len(status.tasks_novas)} −{len(status.tasks_removidas)}", "bold"),
+        (f"+{len(status.tasks_novas)} −{len(status.tasks_removidas)}", "bold"),  # noqa: RUF001 - sinal de menos tipografico, par do "+"
         ("  ·  Git ", "dim"),
         (f"{len(status.faltantes)} faltantes", "bold"),
         (" · ", "dim"),
@@ -1670,7 +1661,9 @@ def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
         if status.chamados:
             partes.append(Text(f"Chamados: {', '.join(status.chamados)}"))
     elif auditado:
-        partes.append(Text("AUDITORIA DA TAG — snapshot não alterado", style="bold cyan"))
+        partes.append(
+            Text("AUDITORIA DA TAG — snapshot não alterado", style="bold cyan")
+        )
     titulo = "VERDE" if status.verde else "● Pendências encontradas"
     estilo = "bold green" if status.verde else "bold yellow"
     partes.extend([Text(titulo, style=estilo), _resumo(status)])

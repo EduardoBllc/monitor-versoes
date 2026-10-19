@@ -5,16 +5,16 @@ Revises: a2c11a78f505
 Create Date: 2026-08-18 16:07:55.951711
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision: str = 'bae96c9be3c9'
-down_revision: Union[str, Sequence[str], None] = 'a2c11a78f505'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "bae96c9be3c9"
+down_revision: str | Sequence[str] | None = "a2c11a78f505"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -44,6 +44,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.execute("drop trigger if exists atribuicao_commit_congelada on atribuicao_commit")
+    op.execute(
+        "drop trigger if exists atribuicao_commit_congelada on atribuicao_commit"
+    )
     op.execute("drop trigger if exists atribuicao_congelada on atribuicao")
     op.execute("drop function if exists trava_versao_liberada()")

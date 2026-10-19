@@ -18,8 +18,11 @@ from motor.domain.types import (
 
 def _alvo(**tasks: list[str]) -> dict[str, TaskTarget]:
     return {
-        ch: TaskTarget(chamado=ch, marcada="13.34.0",
-                       commits=[CommitRef(hash_origem=h, chamado=ch) for h in hashes])
+        ch: TaskTarget(
+            chamado=ch,
+            marcada="13.34.0",
+            commits=[CommitRef(hash_origem=h, chamado=ch) for h in hashes],
+        )
         for ch, hashes in tasks.items()
     }
 
@@ -117,8 +120,9 @@ def test_reconciliar_repassa_conflitantes_e_suspeitos_de_conteudo():
 def test_reconciliar_acusa_commit_que_sumiu_do_git():
     alvo = Alvo(tasks=_alvo(**{"1": ["aaa"]}))
     anteriores = [
-        Atribuicao(chamado="1", marcada="13.34.0", estado="aplicado",
-                   commits=["aaa", "sumido"])
+        Atribuicao(
+            chamado="1", marcada="13.34.0", estado="aplicado", commits=["aaa", "sumido"]
+        )
     ]
     status = reconciliar(alvo, anteriores, {}, {"aaa": Presence.TRAILER}, [], [])
 
@@ -144,10 +148,12 @@ def test_reconciliar_nao_confunde_pendente_com_commit_sumido():
     estado_integro=True passaria.
     """
     alvo = Alvo(tasks=_alvo(**{"1": ["aaa"], "2": []}))
-    pendente = Atribuicao(chamado="1", marcada="13.34.0", estado="pendente",
-                          commits=["aaa"])
-    aplicado_sumido = Atribuicao(chamado="2", marcada="13.34.0",
-                                 estado="aplicado", commits=["bbb"])
+    pendente = Atribuicao(
+        chamado="1", marcada="13.34.0", estado="pendente", commits=["aaa"]
+    )
+    aplicado_sumido = Atribuicao(
+        chamado="2", marcada="13.34.0", estado="aplicado", commits=["bbb"]
+    )
 
     # metade 1: pendente ausente do alvo nao e "sumido" — nao foi aplicado ainda
     so_pendente = reconciliar(alvo, [pendente], {"2": "sem entrega"}, {}, [], [])
@@ -155,8 +161,9 @@ def test_reconciliar_nao_confunde_pendente_com_commit_sumido():
     assert so_pendente.estado_integro is True
 
     # metade 2: aplicado que desapareceu do git segue sendo sumido
-    com_sumido = reconciliar(alvo, [pendente, aplicado_sumido],
-                             {"2": "sem entrega"}, {}, [], [])
+    com_sumido = reconciliar(
+        alvo, [pendente, aplicado_sumido], {"2": "sem entrega"}, {}, [], []
+    )
     assert com_sumido.commits_sumidos == ["bbb"]
     assert com_sumido.estado_integro is False
 

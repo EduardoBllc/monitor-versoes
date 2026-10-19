@@ -12,8 +12,34 @@ import os
 import sys
 import textwrap
 import time
-from collections.abc import Callable, Set as AbstractSet
-from typing import TextIO, TypeVar
+from collections.abc import Callable
+from collections.abc import Set as AbstractSet
+from typing import TextIO
+
+from motor.adapters.estado.postgres import PostgresEstado
+from motor.domain.commits import agrupar_por_chamado
+from motor.domain.types import CommitRef, VersionStatus
+from motor.engine.atualizar import (
+    AtualizarResult,
+    AtualizarStatus,
+    atualizar,
+    atualizar_abort,
+    atualizar_continue,
+)
+from motor.engine.consultar import ChamadoConsultado, consultar
+from motor.engine.criar import criar
+from motor.engine.deps import Deps
+from motor.engine.reconstruir_estado import reconstruir_estado
+from motor.engine.verificar import verificar
+from motor.errors import MotorError, formatar_com_notas
+from motor.montagem import (
+    abrir_sessao,
+    montar_deps,
+    validar_nome_repo,
+    validar_sistema_id,
+    validar_versao,
+)
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 # Anotado Optional na declaracao: sem isso o `= None` do fallback conflita com
 # o tipo da funcao importada, e `if load_dotenv:` passa a ser lido como
@@ -27,40 +53,13 @@ except ImportError:
 else:
     load_dotenv = _load_dotenv
 
-from motor.adapters.estado.postgres import PostgresEstado
-from motor.domain.commits import agrupar_por_chamado
-from motor.domain.types import CommitRef, VersionStatus
-from motor.errors import MotorError, formatar_com_notas
-from motor.engine.criar import criar
-from motor.engine.consultar import ChamadoConsultado, consultar
-from motor.engine.deps import Deps
-from motor.engine.atualizar import (
-    AtualizarResult,
-    AtualizarStatus,
-    atualizar,
-    atualizar_abort,
-    atualizar_continue,
-)
-from motor.engine.reconstruir_estado import reconstruir_estado
-from motor.engine.verificar import verificar
-from motor.montagem import (
-    abrir_sessao,
-    montar_deps,
-    validar_nome_repo,
-    validar_sistema_id,
-    validar_versao,
-)
-from motor.progresso import Progresso, RelatorProgresso, silencioso
-
-_T = TypeVar("_T")
-
 _ARQUIVOS_AMBIENTE = {
     "development": ".env.development",
     "production": ".env",
 }
 
 
-def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
+def _tipo_cli[T](validador: Callable[[str], T]) -> Callable[[str], T]:
     """Adapta um validador de `motor.montagem` ao protocolo do argparse.
 
     A regra e compartilhada com a TUI e fala `MotorError`; traduzir para
@@ -68,7 +67,7 @@ def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
     argparse.
     """
 
-    def converter(valor: str) -> _T:
+    def converter(valor: str) -> T:
         try:
             return validador(valor)
         except MotorError as erro:
@@ -79,13 +78,11 @@ def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
 
 def _carregar_ambiente(argv: list[str]) -> None:
     seletor = argparse.ArgumentParser(add_help=False)
-    seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
-                         default="production")
+    seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE, default="production")
     ambiente = seletor.parse_known_args(argv)[0].env
     if load_dotenv:
         raiz = os.path.dirname(os.path.dirname(__file__))
-        load_dotenv(os.path.join(raiz, _ARQUIVOS_AMBIENTE[ambiente]),
-                    override=True)
+        load_dotenv(os.path.join(raiz, _ARQUIVOS_AMBIENTE[ambiente]), override=True)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -95,28 +92,60 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     comum = argparse.ArgumentParser(add_help=False)
     comum.add_argument("versao", help="versao alvo no formato X.Y.Z")
-    comum.add_argument("--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR")
-    comum.add_argument("--debug", action="store_true", help="loga tempos de cada etapa/comando git")
-    comum.add_argument("--sem-progresso", dest="sem_progresso", action="store_true",
-                       help="nao mostra a barra de progresso (ligada por default em terminal)")
-    comum.add_argument("--bitbucket-token", dest="bitbucket_token", default=os.environ.get("BITBUCKET_TOKEN", ""), help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR")
-    comum.add_argument("--bitbucket-email", dest="bitbucket_email", default=os.environ.get("BITBUCKET_EMAIL", ""), help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)")
+    comum.add_argument(
+        "--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR"
+    )
+    comum.add_argument(
+        "--debug", action="store_true", help="loga tempos de cada etapa/comando git"
+    )
+    comum.add_argument(
+        "--sem-progresso",
+        dest="sem_progresso",
+        action="store_true",
+        help="nao mostra a barra de progresso (ligada por default em terminal)",
+    )
+    comum.add_argument(
+        "--bitbucket-token",
+        dest="bitbucket_token",
+        default=os.environ.get("BITBUCKET_TOKEN", ""),
+        help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR",
+    )
+    comum.add_argument(
+        "--bitbucket-email",
+        dest="bitbucket_email",
+        default=os.environ.get("BITBUCKET_EMAIL", ""),
+        help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)",
+    )
     # No parser pai, nao no 'criar': todos os comandos montam a fonte de tasks
     # (o Deps e um so), e uma flag exclusiva do 'criar' viraria AttributeError
     # nos outros.
-    comum.add_argument("--task-source", dest="fonte_flag", default="tickio",
-                       choices=["tickio", "manual"],
-                       help="fonte das tasks (default: tickio)")
-    comum.add_argument("--lista", dest="lista_manual", default="", help="arquivo de lista (obrigatorio com --task-source=manual)")
+    comum.add_argument(
+        "--task-source",
+        dest="fonte_flag",
+        default="tickio",
+        choices=["tickio", "manual"],
+        help="fonte das tasks (default: tickio)",
+    )
+    comum.add_argument(
+        "--lista",
+        dest="lista_manual",
+        default="",
+        help="arquivo de lista (obrigatorio com --task-source=manual)",
+    )
 
     parser = argparse.ArgumentParser(prog="motor")
-    parser.add_argument("--env", choices=_ARQUIVOS_AMBIENTE,
-                        default="production",
-                        help="ambiente (default: production)")
+    parser.add_argument(
+        "--env",
+        choices=_ARQUIVOS_AMBIENTE,
+        default="production",
+        help="ambiente (default: production)",
+    )
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
 
     p_verificar = sub.add_parser(
-        "verificar", parents=[comum], help="mostra status da versao (verde, tasks, faltantes)"
+        "verificar",
+        parents=[comum],
+        help="mostra status da versao (verde, tasks, faltantes)",
     )
     p_verificar.add_argument(
         "--auditar",
@@ -124,22 +153,41 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recalcula uma versao liberada contra a tag, sem alterar o snapshot",
     )
 
-    sub.add_parser("criar", parents=[comum], help="cria a branch da versao a partir das tasks")
+    sub.add_parser(
+        "criar", parents=[comum], help="cria a branch da versao a partir das tasks"
+    )
 
-    p_inc = sub.add_parser("atualizar", parents=[comum], help="aplica commits faltantes na branch da versao")
+    p_inc = sub.add_parser(
+        "atualizar",
+        parents=[comum],
+        help="aplica commits faltantes na branch da versao",
+    )
     grupo = p_inc.add_mutually_exclusive_group()
-    grupo.add_argument("--continue", dest="continuar", action="store_true", help="retoma apos resolver conflito")
-    grupo.add_argument("--abort", dest="abortar", action="store_true", help="aborta o incremento em andamento")
+    grupo.add_argument(
+        "--continue",
+        dest="continuar",
+        action="store_true",
+        help="retoma apos resolver conflito",
+    )
+    grupo.add_argument(
+        "--abort",
+        dest="abortar",
+        action="store_true",
+        help="aborta o incremento em andamento",
+    )
     p_inc.add_argument(
         "--allow-empty",
         dest="allow_empty",
         action="store_true",
         help="com --continue: aceita a resolucao que nao deixou alteracao, "
-             "registrando o commit como vazio",
+        "registrando o commit como vazio",
     )
 
-    sub.add_parser("reconstruir-estado", parents=[comum],
-                   help="regenera as atribuicoes a partir do git")
+    sub.add_parser(
+        "reconstruir-estado",
+        parents=[comum],
+        help="regenera as atribuicoes a partir do git",
+    )
     sub.add_parser(
         "consulta",
         parents=[comum],
@@ -152,8 +200,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
-    acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True,
-                                       metavar="acao")
+    acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True, metavar="acao")
     p_adicionar = acoes_repo.add_parser("adicionar", help="cadastra um repositorio")
     p_adicionar.add_argument(
         "nome", type=_tipo_cli(validar_nome_repo), help="nome canonico do repo"
@@ -223,7 +270,11 @@ def _imprimir_commits_por_task(
                     if culpados
                     else " [CONFLITANTE]"
                 )
-            tag += " [SUSPEITO: msg+arquivos ja existem no alvo com conteudo diferente]" if c.hash_origem in suspeitos else ""
+            tag += (
+                " [SUSPEITO: msg+arquivos ja existem no alvo com conteudo diferente]"
+                if c.hash_origem in suspeitos
+                else ""
+            )
             print(f"    - {c.hash_origem[:8]} {primeira_linha_msg}{tag}".rstrip())
 
 
@@ -303,7 +354,9 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
             "confirme com: motor atualizar <versao> --repo <path> --continue "
             "--allow-empty (entra como commit vazio, com o trailer -x)"
         )
-        print("ou descarte o commit com: motor atualizar <versao> --repo <path> --abort")
+        print(
+            "ou descarte o commit com: motor atualizar <versao> --repo <path> --abort"
+        )
         return
     print("concluido")
 
@@ -317,7 +370,9 @@ def imprimir_consulta(chamados: list[ChamadoConsultado]) -> None:
         if not chamado.commits:
             print("  (sem commits registrados)")
         for commit in chamado.commits:
-            titulo = commit.msg.splitlines()[0] if commit.msg else "mensagem indisponível"
+            titulo = (
+                commit.msg.splitlines()[0] if commit.msg else "mensagem indisponível"
+            )
             titulo = textwrap.shorten(titulo, width=100, placeholder="…")
             print(f"  - {commit.hash_origem[:8]} {titulo}")
 
@@ -337,7 +392,9 @@ def _escrever_progresso(progresso: Progresso, saida: TextIO) -> None:
     saida.flush()
 
 
-def _relator_do_cli(*, desligado: bool, saida: TextIO | None = None) -> RelatorProgresso:
+def _relator_do_cli(
+    *, desligado: bool, saida: TextIO | None = None
+) -> RelatorProgresso:
     r"""Sem flag para ligar: liga sozinho em terminal, cala em pipe ou arquivo.
 
     Redirecionado, cada evento viraria uma linha com `\r` cru no log — e nao ha
@@ -386,8 +443,9 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
         print(f"status: {resultado.status.name}, orfaos: {len(resultado.orfaos)}")
         for hash_ in resultado.orfaos:
             print(f"  - {hash_[:8]} (sem ch<num> na mensagem)")
-    logging.debug("comando '%s' concluido em %.3fs", args.comando,
-                  time.monotonic() - inicio)
+    logging.debug(
+        "comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -398,7 +456,9 @@ def main(argv: list[str] | None = None) -> None:
 
     logging.basicConfig(
         level=logging.DEBUG if getattr(args, "debug", False) else logging.ERROR,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s" if getattr(args, "debug", False) else "%(levelname)s: %(message)s",
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+        if getattr(args, "debug", False)
+        else "%(levelname)s: %(message)s",
     )
 
     # Antes de abrir o banco: erro de flag nao depende de conexao, e conectar
@@ -426,9 +486,7 @@ def main(argv: list[str] | None = None) -> None:
         repo = _resolver_repo(args.repo)
 
         with abrir_sessao() as sessao:
-            relator = _relator_do_cli(
-                desligado=getattr(args, "sem_progresso", False)
-            )
+            relator = _relator_do_cli(desligado=getattr(args, "sem_progresso", False))
             deps = montar_deps(
                 repo,
                 sessao,

@@ -57,7 +57,9 @@ class _GitComPrevisaoEncadeada(FakeGit):
         )
 
 
-def _git(tags: dict[str, bool] | None = None, classe: type[FakeGit] = FakeGit) -> FakeGit:
+def _git(
+    tags: dict[str, bool] | None = None, classe: type[FakeGit] = FakeGit
+) -> FakeGit:
     """Grafo: m0 e a raiz; a0 e um commit que so existe no master.
 
     As versoes ficam em m0, entao a0 e faltante em todas elas — e o que
@@ -76,15 +78,31 @@ def _git(tags: dict[str, bool] | None = None, classe: type[FakeGit] = FakeGit) -
 def test_verificar_une_tarefas_das_versoes_abertas_menores():
     git = _git()
     tasks = FakeTaskSource(chamados={"13.33.1": ["123123"], "14.0.0": []})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
     # base gravada na criacao: m0. Pre-registrar e o que faz este teste entrar
     # no ramo "base do estado e autoritativa" em vez de no BaseResolver.
-    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                                            base_ref="master", base_commit="m0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
 
     status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 
@@ -99,15 +117,28 @@ def test_verificar_une_tarefas_das_versoes_abertas_menores():
 def test_verificar_congela_versao_quando_a_tag_aparece():
     git = _git(tags={"13.34.0": True})
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA,
-                                            base_ref="13.33.0", base_commit="m0"))
-    estado.substituir_atribuicoes("r", "13.34.0", [
-        Atribuicao(chamado="123456", marcada="13.34.0", estado="aplicado",
-                   commits=["a0"])
-    ])
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
+    estado.substituir_atribuicoes(
+        "r",
+        "13.34.0",
+        [
+            Atribuicao(
+                chamado="123456", marcada="13.34.0", estado="aplicado", commits=["a0"]
+            )
+        ],
+    )
 
-    status = verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado),
-                       "13.34.0")
+    status = verificar(
+        _deps(git, FakeTaskSource(), FakeCommitSource(), estado), "13.34.0"
+    )
 
     congelada = estado.versao("r", "13.34.0")
     assert congelada is not None and congelada.liberada_em is not None
@@ -125,8 +156,15 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
 def test_verificar_nao_grava_em_versao_liberada():
     git = _git(tags={"13.34.0": True})
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA,
-                                            base_ref="13.33.0", base_commit="m0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
     tasks = FakeTaskSource(chamados={"13.34.0": ["999111"]})
 
     verificar(_deps(git, tasks, FakeCommitSource(), estado), "13.34.0")
@@ -166,9 +204,7 @@ def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
         }
     )
 
-    status = verificar(
-        _deps(git, tasks, commits, estado), "13.34.0", auditar=True
-    )
+    status = verificar(_deps(git, tasks, commits, estado), "13.34.0", auditar=True)
 
     assert [c.hash_origem for c in status.faltantes] == ["a0"]
     assert estado.atribuicoes("r", "13.34.0") == []
@@ -215,17 +251,41 @@ def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
         conflita=True, arquivos_conflito=[]
     )
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                                            base_ref="master", base_commit="m0"))
-    estado.substituir_atribuicoes("r", "14.0.0", [
-        Atribuicao(chamado="999999", marcada="14.0.0", estado="aplicado",
-                   commits=["sumido"])
-    ])
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
+    estado.substituir_atribuicoes(
+        "r",
+        "14.0.0",
+        [
+            Atribuicao(
+                chamado="999999",
+                marcada="14.0.0",
+                estado="aplicado",
+                commits=["sumido"],
+            )
+        ],
+    )
 
     status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 
@@ -289,11 +349,19 @@ def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():
     """
     git = _git(tags={"13.99.0": True})
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                                            base_ref="master", base_commit="m0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
 
-    status = verificar(_deps(git, FakeTaskSource(), FakeCommitSource(), estado),
-                       "14.0.0")
+    status = verificar(
+        _deps(git, FakeTaskSource(), FakeCommitSource(), estado), "14.0.0"
+    )
 
     assert status.verde is True
     # nada a congelar: sem linha no estado, nao ha snapshot para proteger
@@ -310,12 +378,24 @@ def test_verificar_busca_antes_de_ler_as_refs_e_congela_tag_nova_no_mesmo_run():
     """
     git = _git(classe=_GitQueTagueiaNoFetch)
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA,
-                                            base_ref="13.33.0", base_commit="m0"))
-    estado.substituir_atribuicoes("r", "13.34.0", [
-        Atribuicao(chamado="123456", marcada="13.34.0", estado="aplicado",
-                   commits=["a0"])
-    ])
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
+    estado.substituir_atribuicoes(
+        "r",
+        "13.34.0",
+        [
+            Atribuicao(
+                chamado="123456", marcada="13.34.0", estado="aplicado", commits=["a0"]
+            )
+        ],
+    )
     # tarefa nova no Tickio: e com ela que o run reescreveria o snapshot
     tasks = FakeTaskSource(chamados={"13.34.0": ["999111"]})
 
@@ -340,10 +420,19 @@ def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
     git = _git()
     git.remotes["14.0.0"] = True  # branch ja publicada: exercita o pull
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
 
     verificar(_deps(git, tasks, commits, estado), "14.0.0")
@@ -376,13 +465,29 @@ def test_verificar_reporta_suspeita_de_cherry_pick_manual_sem_x():
     git.file_changes["a0"] = frozenset({"a.txt"})
     git.file_changes["alvo0"] = frozenset({"a.txt"})
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                                            base_ref="master", base_commit="m0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
 
     status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 
@@ -414,10 +519,19 @@ def test_verificar_atribui_o_conflito_ao_chamado_culpado():
         "a.txt": [CommitRef(hash_origem="c200", msg="fix: ch200 mexe a mesma linha")]
     }
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
     _versao_registrada(estado)
 
@@ -442,10 +556,19 @@ def test_verificar_nao_culpa_chamado_que_ja_esta_na_versao():
         "a.txt": [CommitRef(hash_origem="p200", msg="fix: ch200 ja aplicado aqui")]
     }
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
     _versao_registrada(estado)
 
@@ -471,15 +594,26 @@ def test_verificar_nao_culpa_commit_que_o_proprio_lote_ja_aplicou():
         "a.txt": [CommitRef(hash_origem="a0", msg="ch123123 alfa")]
     }
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [
-            CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                      commit_date=D, msg="ch123123 alfa"),
-            CommitRef(hash_origem="a1", parent="a0", chamado="123123",
-                      commit_date=D + datetime.timedelta(seconds=1),
-                      msg="ch123123 beta"),
-        ]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                ),
+                CommitRef(
+                    hash_origem="a1",
+                    parent="a0",
+                    chamado="123123",
+                    commit_date=D + datetime.timedelta(seconds=1),
+                    msg="ch123123 beta",
+                ),
+            ]
+        }
+    )
     estado = _estado_com_repo()
     _versao_registrada(estado)
 
@@ -505,10 +639,19 @@ def test_verificar_reporta_o_conflito_mesmo_sem_conseguir_atribuir():
         conflita=True, arquivos_conflito=["a.txt"]
     )
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123",
-                             commit_date=D, msg="ch123123 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
     estado = _estado_com_repo()
     _versao_registrada(estado)
 
@@ -541,8 +684,15 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
     proximo: a worktree da versao usada sobrevive ao fim do verificar."""
     git = _git()
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                                            base_ref="master", base_commit="m0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="m0",
+        ),
+    )
     deps = replace(
         _deps(git, FakeTaskSource(chamados={}), FakeCommitSource(), estado),
         worktrees_mantidas=2,
@@ -560,10 +710,10 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
 # ancestralidade da base" — e falsa aqui: a base de uma X.0.0 e o master no
 # ponto de corte, nao o master de agora.
 
-JAN = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-MAR = datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
-ABR = datetime.datetime(2026, 4, 1, tzinfo=datetime.timezone.utc)
-MAI = datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc)
+JAN = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+MAR = datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC)
+ABR = datetime.datetime(2026, 4, 1, tzinfo=datetime.UTC)
+MAI = datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
 
 
 def _git_com_liberada_fora_da_base() -> FakeGit:
@@ -594,20 +744,33 @@ def _estado_com_liberadas() -> FakeEstado:
         ("14.6.0", VersionType.AJUSTADA, "m0"),
         ("15.0.0", VersionType.FECHADA, "m0"),
     ):
-        estado.registrar_versao("r", VersaoInfo(numero=numero, tipo=tipo,
-                                                base_ref="master", base_commit=base))
+        estado.registrar_versao(
+            "r",
+            VersaoInfo(numero=numero, tipo=tipo, base_ref="master", base_commit=base),
+        )
     return estado
 
 
 def test_verificar_cobra_chamado_de_liberada_que_o_corte_nao_herdou():
     tasks = FakeTaskSource(chamados={"14.6.0": ["257270"], "15.0.0": []})
-    commits = FakeCommitSource(por_chamado={
-        "257270": [CommitRef(hash_origem="m1", parent="m0", chamado="257270",
-                             commit_date=ABR, msg="ch257270 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "257270": [
+                CommitRef(
+                    hash_origem="m1",
+                    parent="m0",
+                    chamado="257270",
+                    commit_date=ABR,
+                    msg="ch257270 alfa",
+                )
+            ]
+        }
+    )
 
     status = verificar(
-        _deps(_git_com_liberada_fora_da_base(), tasks, commits, _estado_com_liberadas()),
+        _deps(
+            _git_com_liberada_fora_da_base(), tasks, commits, _estado_com_liberadas()
+        ),
         "15.0.0",
     )
 
@@ -623,15 +786,33 @@ def test_verificar_ignora_liberada_com_tag_anterior_ao_corte():
     entrasse no alvo, apareceria em faltantes.
     """
     tasks = FakeTaskSource(chamados={"13.34.0": ["111111"], "14.6.0": ["257270"]})
-    commits = FakeCommitSource(por_chamado={
-        "257270": [CommitRef(hash_origem="m1", parent="m0", chamado="257270",
-                             commit_date=ABR, msg="ch257270 alfa")],
-        "111111": [CommitRef(hash_origem="m2", parent="m1", chamado="111111",
-                             commit_date=ABR, msg="ch111111 beta")],
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "257270": [
+                CommitRef(
+                    hash_origem="m1",
+                    parent="m0",
+                    chamado="257270",
+                    commit_date=ABR,
+                    msg="ch257270 alfa",
+                )
+            ],
+            "111111": [
+                CommitRef(
+                    hash_origem="m2",
+                    parent="m1",
+                    chamado="111111",
+                    commit_date=ABR,
+                    msg="ch111111 beta",
+                )
+            ],
+        }
+    )
 
     status = verificar(
-        _deps(_git_com_liberada_fora_da_base(), tasks, commits, _estado_com_liberadas()),
+        _deps(
+            _git_com_liberada_fora_da_base(), tasks, commits, _estado_com_liberadas()
+        ),
         "15.0.0",
     )
 
@@ -647,13 +828,29 @@ def test_verificar_nao_recobra_liberada_que_e_a_propria_base_da_ajustada():
     git = _git_com_liberada_fora_da_base()
     git.set_branch("14.7.0", "p1")
     estado = _estado_com_liberadas()
-    estado.registrar_versao("r", VersaoInfo(numero="14.7.0", tipo=VersionType.AJUSTADA,
-                                            base_ref="14.6.0", base_commit="p1"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.7.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="14.6.0",
+            base_commit="p1",
+        ),
+    )
     tasks = FakeTaskSource(chamados={"14.6.0": ["257270"], "14.7.0": []})
-    commits = FakeCommitSource(por_chamado={
-        "257270": [CommitRef(hash_origem="m1", parent="m0", chamado="257270",
-                             commit_date=ABR, msg="ch257270 alfa")]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "257270": [
+                CommitRef(
+                    hash_origem="m1",
+                    parent="m0",
+                    chamado="257270",
+                    commit_date=ABR,
+                    msg="ch257270 alfa",
+                )
+            ]
+        }
+    )
 
     status = verificar(_deps(git, tasks, commits, estado), "14.7.0")
 
@@ -680,17 +877,36 @@ def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
     git.set_branch("14.0.0", "p0")
 
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
-    commits = FakeCommitSource(por_chamado={
-        "123123": [
-            CommitRef(hash_origem="a0", parent="m0", chamado="123123", commit_date=D,
-                      msg="ch123123 alfa"),
-            CommitRef(hash_origem="a1", parent="a0", chamado="123123", commit_date=D,
-                      msg="ch123123 alfa"),
-        ]
-    })
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                ),
+                CommitRef(
+                    hash_origem="a1",
+                    parent="a0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                ),
+            ]
+        }
+    )
     estado = _estado_com_repo()
-    estado.registrar_versao("r", VersaoInfo(numero="14.0.0", tipo=VersionType.FECHADA,
-                                            base_ref="master", base_commit="p0"))
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="14.0.0",
+            tipo=VersionType.FECHADA,
+            base_ref="master",
+            base_commit="p0",
+        ),
+    )
 
     status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 

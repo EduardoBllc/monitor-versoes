@@ -8,10 +8,17 @@ from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 
 def _fonte(handler, **kwargs) -> TickioRest:
-    client = httpx.Client(transport=httpx.MockTransport(handler),
-                          base_url="http://testserver")
-    return TickioRest(base_url="http://testserver", usuario="u", senha="p",
-                      sistema_id=1, client=client, **kwargs)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://testserver"
+    )
+    return TickioRest(
+        base_url="http://testserver",
+        usuario="u",
+        senha="p",
+        sistema_id=1,
+        client=client,
+        **kwargs,
+    )
 
 
 def test_autentica_e_busca_chamados():
@@ -43,13 +50,16 @@ def test_aceita_envelope_real_do_tickio():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/ws/token/":
             return httpx.Response(200, json={"access": "tok"})
-        return httpx.Response(200, json={
-            "sistema_id": 1,
-            "sistema": "VB Web",
-            "versao": "15.0.0",
-            "total": 2,
-            "chamados": [243353, 249991],
-        })
+        return httpx.Response(
+            200,
+            json={
+                "sistema_id": 1,
+                "sistema": "VB Web",
+                "versao": "15.0.0",
+                "total": 2,
+                "chamados": [243353, 249991],
+            },
+        )
 
     assert _fonte(handler).fetch("15.0.0") == ["243353", "249991"]
 
@@ -58,8 +68,9 @@ def test_aceita_envelope_paginado():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/ws/token/":
             return httpx.Response(200, json={"access": "tok"})
-        return httpx.Response(200, json={"results": [{"chamado": "123456"}],
-                                         "next": None})
+        return httpx.Response(
+            200, json={"results": [{"chamado": "123456"}], "next": None}
+        )
 
     assert _fonte(handler).fetch("13.34.0") == ["123456"]
 
@@ -99,6 +110,7 @@ def test_erro_na_listagem_vira_motorerror():
 
 def test_rejeita_corpo_em_formato_desconhecido():
     """Um dict sem lista conhecida nao deve virar lista vazia silenciosa."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/ws/token/":
             return httpx.Response(200, json={"access": "tok"})
@@ -121,15 +133,22 @@ def test_rejeita_item_sem_numero_de_chamado():
 def test_repr_nao_vaza_senha_nem_jwt():
     """--debug sobe o logging para DEBUG: qualquer repr desta dataclass (dump
     de deps, repr de excecao) imprimiria a credencial e o JWT em claro."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/ws/token/":
             return httpx.Response(200, json={"access": "jwt-secreto"})
         return httpx.Response(200, json=[])
 
-    client = httpx.Client(transport=httpx.MockTransport(handler),
-                          base_url="http://testserver")
-    fonte = TickioRest(base_url="http://testserver", usuario="u",
-                       senha="senha-secreta", sistema_id=1, client=client)
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://testserver"
+    )
+    fonte = TickioRest(
+        base_url="http://testserver",
+        usuario="u",
+        senha="senha-secreta",
+        sistema_id=1,
+        client=client,
+    )
     fonte.fetch("13.34.0")
 
     # os dois valores estao no objeto — sem isto o teste passaria por vazio
@@ -150,7 +169,7 @@ def test_formato_inesperado_e_resposta_invalida_nao_backend_fora():
 def test_variavel_faltando_e_erro_de_entrada_nao_backend():
     fonte = TickioRest(base_url="", usuario="", senha="", sistema_id=7)
 
-    with pytest.raises(ErroDeEntrada, match="faltando no .env"):
+    with pytest.raises(ErroDeEntrada, match=r"faltando no \.env"):
         fonte.fetch("13.34.0")
 
 
