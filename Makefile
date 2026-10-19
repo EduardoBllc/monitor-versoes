@@ -1,5 +1,6 @@
 # Um VIRTUAL_ENV de outro projeto vazado no shell faz o uv usar o interpretador
-# errado (ver .claude/AGENTS.md). Sem ele, `uv run` usa o .venv do projeto.
+# errado (ver "Armadilhas do ambiente" no CONTRIBUTING.md). Sem ele, `uv run`
+# usa o .venv do projeto.
 unexport VIRTUAL_ENV
 
 # `python -m`, como o pre-commit e o CI sempre rodaram: a raiz entra no sys.path.
