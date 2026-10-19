@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+from functools import partial
 from pathlib import Path
 from threading import Event
 from typing import cast
@@ -21,6 +22,7 @@ from motor.tui import (
     MotorTUI,
     PainelProgresso,
     RepoOption,
+    Runners,
     VersionOption,
     descobrir_repos,
     descobrir_versoes,
@@ -141,7 +143,7 @@ def test_app_exibe_loading_enquanto_carrega_repos():
         return [repo]
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(carregar_repos, lambda opcao: [], _nunca_executa)
+        app = MotorTUI(Runners(carregar_repos, lambda opcao: [], _nunca_executa))
         async with app.run_test(size=(120, 36)):
             assert await asyncio.to_thread(iniciou.wait, 1)
 
@@ -466,6 +468,68 @@ def test_renderizar_atualizacao_bloqueada_orienta_continuacao():
     assert "Continuar" in texto and "Abortar" in texto
 
 
+def test_renderizar_atualizacao_mostra_ja_presentes_e_alertas_da_versao():
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(
+                status=AtualizarStatus.DONE,
+                ja_presentes=3,
+                status_versao=VersionStatus(
+                    verde=False, estado_integro=True, tasks_sem_commits=["255514"]
+                ),
+            )
+        )
+    )
+
+    assert "Branch já estava atualizada" in texto
+    assert "3 commits já presentes no histórico" in texto
+    assert "Chamados sem commits: 255514" in texto
+
+
+def test_renderizar_atualizacao_omite_alertas_de_versao_sem_pendencia():
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(
+                status=AtualizarStatus.DONE,
+                status_versao=VersionStatus(verde=True, estado_integro=True),
+            )
+        )
+    )
+
+    assert "Atualização concluída" in texto
+    assert "Chamados" not in texto
+    assert "já presentes" not in texto
+
+
+def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
+    apps: list[MotorTUI] = []
+
+    def capturar(app: MotorTUI) -> None:
+        apps.append(app)
+
+    monkeypatch.setattr(MotorTUI, "run", capturar)
+
+    tui.run_tui()
+
+    [app] = apps
+    assert app._registrar is tui._registrar_no_banco
+    assert app._definir_piso is tui._definir_piso_no_banco
+    ligados = {
+        tui._repos_do_ambiente: app._carregar_repos,
+        tui._versoes_do_repo: app._carregar_versoes,
+        tui._verificar_repo: app._executar,
+        tui._atualizar_repo: app._atualizar,
+        tui._continuar_repo: app._continuar,
+        tui._abortar_repo: app._abortar,
+        tui._consultar_repo: app._consultar,
+        tui._criar_repo: app._criar,
+    }
+    for alvo, runner in ligados.items():
+        assert isinstance(runner, partial)
+        assert runner.func is alvo
+        assert runner.keywords == {"progresso": app._slot.relatar}
+
+
 def test_app_seleciona_repo_tag_e_executa_auditoria():
     repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
     versao = VersionOption(numero="14.0.0", liberada=True)
@@ -477,9 +541,11 @@ def test_app_seleciona_repo_tag_e_executa_auditoria():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo, RepoOption(nome="beta", caminho=None)],
-            carregar_versoes=lambda opcao: [versao],
-            executar=executar,
+            Runners(
+                carregar_repos=lambda: [repo, RepoOption(nome="beta", caminho=None)],
+                carregar_versoes=lambda opcao: [versao],
+                executar=executar,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -507,9 +573,11 @@ def test_app_pula_placeholders_dos_selects():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(),
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(),
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -562,10 +630,12 @@ def test_app_consulta_snapshot_ao_selecionar_versao():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(),
-            consultar_versao=consultar_runner,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(),
+                consultar_versao=consultar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -613,14 +683,16 @@ def test_app_mantem_verificar_e_atualizar_visiveis_e_atualiza_pendencias():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(
-                verde=False,
-                estado_integro=True,
-                faltantes=commits,
-            ),
-            atualizar_repo=atualizar_runner,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(
+                    verde=False,
+                    estado_integro=True,
+                    faltantes=commits,
+                ),
+                atualizar_repo=atualizar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -673,10 +745,12 @@ def _app_para_previa(
 ) -> MotorTUI:
     """App de um repo e uma versao, com verificacao de resultado fixo."""
     return MotorTUI(
-        carregar_repos=lambda: [_REPO_PREVIA],
-        carregar_versoes=lambda opcao: [versao],
-        executar=lambda repo, numero, auditar: status,
-        atualizar_repo=atualizar_runner,
+        Runners(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, numero, auditar: status,
+            atualizar_repo=atualizar_runner,
+        )
     )
 
 
@@ -718,10 +792,12 @@ def test_app_atualizar_sem_verificar_antes_pede_confirmacao_e_aplica():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [_REPO_PREVIA],
-            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
-            executar=executar,
-            atualizar_repo=atualizar_runner,
+            Runners(
+                carregar_repos=lambda: [_REPO_PREVIA],
+                carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+                executar=executar,
+                atualizar_repo=atualizar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await _selecionar_previa(app, pilot)
@@ -885,18 +961,20 @@ def test_app_resolucao_vazia_vira_registrar_vazio_e_confirma():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(
-                verde=False, estado_integro=True, faltantes=[commit]
-            ),
-            atualizar_repo=lambda opcao, numero: AtualizarResult(
-                status=AtualizarStatus.BLOCKED,
-                blocked_commit="deadbeefcafe",
-                arquivos_conflito=["motor/tui.py"],
-            ),
-            continuar_repo=continuar_runner,
-            abortar_repo=lambda opcao, numero: None,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(
+                    verde=False, estado_integro=True, faltantes=[commit]
+                ),
+                atualizar_repo=lambda opcao, numero: AtualizarResult(
+                    status=AtualizarStatus.BLOCKED,
+                    blocked_commit="deadbeefcafe",
+                    arquivos_conflito=["motor/tui.py"],
+                ),
+                continuar_repo=continuar_runner,
+                abortar_repo=lambda opcao, numero: None,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -957,10 +1035,14 @@ def test_sugerir_versoes_sem_versao_nenhuma_nao_inventa():
 
 def _app_criar(criar_runner, versoes: list[VersionOption] | None = None) -> MotorTUI:
     return MotorTUI(
-        carregar_repos=lambda: [_REPO_PREVIA],
-        carregar_versoes=lambda opcao: [_VERSAO_PREVIA] if versoes is None else versoes,
-        executar=_nunca_executa,
-        criar_repo=criar_runner,
+        Runners(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: (
+                [_VERSAO_PREVIA] if versoes is None else versoes
+            ),
+            executar=_nunca_executa,
+            criar_repo=criar_runner,
+        )
     )
 
 
@@ -1083,11 +1165,13 @@ def test_app_criar_seleciona_a_versao_nova_e_consulta_ela():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [_REPO_PREVIA],
-            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
-            executar=_nunca_executa,
-            consultar_versao=consultar_runner,
-            criar_repo=criar_runner,
+            Runners(
+                carregar_repos=lambda: [_REPO_PREVIA],
+                carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+                executar=_nunca_executa,
+                consultar_versao=consultar_runner,
+                criar_repo=criar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await _selecionar_previa(app, pilot)
@@ -1143,14 +1227,16 @@ def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [_REPO_PREVIA],
-            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
-            executar=_nunca_executa,
-            atualizar_repo=lambda repo, numero: AtualizarResult(
-                status=AtualizarStatus.DONE
-            ),
-            continuar_repo=continuar_runner,
-            criar_repo=criar_runner,
+            Runners(
+                carregar_repos=lambda: [_REPO_PREVIA],
+                carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+                executar=_nunca_executa,
+                atualizar_repo=lambda repo, numero: AtualizarResult(
+                    status=AtualizarStatus.DONE
+                ),
+                continuar_repo=continuar_runner,
+                criar_repo=criar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await _selecionar_previa(app, pilot)
@@ -1177,9 +1263,11 @@ def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
 def test_app_sem_runner_de_criacao_ignora_o_atalho():
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [_REPO_PREVIA],
-            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
-            executar=_nunca_executa,
+            Runners(
+                carregar_repos=lambda: [_REPO_PREVIA],
+                carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+                executar=_nunca_executa,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await _selecionar_previa(app, pilot)
@@ -1213,13 +1301,15 @@ def test_app_bloqueio_transforma_atualizar_em_continuar():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(
-                verde=False, estado_integro=True, faltantes=[commit]
-            ),
-            atualizar_repo=atualizar_runner,
-            continuar_repo=continuar_runner,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(
+                    verde=False, estado_integro=True, faltantes=[commit]
+                ),
+                atualizar_repo=atualizar_runner,
+                continuar_repo=continuar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1263,20 +1353,22 @@ def _app_bloqueada(
     abortar_runner,
 ) -> MotorTUI:
     return MotorTUI(
-        carregar_repos=lambda: [repo],
-        carregar_versoes=lambda opcao: [versao],
-        executar=lambda repo, versao, auditar: VersionStatus(
-            verde=False, estado_integro=True, faltantes=[commit]
-        ),
-        atualizar_repo=lambda opcao, numero: AtualizarResult(
-            status=AtualizarStatus.BLOCKED,
-            blocked_commit="deadbeefcafe",
-            arquivos_conflito=["motor/tui.py"],
-        ),
-        continuar_repo=lambda opcao, numero, *, allow_empty=False: AtualizarResult(
-            status=AtualizarStatus.DONE
-        ),
-        abortar_repo=abortar_runner,
+        Runners(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            executar=lambda repo, versao, auditar: VersionStatus(
+                verde=False, estado_integro=True, faltantes=[commit]
+            ),
+            atualizar_repo=lambda opcao, numero: AtualizarResult(
+                status=AtualizarStatus.BLOCKED,
+                blocked_commit="deadbeefcafe",
+                arquivos_conflito=["motor/tui.py"],
+            ),
+            continuar_repo=lambda opcao, numero, *, allow_empty=False: AtualizarResult(
+                status=AtualizarStatus.DONE
+            ),
+            abortar_repo=abortar_runner,
+        )
     )
 
 
@@ -1371,19 +1463,21 @@ def test_app_troca_de_versao_esquece_o_bloqueio():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao_a, versao_b],
-            executar=lambda repo, versao, auditar: VersionStatus(
-                verde=False, estado_integro=True, faltantes=[commit]
-            ),
-            atualizar_repo=lambda opcao, numero: AtualizarResult(
-                status=AtualizarStatus.BLOCKED,
-                blocked_commit="deadbeefcafe",
-                arquivos_conflito=["motor/tui.py"],
-            ),
-            continuar_repo=lambda opcao, numero, *, allow_empty=False: AtualizarResult(
-                status=AtualizarStatus.DONE
-            ),
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao_a, versao_b],
+                executar=lambda repo, versao, auditar: VersionStatus(
+                    verde=False, estado_integro=True, faltantes=[commit]
+                ),
+                atualizar_repo=lambda opcao, numero: AtualizarResult(
+                    status=AtualizarStatus.BLOCKED,
+                    blocked_commit="deadbeefcafe",
+                    arquivos_conflito=["motor/tui.py"],
+                ),
+                continuar_repo=lambda opcao, numero, *, allow_empty=False: (
+                    AtualizarResult(status=AtualizarStatus.DONE)
+                ),
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1446,10 +1540,12 @@ def test_app_atualizar_nao_aplica_quando_a_previa_falha():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            lambda: [repo],
-            lambda opcao: [versao],
-            verificar_runner,
-            atualizar_runner,
+            Runners(
+                lambda: [repo],
+                lambda opcao: [versao],
+                verificar_runner,
+                atualizar_runner,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1484,11 +1580,13 @@ def test_app_troca_versao_limpa_resultado_anterior():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao_a, versao_b],
-            executar=lambda repo, versao, auditar: VersionStatus(
-                verde=True, estado_integro=True
-            ),
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao_a, versao_b],
+                executar=lambda repo, versao, auditar: VersionStatus(
+                    verde=True, estado_integro=True
+                ),
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1517,11 +1615,13 @@ def test_app_substitui_carregamento_apos_listar_versoes():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(
-                verde=True, estado_integro=True
-            ),
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(
+                    verde=True, estado_integro=True
+                ),
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1550,7 +1650,7 @@ def test_app_troca_repo_limpa_erro_anterior():
         raise MotorError("falha anterior")
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(lambda: [repo_a, repo_b], carregar_versoes, falhar)
+        app = MotorTUI(Runners(lambda: [repo_a, repo_b], carregar_versoes, falhar))
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
             app.query_one("#repo", Select).value = repo_a
@@ -1581,7 +1681,7 @@ def test_app_exibe_motor_error_sem_traceback():
         raise MotorError("banco inacessível")
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(falhar, lambda repo: [], _nunca_executa)
+        app = MotorTUI(Runners(falhar, lambda repo: [], _nunca_executa))
         async with app.run_test(size=(120, 36)):
             await app.workers.wait_for_complete()
             assert "banco inacessível" in _texto(
@@ -1603,7 +1703,7 @@ def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
         raise erro
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(falhar, lambda repo: [], _nunca_executa)
+        app = MotorTUI(Runners(falhar, lambda repo: [], _nunca_executa))
         async with app.run_test(size=(120, 36)):
             await app.workers.wait_for_complete()
             texto = _texto(app.query_one("#resultado", Static).content)
@@ -1618,7 +1718,7 @@ def test_app_esconde_erro_interno_e_registra_traceback(caplog):
         raise RuntimeError("bug secreto")
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(falhar, lambda repo: [], _nunca_executa)
+        app = MotorTUI(Runners(falhar, lambda repo: [], _nunca_executa))
         async with app.run_test(size=(120, 36)):
             await app.workers.wait_for_complete()
             texto = _texto(app.query_one("#resultado", Static).content)
@@ -1637,9 +1737,11 @@ def test_app_centra_aviso_e_alinha_resultado_no_canto():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=lambda repo, versao, auditar: VersionStatus(),
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=lambda repo, versao, auditar: VersionStatus(),
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1679,7 +1781,7 @@ def test_app_exibe_loading_enquanto_carrega_versoes():
         def nao_chamado(opcao, numero, auditar):
             raise AssertionError("verificar nao devia rodar neste fluxo")
 
-        app = MotorTUI(lambda: [repo], carregar_versoes, nao_chamado)
+        app = MotorTUI(Runners(lambda: [repo], carregar_versoes, nao_chamado))
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
             app.query_one("#repo", Select).value = repo
@@ -1708,7 +1810,7 @@ def test_app_exibe_loading_apenas_durante_verificacao():
         return VersionStatus(verde=True, estado_integro=True)
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(lambda: [repo], lambda opcao: [versao], executar)
+        app = MotorTUI(Runners(lambda: [repo], lambda opcao: [versao], executar))
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
             app.query_one("#repo", Select).value = repo
@@ -1745,7 +1847,7 @@ def test_app_nao_inicia_execucoes_concorrentes():
         return VersionStatus(verde=True, estado_integro=True)
 
     async def executar_fluxo() -> None:
-        app = MotorTUI(lambda: [repo], lambda opcao: [versao], executar)
+        app = MotorTUI(Runners(lambda: [repo], lambda opcao: [versao], executar))
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
             app.query_one("#repo", Select).value = repo
@@ -1791,9 +1893,11 @@ def test_app_descarta_versoes_obsoletas_sem_liberar_repo_atual():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo_a, repo_b],
-            carregar_versoes=carregar_versoes,
-            executar=_nunca_executa,
+            Runners(
+                carregar_repos=lambda: [repo_a, repo_b],
+                carregar_versoes=carregar_versoes,
+                executar=_nunca_executa,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1833,9 +1937,11 @@ def test_app_mantem_repo_sem_checkout_visivel_mas_inexecutavel():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=nao_deve_rodar,
-            executar=nao_deve_rodar,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=nao_deve_rodar,
+                executar=nao_deve_rodar,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -1857,9 +1963,11 @@ def _app_com_consulta(**extra) -> MotorTUI:
     repo = RepoOption(nome="alpha", caminho="/projetos/alpha")
     versao = extra.pop("versao", VersionOption(numero="14.0.0", liberada=False))
     return MotorTUI(
-        carregar_repos=lambda: [repo],
-        carregar_versoes=lambda opcao: [versao],
-        **extra,
+        Runners(
+            carregar_repos=lambda: [repo],
+            carregar_versoes=lambda opcao: [versao],
+            **extra,
+        )
     )
 
 
@@ -2137,12 +2245,14 @@ def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
     """Base dos testes de cadastro: a lista de repos sai de `repos`, que o
     registrador de cada teste alimenta, para provar o recarregamento."""
     return MotorTUI(
-        carregar_repos=lambda: [
-            RepoOption(nome=nome, caminho=f"/projetos/{nome}") for nome in repos
-        ],
-        carregar_versoes=lambda opcao: [],
-        executar=_nunca_executa,
-        registrar_repo=registrar,
+        Runners(
+            carregar_repos=lambda: [
+                RepoOption(nome=nome, caminho=f"/projetos/{nome}") for nome in repos
+            ],
+            carregar_versoes=lambda opcao: [],
+            executar=_nunca_executa,
+            registrar_repo=registrar,
+        )
     )
 
 
@@ -2242,9 +2352,11 @@ def test_app_cadastro_de_repo_duplicado_mostra_erro_no_painel():
 def test_app_sem_registrador_ignora_a_tecla_de_cadastro():
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [RepoOption(nome="alpha", caminho="/p/alpha")],
-            carregar_versoes=lambda opcao: [],
-            executar=_nunca_executa,
+            Runners(
+                carregar_repos=lambda: [RepoOption(nome="alpha", caminho="/p/alpha")],
+                carregar_versoes=lambda opcao: [],
+                executar=_nunca_executa,
+            )
         )
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
@@ -2292,9 +2404,11 @@ def test_app_desenha_a_fase_e_a_contagem_do_motor_no_lugar_do_spinner():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=executar,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=executar,
+            ),
             slot=slot,
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -2346,9 +2460,11 @@ def test_app_volta_para_o_indeterminado_em_fase_sem_contagem():
 
     async def executar_fluxo() -> None:
         app = MotorTUI(
-            carregar_repos=lambda: [repo],
-            carregar_versoes=lambda opcao: [versao],
-            executar=executar,
+            Runners(
+                carregar_repos=lambda: [repo],
+                carregar_versoes=lambda opcao: [versao],
+                executar=executar,
+            ),
             slot=slot,
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -2450,12 +2566,16 @@ def test_descobrir_repos_carrega_o_piso_do_estado(tmp_path):
 
 def _app_de_piso(definir) -> MotorTUI:
     return MotorTUI(
-        carregar_repos=lambda: [
-            RepoOption(nome="alpha", caminho="/projetos/alpha", piso_versao="13.0.0")
-        ],
-        carregar_versoes=lambda opcao: [],
-        executar=_nunca_executa,
-        definir_piso=definir,
+        Runners(
+            carregar_repos=lambda: [
+                RepoOption(
+                    nome="alpha", caminho="/projetos/alpha", piso_versao="13.0.0"
+                )
+            ],
+            carregar_versoes=lambda opcao: [],
+            executar=_nunca_executa,
+            definir_piso=definir,
+        )
     )
 
 
