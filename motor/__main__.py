@@ -33,6 +33,8 @@ from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.errors import MotorError, formatar_com_notas
 from motor.montagem import (
+    CredenciaisBitbucket,
+    FonteTasks,
     abrir_sessao,
     montar_deps,
     validar_nome_repo,
@@ -490,10 +492,11 @@ def main(argv: list[str] | None = None) -> None:
             deps = montar_deps(
                 repo,
                 sessao,
-                fonte_tasks=args.fonte_flag,
-                lista_manual=args.lista_manual,
-                bitbucket_token=getattr(args, "bitbucket_token", ""),
-                bitbucket_email=getattr(args, "bitbucket_email", ""),
+                tasks=FonteTasks(args.fonte_flag, args.lista_manual),
+                bitbucket=CredenciaisBitbucket(
+                    getattr(args, "bitbucket_token", ""),
+                    getattr(args, "bitbucket_email", ""),
+                ),
                 progresso=relator,
             )
             try:

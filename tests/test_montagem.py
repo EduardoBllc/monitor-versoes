@@ -19,6 +19,7 @@ from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.montagem import (
+    CredenciaisBitbucket,
     montar_commit_source,
     montar_task_source,
     validar_nome_repo,
@@ -49,7 +50,9 @@ def test_sem_token_a_fonte_e_so_o_grep():
 def test_sem_estado_nao_monta_a_fonte_de_pr():
     # a fonte de PR le o indice local de PRs, que vive no estado. Sem banco ela
     # nao teria o que ler e devolveria vazio para todo chamado — pior que o grep.
-    fonte = montar_commit_source(FakeGit(), token="tok", email="dev@x.com")
+    fonte = montar_commit_source(
+        FakeGit(), bitbucket=CredenciaisBitbucket("tok", "dev@x.com")
+    )
 
     assert isinstance(fonte, GrepCommitSource)
 
@@ -59,8 +62,7 @@ def test_com_token_a_pr_vem_antes_do_grep():
     # grep fica de fallback para o chamado que nenhuma PR casou.
     fonte = montar_commit_source(
         FakeGit(),
-        token="tok",
-        email="dev@x.com",
+        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
         repo="r",
     )
@@ -78,7 +80,10 @@ def test_a_fonte_de_pr_recebe_o_cache_do_estado():
     estado = FakeEstado(repos={"vbweb": RepoInfo(nome="vbweb", tickio_sistema_id=1)})
 
     fonte = montar_commit_source(
-        FakeGit(), token="tok", email="dev@x.com", estado=estado, repo="vbweb"
+        FakeGit(),
+        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
+        estado=estado,
+        repo="vbweb",
     )
 
     assert isinstance(fonte, ChainCommitSource)
@@ -93,7 +98,9 @@ def test_montar_nao_toca_o_git(token):
     workspace/repo agora faria todo comando pagar uma chamada de git, e um
     clone sem `origin` passaria a falhar na montagem em vez de na busca.
     """
-    montar_commit_source(GitQueGritaSeUsado(), token=token, email="dev@x.com")
+    montar_commit_source(
+        GitQueGritaSeUsado(), bitbucket=CredenciaisBitbucket(token, "dev@x.com")
+    )
 
 
 # -- fonte de tasks -----------------------------------------------------------

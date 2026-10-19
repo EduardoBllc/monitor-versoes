@@ -24,6 +24,8 @@ from motor.__main__ import (
     imprimir_status,
     main,
 )
+from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
+from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
@@ -38,6 +40,7 @@ from motor.domain.types import (
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
+from motor.montagem import CredenciaisBitbucket
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -714,6 +717,34 @@ def test_lista_manual_nao_exige_variavel_do_tickio(
     assert "verde:" in capsys.readouterr().out
 
 
+def test_flags_do_bitbucket_vencem_o_ambiente(bordas, tmp_path, monkeypatch):
+    # a TUI prova o caminho do ambiente; este prova a flag do CLI chegando ate a
+    # fonte de PR, e vencendo o ambiente quando os dois existem.
+    monkeypatch.setenv("BITBUCKET_TOKEN", "tok-ambiente")
+    monkeypatch.setenv("BITBUCKET_EMAIL", "ambiente@x.com")
+    capturado: list[Deps] = []
+    monkeypatch.setattr(cli, "_despachar", lambda args, deps: capturado.append(deps))
+
+    main(
+        [
+            "verificar",
+            "13.34.0",
+            "--repo",
+            _repo_dir(tmp_path),
+            "--bitbucket-token",
+            "tok-flag",
+            "--bitbucket-email",
+            "flag@x.com",
+        ]
+    )
+
+    fonte = capturado[0].commit_source
+    assert isinstance(fonte, ChainCommitSource)
+    pr = fonte.sources[0]
+    assert isinstance(pr, BitbucketPRCommitSource)
+    assert (pr.token, pr.email) == ("tok-flag", "flag@x.com")
+
+
 def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     # a credencial mora dentro do CommitSource, e o repr default de Deps
     # atravessa o ChainCommitSource ate ela: um dump de deps sob --debug
@@ -724,7 +755,7 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
         estado=FakeEstado(),
         repo="r",
         commit_source=montagem.montar_commit_source(
-            _git(), token="tok123", email="dev@x.com"
+            _git(), bitbucket=CredenciaisBitbucket("tok123", "dev@x.com")
         ),
     )
 

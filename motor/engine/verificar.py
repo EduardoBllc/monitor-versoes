@@ -8,7 +8,12 @@ import time
 from dataclasses import replace
 
 from motor.domain.commits import extrair_chamado, ordenar_por_grafo
-from motor.domain.reconcile import atribuicoes_de, filtrar_excluidos, reconciliar
+from motor.domain.reconcile import (
+    FatosDoGit,
+    atribuicoes_de,
+    filtrar_excluidos,
+    reconciliar,
+)
 from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
 from motor.domain.version import (
     chave,
@@ -305,10 +310,7 @@ def verificar(
         replace(resultado, tasks=alvo),
         anteriores,
         deps.estado.sem_entrega(deps.repo),
-        presentes,
-        conflitantes,
-        suspeitos_conteudo,
-        conflito_causado_por,
+        FatosDoGit(presentes, conflitantes, suspeitos_conteudo, conflito_causado_por),
     )
 
     if not auditar:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 
 from motor.domain.types import (
     Alvo,
@@ -72,18 +72,26 @@ def atribuicoes_de(alvo: TargetSet, presentes: dict[str, Presence]) -> list[Atri
     ]
 
 
+@dataclass(frozen=True)
+class FatosDoGit:
+    """O que o chamador ja apurou no git sobre os commits do alvo."""
+
+    presentes: dict[str, Presence]
+    conflitantes: list[CommitRef]
+    suspeitos_conteudo: Sequence[CommitRef] = ()
+    conflito_causado_por: dict[str, list[str]] = field(default_factory=dict)
+
+
 def reconciliar(
     alvo: Alvo,
     anteriores: list[Atribuicao],
     sem_entrega: dict[str, str],
-    presentes: dict[str, Presence],
-    conflitantes: list[CommitRef],
-    suspeitos_conteudo: Sequence[CommitRef] = (),
-    conflito_causado_por: dict[str, list[str]] | None = None,
+    fatos: FatosDoGit,
 ) -> VersionStatus:
-    """Produz o VersionStatus. Funcao pura: `presentes`, `conflitantes` e
-    `suspeitos_conteudo` chegam pre-computados pelo chamador.
+    """Produz o VersionStatus. Funcao pura: os fatos do git chegam
+    pre-computados pelo chamador.
     """
+    presentes = fatos.presentes
     novas, removidas = diff_tasks(alvo.tasks, anteriores)
 
     faltantes: list[CommitRef] = []
@@ -134,8 +142,8 @@ def reconciliar(
         commits_sumidos=sumidos,
         faltantes=faltantes,
         ancestrais=ancestrais,
-        conflitantes=conflitantes,
-        suspeitos_conteudo=list(suspeitos_conteudo),
-        conflito_causado_por=dict(conflito_causado_por or {}),
+        conflitantes=fatos.conflitantes,
+        suspeitos_conteudo=list(fatos.suspeitos_conteudo),
+        conflito_causado_por=dict(fatos.conflito_causado_por),
         tasks_sem_commits=sem_commits,
     )

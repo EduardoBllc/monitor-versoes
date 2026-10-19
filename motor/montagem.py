@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -33,6 +34,28 @@ from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
 from motor.progresso import RelatorProgresso, silencioso
+
+
+@dataclass(frozen=True)
+class CredenciaisBitbucket:
+    """Token e email da conta do Bitbucket. Vazios desligam a fonte de PR."""
+
+    # repr=False: um log do objeto imprimiria a credencial em claro.
+    token: str = field(default="", repr=False)
+    email: str = field(default="", repr=False)
+
+
+@dataclass(frozen=True)
+class FonteTasks:
+    """Escolha do operador para a fonte de tasks (`--task-source`/`--lista`)."""
+
+    fonte: str = "tickio"
+    lista_manual: str = ""
+
+
+# defaults dos parametros: os dataclasses sao congelados, entao compartilhar e seguro.
+_SEM_BITBUCKET = CredenciaisBitbucket()
+_TICKIO = FonteTasks()
 
 
 def validar_nome_repo(valor: str) -> str:
@@ -103,8 +126,7 @@ def montar_task_source(
 def montar_commit_source(
     git: GitRepo,
     *,
-    token: str = "",
-    email: str = "",
+    bitbucket: CredenciaisBitbucket = _SEM_BITBUCKET,
     estado: EstadoRepo | None = None,
     repo: str = "",
     progresso: RelatorProgresso = silencioso,
@@ -119,11 +141,11 @@ def montar_commit_source(
     """
     grep = GrepCommitSource(git=git, progresso=progresso)
     # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
-    if not token or estado is None:
+    if not bitbucket.token or estado is None:
         return grep
     pr = BitbucketPRCommitSource(
-        token=token,
-        email=email,
+        token=bitbucket.token,
+        email=bitbucket.email,
         git=git,
         progresso=progresso,
         # indice local de PRs + cache de `PR -> commits`: uma varredura
@@ -138,10 +160,8 @@ def montar_deps(
     caminho_repo: str,
     sessao: Session,
     *,
-    fonte_tasks: str = "tickio",
-    lista_manual: str = "",
-    bitbucket_token: str = "",
-    bitbucket_email: str = "",
+    tasks: FonteTasks = _TICKIO,
+    bitbucket: CredenciaisBitbucket = _SEM_BITBUCKET,
     progresso: RelatorProgresso = silencioso,
 ) -> Deps:
     """O `Deps` completo, com as quatro portas montadas.
@@ -157,14 +177,16 @@ def montar_deps(
     return Deps(
         git=git,
         tasks=montar_task_source(
-            info.tickio_sistema_id, fonte=fonte_tasks, lista_manual=lista_manual
+            info.tickio_sistema_id, fonte=tasks.fonte, lista_manual=tasks.lista_manual
         ),
         estado=estado,
         repo=info.nome,
         commit_source=montar_commit_source(
             git,
-            token=bitbucket_token or os.environ.get("BITBUCKET_TOKEN", ""),
-            email=bitbucket_email or os.environ.get("BITBUCKET_EMAIL", ""),
+            bitbucket=CredenciaisBitbucket(
+                token=bitbucket.token or os.environ.get("BITBUCKET_TOKEN", ""),
+                email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),
+            ),
             estado=estado,
             repo=info.nome,
             progresso=progresso,
