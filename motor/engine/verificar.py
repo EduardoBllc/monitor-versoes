@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from motor.domain.commits import extrair_chamado, ordenar_por_grafo
 from motor.domain.reconcile import (
@@ -14,7 +14,14 @@ from motor.domain.reconcile import (
     filtrar_excluidos,
     reconciliar,
 )
-from motor.domain.types import CommitRef, Presence, VersaoInfo, VersionStatus
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    Presence,
+    TargetSet,
+    VersaoInfo,
+    VersionStatus,
+)
 from motor.domain.version import (
     chave,
     inferir_tipo,
@@ -31,14 +38,20 @@ from motor.services.target_resolver import TargetResolver
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class _Contexto:
+    """O que as passadas de presenca e de conflito consultam: o oraculo do
+    run (um so, pelo cache) e o par (base gravada, ref do alvo) que ele cruza.
+    """
+
+    deps: Deps
+    oracle: PresenceOracle
+    base_commit: str
+    ref_alvo: str
+
+
 def _culpados_do_conflito(
-    deps: Deps,
-    oracle: PresenceOracle,
-    base_commit: str,
-    ref_alvo: str,
-    meta: CommitRef,
-    arquivos: list[str],
-    ja_simulados: set[str],
+    ctx: _Contexto, meta: CommitRef, arquivos: list[str], ja_simulados: set[str]
 ) -> list[str]:
     """Chamados que tocaram as mesmas linhas antes do commit conflitante e que
     nao estao nesta versao — a resposta a "de que alteracao esse cherry-pick
@@ -48,8 +61,8 @@ def _culpados_do_conflito(
     if not arquivos:
         return []
     try:
-        por_arquivo = deps.git.culpados_por_linha(
-            base_commit, meta.parent, meta.hash_origem, arquivos
+        por_arquivo = ctx.deps.git.culpados_por_linha(
+            ctx.base_commit, meta.parent, meta.hash_origem, arquivos
         )
     except MotorError as e:
         # Mesma politica do oraculo de presenca (§2 "senao -> ausente"): o que
@@ -66,7 +79,7 @@ def _culpados_do_conflito(
                 continue
             # Culpado que ja esta no alvo nao pode ser a causa da divergencia.
             if (
-                oracle.presente(c.hash_origem, base_commit, ref_alvo)
+                ctx.oracle.presente(c.hash_origem, ctx.base_commit, ctx.ref_alvo)
                 != Presence.AUSENTE
             ):
                 continue
@@ -153,14 +166,9 @@ def verificar(
     tags = deps.git.list_version_tags()
     abertas = versoes_abertas(todas, tags)
 
+    info: VersaoInfo | None
     if auditar:
-        info = deps.estado.versao(deps.repo, versao)
-        if versao not in tags:
-            raise ErroDeEntrada("--auditar exige uma versao liberada")
-        if info is None:
-            raise ErroDeEntrada("--auditar exige uma versao registrada no estado")
-        # `congelar=False`: auditoria nao escreve no estado nem na worktree.
-        datas_das_tags = _datas_das_tags(deps, tags, versao, congelar=False)
+        info, datas_das_tags = _preparar_auditoria(deps, versao, tags)
         ref_alvo = deps.git.resolve_ref(f"refs/tags/{versao}")
     else:
         datas_das_tags = _datas_das_tags(deps, tags, versao, congelar=True)
@@ -169,44 +177,11 @@ def verificar(
         if info is not None and info.liberada_em is not None:
             return _snapshot_congelado(deps, versao, info.liberada_em)
 
-        deps.progresso(Progresso("preparando worktree"))
-        deps.git.use_worktree(versao)
-        if deps.git.remote_branch_exists("origin", versao):
-            deps.git.pull_branch("origin", versao)
+        _preparar_worktree(deps, versao)
         ref_alvo = versao
 
-    if info is None:
-        # Primeira vez que o motor ve esta versao: resolve e grava a base.
-        deps.progresso(Progresso("resolvendo a base da vers\u00e3o"))
-        resolvida = BaseResolver(git=deps.git).resolve(versao)
-        deps.estado.registrar_versao(
-            deps.repo,
-            VersaoInfo(
-                numero=versao,
-                tipo=inferir_tipo(versao),
-                base_ref=resolvida.ref,
-                base_commit=resolvida.commit,
-            ),
-        )
-        base_commit = resolvida.commit
-    else:
-        # A base gravada e a autoritativa. Recomputar faria a base de uma
-        # X.0.0 seguir o tip atual do master em vez do ponto de corte, e o
-        # oraculo passaria a considerar presente tudo que entrou depois.
-        base_commit = info.base_commit
-
-    if deps.commit_source is None:
-        # Bug de montagem, nao erro do operador: o front-end tem de montar a
-        # fonte (motor.montagem.montar_commit_source). AssertionError em vez de
-        # MotorError porque o main() ja roteia nao-MotorError para traceback, e
-        # e traceback que o autor deste bug precisa ver.
-        raise AssertionError("Deps.commit_source nao montado")
-    resolver = TargetResolver(
-        tasks=deps.tasks,
-        commits=deps.commit_source,
-        progresso=deps.progresso,
-        piso=deps.piso_versao,
-    )
+    base_commit = _base_commit(deps, versao, info)
+    resolver = _target_resolver(deps)
     # A liberada saiu de `abertas`, mas volta como fonte quando o corte do alvo
     # nao herdou o que ela entregou (spec §2). `corte` e a data do commit-base
     # gravado — o mesmo que nao se recomputa acima, pelo mesmo motivo.
@@ -223,83 +198,16 @@ def verificar(
     # ANTES de sobrescrever: e o que detecta tarefa desmarcada no Tickio.
     anteriores = deps.estado.atribuicoes(deps.repo, versao)
 
-    todos_os_hashes: dict[str, CommitRef] = {}
-    candidatos_conflito: set[str] = set()
-    for tt in alvo.values():
-        for c in tt.commits:
-            todos_os_hashes[c.hash_origem] = c
-            candidatos_conflito.add(c.hash_origem)
-    for a in anteriores:
-        for h in a.commits:
-            todos_os_hashes.setdefault(h, CommitRef(hash_origem=h))
+    todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
 
-    oracle = PresenceOracle(git=deps.git)
+    ctx = _Contexto(deps, PresenceOracle(git=deps.git), base_commit, ref_alvo)
     t = time.monotonic()
-    presentes: dict[str, Presence] = {}
-    suspeitos_conteudo: list[CommitRef] = []
-    for indice, (hash_, c) in enumerate(todos_os_hashes.items(), start=1):
-        deps.progresso(
-            Progresso("presen\u00e7a dos commits", indice, len(todos_os_hashes))
-        )
-        p = oracle.presente(hash_, base_commit, ref_alvo)
-        presentes[hash_] = p
-        # predict_merge e a suspeita por conteudo so fazem sentido para commit
-        # que e candidato real de cherry-pick (lado alvo): conflitantes e
-        # suspeitos_conteudo sao subconjunto de faltantes (VersionStatus),
-        # nunca de commit que so o estado conhecia e sumiu do git.
-        if (
-            p == Presence.AUSENTE
-            and hash_ in candidatos_conflito
-            and oracle.suspeita_por_conteudo(hash_, base_commit, ref_alvo) is not None
-        ):
-            suspeitos_conteudo.append(c)
-
-    # Segunda passada, agora com o lote todo resolvido: candidato ausente cujo
-    # patch e identico ao de um candidato presente ja teve o conteudo aplicado
-    # sob outro hash de origem — cobra-lo mandaria o operador aplicar o que nao
-    # tem mais o que aplicar (o pick sairia vazio). O gemeo aparece quando a
-    # branch da PR foi rebasada e depois mergeada de volta.
-    ja_presentes = {h: p for h, p in presentes.items() if p != Presence.AUSENTE}
-    for hash_ in [h for h, p in presentes.items() if p == Presence.AUSENTE]:
-        if oracle.duplicata_de_presente(hash_, ja_presentes):
-            presentes[hash_] = Presence.PATCH_ID
-    suspeitos_conteudo = [
-        c for c in suspeitos_conteudo if presentes[c.hash_origem] == Presence.AUSENTE
-    ]
-
-    # Simula o mesmo lote ordenado que `atualizar` executa. Usar sempre o tip
-    # original faz um commit dependente parecer modify/delete quando o pai
-    # tambem esta faltando, embora o pai seja aplicado antes dele.
-    tip = deps.git.resolve_ref(ref_alvo)
-    candidatos = ordem_de_aplicacao(
-        deps,
+    presentes, suspeitos_conteudo = _presenca(ctx, todos_os_hashes, candidatos_conflito)
+    conflitantes, conflito_causado_por = _simular_conflitos(
+        ctx,
         [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
+        presentes,
     )
-    conflitantes: list[CommitRef] = []
-    conflito_causado_por: dict[str, list[str]] = {}
-    ja_simulados: set[str] = set()
-    for indice, c in enumerate(candidatos, start=1):
-        deps.progresso(Progresso("simulando conflitos", indice, len(candidatos)))
-        if presentes[c.hash_origem] != Presence.AUSENTE:
-            continue
-        meta = deps.git.commit_meta(c.hash_origem)
-        pred = deps.git.predict_merge(meta.parent, tip, c.hash_origem)
-        if pred.conflita:
-            conflitantes.append(c)
-            culpados = _culpados_do_conflito(
-                deps,
-                oracle,
-                base_commit,
-                ref_alvo,
-                meta,
-                pred.arquivos_conflito,
-                ja_simulados,
-            )
-            if culpados:
-                conflito_causado_por[c.hash_origem] = culpados
-            break
-        ja_simulados.add(c.hash_origem)
-        tip = pred.arvore_resultante
     logger.debug(
         "oraculo de presenca: %.3fs (%d commits)",
         time.monotonic() - t,
@@ -343,3 +251,148 @@ def _snapshot_congelado(
         liberada_em=liberada_em,
         chamados=sorted(a.chamado for a in anteriores),
     )
+
+
+def _preparar_auditoria(
+    deps: Deps, versao: str, tags: list[str]
+) -> tuple[VersaoInfo, dict[str, datetime.datetime]]:
+    info = deps.estado.versao(deps.repo, versao)
+    if versao not in tags:
+        raise ErroDeEntrada("--auditar exige uma versao liberada")
+    if info is None:
+        raise ErroDeEntrada("--auditar exige uma versao registrada no estado")
+    # `congelar=False`: auditoria nao escreve no estado nem na worktree.
+    return info, _datas_das_tags(deps, tags, versao, congelar=False)
+
+
+def _preparar_worktree(deps: Deps, versao: str) -> None:
+    deps.progresso(Progresso("preparando worktree"))
+    deps.git.use_worktree(versao)
+    if deps.git.remote_branch_exists("origin", versao):
+        deps.git.pull_branch("origin", versao)
+
+
+def _base_commit(deps: Deps, versao: str, info: VersaoInfo | None) -> str:
+    if info is not None:
+        # A base gravada e a autoritativa. Recomputar faria a base de uma
+        # X.0.0 seguir o tip atual do master em vez do ponto de corte, e o
+        # oraculo passaria a considerar presente tudo que entrou depois.
+        return info.base_commit
+    # Primeira vez que o motor ve esta versao: resolve e grava a base.
+    deps.progresso(Progresso("resolvendo a base da versão"))
+    resolvida = BaseResolver(git=deps.git).resolve(versao)
+    deps.estado.registrar_versao(
+        deps.repo,
+        VersaoInfo(
+            numero=versao,
+            tipo=inferir_tipo(versao),
+            base_ref=resolvida.ref,
+            base_commit=resolvida.commit,
+        ),
+    )
+    return resolvida.commit
+
+
+def _target_resolver(deps: Deps) -> TargetResolver:
+    if deps.commit_source is None:
+        # Bug de montagem, nao erro do operador: o front-end tem de montar a
+        # fonte (motor.montagem.montar_commit_source). AssertionError em vez de
+        # MotorError porque o main() ja roteia nao-MotorError para traceback, e
+        # e traceback que o autor deste bug precisa ver.
+        raise AssertionError("Deps.commit_source nao montado")
+    return TargetResolver(
+        tasks=deps.tasks,
+        commits=deps.commit_source,
+        progresso=deps.progresso,
+        piso=deps.piso_versao,
+    )
+
+
+def _hashes_do_lote(
+    alvo: TargetSet, anteriores: list[Atribuicao]
+) -> tuple[dict[str, CommitRef], set[str]]:
+    """Todo hash que o run olha, e o subconjunto que e candidato de
+    cherry-pick (lado alvo). Hash que so o estado conhecia entra para ter
+    presenca apurada, nunca como candidato.
+    """
+    todos_os_hashes: dict[str, CommitRef] = {}
+    candidatos_conflito: set[str] = set()
+    for tt in alvo.values():
+        for c in tt.commits:
+            todos_os_hashes[c.hash_origem] = c
+            candidatos_conflito.add(c.hash_origem)
+    for a in anteriores:
+        for h in a.commits:
+            todos_os_hashes.setdefault(h, CommitRef(hash_origem=h))
+    return todos_os_hashes, candidatos_conflito
+
+
+def _presenca(
+    ctx: _Contexto,
+    todos_os_hashes: dict[str, CommitRef],
+    candidatos_conflito: set[str],
+) -> tuple[dict[str, Presence], list[CommitRef]]:
+    presentes: dict[str, Presence] = {}
+    suspeitos_conteudo: list[CommitRef] = []
+    for indice, (hash_, c) in enumerate(todos_os_hashes.items(), start=1):
+        ctx.deps.progresso(
+            Progresso("presença dos commits", indice, len(todos_os_hashes))
+        )
+        p = ctx.oracle.presente(hash_, ctx.base_commit, ctx.ref_alvo)
+        presentes[hash_] = p
+        # predict_merge e a suspeita por conteudo so fazem sentido para commit
+        # que e candidato real de cherry-pick (lado alvo): conflitantes e
+        # suspeitos_conteudo sao subconjunto de faltantes (VersionStatus),
+        # nunca de commit que so o estado conhecia e sumiu do git.
+        if (
+            p == Presence.AUSENTE
+            and hash_ in candidatos_conflito
+            and ctx.oracle.suspeita_por_conteudo(hash_, ctx.base_commit, ctx.ref_alvo)
+            is not None
+        ):
+            suspeitos_conteudo.append(c)
+
+    # Segunda passada, agora com o lote todo resolvido: candidato ausente cujo
+    # patch e identico ao de um candidato presente ja teve o conteudo aplicado
+    # sob outro hash de origem — cobra-lo mandaria o operador aplicar o que nao
+    # tem mais o que aplicar (o pick sairia vazio). O gemeo aparece quando a
+    # branch da PR foi rebasada e depois mergeada de volta.
+    ja_presentes = {h: p for h, p in presentes.items() if p != Presence.AUSENTE}
+    for hash_ in [h for h, p in presentes.items() if p == Presence.AUSENTE]:
+        if ctx.oracle.duplicata_de_presente(hash_, ja_presentes):
+            presentes[hash_] = Presence.PATCH_ID
+    suspeitos_conteudo = [
+        c for c in suspeitos_conteudo if presentes[c.hash_origem] == Presence.AUSENTE
+    ]
+    return presentes, suspeitos_conteudo
+
+
+def _simular_conflitos(
+    ctx: _Contexto, candidatos: list[CommitRef], presentes: dict[str, Presence]
+) -> tuple[list[CommitRef], dict[str, list[str]]]:
+    git = ctx.deps.git
+    # Simula o mesmo lote ordenado que `atualizar` executa. Usar sempre o tip
+    # original faz um commit dependente parecer modify/delete quando o pai
+    # tambem esta faltando, embora o pai seja aplicado antes dele.
+    tip = git.resolve_ref(ctx.ref_alvo)
+    candidatos = ordem_de_aplicacao(ctx.deps, candidatos)
+    conflitantes: list[CommitRef] = []
+    conflito_causado_por: dict[str, list[str]] = {}
+    ja_simulados: set[str] = set()
+    for indice, c in enumerate(candidatos, start=1):
+        ctx.deps.progresso(Progresso("simulando conflitos", indice, len(candidatos)))
+        if presentes[c.hash_origem] != Presence.AUSENTE:
+            continue
+        meta = git.commit_meta(c.hash_origem)
+        pred = git.predict_merge(meta.parent, tip, c.hash_origem)
+        if pred.conflita:
+            conflitantes.append(c)
+            culpados = _culpados_do_conflito(
+                ctx, meta, pred.arquivos_conflito, ja_simulados
+            )
+            if culpados:
+                conflito_causado_por[c.hash_origem] = culpados
+            break
+        ja_simulados.add(c.hash_origem)
+        tip = pred.arvore_resultante
+    return conflitantes, conflito_causado_por
