@@ -320,7 +320,7 @@ def bordas(monkeypatch):
 
 
 def test_verificar_ponta_a_ponta_com_lista_manual(bordas, tmp_path, capsys):
-    git, estado = bordas
+    git, _estado = bordas
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
@@ -383,7 +383,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
 
 
 def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
-    git, estado = bordas
+    _git, estado = bordas
     estado.aliases["vbweb"] = "vendabemweb"
     lista = tmp_path / "lista.txt"
     lista.write_text("", encoding="utf-8")
@@ -437,7 +437,7 @@ def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
 
 
 def test_reconstruir_estado_ponta_a_ponta(bordas, tmp_path, capsys):
-    git, estado = bordas
+    git, _estado = bordas
     # commit na branch da versao sem ch<num> na mensagem: orfao
     git.add_commit("p1", "m0", "ajuste sem numero", D)
     git.set_branch("13.34.0", "p1")

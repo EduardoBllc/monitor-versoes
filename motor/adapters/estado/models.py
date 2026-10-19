@@ -9,12 +9,12 @@ import datetime
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     MetaData,
-    CheckConstraint,
     UniqueConstraint,
     text,
 )

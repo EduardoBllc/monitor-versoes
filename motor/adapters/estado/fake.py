@@ -70,7 +70,7 @@ class FakeEstado:
         self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         self._exigir_repo(repo)
-        for numero, quando in liberadas.items():
+        for numero, recebida in liberadas.items():
             atual = self.versoes.get((repo, numero))
             if atual is None or atual.liberada_em is not None:
                 continue
@@ -79,8 +79,9 @@ class FakeEstado:
             # Guardar o que veio deixaria a suite verde numa comparacao mista
             # que estoura so em producao — a distribuicao do §2 compara esta
             # data com a data de um commit, que sempre tem fuso.
+            quando = recebida
             if quando.tzinfo is None:
-                quando = quando.replace(tzinfo=datetime.timezone.utc)
+                quando = quando.replace(tzinfo=datetime.UTC)
             self.versoes[(repo, numero)] = VersaoInfo(
                 numero=atual.numero,
                 tipo=atual.tipo,

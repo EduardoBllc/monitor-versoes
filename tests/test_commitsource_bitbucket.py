@@ -20,9 +20,8 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.errors import MotorError
 from motor.domain.types import RepoInfo
-from motor.errors import ErroDeEntrada, RespostaInvalida
+from motor.errors import ErroDeEntrada, MotorError, RespostaInvalida
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
@@ -47,7 +46,7 @@ def _git_com_master(*hashes_na_master: str, classe: type[FakeGit] = FakeGit) -> 
     # no mesmo tip: e o que um clone recem-fetchado tem, e a fonte le a de
     # rastreamento.
     g = classe()
-    t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     anterior = ""
     for h in hashes_na_master:
         g.add_commit(h, anterior, f"commit {h}", t0)
@@ -157,7 +156,7 @@ def test_pr_conta_commit_que_so_chegou_no_origin_master():
         "c2",
         "c1",
         "commit c2",
-        datetime.datetime(2024, 1, 2, tzinfo=datetime.timezone.utc),
+        datetime.datetime(2024, 1, 2, tzinfo=datetime.UTC),
     )
     g.set_branch("origin/master", "c2")  # local `master` fica em c1
     prs = [

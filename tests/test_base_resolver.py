@@ -11,9 +11,7 @@ from motor.services.base_resolver import BaseResolver
 
 def test_base_resolver_resolve():
     g = FakeGit()
-    g.add_commit(
-        "hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc)
-    )
+    g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.UTC))
     g.set_branch("13.6.0", "hash136")
 
     resolver = BaseResolver(git=g)
@@ -32,9 +30,7 @@ def test_base_resolver_usa_a_ref_de_rastreamento_quando_nao_ha_head_local():
     segunda tentativa a base correta viraria erro.
     """
     g = FakeGit(remote_refs={"13.6.0": "hash136"})
-    g.add_commit(
-        "hash136", "", "base 13.6.0", datetime.datetime.now(datetime.timezone.utc)
-    )
+    g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.UTC))
 
     base = BaseResolver(git=g).resolve("13.7.0")
 
@@ -55,9 +51,7 @@ def test_base_resolver_prefere_o_head_local_a_ref_de_rastreamento():
         remote_refs={"13.6.0": "remoto136"},
     )
     for h in ("local136", "remoto136"):
-        g.add_commit(
-            h, "", f"base 13.6.0 em {h}", datetime.datetime.now(datetime.timezone.utc)
-        )
+        g.add_commit(h, "", f"base 13.6.0 em {h}", datetime.datetime.now(datetime.UTC))
 
     base = BaseResolver(git=g).resolve("13.7.0")
 
@@ -104,7 +98,7 @@ def test_bug_do_adapter_propaga_e_nao_vira_base_nao_encontrada():
             raise RuntimeError("bug no adapter")
 
     g = _GitComBug()
-    g.add_commit("hash136", "", "base", datetime.datetime.now(datetime.timezone.utc))
+    g.add_commit("hash136", "", "base", datetime.datetime.now(datetime.UTC))
     g.set_branch("13.6.0", "hash136")
 
     with pytest.raises(RuntimeError, match="bug no adapter"):
@@ -126,7 +120,7 @@ def test_base_de_versao_existente_e_o_ponto_de_corte_nao_o_tip_da_base():
     corte 20 dias adiantado, dez versoes 14.x liberadas nesse intervalo sairam
     do alvo em silencio, levando 85 chamados junto.
     """
-    agora = datetime.datetime.now(datetime.timezone.utc)
+    agora = datetime.datetime.now(datetime.UTC)
     g = FakeGit()
     g.add_commit("corte", "", "master no ponto de corte", agora)
     g.add_commit("master_depois", "corte", "master andou depois do corte", agora)
@@ -146,7 +140,7 @@ def test_base_de_versao_que_ainda_nao_existe_e_o_tip_da_ref_base():
     agora, entao o tip da ref-base E o ponto de corte. Sem esta metade, `criar`
     quebraria — nao ha ref da versao para cruzar com a base.
     """
-    agora = datetime.datetime.now(datetime.timezone.utc)
+    agora = datetime.datetime.now(datetime.UTC)
     g = FakeGit()
     g.add_commit("corte", "", "master no ponto de corte", agora)
     g.add_commit("master_depois", "corte", "master andou depois do corte", agora)
@@ -164,7 +158,7 @@ def test_base_de_ajustada_e_o_corte_mesmo_com_commit_novo_na_anterior():
     depois de a 14.10.0 ter sido cortada dela, e resolver a tag daria esse
     hotfix como base — um commit que a 14.10.0 nunca teve.
     """
-    agora = datetime.datetime.now(datetime.timezone.utc)
+    agora = datetime.datetime.now(datetime.UTC)
     g = FakeGit(tags={"14.9.0": True})
     g.add_commit("corte", "", "tip da 14.9.0 no corte", agora)
     g.add_commit("hotfix_149", "corte", "hotfix na 14.9.0 depois do corte", agora)

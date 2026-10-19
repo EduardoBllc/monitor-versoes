@@ -9,15 +9,15 @@ engine — espelhando onde o Go liga isso.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator
 import datetime
 import logging
 import os
 import re
 import subprocess
-from typing import Any
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
 from motor.domain.types import CommitRef
 from motor.domain.version import worktrees_a_remover
@@ -133,7 +133,13 @@ def _rodar_git(
     """
     try:
         return subprocess.run(
-            args, cwd=cwd, capture_output=True, text=True, errors="replace", **extra
+            args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            **extra,
         )
     except OSError as e:
         raise BackendIndisponivel(f"git {' '.join(args[1:])}: {e}") from e
@@ -146,9 +152,13 @@ def _rodar_git_bytes(
     e `diff --quiet` so olha o returncode. A guarda de `OSError` e a mesma.
     """
     try:
-        return subprocess.run(args, cwd=cwd, capture_output=True)
+        return subprocess.run(args, cwd=cwd, capture_output=True, check=False)
     except OSError as e:
         raise BackendIndisponivel(f"git {' '.join(args[1:])}: {e}") from e
+
+
+# merge-tree --write-tree
+_GIT_MINIMO = (2, 38)
 
 
 def _checar_versao_git() -> None:
@@ -159,7 +169,7 @@ def _checar_versao_git() -> None:
     if not m:
         return  # formato inesperado - nao bloqueia, so nao valida
     major, minor = int(m.group(1)), int(m.group(2))
-    if major < 2 or (major == 2 and minor < 38):
+    if (major, minor) < _GIT_MINIMO:
         raise BackendIndisponivel(
             f"git {major}.{minor} encontrado, motor precisa de >= 2.38 "
             "(merge-tree --write-tree)"
@@ -170,12 +180,12 @@ def _parse_log(out: str) -> list[CommitRef]:
     if out == "":
         return []
     resultado: list[CommitRef] = []
-    for entrada in out.split(SEPARADOR_REGISTRO):
-        entrada = entrada.strip("\n")
+    for bruta in out.split(SEPARADOR_REGISTRO):
+        entrada = bruta.strip("\n")
         if entrada == "":
             continue
         campos = entrada.split(SEPARADOR_CAMPO, 2)
-        if len(campos) != 3:
+        if len(campos) != 3:  # noqa: PLR2004 - campos do --format, split(..., 2)
             continue
         try:
             data = datetime.datetime.fromisoformat(campos[1])
@@ -195,12 +205,12 @@ def _parse_metas(out: str) -> dict[str, CommitRef]:
     depois vira o bug de campo trocado.
     """
     resultado: dict[str, CommitRef] = {}
-    for entrada in out.split(SEPARADOR_REGISTRO):
-        entrada = entrada.strip("\n")
+    for bruta in out.split(SEPARADOR_REGISTRO):
+        entrada = bruta.strip("\n")
         if entrada == "":
             continue
         campos = entrada.split(SEPARADOR_CAMPO, 3)
-        if len(campos) != 4:
+        if len(campos) != 4:  # noqa: PLR2004 - campos do --format, split(..., 3)
             continue
         try:
             data = datetime.datetime.fromisoformat(campos[1])
@@ -416,7 +426,7 @@ class GitSubprocess:
             hash,
         )
         campos = out.split(SEPARADOR_CAMPO, 2)
-        if len(campos) != 3:
+        if len(campos) != 3:  # noqa: PLR2004 - campos do --format, split(..., 2)
             raise RespostaInvalida(f"saida inesperada de git show: {out!r}")
         try:
             data = datetime.datetime.fromisoformat(campos[1])
@@ -515,7 +525,7 @@ class GitSubprocess:
         out = self._output(
             self.repo_path, "diff-tree", "--no-commit-id", "--name-only", "-r", hash
         )
-        return frozenset(l for l in out.split("\n") if l != "")
+        return frozenset(nome for nome in out.split("\n") if nome != "")
 
     def resolve_ref(self, ref: str, /) -> str:
         # ^{commit} descasca tag anotada: as tags de release deste projeto sao

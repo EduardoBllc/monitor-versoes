@@ -19,9 +19,9 @@ Auth: Authorization: Basic base64(email:token). Paginação pelo campo `next`.
 from __future__ import annotations
 
 import base64
+import contextlib
 import datetime
 import re
-import contextlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -153,7 +153,7 @@ class BitbucketPRCommitSource:
         # Marca = inicio da varredura, nao o maior `updated_on` visto. PR
         # mergeada DURANTE esta varredura pode nao aparecer nela; com o inicio
         # como marca, o `updated_on` dela e maior e a proxima janela a pega.
-        inicio = datetime.datetime.now(datetime.timezone.utc)
+        inicio = datetime.datetime.now(datetime.UTC)
         marca = self.estado.marca_varredura(self.repo_estado)
 
         params: dict[str, object] = {
@@ -297,7 +297,7 @@ class BitbucketPRCommitSource:
                 raise ErroDeEntrada(f"URL do Bitbucket invalida: {url!r}: {e}") from e
             except httpx.HTTPError as e:
                 raise BackendIndisponivel(f"chamando Bitbucket {url}: {e}") from e
-            if resp.status_code != 200:
+            if resp.status_code != httpx.codes.OK:
                 raise BackendIndisponivel(
                     f"Bitbucket respondeu {resp.status_code} em {url}: {resp.text}"
                 )

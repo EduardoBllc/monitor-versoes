@@ -15,8 +15,8 @@ from motor.adapters.estado import models
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
-    PrIndex,
     Exclusion,
+    PrIndex,
     RepoInfo,
     VersaoInfo,
     VersionType,

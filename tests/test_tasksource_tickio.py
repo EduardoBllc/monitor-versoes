@@ -169,7 +169,7 @@ def test_formato_inesperado_e_resposta_invalida_nao_backend_fora():
 def test_variavel_faltando_e_erro_de_entrada_nao_backend():
     fonte = TickioRest(base_url="", usuario="", senha="", sistema_id=7)
 
-    with pytest.raises(ErroDeEntrada, match="faltando no .env"):
+    with pytest.raises(ErroDeEntrada, match=r"faltando no \.env"):
         fonte.fetch("13.34.0")
 
 

@@ -9,14 +9,14 @@ Create Date: 2026-08-19
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 revision: str = "c31ffb4de7a1"
-down_revision: Union[str, Sequence[str], None] = "eafc77e6d0ce"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "eafc77e6d0ce"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # Igual a ERRCODE_VERSAO_CONGELADA em motor/adapters/estado/postgres.py.

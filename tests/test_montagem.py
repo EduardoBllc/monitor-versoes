@@ -14,8 +14,8 @@ from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.adapters.git.fake import FakeGit
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.montagem import (

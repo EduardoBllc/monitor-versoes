@@ -93,7 +93,7 @@ class FakeGit:
         em producao.
         """
         if date.tzinfo is None:
-            date = date.replace(tzinfo=datetime.timezone.utc)
+            date = date.replace(tzinfo=datetime.UTC)
         self.commits[hash] = FakeCommit(hash=hash, parent=parent, msg=msg, date=date)
 
     def set_branch(self, branch: str, hash: str) -> None:

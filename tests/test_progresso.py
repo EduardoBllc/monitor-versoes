@@ -9,6 +9,9 @@ from __future__ import annotations
 import datetime
 import io
 
+from rich.console import Console
+
+from motor.__main__ import _escrever_progresso, _relator_do_cli
 from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
@@ -27,9 +30,6 @@ from motor.engine.consultar import consultar
 from motor.engine.deps import Deps
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from rich.console import Console
-
-from motor.__main__ import _escrever_progresso, _relator_do_cli
 from motor.progresso import Progresso, SlotProgresso, silencioso
 from motor.services.target_resolver import TargetResolver
 from motor.tui import renderizar_progresso

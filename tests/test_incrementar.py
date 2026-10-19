@@ -21,7 +21,7 @@ from motor.engine.atualizar import (
 from motor.engine.deps import Deps
 from motor.errors import RecusaDeInvariante
 
-D = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 D1 = D + datetime.timedelta(minutes=1)
 
 UM = {

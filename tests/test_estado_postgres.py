@@ -167,11 +167,11 @@ def test_marcar_liberadas_nao_reescreve_data(sessao_postgres):
     estado.registrar_versao("vendabemweb", _info("13.34.0"))
     # timezone.utc explicito: a coluna e timestamptz (migracao eafc77e6d0ce),
     # e um datetime naive de volta do banco nunca compara igual a um aware.
-    primeira = datetime.datetime(2026, 8, 1, tzinfo=datetime.timezone.utc)
+    primeira = datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC)
     estado.marcar_liberadas("vendabemweb", {"13.34.0": primeira})
     estado.marcar_liberadas(
         "vendabemweb",
-        {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)},
+        {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)},
     )
 
     gravada = estado.versao("vendabemweb", "13.34.0")

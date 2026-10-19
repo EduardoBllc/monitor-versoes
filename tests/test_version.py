@@ -190,7 +190,7 @@ def test_worktrees_a_remover_nada_quando_manter_cobre_todas():
 
 
 def _quando(mes: int) -> datetime.datetime:
-    return datetime.datetime(2026, mes, 1, tzinfo=datetime.timezone.utc)
+    return datetime.datetime(2026, mes, 1, tzinfo=datetime.UTC)
 
 
 def test_liberadas_no_alvo_entra_so_com_tag_posterior_ao_corte():

@@ -12,7 +12,7 @@ from motor.services.presence_oracle import PresenceOracle
 
 def test_presence_oracle_ancestral_direto():
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("c1", "", "primeiro", t0)
     g.add_commit("c2", "c1", "segundo", t0)
     g.set_branch("14.0.0", "c2")
@@ -25,7 +25,7 @@ def test_presence_oracle_ancestral_direto():
 
 def test_presence_oracle_via_trailer():
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: algo", t0)
     g.add_commit("base-tip", "", "base", t0)
     g.set_branch("13.6.0", "base-tip")
@@ -41,7 +41,7 @@ def test_presence_oracle_via_trailer():
 
 def test_presence_oracle_ausente():
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: nunca aplicado", t0)
     g.add_commit("base-tip", "", "base", t0)
     g.set_branch("13.6.0", "base-tip")
@@ -59,7 +59,7 @@ def test_presence_oracle_commits_in_range_falha_trata_como_ausente():
     presente deve reportar ausente sem propagar o erro.
     """
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: algo", t0)
     g.add_commit("base-tip", "", "base", t0)
     g.set_branch("13.6.0", "base-tip")
@@ -80,7 +80,7 @@ def test_presence_oracle_suspeita_por_conteudo_match_msg_e_arquivos():
     nivel 4 (fora do oraculo formal) deve achar o match por mensagem+arquivos.
     """
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("base-tip", "", "base", t0)
     g.add_commit(
@@ -103,7 +103,7 @@ def test_presence_oracle_suspeita_por_conteudo_match_msg_e_arquivos():
 
 def test_presence_oracle_suspeita_por_conteudo_arquivos_diferentes_nao_bate():
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", t0)
     g.add_commit("base-tip", "", "base", t0)
     g.add_commit("alvo1", "base-tip", "fix: ch255514 corrige logs", t0)
@@ -128,7 +128,7 @@ def test_presence_oracle_suspeita_por_conteudo_consumo_evita_colisao_duplicata()
     origem colidiria com o mesmo alvo ja usado pelo primeiro.
     """
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: ajuste", t0)
     g.add_commit(
         "origem2", "origem1", "fix: ajuste", t0
@@ -160,7 +160,7 @@ def test_presence_oracle_patch_id_origem_falha_trata_como_ausente():
     simetrico ao fallback ja aplicado ao patch-id dos candidatos.
     """
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("base-tip", "", "base", t0)
     g.set_branch("13.6.0", "base-tip")
     g.set_branch("13.7.0", "base-tip")
@@ -185,7 +185,7 @@ def test_excecao_fora_do_contrato_propaga_em_vez_de_virar_ausente():
     no adapter virava veredito de presenca errado, sem sinal nenhum. Com o
     contrato declarado, so MotorError e degradavel.
     """
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     git = _GitQueVazaBug()
     git.add_commit("m0", "", "raiz", t0)
     git.set_branch("13.34.0", "m0")
@@ -203,7 +203,7 @@ def test_motorerror_do_adapter_continua_degradando_para_ausente():
         def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:
             raise NaoEncontrado("objeto sumiu do historico")
 
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     git = _GitQueFalhaNoContrato()
     git.add_commit("m0", "", "raiz", t0)
     git.set_branch("13.34.0", "m0")
@@ -219,7 +219,7 @@ def test_presence_oracle_trailer_abaixo_da_base_conta_como_presente():
     prova que a entrega esta fisicamente na branch, venha de onde vier.
     """
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: algo", t0)
     g.add_commit("raiz", "", "raiz", t0)
     # o pick entrou na 14.10.0, ANTES do corte da 14.11.0

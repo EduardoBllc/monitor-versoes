@@ -242,9 +242,12 @@ def verificar(
         # que e candidato real de cherry-pick (lado alvo): conflitantes e
         # suspeitos_conteudo sao subconjunto de faltantes (VersionStatus),
         # nunca de commit que so o estado conhecia e sumiu do git.
-        if p == Presence.AUSENTE and hash_ in candidatos_conflito:
-            if oracle.suspeita_por_conteudo(hash_, base_commit, ref_alvo) is not None:
-                suspeitos_conteudo.append(c)
+        if (
+            p == Presence.AUSENTE
+            and hash_ in candidatos_conflito
+            and oracle.suspeita_por_conteudo(hash_, base_commit, ref_alvo) is not None
+        ):
+            suspeitos_conteudo.append(c)
 
     # Segunda passada, agora com o lote todo resolvido: candidato ausente cujo
     # patch e identico ao de um candidato presente ja teve o conteudo aplicado

@@ -2,21 +2,21 @@ import asyncio
 import contextlib
 import datetime
 from pathlib import Path
-from typing import cast
 from threading import Event
+from typing import cast
 
 from rich.console import Console
 from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 
+import motor.montagem as montagem
+import motor.tui as tui
 from motor.adapters.estado.fake import FakeEstado
-from motor.ports import GitRepo
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError, NaoEncontrado
+from motor.ports import GitRepo
 from motor.progresso import Progresso, SlotProgresso
-import motor.montagem as montagem
-import motor.tui as tui
 from motor.tui import (
     MotorTUI,
     PainelProgresso,
@@ -2427,12 +2427,12 @@ def test_renderizar_chamado_mostra_o_descendente_no_topo():
             CommitRef(
                 hash_origem="antigo",
                 msg="Commit antigo",
-                commit_date=datetime.datetime(2026, 2, 1, tzinfo=datetime.timezone.utc),
+                commit_date=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
             ),
             CommitRef(
                 hash_origem="novo",
                 msg="Commit novo",
-                commit_date=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+                commit_date=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
             ),
         ],
     )

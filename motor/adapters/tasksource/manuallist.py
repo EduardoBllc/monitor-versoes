@@ -22,8 +22,8 @@ class ManualList:
             raise ErroDeEntrada(f"abrindo lista manual {self.caminho}: {e}") from e
 
         chamados: list[str] = []
-        for linha in linhas:
-            linha = linha.strip()
+        for bruta in linhas:
+            linha = bruta.strip()
             if linha == "" or linha.startswith("#"):
                 continue
             if not linha.isdigit():

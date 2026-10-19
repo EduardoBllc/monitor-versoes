@@ -68,7 +68,7 @@ class TickioRest:
                     f"buscando chamados da versao {versao} no Tickio: {e}"
                 ) from e
 
-            if resp.status_code != 200:
+            if resp.status_code != httpx.codes.OK:
                 raise BackendIndisponivel(
                     f"Tickio respondeu {resp.status_code} ao listar a versao {versao}: "
                     f"{resp.text}"
@@ -94,7 +94,7 @@ class TickioRest:
         except httpx.HTTPError as e:
             raise BackendIndisponivel(f"autenticando no Tickio: {e}") from e
 
-        if resp.status_code != 200:
+        if resp.status_code != httpx.codes.OK:
             raise BackendIndisponivel(
                 f"autenticando no Tickio: respondeu {resp.status_code}: {resp.text}"
             )

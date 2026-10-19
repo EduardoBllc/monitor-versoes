@@ -19,7 +19,7 @@ def test_fake_git_remote_url():
 
 def test_fake_git_cherry_pick_aplica_e_encadeia_trailer():
     g = FakeGit()
-    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     g.add_commit("origem1", "", "fix: ch255514 corrige logs", base)
     g.add_commit("base-tip", "", "base", base)
     g.set_branch("13.7.0", "base-tip")
@@ -37,7 +37,7 @@ def test_fake_git_cherry_pick_aplica_e_encadeia_trailer():
 
 def test_fake_git_cherry_pick_conflito_e_continue():
     g = FakeGit()
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     g.add_commit("origem1", "", "fix: algo", now)
     g.add_commit("base-tip", "", "base", now)
     g.set_branch("13.7.0", "base-tip")
@@ -74,7 +74,7 @@ def test_fake_git_read_write_file():
 
 def test_fake_git_is_ancestor_e_merge_base():
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("c1", "", "primeiro", t0)
     g.add_commit("c2", "c1", "segundo", t0)
     g.set_branch("master", "c2")
@@ -88,7 +88,7 @@ def test_fake_git_is_ancestor_e_merge_base():
 
 def test_fake_git_merge_base_branches_divergentes():
     g = FakeGit()
-    t0 = datetime.datetime.now(datetime.timezone.utc)
+    t0 = datetime.datetime.now(datetime.UTC)
     g.add_commit("r", "", "raiz", t0)
     g.add_commit("y", "r", "commit y", t0)
     g.add_commit("x", "y", "commit x", t0)
@@ -226,7 +226,7 @@ def test_branch_duplicada_e_recusa_nao_ausencia():
 
 def test_fake_worktree_gc_mantem_as_n_mais_usadas():
     g = FakeGit()
-    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     g.add_commit("tip", "", "base", base)
     for v in ("13.1.0", "13.2.0", "13.3.0"):
         g.branches[v] = "tip"
@@ -241,7 +241,7 @@ def test_fake_worktree_gc_mantem_as_n_mais_usadas():
 
 def test_fake_worktree_gc_promove_worktree_reusada():
     g = FakeGit()
-    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     g.add_commit("tip", "", "base", base)
     for v in ("13.1.0", "13.2.0", "13.3.0"):
         g.branches[v] = "tip"
@@ -253,7 +253,7 @@ def test_fake_worktree_gc_promove_worktree_reusada():
 
 def test_fake_worktree_gc_com_manter_zero_remove_tudo():
     g = FakeGit()
-    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     g.add_commit("tip", "", "base", base)
     g.branches["13.1.0"] = "tip"
     g.use_worktree("13.1.0")
@@ -265,7 +265,7 @@ def test_fake_worktree_gc_com_manter_zero_remove_tudo():
 
 def test_fake_worktree_add_registra_a_worktree_criada():
     g = FakeGit()
-    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     g.add_commit("tip", "", "base", base)
     g.branches["master"] = "tip"
 
@@ -284,7 +284,7 @@ def test_fake_worktree_gc_tem_a_assinatura_do_adapter_real():
 
 def test_fake_git_ordem_topologica_ignora_data_e_hash_ausente():
     g = FakeGit()
-    cedo = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    cedo = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
     tarde = cedo + datetime.timedelta(days=5)
     g.add_commit("m0", "", "raiz", cedo)
     g.add_commit("pai", "m0", "escrito depois", tarde)

@@ -36,7 +36,7 @@ class Version:
 # Toda data de commit que vem do git (%cI) ou do Bitbucket tem fuso. A
 # ausencia de data tem de ter fuso tambem, senao a comparacao com uma data de
 # verdade estoura com TypeError.
-SEM_DATA = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+SEM_DATA = datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
 
 @dataclass(frozen=True)

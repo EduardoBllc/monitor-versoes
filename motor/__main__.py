@@ -12,8 +12,34 @@ import os
 import sys
 import textwrap
 import time
-from collections.abc import Callable, Set as AbstractSet
-from typing import TextIO, TypeVar
+from collections.abc import Callable
+from collections.abc import Set as AbstractSet
+from typing import TextIO
+
+from motor.adapters.estado.postgres import PostgresEstado
+from motor.domain.commits import agrupar_por_chamado
+from motor.domain.types import CommitRef, VersionStatus
+from motor.engine.atualizar import (
+    AtualizarResult,
+    AtualizarStatus,
+    atualizar,
+    atualizar_abort,
+    atualizar_continue,
+)
+from motor.engine.consultar import ChamadoConsultado, consultar
+from motor.engine.criar import criar
+from motor.engine.deps import Deps
+from motor.engine.reconstruir_estado import reconstruir_estado
+from motor.engine.verificar import verificar
+from motor.errors import MotorError, formatar_com_notas
+from motor.montagem import (
+    abrir_sessao,
+    montar_deps,
+    validar_nome_repo,
+    validar_sistema_id,
+    validar_versao,
+)
+from motor.progresso import Progresso, RelatorProgresso, silencioso
 
 # Anotado Optional na declaracao: sem isso o `= None` do fallback conflita com
 # o tipo da funcao importada, e `if load_dotenv:` passa a ser lido como
@@ -27,40 +53,13 @@ except ImportError:
 else:
     load_dotenv = _load_dotenv
 
-from motor.adapters.estado.postgres import PostgresEstado
-from motor.domain.commits import agrupar_por_chamado
-from motor.domain.types import CommitRef, VersionStatus
-from motor.errors import MotorError, formatar_com_notas
-from motor.engine.criar import criar
-from motor.engine.consultar import ChamadoConsultado, consultar
-from motor.engine.deps import Deps
-from motor.engine.atualizar import (
-    AtualizarResult,
-    AtualizarStatus,
-    atualizar,
-    atualizar_abort,
-    atualizar_continue,
-)
-from motor.engine.reconstruir_estado import reconstruir_estado
-from motor.engine.verificar import verificar
-from motor.montagem import (
-    abrir_sessao,
-    montar_deps,
-    validar_nome_repo,
-    validar_sistema_id,
-    validar_versao,
-)
-from motor.progresso import Progresso, RelatorProgresso, silencioso
-
-_T = TypeVar("_T")
-
 _ARQUIVOS_AMBIENTE = {
     "development": ".env.development",
     "production": ".env",
 }
 
 
-def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
+def _tipo_cli[T](validador: Callable[[str], T]) -> Callable[[str], T]:
     """Adapta um validador de `motor.montagem` ao protocolo do argparse.
 
     A regra e compartilhada com a TUI e fala `MotorError`; traduzir para
@@ -68,7 +67,7 @@ def _tipo_cli(validador: Callable[[str], _T]) -> Callable[[str], _T]:
     argparse.
     """
 
-    def converter(valor: str) -> _T:
+    def converter(valor: str) -> T:
         try:
             return validador(valor)
         except MotorError as erro:

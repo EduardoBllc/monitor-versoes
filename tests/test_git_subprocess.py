@@ -19,8 +19,8 @@ from motor.adapters.git.subprocess import (
 )
 from motor.domain.version import versoes_abertas
 from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado
-from motor.progresso import Progresso
 from motor.ports import CherryPickOutcome
+from motor.progresso import Progresso
 
 
 def _git_env() -> dict[str, str]:
@@ -38,7 +38,12 @@ def _git_env() -> dict[str, str]:
 
 def _run_git(dir_: str, *args: str) -> None:
     proc = subprocess.run(
-        ["git", *args], cwd=dir_, env=_git_env(), capture_output=True, text=True
+        ["git", *args],
+        cwd=dir_,
+        env=_git_env(),
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if proc.returncode != 0:
         pytest.fail(f"git {args}: {proc.returncode}: {proc.stdout}{proc.stderr}")
@@ -316,6 +321,7 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
         cwd=str(clone),
         capture_output=True,
         text=True,
+        check=True,
     ).stdout
     assert "refs/heads/13.35.0" not in refs, f"o fetch criou head local: {refs!r}"
     assert "refs/remotes/origin/13.35.0" in refs, f"refs apos o fetch: {refs!r}"
@@ -415,6 +421,7 @@ def test_git_subprocess_resolve_ref_descasca_tag_anotada(tmp_path):
         cwd=repo_dir,
         capture_output=True,
         text=True,
+        check=True,
     ).stdout.strip()
     assert sha_do_objeto_de_tag != commit_de_master, "tag nao ficou anotada"
 
@@ -653,6 +660,7 @@ def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_
         cwd=str(clone),
         capture_output=True,
         text=True,
+        check=True,
     ).stdout
     # premissa: as duas refs existem, so em remotos diferentes
     assert "refs/remotes/origin/13.35.0" in refs, f"refs: {refs!r}"
@@ -701,7 +709,11 @@ def _cenario_culpado(tmp_path, linhas_iniciais: str = "l1\nl2\nl3\nl4\nl5\n"):
 
 def _rev(dir_: str, ref: str) -> str:
     return subprocess.run(
-        ["git", "rev-parse", ref], cwd=dir_, capture_output=True, text=True
+        ["git", "rev-parse", ref],
+        cwd=dir_,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
@@ -1024,7 +1036,11 @@ def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
 
 def _log_topo(dir_: str) -> str:
     proc = subprocess.run(
-        ["git", "log", "-1", "--format=%B"], cwd=dir_, capture_output=True, text=True
+        ["git", "log", "-1", "--format=%B"],
+        cwd=dir_,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return proc.stdout
 

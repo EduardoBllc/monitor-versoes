@@ -6,21 +6,21 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Protocol
-
-from sqlalchemy.orm import Session
+from typing import ClassVar, Protocol
 
 from rich import box
-from rich.console import RenderableType
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar as BarraRich
 from rich.table import Table
 from rich.text import Text
+from sqlalchemy.orm import Session
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import BindingType
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
+from textual.visual import VisualType
 from textual.widget import Widget
 from textual.widgets import (
     Button,
@@ -32,7 +32,6 @@ from textual.widgets import (
     Select,
     Static,
 )
-from textual.visual import VisualType
 from textual.widgets.option_list import Option
 
 from motor.adapters.estado.postgres import PostgresEstado
@@ -110,7 +109,7 @@ class ResultadoModal(ModalScreen[None]):
     exigir uma troca de versao para reconstrui-la.
     """
 
-    BINDINGS = [("escape,enter,q", "dismiss", "Fechar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape,enter,q", "dismiss", "Fechar")]
     DEFAULT_CSS = """
     ResultadoModal { align: center middle; }
     ResultadoModal > VerticalScroll {
@@ -140,7 +139,7 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
     caminho de erro normal do app, com o modal ja fechado.
     """
 
-    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
     DEFAULT_CSS = """
     CadastroModal { align: center middle; }
     CadastroModal > Vertical {
@@ -199,7 +198,7 @@ class PisoModal(ModalScreen["str | None"]):
     erro normal do app, como no cadastro.
     """
 
-    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
     DEFAULT_CSS = """
     PisoModal { align: center middle; }
     PisoModal > Vertical {
@@ -264,7 +263,7 @@ class AbortarModal(ModalScreen[bool]):
     operador. O resto do app so escreve o que da para refazer sozinho.
     """
 
-    BINDINGS = [("escape", "recusar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "recusar", "Cancelar")]
     DEFAULT_CSS = """
     AbortarModal { align: center middle; }
     AbortarModal > Vertical {
@@ -310,7 +309,7 @@ class ConfirmarModal(ModalScreen[bool]):
     momento em que ele decide, nao num modal que ele fechou dois cliques atras.
     """
 
-    BINDINGS = [("escape", "recusar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "recusar", "Cancelar")]
     DEFAULT_CSS = """
     ConfirmarModal { align: center middle; }
     ConfirmarModal > Vertical {
@@ -380,7 +379,7 @@ class CriarModal(ModalScreen["str | None"]):
     branch, e a branch e justamente o que ainda nao existe.
     """
 
-    BINDINGS = [("escape", "cancelar", "Cancelar")]
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
     DEFAULT_CSS = """
     CriarModal { align: center middle; }
     CriarModal > Vertical {
@@ -535,7 +534,7 @@ class PainelProgresso(Static):
 
 
 class MotorTUI(App[None]):
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         ("q", "quit", "Sair"),
         ("v", "verificar", "Verificar"),
         ("u", "atualizar", "Atualizar"),
@@ -1475,7 +1474,7 @@ def run_tui() -> None:
 def _resumo(status: VersionStatus) -> Text:
     return Text.assemble(
         ("Escopo ", "dim"),
-        (f"+{len(status.tasks_novas)} −{len(status.tasks_removidas)}", "bold"),
+        (f"+{len(status.tasks_novas)} −{len(status.tasks_removidas)}", "bold"),  # noqa: RUF001 - sinal de menos tipografico, par do "+"
         ("  ·  Git ", "dim"),
         (f"{len(status.faltantes)} faltantes", "bold"),
         (" · ", "dim"),

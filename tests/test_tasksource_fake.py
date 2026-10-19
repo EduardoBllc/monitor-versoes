@@ -16,7 +16,7 @@ def test_fake_task_source_fetch():
 
 def test_fake_task_source_erro():
     f = FakeTaskSource()
-    f.err = Exception("falha simulada")
+    f.err = RuntimeError("falha simulada")
 
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         f.fetch("13.7.0")

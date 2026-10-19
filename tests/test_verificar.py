@@ -710,10 +710,10 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
 # ancestralidade da base" — e falsa aqui: a base de uma X.0.0 e o master no
 # ponto de corte, nao o master de agora.
 
-JAN = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
-MAR = datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
-ABR = datetime.datetime(2026, 4, 1, tzinfo=datetime.timezone.utc)
-MAI = datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc)
+JAN = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+MAR = datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC)
+ABR = datetime.datetime(2026, 4, 1, tzinfo=datetime.UTC)
+MAI = datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
 
 
 def _git_com_liberada_fora_da_base() -> FakeGit:
