@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+import io
 from functools import partial
 from pathlib import Path
 from threading import Event
@@ -42,7 +43,7 @@ def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatu
 
 
 def _texto(renderable) -> str:
-    console = Console(record=True, width=120, color_system=None)
+    console = Console(file=io.StringIO(), record=True, width=120, color_system=None)
     console.print(renderable)
     return console.export_text()
 

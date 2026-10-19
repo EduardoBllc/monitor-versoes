@@ -44,7 +44,10 @@ def _fases(relatos: list[Progresso]) -> list[tuple[str, int, int]]:
 def _renderizado(renderable, *, estilos: bool = False) -> str:
     # com estilos quando o que muda e cor, nao caractere: e o caso do pulso.
     console = Console(
-        record=True, width=80, color_system="truecolor" if estilos else None
+        file=io.StringIO(),
+        record=True,
+        width=80,
+        color_system="truecolor" if estilos else None,
     )
     console.print(renderable)
     return console.export_text(styles=estilos)
