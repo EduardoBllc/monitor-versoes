@@ -15,7 +15,7 @@ install:
 	cp -n .env.example .env
 
 db:
-	docker compose up -d
+	docker compose up -d --wait
 
 migrate:
 	uv run alembic upgrade head
@@ -28,7 +28,7 @@ setup:
 	$(DEV) pre_commit install
 
 db-dev:
-	docker compose --env-file .env.development up -d
+	docker compose --env-file .env.development up -d --wait
 
 # set -a exporta as variáveis do arquivo: o load_dotenv() do Alembic não
 # sobrescreve variável já presente, então o .env de produção não entra.

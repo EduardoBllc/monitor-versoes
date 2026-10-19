@@ -54,7 +54,7 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 | Sintoma | Causa e saída |
 | --- | --- |
 | `uv run pytest` morre na coleta com `SyntaxError: future feature annotations is not defined` | Um `VIRTUAL_ENV` de outro projeto (Python antigo) vazou para o shell e o `uv` o prefere ao `.venv`. Não é erro de código. Use `make` (ele faz `unexport VIRTUAL_ENV`), ou `unset VIRTUAL_ENV`, ou chame `./.venv/bin/python -m pytest` (idem `mypy`, `ruff`, `alembic`). Sem `.venv`: `unset VIRTUAL_ENV; uv sync --all-extras`. |
-| `docker compose up -d` subiu, mas não é o banco de desenvolvimento | Sem `--env-file`, o compose lê `.env` (produção, porta 5433). Desenvolvimento é `make db-dev`, ou `docker compose --env-file .env.development up -d`. |
+| `docker compose up -d` subiu, mas não é o banco de desenvolvimento | Sem `--env-file`, o compose lê `.env` (produção, porta 5433). Desenvolvimento é `make db-dev`, ou `docker compose --env-file .env.development up -d --wait`. |
 | `alembic upgrade head` migrou o banco errado | O `load_dotenv()` do Alembic não sobrescreve variável já presente no ambiente — e sem nada exportado lê `.env`. Use `make migrate-dev`, ou exporte antes: `set -a; . ./.env.development; set +a; ./.venv/bin/python -m alembic upgrade head`. |
 
 ## Fluxo
