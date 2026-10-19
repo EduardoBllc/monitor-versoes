@@ -28,8 +28,8 @@ a documentação. O conteúdo está nas fontes abaixo, não aqui.
   sem acento; comentários com acento liberado.
 - **Sem `CLAUDE.md`**, em nenhum nível do repo. O Claude Code só lê o `AGENTS.md`
   quando não há `CLAUDE.md`.
-- **Antes de dar um trabalho por pronto, rode o portão** (ruff, mypy, pytest —
-  comandos no [README.md](README.md)) e relate o resultado. Falha de ambiente
-  se declara, não se esconde nem se contorna.
+- **Antes de dar um trabalho por pronto, rode o portão** (`make check`, ver
+  [CONTRIBUTING.md](CONTRIBUTING.md#verificações)) e relate o resultado. Falha
+  de ambiente se declara, não se esconde nem se contorna.
 - **Código e doc divergem?** Não escolha um lado por reflexo: investigue a
   intenção (histórico, issue, decisão) e corrija o que estiver errado.
