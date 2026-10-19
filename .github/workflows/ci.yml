@@ -18,18 +18,22 @@ jobs:
       # Cada etapa reporta sozinha: um format quebrado nao esconde o pytest.
       fail-fast: false
       matrix:
+        # Cada etapa e um alvo do Makefile; `make check` roda os mesmos alvos,
+        # na mesma ordem. O comando vive so no Makefile.
         include:
           - etapa: ruff format
-            comando: ruff format --check .
+            alvo: fmt-check
           - etapa: ruff check
-            comando: ruff check .
+            alvo: lint
           - etapa: mypy
-            comando: mypy
+            alvo: typecheck
           - etapa: pytest
-            # -rs lista o motivo de cada skip: integracao pulada aparece no log.
-            comando: pytest -rs
+            alvo: test
+    env:
+      # O `uv run` do Makefile falha em vez de reescrever um uv.lock desatualizado.
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.0
       - run: uv sync --all-extras --locked --python 3.14
-      - run: ./.venv/bin/python -m ${{ matrix.comando }}
+      - run: make ${{ matrix.alvo }}
