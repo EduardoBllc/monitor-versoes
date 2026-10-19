@@ -17,6 +17,7 @@ dev = [
     "mypy",
     "testcontainers[postgres]",
     "ruff>=0.17.1",
+    "pre-commit>=4.7.0",
 ]
 
 [project.scripts]
