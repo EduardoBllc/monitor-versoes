@@ -91,13 +91,18 @@ Um subagente redator por issue, com [spec.md](spec.md) ou [plano.md](plano.md). 
 3. a rodada repassa a crítica ao mesmo redator (SendMessage), que corrige o arquivo;
 4. a rodada publica e troca a label. Não há segunda revisão.
 
-**Publicar a spec.** A descrição original fica intacta; `## Spec` é sempre a última
-seção do corpo, e uma revisão a substitui:
+**Publicar a spec.** O resto do corpo fica intacto. A spec usa só subseções `###`, então
+ela vai de `## Spec` até o próximo `## ` (ou o fim). Uma revisão substitui só esse
+trecho, e a primeira publicação acrescenta a spec ao fim:
 
 ```bash
 gh issue view N --json body --jq .body > corpo.md
-awk '/^## Spec$/{exit} {print}' corpo.md > novo.md   # tudo antes da spec antiga
-cat spec.md >> novo.md                                # spec.md começa com "## Spec"
+if grep -q '^## Spec$' corpo.md; then
+  awk -v f=spec.md '/^## Spec$/{while((getline l<f)>0)print l; skip=1; next}
+    skip && /^## /{skip=0} !skip' corpo.md > novo.md
+else
+  { cat corpo.md; echo; cat spec.md; } > novo.md     # spec.md começa com "## Spec"
+fi
 gh issue edit N --body-file novo.md
 ```
 

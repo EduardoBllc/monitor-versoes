@@ -13,7 +13,7 @@ que começa com `## Spec`; a rodada publica no corpo.
 
 ## Formato
 
-Use a spec da issue #72 como exemplo de tom e granularidade. A seção traz:
+A seção traz, nesta ordem:
 
 - **Comportamento:** o que muda para quem usa, em subseções `###` quando houver partes
   distintas. Tabela quando a regra for uma matriz.
@@ -21,7 +21,8 @@ Use a spec da issue #72 como exemplo de tom e granularidade. A seção traz:
 - **`### Critérios de aceite`:** verificáveis, um por item.
 - Última linha da seção: `Plano: necessário, porque…` ou `Plano: dispensável, porque…`.
 
-Tudo isso fica dentro de `## Spec`, que é a última seção do corpo.
+Tudo isso fica dentro de `## Spec`, só com subseções `###`: um `## ` dentro dela seria
+lido como o fim da spec e a próxima revisão o preservaria fora dela.
 
 Spec diz o quê e por quê, não como: nada de passo a passo de implementação. Decisão que
 só o dono pode tomar vira pergunta explícita na spec, não suposição.

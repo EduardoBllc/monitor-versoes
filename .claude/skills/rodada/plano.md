@@ -13,12 +13,22 @@ arquivo; a rodada o publica como comentário.
 
 ## Formato
 
-Siga a skill superpowers:writing-plans: tarefas pequenas, arquivos exatos, passos em
-checkbox, teste antes do código, `make check` e commit ao fim de cada tarefa. O plano da
-issue #72 é o exemplo de formato.
+O arquivo começa com `<!-- rodada:plano -->` na primeira linha, seguido de:
 
-O arquivo começa com `<!-- rodada:plano -->` na primeira linha, seguido de
-`# Plano — <título da issue>`.
+- `# Plano — <título da issue>`, com **Objetivo** (uma frase), **Arquitetura** (duas ou
+  três) e **Spec:** `corpo desta issue (#N)`.
+- `## Restrições globais`: os valores exatos que a spec fixa e valem para todas as
+  tarefas.
+- `## Pontos de atenção na revisão`: as entradas ou falhas que a spec implica e nenhum
+  teste cobre, uma por linha.
+- `### Tarefa N: <nome>`, cada uma com **Arquivos** (criar, modificar e testar, com o
+  caminho exato) e passos em checkbox. Cada passo é uma ação com resultado verificável:
+  o teste com suas asserções, a assinatura do código, ou o comando e a saída esperada.
+  A tarefa termina com `make check` verde e um commit.
+
+O plano decide o que o executor não decidiria sozinho (arquivos, nomes, assinaturas,
+valores, testes) e não transcreve o código. Se a skill superpowers:writing-plans estiver
+disponível, ela detalha esse formato; este arquivo basta sem ela.
 
 O plano cobre só a spec. O que ela não pede não entra; ambiguidade da spec vira pergunta
 no topo do plano, não suposição.
