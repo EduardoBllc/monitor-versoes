@@ -16,7 +16,8 @@ Regras invioláveis:
 - Só issues. Pull requests nunca são processados.
 - No máximo 3 subagentes ao mesmo tempo.
 - Todo comentário da rodada começa com o marcador `<!-- rodada:<papel> -->`
-  (`triagem`, `plano`, `travada`). É ele que diz o que a rodada já escreveu.
+  (`triagem`, `plano`, `travada`, `trava`). É ele que diz o que a rodada já escreveu.
+- Cada rodada gera, ao começar, um id próprio: `date -u +%Y%m%dT%H%M%SZ`-`$RANDOM`.
 
 Nos comandos, `{owner}` e `{repo}` ficam literais (o `gh api` os preenche) e `{dono}` é
 `gh repo view --json owner --jq .owner.login`.
@@ -51,13 +52,46 @@ Pule a issue, e diga o motivo no relatório, quando:
 
 | Estado | Passo |
 | --- | --- |
-| `rascunho` | Triagem (seção 5), se a regra de repetição deixar. |
-| `elaborada`, `spec-ajustes` | Spec (seção 6). → `spec-em-revisão` |
-| `spec-aprovada`, `plano-ajustes` | Plano (seção 6). → `plano-em-revisão` |
-| `aguardando-execução` | Execução (seção 7). → `em-execução` |
-| `spec-em-revisão`, `plano-em-revisão`, `em-execução` | Nada; esperando o dono ou o PR. |
+| `rascunho` | Triagem (seção 6), se a regra de repetição deixar. |
+| `elaborada`, `spec-ajustes` | Trava em `spec-em-elaboração` (seção 5); spec (seção 7). → `spec-em-revisão` |
+| `spec-aprovada`, `plano-ajustes` | Trava em `plano-em-elaboração`; plano (seção 7). → `plano-em-revisão` |
+| `aguardando-execução` | Trava em `em-execução`; execução (seção 8). |
+| `spec-em-elaboração`, `plano-em-elaboração`, `em-execução` | Só a checagem de trava esquecida (seção 5). |
+| `spec-em-revisão`, `plano-em-revisão` | Nada; esperando o dono. |
 
-## 5. Triagem
+## 5. Trava
+
+Os estados `spec-em-elaboração`, `plano-em-elaboração` e `em-execução` dizem que um
+agente está trabalhando. O comentário de trava diz qual rodada e de onde a issue veio.
+Ele existe enquanto o agente trabalha, e só nesse intervalo.
+
+**Pegar a trava**, antes de despachar qualquer subagente:
+
+1. troque a label do estado atual para o estado em andamento (seção 9);
+2. comente `<!-- rodada:trava <id da rodada> <estado anterior> -->`;
+3. releia os comentários e ache os de trava criados há menos de 2 horas:
+
+   ```bash
+   gh api repos/{owner}/{repo}/issues/N/comments --paginate \
+     --jq '.[] | select(.body | startswith("<!-- rodada:trava ")) | [.id, .created_at, .body] | @tsv'
+   ```
+
+4. se o de menor `id` não for o seu, outra rodada chegou antes: apague o seu
+   (`gh api -X DELETE repos/{owner}/{repo}/issues/comments/<id>`), não mexa na label e
+   relate "perdeu a trava".
+
+Labels não têm compare-and-set no GitHub; a ordem dos comentários é o desempate.
+
+**Soltar a trava:** apague o comentário de trava ao publicar a spec ou o plano, ao abrir
+o PR ou ao registrar uma falha (seção 10).
+
+**Trava esquecida:** se a issue está num estado em andamento e o comentário de trava tem
+mais de 2 horas, o agente provavelmente morreu. Não retome nem solte: relate
+`#N  trava esquecida desde <created_at>, veio de <estado anterior>`. O dono apaga o
+comentário e devolve a label. Issue em `em-execução` sem comentário de trava tem PR
+aberto e não é esquecida.
+
+## 6. Triagem
 
 **Repetição.** Triagem só roda se a issue nunca foi triada, ou se mudou depois da
 última triagem. Seja `T` o `created_at` do último comentário `rodada:triagem`:
@@ -81,7 +115,7 @@ texto do comentário. A rodada publica:
   `--remove-label ia:elaborada` se ela estiver lá;
 - completa: o comentário com o porquê e `gh issue edit N --add-label ia:elaborada`.
 
-## 6. Spec e plano
+## 7. Spec e plano
 
 Um subagente redator por issue, com [spec.md](spec.md) ou [plano.md](plano.md). O ciclo:
 
@@ -89,7 +123,8 @@ Um subagente redator por issue, com [spec.md](spec.md) ou [plano.md](plano.md). 
 2. um subagente **novo** roda com [revisor.md](revisor.md), recebendo só o documento e a
    issue;
 3. a rodada repassa a crítica ao mesmo redator (SendMessage), que corrige o arquivo;
-4. a rodada publica e troca a label. Não há segunda revisão.
+4. a rodada publica, troca a label para `*-em-revisão` e solta a trava. Não há segunda
+   revisão.
 
 **Publicar a spec.** O resto do corpo fica intacto. A spec usa só subseções `###`, então
 ela vai de `## Spec` até o próximo `## ` (ou o fim). Uma revisão substitui só esse
@@ -115,13 +150,14 @@ gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> -F body=@plano.md   # 
 gh issue comment N --body-file plano.md                                # se não achou
 ```
 
-## 7. Execução
+## 8. Execução
 
-1. Antes de despachar, troque a label para `estado:em-execução`. Ela é a trava.
-2. Um subagente por issue, com `isolation: "worktree"` e [execucao.md](execucao.md).
-3. Ele devolve a URL do PR ou o motivo da falha.
+1. Com a trava pega (seção 5), um subagente por issue, com `isolation: "worktree"` e
+   [execucao.md](execucao.md).
+2. Ele devolve a URL do PR ou o motivo da falha.
+3. Com o PR aberto, a issue fica em `em-execução` e a rodada solta a trava.
 
-## 8. Troca de label
+## 9. Troca de label
 
 Sempre num só comando, removendo a anterior:
 
@@ -132,16 +168,16 @@ gh issue edit N --remove-label "estado:<anterior>" --add-label "estado:<nova>"
 Ao sair de `estado:elaborada`, inclua `--remove-label ia:elaborada` se ela estiver na
 issue. Issue sem label `estado:` (rascunho implícito) não tem o que remover.
 
-## 9. Falha
+## 10. Falha
 
 Portão vermelho, spec ambígua na execução, conflito, subagente sem resultado:
 
 1. comente `<!-- rodada:travada -->` com o motivo;
 2. aplique `ia:travada`;
-3. volte a label ao estado anterior ao passo (na execução, `em-execução` →
-   `aguardando-execução`).
+3. volte a label ao estado anterior registrado no comentário de trava;
+4. solte a trava.
 
-## 10. Relatório
+## 11. Relatório
 
 Uma linha por issue tocada ou pulada:
 

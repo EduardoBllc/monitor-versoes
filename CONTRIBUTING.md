@@ -85,14 +85,16 @@ próximo portão humano. Como a rodada trabalha está em
 stateDiagram-v2
     [*] --> rascunho: dono cria
     rascunho --> elaborada: dono
-    elaborada --> spec_em_revisao: IA escreve a spec
+    elaborada --> spec_em_elaboracao: rodada pega a issue
+    spec_ajustes --> spec_em_elaboracao: rodada pega a issue
+    spec_em_elaboracao --> spec_em_revisao: IA publica a spec
     spec_em_revisao --> spec_ajustes: dono comenta
-    spec_ajustes --> spec_em_revisao: IA revisa a spec
     spec_em_revisao --> spec_aprovada: dono pede plano
     spec_em_revisao --> aguardando_execucao: dono dispensa o plano
-    spec_aprovada --> plano_em_revisao: IA escreve o plano
+    spec_aprovada --> plano_em_elaboracao: rodada pega a issue
+    plano_ajustes --> plano_em_elaboracao: rodada pega a issue
+    plano_em_elaboracao --> plano_em_revisao: IA publica o plano
     plano_em_revisao --> plano_ajustes: dono comenta
-    plano_ajustes --> plano_em_revisao: IA revisa o plano
     plano_em_revisao --> aguardando_execucao: dono
     aguardando_execucao --> em_execucao: IA implementa e abre o PR
     em_execucao --> [*]: dono mergeia o PR
@@ -105,9 +107,11 @@ anterior.
 | --- | --- | --- |
 | `estado:rascunho` | dono, ao criar | em elaboração; a IA faz triagem |
 | `estado:elaborada` | **dono** | entra no fluxo; o agente escreve a spec |
+| `estado:spec-em-elaboração` | IA | agente escrevendo ou revisando a spec; serve de trava |
 | `estado:spec-em-revisão` | IA | spec no corpo, já revisada pela IA, esperando o dono |
 | `estado:spec-ajustes` | **dono** (+ comentário) | o agente revisa a spec com base nos comentários |
 | `estado:spec-aprovada` | **dono** | o agente escreve o plano |
+| `estado:plano-em-elaboração` | IA | agente escrevendo ou revisando o plano; serve de trava |
 | `estado:plano-em-revisão` | IA | plano em comentário, já revisado pela IA, esperando o dono |
 | `estado:plano-ajustes` | **dono** (+ comentário) | o agente revisa o plano |
 | `estado:aguardando-execução` | **dono** | pode executar, com ou sem plano |
@@ -127,3 +131,7 @@ Regras gerais:
 - Ao aprovar a spec, o dono decide o plano pela label que aplica: `spec-aprovada` pede
   plano, `aguardando-execução` dispensa.
 - A issue fecha no merge do PR, via `Closes #N`.
+- Os estados em andamento (`spec-em-elaboração`, `plano-em-elaboração`, `em-execução`)
+  são travas: a rodada só os aplica no momento de despachar o agente, e duas rodadas
+  nunca trabalham na mesma issue. Trava parada há mais de 2 horas aparece no relatório
+  da rodada; quem a solta é o dono.
