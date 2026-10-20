@@ -69,16 +69,20 @@ Ele existe enquanto o agente trabalha, e só nesse intervalo.
 
 **Pegar a trava**, antes de despachar qualquer subagente:
 
-1. troque a label do estado atual para o estado em andamento (seção 9);
-2. comente `<!-- rodada:trava <id da rodada> <estado anterior> -->`;
-3. releia os comentários e ache os de trava criados há menos de 2 horas:
+1. releia as labels (`gh issue view N --json labels`). Se o estado não é mais o da
+   coleta, outra rodada ou o dono mexeu: não pegue a trava e siga o despacho do estado
+   novo;
+2. troque a label do estado atual para o estado em andamento (seção 9);
+3. comente `<!-- rodada:trava <id da rodada> <estado anterior> -->`, com o estado anterior
+   escrito como a label inteira (`estado:spec-ajustes`), que é o que a seção 10 devolve;
+4. releia os comentários e ache os de trava criados há menos de 2 horas:
 
    ```bash
    gh api repos/{owner}/{repo}/issues/N/comments --paginate \
      --jq '.[] | select(.body | startswith("<!-- rodada:trava ")) | [.id, .created_at, .body] | @tsv'
    ```
 
-4. se o de menor `id` não for o seu, outra rodada chegou antes: apague o seu
+5. se o de menor `id` não for o seu, outra rodada chegou antes: apague o seu
    (`gh api -X DELETE repos/{owner}/{repo}/issues/comments/<id>`), não mexa na label e
    relate "perdeu a trava".
 
