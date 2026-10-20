@@ -1,0 +1,189 @@
+---
+name: rodada
+description: Use quando o dono pedir uma rodada, `/rodada`, para processar issues ou avançar issues do monitor-versoes pelo ciclo de labels `estado:` (triagem, spec, plano, execução). Aceita milestone ou `#N` como filtro.
+---
+
+# Rodada
+
+Avança cada issue aberta **um passo** no [ciclo da issue](../../../CONTRIBUTING.md#ciclo-da-issue)
+e para no próximo portão humano. O significado de cada label está lá; aqui está só o
+algoritmo.
+
+Regras invioláveis:
+
+- **Nunca faça merge.** A rodada para no PR; o dono mergeia.
+- Um passo por issue por rodada.
+- Só issues. Pull requests nunca são processados.
+- No máximo 3 subagentes ao mesmo tempo.
+- Todo comentário da rodada começa com o marcador `<!-- rodada:<papel> -->`
+  (`triagem`, `plano`, `travada`, `trava`). É ele que diz o que a rodada já escreveu.
+- Cada rodada gera, ao começar, um id próprio: `date -u +%Y%m%dT%H%M%SZ`-`$RANDOM`.
+
+Nos comandos, `{owner}` e `{repo}` ficam literais (o `gh api` os preenche) e `{dono}` é
+`gh repo view --json owner --jq .owner.login`.
+
+## 1. Argumento
+
+- milestone: `gh issue list --state open --milestone "<milestone>" ...`;
+- `#N`: só a issue N. Se `gh api repos/{owner}/{repo}/issues/N --jq .pull_request` não vier
+  vazio, é PR: avise e pare;
+- nenhum: todas as issues abertas.
+
+## 2. Coleta
+
+```bash
+gh issue list --state open --json number,title,labels,body,updatedAt --limit 200
+gh api repos/{owner}/{repo}/issues/N/dependencies/blocked_by --jq '[.[] | select(.state == "open")] | length'
+```
+
+O estado é a label `estado:` da issue. Issue sem nenhuma está fora do fluxo: descarte-a
+em silêncio, sem citá-la no relatório. Com `#N` explícito, diga que ela não tem label
+`estado:` e pare.
+
+## 3. Filtro
+
+Pule a issue, e diga o motivo no relatório, quando:
+
+- tem `ia:travada`;
+- tem bloqueio aberto (contagem acima maior que zero);
+- tem mais de uma label `estado:`. Não adivinhe qual vale: comente
+  `<!-- rodada:travada -->` pedindo ao dono que deixe só uma, aplique `ia:travada` e não
+  mexa nas labels `estado:`. Assim as rodadas seguintes não repetem o comentário.
+
+## 4. Despacho
+
+| Estado | Passo |
+| --- | --- |
+| `rascunho` | Triagem (seção 6), se a regra de repetição deixar. |
+| `elaborada`, `spec-ajustes` | Trava em `spec-em-elaboração` (seção 5); spec (seção 7). → `spec-em-revisão` |
+| `spec-aprovada`, `plano-ajustes` | Trava em `plano-em-elaboração`; plano (seção 7). → `plano-em-revisão` |
+| `aguardando-execução` | Trava em `em-execução`; execução (seção 8). |
+| `spec-em-elaboração`, `plano-em-elaboração`, `em-execução` | Só a checagem de trava esquecida (seção 5). |
+| `spec-em-revisão`, `plano-em-revisão` | Nada; esperando o dono. |
+
+## 5. Trava
+
+Os estados `spec-em-elaboração`, `plano-em-elaboração` e `em-execução` dizem que um
+agente está trabalhando. O comentário de trava diz qual rodada e de onde a issue veio.
+Ele existe enquanto o agente trabalha, e só nesse intervalo.
+
+**Pegar a trava**, antes de despachar qualquer subagente:
+
+1. troque a label do estado atual para o estado em andamento (seção 9);
+2. comente `<!-- rodada:trava <id da rodada> <estado anterior> -->`;
+3. releia os comentários e ache os de trava criados há menos de 2 horas:
+
+   ```bash
+   gh api repos/{owner}/{repo}/issues/N/comments --paginate \
+     --jq '.[] | select(.body | startswith("<!-- rodada:trava ")) | [.id, .created_at, .body] | @tsv'
+   ```
+
+4. se o de menor `id` não for o seu, outra rodada chegou antes: apague o seu
+   (`gh api -X DELETE repos/{owner}/{repo}/issues/comments/<id>`), não mexa na label e
+   relate "perdeu a trava".
+
+Labels não têm compare-and-set no GitHub; a ordem dos comentários é o desempate.
+
+**Soltar a trava:** apague o comentário de trava ao publicar a spec ou o plano, ao abrir
+o PR ou ao registrar uma falha (seção 10).
+
+**Trava esquecida:** se a issue está num estado em andamento e o comentário de trava tem
+mais de 2 horas, o agente provavelmente morreu. Não retome nem solte: relate
+`#N  trava esquecida desde <created_at>, veio de <estado anterior>`. O dono apaga o
+comentário e devolve a label. Issue em `em-execução` sem comentário de trava tem PR
+aberto e não é esquecida.
+
+## 6. Triagem
+
+**Repetição.** Triagem só roda se a issue nunca foi triada, ou se mudou depois da
+última triagem. Seja `T` o `created_at` do último comentário `rodada:triagem`:
+
+```bash
+gh api repos/{owner}/{repo}/issues/N/comments --paginate \
+  --jq '.[] | [.created_at, .user.login, (.body | startswith("<!-- rodada:triagem -->"))] | @tsv'
+gh api graphql -F owner='{owner}' -F name='{repo}' -F n=N \
+  -f query='query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){issue(number:$n){lastEditedAt}}}' \
+  --jq .data.repository.issue.lastEditedAt
+```
+
+Refaça se não há `T`, se `lastEditedAt > T` (vazio = nunca editada) ou se `{dono}` comentou depois de `T`.
+Mudança só de label não conta.
+
+**Execução.** Um único subagente, em lote, com [triagem.md](triagem.md) e a lista das
+issues (corpo e comentários). Ele devolve, por issue, `completa` ou `incompleta` e o
+texto do comentário. A rodada publica:
+
+- incompleta: `gh issue comment N --body-file <arquivo>` (o que falta) e
+  `--remove-label ia:elaborada` se ela estiver lá;
+- completa: o comentário com o porquê e `gh issue edit N --add-label ia:elaborada`.
+
+## 7. Spec e plano
+
+Um subagente redator por issue, com [spec.md](spec.md) ou [plano.md](plano.md). O ciclo:
+
+1. o redator escreve o documento num arquivo e devolve o caminho;
+2. um subagente **novo** roda com [revisor.md](revisor.md), recebendo só o documento e a
+   issue;
+3. a rodada repassa a crítica ao mesmo redator (SendMessage), que corrige o arquivo;
+4. a rodada publica, troca a label para `*-em-revisão` e solta a trava. Não há segunda
+   revisão.
+
+**Publicar a spec.** O resto do corpo fica intacto. A spec usa só subseções `###`, então
+ela vai de `## Spec` até o próximo `## ` (ou o fim). Uma revisão substitui só esse
+trecho, e a primeira publicação acrescenta a spec ao fim:
+
+```bash
+gh issue view N --json body --jq .body > corpo.md
+if grep -q '^## Spec$' corpo.md; then
+  awk -v f=spec.md '/^## Spec$/{while((getline l<f)>0)print l; skip=1; next}
+    skip && /^## /{skip=0} !skip' corpo.md > novo.md
+else
+  { cat corpo.md; echo; cat spec.md; } > novo.md     # spec.md começa com "## Spec"
+fi
+gh issue edit N --body-file novo.md
+```
+
+**Publicar o plano.** Um só comentário de plano por issue; uma revisão o edita:
+
+```bash
+gh api repos/{owner}/{repo}/issues/N/comments --paginate \
+  --jq '.[] | select(.body | startswith("<!-- rodada:plano -->")) | .id' | tail -1
+gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> -F body=@plano.md   # se achou
+gh issue comment N --body-file plano.md                                # se não achou
+```
+
+## 8. Execução
+
+1. Com a trava pega (seção 5), um subagente por issue, com `isolation: "worktree"` e
+   [execucao.md](execucao.md).
+2. Ele devolve a URL do PR ou o motivo da falha.
+3. Com o PR aberto, a issue fica em `em-execução` e a rodada solta a trava.
+
+## 9. Troca de label
+
+Sempre num só comando, removendo a anterior:
+
+```bash
+gh issue edit N --remove-label "estado:<anterior>" --add-label "estado:<nova>"
+```
+
+Ao sair de `estado:elaborada`, inclua `--remove-label ia:elaborada` se ela estiver na
+issue.
+
+## 10. Falha
+
+Portão vermelho, spec ambígua na execução, conflito, subagente sem resultado:
+
+1. comente `<!-- rodada:travada -->` com o motivo;
+2. aplique `ia:travada`;
+3. volte a label ao estado anterior registrado no comentário de trava;
+4. solte a trava.
+
+## 11. Relatório
+
+Uma linha por issue tocada ou pulada:
+
+```
+#N  <estado anterior> → <estado novo>  <link do comentário, do corpo ou do PR>
+#N  pulada: <motivo>
+```
