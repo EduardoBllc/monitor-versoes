@@ -137,3 +137,4 @@ Regras gerais:
   são travas: a rodada só os aplica no momento de despachar o agente, e duas rodadas
   nunca trabalham na mesma issue. Trava parada há mais de 2 horas aparece no relatório
   da rodada; quem a solta é o dono.
+Ensaio
