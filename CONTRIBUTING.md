@@ -60,7 +60,7 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 ## Fluxo
 
 1. **Trabalho nasce na issue.** A spec vai no corpo da issue; o plano, em comentário
-   nela.
+   nela. A issue avança pelo [ciclo da issue](#ciclo-da-issue).
 2. **Branch e PR.** A `main` é protegida: toda mudança entra por PR, e o merge exige os
    checks `ruff format`, `ruff check`, `mypy` e `pytest` verdes — para todos, dono
    incluído.
@@ -69,3 +69,58 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
    checklist. O Claude revisa o PR quando ele abre, e `@claude review`, comentado pelo
    dono, pede uma nova revisão; a revisão comenta e não bloqueia, e o merge continua
    humano.
+
+## Ciclo da issue
+
+A issue é elaborada, recebe spec, a spec é revisada, recebe plano (quando precisa), o
+plano é revisado, e só então é executada. O estado fica nas labels `estado:`; o dono
+dispara a rodada com `/rodada [milestone|#N]`, que avança cada issue um passo até o
+próximo portão humano. Como a rodada trabalha está em
+[.claude/skills/rodada/](.claude/skills/rodada/SKILL.md).
+
+```mermaid
+stateDiagram-v2
+    [*] --> rascunho: dono cria
+    rascunho --> elaborada: dono
+    elaborada --> spec_em_revisao: IA escreve a spec
+    spec_em_revisao --> spec_ajustes: dono comenta
+    spec_ajustes --> spec_em_revisao: IA revisa a spec
+    spec_em_revisao --> spec_aprovada: dono pede plano
+    spec_em_revisao --> aguardando_execucao: dono dispensa o plano
+    spec_aprovada --> plano_em_revisao: IA escreve o plano
+    plano_em_revisao --> plano_ajustes: dono comenta
+    plano_ajustes --> plano_em_revisao: IA revisa o plano
+    plano_em_revisao --> aguardando_execucao: dono
+    aguardando_execucao --> em_execucao: IA implementa e abre o PR
+    em_execucao --> [*]: dono mergeia o PR
+```
+
+As labels `estado:` são exclusivas entre si. Ao aplicar uma, o orquestrador remove a
+anterior.
+
+| Label | Quem aplica | Significado |
+| --- | --- | --- |
+| `estado:rascunho` | dono, ao criar | em elaboração; a IA faz triagem |
+| `estado:elaborada` | **dono** | entra no fluxo; o agente escreve a spec |
+| `estado:spec-em-revisão` | IA | spec no corpo, já revisada pela IA, esperando o dono |
+| `estado:spec-ajustes` | **dono** (+ comentário) | o agente revisa a spec com base nos comentários |
+| `estado:spec-aprovada` | **dono** | o agente escreve o plano |
+| `estado:plano-em-revisão` | IA | plano em comentário, já revisado pela IA, esperando o dono |
+| `estado:plano-ajustes` | **dono** (+ comentário) | o agente revisa o plano |
+| `estado:aguardando-execução` | **dono** | pode executar, com ou sem plano |
+| `estado:em-execução` | IA | agente trabalhando ou PR aberto; serve de trava |
+
+Duas labels ficam fora da máquina de estados e convivem com as `estado:`:
+
+| Label | Quem aplica | Significado |
+| --- | --- | --- |
+| `ia:elaborada` | IA | na triagem, a IA considera a issue pronta para entrar no fluxo |
+| `ia:travada` | IA | um passo falhou; as rodadas pulam a issue até o dono remover a label |
+
+Regras gerais:
+
+- Issue aberta sem nenhuma label `estado:` conta como `estado:rascunho`.
+- Issue com bloqueio aberto (`blocked_by`) não avança, seja qual for o estado.
+- Ao aprovar a spec, o dono decide o plano pela label que aplica: `spec-aprovada` pede
+  plano, `aguardando-execução` dispensa.
+- A issue fecha no merge do PR, via `Closes #N`.
