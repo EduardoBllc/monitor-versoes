@@ -68,7 +68,9 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
    issue com `Closes #N`. O [template](.github/pull_request_template.md) traz o
    checklist. O Claude revisa o PR quando ele abre, e `@claude review`, comentado pelo
    dono, pede uma nova revisão; a revisão comenta e não bloqueia, e o merge continua
-   humano.
+   humano. Quem ajusta o PR por causa de um comentário da revisão responde na thread
+   (o que mudou e em qual commit, ou por que não mudou) e a marca como resolvida quando
+   o ajuste a encerra.
 
 ## Ciclo da issue
 
