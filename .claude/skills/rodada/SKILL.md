@@ -36,7 +36,9 @@ gh issue list --state open --json number,title,labels,body,updatedAt --limit 200
 gh api repos/{owner}/{repo}/issues/N/dependencies/blocked_by --jq '[.[] | select(.state == "open")] | length'
 ```
 
-O estado é a label `estado:` da issue; sem nenhuma, conta como `estado:rascunho`.
+O estado é a label `estado:` da issue. Issue sem nenhuma está fora do fluxo: descarte-a
+em silêncio, sem citá-la no relatório. Com `#N` explícito, diga que ela não tem label
+`estado:` e pare.
 
 ## 3. Filtro
 
@@ -166,7 +168,7 @@ gh issue edit N --remove-label "estado:<anterior>" --add-label "estado:<nova>"
 ```
 
 Ao sair de `estado:elaborada`, inclua `--remove-label ia:elaborada` se ela estiver na
-issue. Issue sem label `estado:` (rascunho implícito) não tem o que remover.
+issue.
 
 ## 10. Falha
 

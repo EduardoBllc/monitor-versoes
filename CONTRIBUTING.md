@@ -126,7 +126,9 @@ Duas labels ficam fora da máquina de estados e convivem com as `estado:`:
 
 Regras gerais:
 
-- Issue aberta sem nenhuma label `estado:` conta como `estado:rascunho`.
+- Só entra na rodada a issue com uma label `estado:`. Sem ela, a issue fica fora do
+  fluxo e é tratada à mão; para trazê-la, o dono aplica `estado:rascunho` (ou o estado
+  em que ela já está). A revisão de IA dos PRs não depende disso e roda em todo PR.
 - Issue com bloqueio aberto (`blocked_by`) não avança, seja qual for o estado.
 - Ao aprovar a spec, o dono decide o plano pela label que aplica: `spec-aprovada` pede
   plano, `aguardando-execução` dispensa.
