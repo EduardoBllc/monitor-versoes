@@ -70,7 +70,8 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
    dono, pede uma nova revisão; a revisão comenta e não bloqueia, e o merge continua
    humano. Quem ajusta o PR por causa de um comentário da revisão responde na thread
    (o que mudou e em qual commit, ou por que não mudou) e a marca como resolvida quando
-   o ajuste a encerra.
+   o ajuste a encerra. Resposta escrita por IA termina com a linha
+   `🤖 _Resposta do Claude Code_`.
 
 ## Ciclo da issue
 
