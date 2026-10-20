@@ -66,4 +66,6 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
    incluído.
 3. **O PR descreve o que foi feito** — e o desvio do plano, quando houver — e fecha a
    issue com `Closes #N`. O [template](.github/pull_request_template.md) traz o
-   checklist.
+   checklist. O Claude revisa o PR quando ele abre, e `@claude review`, comentado pelo
+   dono, pede uma nova revisão; a revisão comenta e não bloqueia, e o merge continua
+   humano.
