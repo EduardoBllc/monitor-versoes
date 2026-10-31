@@ -148,7 +148,7 @@ jobs:
           claude_args: >-
             --max-turns 60
             --disallowedTools "Bash(gh pr merge:*)"
-            --allowedTools "Bash(gh:*),Bash(git:*),Bash(make:*),Bash(uv:*),Read,Edit,Write,Glob,Grep,Task,Agent"
+            --allowedTools "Bash(gh:*),Bash(git:*),Bash(make:*),Bash(uv:*),Bash(cd:*),Bash(cat:*),Bash(ls:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*),Bash(jq:*),Bash(echo:*),Bash(printf:*),Bash(mkdir:*),Read,Edit,Write,Glob,Grep,Task,Agent"
           prompt: |
             Repositório: ${{ github.repository }}
             Evento: ${{ github.event_name }}
