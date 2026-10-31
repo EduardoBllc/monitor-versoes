@@ -264,7 +264,7 @@ class PisoModal(ModalScreen["str | None"]):
 
     def _salvar(self) -> None:
         try:
-            piso = validar_versao(self.query_one("#piso-versao", Input).value.strip())
+            piso = validar_versao(self.query_one("#piso-versao", Input).value)
         except MotorError as erro:
             self.query_one("#piso-erro", Static).update(str(erro))
             return
