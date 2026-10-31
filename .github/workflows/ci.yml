@@ -13,7 +13,7 @@ jobs:
     # O nome do job e o nome do check que a protecao da main exige: mudar
     # `etapa` aqui exige atualizar o ruleset junto.
     name: ${{ matrix.etapa }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       # Cada etapa reporta sozinha: um format quebrado nao esconde o pytest.
       fail-fast: false
