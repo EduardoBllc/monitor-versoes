@@ -127,3 +127,7 @@ Regras gerais:
 - Na dúvida sobre o que o dono quis, o agente pergunta em vez de agir; se falhar, comenta o
   motivo, menciona o dono e para.
 - Localmente, `/agente #N` trata a issue como se o dono tivesse acabado de comentar nela.
+- Para depurar uma run, cada run guarda por 7 dias o artifact `execucao`: a execução
+  inteira, cifrada com [age](https://github.com/FiloSottile/age) para a chave pública em
+  `vars.AGENTE_LOG_CHAVE`. A chave privada fica só com o dono:
+  `gh run download <run> -n execucao && age -d -i <chave> execucao.json.age`.
