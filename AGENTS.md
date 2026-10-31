@@ -11,7 +11,7 @@ a documentação. O conteúdo está nas fontes abaixo, não aqui.
 | O quê, como instalar, usar, problemas comuns | [README.md](README.md) |
 | Como contribuir | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Ciclo da issue e significado das labels | [CONTRIBUTING.md](CONTRIBUTING.md#ciclo-da-issue) |
-| Como a rodada processa issues | [.claude/skills/rodada/](.claude/skills/rodada/SKILL.md) |
+| Como o agente processa issues | [.claude/skills/agente/](.claude/skills/agente/SKILL.md) |
 | Por quê (decisões) | [docs/decisoes/](docs/decisoes/) — ordem de leitura no `README.md` de lá |
 | Padrões de código | [docs/padroes/codigo.md](docs/padroes/codigo.md) |
 | Padrões de teste | [docs/padroes/testes.md](docs/padroes/testes.md) |
