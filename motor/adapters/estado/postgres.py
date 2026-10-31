@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NoReturn, TypeVar
 
-from sqlalchemy import Select, delete, select
+from sqlalchemy import Select, delete, inspect, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -55,6 +55,26 @@ def _repo_info(linha: models.Repo) -> RepoInfo:
 @dataclass
 class PostgresEstado:
     sessao: Session
+
+    def verificar_conexao(self) -> None:
+        """`SELECT 1`: o banco responde? Usado pelo `motor diagnostico`."""
+        try:
+            self.sessao.execute(text("SELECT 1"))
+        except DBAPIError as e:
+            self._traduzir_erro(e)
+
+    def revisao_migracao(self) -> str | None:
+        """`version_num` da tabela `alembic_version`; `None` se a tabela não
+        existe ou está vazia (banco sem migração)."""
+        try:
+            if not inspect(self.sessao.connection()).has_table("alembic_version"):
+                return None
+            revisao = self.sessao.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        except DBAPIError as e:
+            self._traduzir_erro(e)
+        return None if revisao is None else str(revisao)
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         # Nome canonico e alias dividem o mesmo espaco de nomes, entao as duas

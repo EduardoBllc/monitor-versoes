@@ -8,7 +8,8 @@ ver so `motor.ports`.
 consulta o git: `atualizar --abort` e `reconstruir-estado` recebem as mesmas
 fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
 Unica excecao deliberada: `resolver_repo`, porque o nome canonico e o
-`tickio_sistema_id` decidem *como* montar o resto.
+`tickio_sistema_id` decidem *como* montar o resto. O I/O do `motor diagnostico`
+vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
 """
 
 from __future__ import annotations

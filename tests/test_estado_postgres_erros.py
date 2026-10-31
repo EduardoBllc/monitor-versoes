@@ -165,3 +165,33 @@ def test_tipo_de_versao_invalido_no_banco_vira_resposta_invalida():
 
     with pytest.raises(RespostaInvalida, match="bugado"):
         PostgresEstado(sessao=cast(Session, sessao)).versao("vendabemweb", "13.34.0")
+
+
+# -- verificar_conexao (motor diagnostico) -----------------------------------
+
+
+class _SessaoExecuteFalha(_SessaoQueFalha):
+    def execute(self, stmt: object) -> object:
+        raise self.erro
+
+
+def test_verificar_conexao_sem_sqlstate_e_backend_indisponivel():
+    sessao = _SessaoExecuteFalha(
+        OperationalError("select 1", None, Exception("connection refused"))
+    )
+
+    with pytest.raises(BackendIndisponivel, match="docker compose up -d"):
+        PostgresEstado(sessao=_como_sessao(sessao)).verificar_conexao()
+
+
+def test_verificar_conexao_com_sqlstate_nao_e_backend_indisponivel():
+    sessao = _SessaoExecuteFalha(
+        OperationalError(
+            "select 1", None, _OrigComSqlstate("password authentication", "28P01")
+        )
+    )
+
+    with pytest.raises(MotorError) as e:
+        PostgresEstado(sessao=_como_sessao(sessao)).verificar_conexao()
+
+    assert not isinstance(e.value, BackendIndisponivel)

@@ -17,11 +17,17 @@ import pytest
 from motor.adapters.commitsource.bitbucket import (
     BitbucketPRCommitSource,
     parse_workspace_repo,
+    verificar_credenciais,
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.domain.types import RepoInfo
-from motor.errors import ErroDeEntrada, MotorError, RespostaInvalida
+from motor.errors import (
+    BackendIndisponivel,
+    ErroDeEntrada,
+    MotorError,
+    RespostaInvalida,
+)
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
@@ -712,3 +718,46 @@ def test_pr_com_prefixo_em_maiuscula_casa():
 
     hashes = [c.hash_origem for c in resultado.get("255514", [])]
     assert hashes == ["c1", "c2"], f"faltou a PR de titulo em caixa alta: {hashes}"
+
+
+# -- verificar_credenciais (motor diagnostico) --------------------------------
+
+
+def _cliente(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_verificar_credenciais_aceita_e_manda_basic():
+    vistos = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        vistos.append(request)
+        return httpx.Response(200, json={"uuid": "x"})
+
+    verificar_credenciais(
+        "tok", "a@b.c", base_url="http://bb/2.0", client=_cliente(handler)
+    )
+
+    assert len(vistos) == 1
+    assert str(vistos[0].url) == "http://bb/2.0/user"
+    assert vistos[0].headers["Authorization"] == "Basic YUBiLmM6dG9r"
+
+
+def test_verificar_credenciais_recusada():
+    with pytest.raises(BackendIndisponivel):
+        verificar_credenciais(
+            "tok",
+            "a@b.c",
+            base_url="http://bb/2.0",
+            client=_cliente(lambda r: httpx.Response(401)),
+        )
+
+
+def test_verificar_credenciais_sem_email_nao_faz_requisicao():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("nao deveria chamar a rede")
+
+    with pytest.raises(ErroDeEntrada):
+        verificar_credenciais(
+            "tok", "", base_url="http://bb/2.0", client=_cliente(handler)
+        )

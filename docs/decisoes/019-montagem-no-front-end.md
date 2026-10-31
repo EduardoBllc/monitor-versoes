@@ -17,6 +17,11 @@ passaria a falhar antes de começar. Por isso o `workspace/repo` do Bitbucket sa
 primeira busca, dentro do adapter, e não na construção. Única exceção deliberada:
 `resolver_repo`, porque o nome canônico e o `tickio_sistema_id` decidem _como_ montar o resto.
 
+`motor diagnostico` não abre exceção na montagem: o I/O dele (conexão ao banco, autenticação no
+Tickio e no Bitbucket) fica em `motor/diagnostico.py` e em métodos de verificação públicos dos
+adapters, e a montagem segue sem tocar rede nem banco. "Montar não é usar" vale para os demais
+comandos.
+
 Consequência de teste: as bordas de I/O se trocam em `motor.montagem`, não no front-end. Um
 `monkeypatch` no módulo do CLI não alcança mais a montagem da TUI, e é justamente esse o
 ponto — antes as duas se ligavam por um import de nome privado.

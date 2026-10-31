@@ -92,6 +92,7 @@ def test_help_descreve_as_acoes_da_tui():
     [
         (["--help"], ".env"),
         (["--env", "development", "--help"], ".env.development"),
+        (["--env", "development", "diagnostico", "--help"], ".env.development"),
     ],
 )
 def test_main_carrega_o_ambiente_escolhido_antes_do_parser(monkeypatch, argv, arquivo):
@@ -863,3 +864,39 @@ def test_verificar_nao_busca_no_tickio_versao_abaixo_do_piso_do_repo(
 
     # 13.33.0 esta aberta e seria fonte com o piso padrao
     assert buscadas == ["13.34.0"]
+
+
+# -- diagnostico --------------------------------------------------------------
+
+
+def test_diagnostico_esta_no_parser_sem_exigir_repo():
+    args = _build_parser().parse_args(["diagnostico"])
+
+    assert args.comando == "diagnostico"
+
+
+@pytest.mark.parametrize(("falha", "codigo"), [(False, 0), (True, 1)])
+def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
+    monkeypatch, capsys, falha, codigo
+):
+    from motor.diagnostico import Estado, Resultado
+
+    estado = Estado.FALHA if falha else Estado.OK
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    monkeypatch.setattr(cli, "head_do_alembic", lambda raiz: "rev")
+    monkeypatch.setattr(
+        cli,
+        "diagnosticar",
+        lambda *a, **k: [Resultado("Postgres", estado, "x", "docker compose up -d")],
+    )
+    monkeypatch.setattr(
+        cli, "abrir_sessao", lambda: pytest.fail("não abre sessão por conta própria")
+    )
+
+    if falha:
+        with pytest.raises(SystemExit) as saida:
+            main(["diagnostico"])
+        assert saida.value.code == codigo
+    else:
+        main(["diagnostico"])
+    assert estado.value in capsys.readouterr().out
