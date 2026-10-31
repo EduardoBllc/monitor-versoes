@@ -111,6 +111,14 @@ def diagnosticar(
     return resultados
 
 
+def _postgres_fora(erro: MotorError, dica: str) -> list[Resultado]:
+    """Postgres fora implica Migração não verificada."""
+    return [
+        _falha("Postgres", erro, dica),
+        Resultado("Migração", Estado.NAO_VERIFICADA, "Postgres indisponível"),
+    ]
+
+
 def _banco(
     abrir_sessao: Callable[[], AbstractContextManager[Session]],
     problemas_banco: list[str],
@@ -130,22 +138,14 @@ def _banco(
             try:
                 estado.verificar_conexao()
             except MotorError as e:
-                return [
-                    _falha("Postgres", e, dica_banco),
-                    Resultado(
-                        "Migração", Estado.NAO_VERIFICADA, "Postgres indisponível"
-                    ),
-                ]
+                return _postgres_fora(e, dica_banco)
             postgres = Resultado("Postgres", Estado.OK, "conexão funciona")
             try:
                 revisao = estado.revisao_migracao()
             except MotorError as e:
                 return [postgres, _falha("Migração", e, dica_banco)]
     except MotorError as e:
-        return [
-            _falha("Postgres", e, dica_banco),
-            Resultado("Migração", Estado.NAO_VERIFICADA, "Postgres indisponível"),
-        ]
+        return _postgres_fora(e, dica_banco)
     if revisao is None:
         migracao = Resultado(
             "Migração", Estado.FALHA, "banco sem migração aplicada", migrar
@@ -189,6 +189,7 @@ def _tickio(
         base_url=env["TICKIO_BASE_URL"],
         usuario=env["TICKIO_USER"],
         senha=env["TICKIO_PASSWORD"],
+        # Só autentica: o sistema_id não entra no login, então 0 é placeholder.
         sistema_id=0,
         client=cliente,
     )
