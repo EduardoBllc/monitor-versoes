@@ -119,6 +119,8 @@ Regras gerais:
   agente nunca executa sem a aprovação do portão.
 - `@claude review` pede só a "Revisão IA" (ver o [fluxo](#fluxo)) e não acorda o agente.
 - O merge é sempre do dono; o agente para no PR.
+- Mudança em `.claude/` ou `.github/workflows/` é `manual`: o Claude Code protege `.claude/`
+  e o App não tem a permissão Workflows, então o agente não consegue escrever ali.
 - A issue fecha no merge do PR, via `Closes #N`.
 - Na dúvida sobre o que o dono quis, o agente pergunta em vez de agir; se falhar, comenta o
   motivo, menciona o dono e para.
