@@ -130,4 +130,4 @@ Regras gerais:
 - Para depurar uma run, cada run guarda por 7 dias o artifact `execucao`: a execução
   inteira, cifrada com [age](https://github.com/FiloSottile/age) para a chave pública em
   `vars.AGENTE_LOG_CHAVE`. A chave privada fica só com o dono:
-  `gh run download <run> -n execucao && age -d -i <chave> execucao.json.age`.
+  `gh run download <run> -n execucao && age -d -i <chave> -o execucao.json execucao.json.age`.
