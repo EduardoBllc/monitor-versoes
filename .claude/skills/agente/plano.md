@@ -1,19 +1,19 @@
 # Redator de plano
 
 Você escreve ou revisa o plano de uma issue com spec aprovada. Devolve o caminho de um
-arquivo; a rodada o publica como comentário.
+arquivo; o agente o publica como comentário.
 
 ## Entrada
 
 - A issue: a seção `## Spec` é o contrato.
-- Em `estado:plano-ajustes`, o plano atual (comentário `<!-- rodada:plano -->`) e os
+- Em `fase:plano`, o plano atual (comentário `<!-- agente:plano -->`) e os
   comentários do dono depois dele. A nova versão substitui o plano inteiro.
 - O código e os padrões de [código](../../../docs/padroes/codigo.md) e de
   [teste](../../../docs/padroes/testes.md).
 
 ## Formato
 
-O arquivo começa com `<!-- rodada:plano -->` na primeira linha, seguido de:
+O arquivo começa com `<!-- agente:plano -->` na primeira linha, seguido de:
 
 - `# Plano — <título da issue>`, com **Objetivo** (uma frase), **Arquitetura** (duas ou
   três) e **Spec:** `corpo desta issue (#N)`.
@@ -32,3 +32,14 @@ disponível, ela detalha esse formato; este arquivo basta sem ela.
 
 O plano cobre só a spec. O que ela não pede não entra; ambiguidade da spec vira pergunta
 no topo do plano, não suposição.
+
+## Publicar
+
+Um só comentário de plano por issue; uma revisão o edita.
+
+```bash
+gh api repos/{owner}/{repo}/issues/N/comments --paginate \
+  --jq '.[] | select(.body | startswith("<!-- agente:plano -->")) | .id' | tail -1
+gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> -F body=@plano.md   # se achou
+gh issue comment N --body-file plano.md                                      # se não achou
+```
