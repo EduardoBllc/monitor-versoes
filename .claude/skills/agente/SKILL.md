@@ -56,9 +56,8 @@ Na dúvida sobre o que o dono quis, pergunte em vez de agir.
 
 ## Falha
 
-Portão vermelho, ambiguidade, conflito ou ferramenta negada: comente o motivo (na negação,
-o comando negado), mencione o dono e pare. A label não muda; o próximo comentário do dono
-acorda o agente de novo.
+Portão vermelho, ambiguidade ou conflito: comente o motivo, mencione o dono e pare. A
+label não muda; o próximo comentário do dono acorda o agente de novo.
 
 ## Uso local
 
