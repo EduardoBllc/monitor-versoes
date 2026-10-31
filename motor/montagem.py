@@ -71,8 +71,9 @@ def validar_nome_repo(valor: str) -> str:
 
 def validar_versao(valor: str) -> str:
     """Numero X.Y.Z, como o motor ordena versoes."""
-    chave(valor)
-    return valor
+    aparado = valor.strip()
+    chave(aparado)
+    return aparado
 
 
 def validar_sistema_id(valor: str) -> int:
