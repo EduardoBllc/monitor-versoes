@@ -1,0 +1,127 @@
+name: Agente
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  workflow_run:
+    workflows: ["Revisão IA"]
+    types: [completed]
+
+# Um agente por issue ou PR; o evento seguinte espera em vez de cancelar o que está em curso.
+concurrency:
+  group: agente-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+  cancel-in-progress: false
+
+# Toda escrita vai pelo token do App: comentário dele não dispara este workflow.
+permissions:
+  contents: read
+
+jobs:
+  agente:
+    if: >-
+      (github.event_name == 'issues' &&
+       github.event.issue.author_association == 'OWNER' &&
+       !contains(github.event.issue.labels.*.name, 'manual')) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.comment.author_association == 'OWNER' &&
+       github.event.issue.state == 'open' &&
+       !contains(github.event.issue.labels.*.name, 'manual') &&
+       !contains(github.event.comment.body, '@claude review')) ||
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.author_association == 'OWNER' &&
+       github.event.pull_request.state == 'open' &&
+       !(github.event.review.state == 'approved' &&
+         (github.event.review.body == null || github.event.review.body == ''))) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.pull_requests[0] != null)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NUMERO: ${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+      URL_GATILHO: ${{ github.event.comment.html_url || github.event.review.html_url || github.event.issue.html_url }}
+    steps:
+      # Segredos não entram em `if:`; passam por env para a checagem.
+      - name: Conferir secrets
+        env:
+          AGENTE_APP_ID: ${{ secrets.AGENTE_APP_ID }}
+          AGENTE_APP_PRIVATE_KEY: ${{ secrets.AGENTE_APP_PRIVATE_KEY }}
+        run: |
+          falta=0
+          for nome in AGENTE_APP_ID AGENTE_APP_PRIVATE_KEY; do
+            if [ -z "${!nome}" ]; then
+              echo "::error::falta o secret $nome"
+              falta=1
+            fi
+          done
+          exit "$falta"
+
+      - uses: actions/create-github-app-token@v3.3.0
+        id: app
+        with:
+          # `app-id` é o input legado, mas aceito; o secret guarda o App ID numérico.
+          app-id: ${{ secrets.AGENTE_APP_ID }}
+          private-key: ${{ secrets.AGENTE_APP_PRIVATE_KEY }}
+
+      # A "Revisão IA" também roda em PR do dono; o agente só corrige PR que ele abriu.
+      - name: Conferir autor do PR
+        id: autor
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+        run: |
+          autor=$(gh pr view "$NUMERO" --repo "$GITHUB_REPOSITORY" --json author --jq .author.login)
+          if [ "$autor" = "$BOT" ]; then
+            echo "seguir=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR #$NUMERO é de $autor, não de $BOT: nada a fazer."
+            echo "seguir=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7.0.1
+        if: steps.autor.outputs.seguir != 'false'
+        with:
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
+
+      - name: Identidade do git
+        if: steps.autor.outputs.seguir != 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+        run: |
+          id=$(gh api "/users/$BOT" --jq .id)
+          git config user.name "$BOT"
+          git config user.email "$id+$BOT@users.noreply.github.com"
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        if: steps.autor.outputs.seguir != 'false'
+      - run: uv sync --all-extras --locked --python 3.14
+        if: steps.autor.outputs.seguir != 'false'
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.autor.outputs.seguir != 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          # `Task` e `Agent` são o mesmo recurso (subagente) sob nomes de versões diferentes do Claude Code.
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Bash(git:*),Bash(make:*),Bash(uv:*),Read,Edit,Write,Glob,Grep,Task,Agent"
+          prompt: |
+            Repositório: ${{ github.repository }}
+            Evento: ${{ github.event_name }}
+            Issue ou PR: #${{ env.NUMERO }}
+            Gatilho: ${{ env.URL_GATILHO }}
+            Dono: @${{ github.repository_owner }}
+
+            Se o evento for workflow_run, é a conclusão da "Revisão IA" no PR #${{ env.NUMERO }}.
+
+            Siga a skill agente (.claude/skills/agente/SKILL.md). Escreva em português.
