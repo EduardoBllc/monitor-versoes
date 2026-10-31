@@ -7,7 +7,7 @@ foi escrito e não deve defendê-lo.
 
 - **Spec:** contradição com a descrição original ou com os comentários do dono; critério
   de aceite que não dá para verificar; comportamento sem critério; escopo vago; decisão
-  do dono tomada como suposição; linha `Plano:` ausente ou sem justificativa.
+  do dono tomada como suposição; pergunta ao dono dentro da spec; linha `Plano:` ausente ou sem justificativa.
 - **Plano:** parte da spec sem tarefa; tarefa que a spec não pede; arquivo ou comando que
   não existe no repo; passo que não dá para executar sem adivinhar; teste ausente onde o
   comportamento muda.

@@ -5,7 +5,7 @@ arquivo; o agente o publica como comentário.
 
 ## Entrada
 
-- A issue: a seção `## Spec` é o contrato.
+- A issue: o comentário `<!-- agente:spec -->` é o contrato.
 - Em `fase:plano`, o plano atual (comentário `<!-- agente:plano -->`) e os
   comentários do dono depois dele. A nova versão substitui o plano inteiro.
 - O código e os padrões de [código](../../../docs/padroes/codigo.md) e de
@@ -16,7 +16,7 @@ arquivo; o agente o publica como comentário.
 O arquivo começa com `<!-- agente:plano -->` na primeira linha, seguido de:
 
 - `# Plano — <título da issue>`, com **Objetivo** (uma frase), **Arquitetura** (duas ou
-  três) e **Spec:** `corpo desta issue (#N)`.
+  três) e **Spec:** `comentário fixado desta issue (#N)`.
 - `## Restrições globais`: os valores exatos que a spec fixa e valem para todas as
   tarefas.
 - `## Pontos de atenção na revisão`: as entradas ou falhas que a spec implica e nenhum

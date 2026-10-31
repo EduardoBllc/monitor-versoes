@@ -7,7 +7,7 @@ merge.** No Actions, o workflow já deixou a identidade git do bot configurada e
 
 Fase `fase:execução`.
 
-1. Leia a issue: `## Spec` é o contrato; o comentário `<!-- agente:plano -->`, quando
+1. Leia a issue: o comentário `<!-- agente:spec -->` é o contrato; o comentário `<!-- agente:plano -->`, quando
    existe, é o caminho. Sem plano, a spec basta. Na pequena, o corpo elaborado é o
    contrato.
 2. Comente na issue que vai executar e o que fará, em uma linha. A vez não é do dono:
