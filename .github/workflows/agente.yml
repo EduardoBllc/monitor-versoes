@@ -132,6 +132,7 @@ jobs:
         if: steps.autor.outputs.seguir != 'false' && steps.assinatura.outputs.seguir != 'false'
 
       - uses: anthropics/claude-code-action@v1
+        id: claude
         if: steps.autor.outputs.seguir != 'false' && steps.assinatura.outputs.seguir != 'false'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -142,7 +143,6 @@ jobs:
           allowed_bots: ${{ steps.app.outputs.app-slug }}
           bot_name: ${{ steps.app.outputs.app-slug }}[bot]
           bot_id: ${{ steps.bot.outputs.id }}
-          show_full_output: true
           # Runner descartável e `gh`/`git` já liberados: a lista de permitidos só barrava
           # comando inofensivo. A negação vale mesmo no bypass: o agente nunca mergeia.
           claude_args: >-
@@ -164,3 +164,21 @@ jobs:
             segundo plano; espere cada um terminar antes de seguir.
 
             Siga a skill agente (.claude/skills/agente/SKILL.md). Escreva em português.
+
+      # Log e artifact são públicos; cifrado, só o dono lê a execução inteira.
+      - name: Cifrar execução
+        id: cifrar
+        if: always() && vars.AGENTE_LOG_CHAVE != '' && steps.claude.outputs.execution_file != ''
+        env:
+          CHAVE: ${{ vars.AGENTE_LOG_CHAVE }}
+          ARQUIVO: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          age -r "$CHAVE" -o "$RUNNER_TEMP/execucao.json.age" "$ARQUIVO"
+
+      - uses: actions/upload-artifact@v7.0.2
+        if: always() && steps.cifrar.outcome == 'success'
+        with:
+          name: execucao
+          path: ${{ runner.temp }}/execucao.json.age
+          retention-days: 7
