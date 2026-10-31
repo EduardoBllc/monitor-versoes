@@ -2615,6 +2615,24 @@ def test_app_piso_parte_do_atual_grava_e_reabre_com_o_novo():
     asyncio.run(executar_fluxo())
 
 
+def test_app_piso_com_espacos_nas_pontas_grava_aparado():
+    chamadas: list[tuple[str, str]] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_de_piso(lambda nome, piso: chamadas.append((nome, piso)))
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_piso(app, pilot)
+            app.screen.query_one("#piso-versao", Input).value = "  14.0.0  "
+            await pilot.click("#piso-salvar")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert chamadas == [("alpha", "14.0.0")]
+
+    asyncio.run(executar_fluxo())
+
+
 def test_app_piso_recusa_formato_invalido_e_mantem_modal():
     def definir(nome: str, piso: str) -> None:
         raise AssertionError("piso invalido nao pode chegar ao banco")
