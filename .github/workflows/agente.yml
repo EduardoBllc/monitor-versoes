@@ -14,6 +14,9 @@ on:
 # Um agente por issue ou PR; o evento seguinte espera em vez de cancelar o que está em curso.
 # O grupo é avaliado antes do `if:` do job: evento que o job vai pular ganha grupo próprio
 # (run_id), senão ocuparia a vaga de espera e descartaria um evento do dono.
+# shortcut: resposta assinada a thread vai para a fila, porque a assinatura só se vê
+# consultando o review. Grupo próprio para review de corpo vazio rodaria em paralelo um
+# review real só com comentários de linha. Revisitar se eventos do dono se perderem.
 concurrency:
   group: agente-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}-${{ ((github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association) == 'OWNER' && !contains(github.event.comment.body, 'Resposta do Claude Code') || github.event_name == 'workflow_run') && 'fila' || github.run_id }}
   cancel-in-progress: false
