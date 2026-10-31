@@ -37,6 +37,7 @@ jobs:
       (github.event_name == 'pull_request_review' &&
        github.event.review.author_association == 'OWNER' &&
        github.event.pull_request.state == 'open' &&
+       !contains(github.event.pull_request.labels.*.name, 'manual') &&
        !(github.event.review.state == 'approved' &&
          (github.event.review.body == null || github.event.review.body == ''))) ||
       (github.event_name == 'workflow_run' &&
@@ -78,7 +79,8 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           BOT: ${{ steps.app.outputs.app-slug }}[bot]
         run: |
-          autor=$(gh pr view "$NUMERO" --repo "$GITHUB_REPOSITORY" --json author --jq .author.login)
+          # A REST devolve `<slug>[bot]`; `gh pr view --json author` devolveria `app/<slug>`.
+          autor=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMERO" --jq .user.login)
           if [ "$autor" = "$BOT" ]; then
             echo "seguir=true" >> "$GITHUB_OUTPUT"
           else
@@ -92,15 +94,14 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           fetch-depth: 0
 
-      - name: Identidade do git
+      # A action regrava user.name/user.email a partir de `bot_name`/`bot_id` (padrão claude[bot]).
+      - name: Id do bot
+        id: bot
         if: steps.autor.outputs.seguir != 'false'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           BOT: ${{ steps.app.outputs.app-slug }}[bot]
-        run: |
-          id=$(gh api "/users/$BOT" --jq .id)
-          git config user.name "$BOT"
-          git config user.email "$id+$BOT@users.noreply.github.com"
+        run: echo "id=$(gh api "/users/$BOT" --jq .id)" >> "$GITHUB_OUTPUT"
 
       - uses: astral-sh/setup-uv@v10.3.0
         if: steps.autor.outputs.seguir != 'false'
@@ -116,6 +117,8 @@ jobs:
           github_token: ${{ steps.app.outputs.token }}
           # No workflow_run o actor é o bot do App, que a action rejeita se não for listado.
           allowed_bots: ${{ steps.app.outputs.app-slug }}
+          bot_name: ${{ steps.app.outputs.app-slug }}[bot]
+          bot_id: ${{ steps.bot.outputs.id }}
           # `Task` e `Agent` são o mesmo recurso (subagente) sob nomes de versões diferentes do Claude Code.
           # A main exige só checks, não aprovação: sem isto o token do App poderia mergear.
           claude_args: >-

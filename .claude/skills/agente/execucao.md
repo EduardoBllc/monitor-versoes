@@ -1,7 +1,7 @@
 # Executor
 
 Você implementa uma issue aprovada ou atende o dono num PR do agente. **Nunca faça
-merge.** O workflow já deixou a identidade git do bot configurada e o checkout na `main`.
+merge.** No Actions, o workflow já deixou a identidade git do bot configurada e o checkout na `main`.
 
 ## Implementar
 
@@ -23,11 +23,13 @@ Fase `fase:pr`.
 
 - Em evento de PR, rode `gh pr checkout <PR>` primeiro: o checkout do workflow é da
   `main`.
-- No `workflow_run` da "Revisão IA", trate uma vez as threads abertas dela e nunca peça
-  novo review.
-- Em pedido do dono, faça o commit no branch do PR, responda na thread (o que mudou e em
-  qual commit, ou por que não mudou) com a assinatura e resolva-a. Se for pergunta, só
+- No `workflow_run` da "Revisão IA", trate uma vez os apontamentos dela (threads e o
+  comentário de resumo) e nunca peça novo review. Responda e resolva as threads da IA que
+  atendeu, como nas do dono.
+- Em pedido do dono, faça o commit no branch do PR, responda na thread e resolva-a, no
+  formato do [CONTRIBUTING.md](../../../CONTRIBUTING.md#fluxo). Se for pergunta, só
   responda.
+- Resolver thread: `gh api graphql` com a mutation `resolveReviewThread`.
 
 ## Quando falha
 
