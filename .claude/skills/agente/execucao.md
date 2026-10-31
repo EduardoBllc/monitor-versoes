@@ -17,6 +17,9 @@ Fase `fase:execução`.
 5. Commits em português, push e PR com o
    [template](../../../.github/pull_request_template.md) e `Closes #N`.
 
+Não edite comentário que já existe, fora o do plano: o corpo do PR vai só por
+`gh pr create` ou `gh pr edit`, e aviso ao dono é sempre comentário novo.
+
 ## PR
 
 Fase `fase:pr`.

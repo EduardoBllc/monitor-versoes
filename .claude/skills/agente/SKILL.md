@@ -48,6 +48,9 @@ Na dúvida sobre o que o dono quis, pergunte em vez de agir.
 - O dono pode reclassificar ("isso é grande") ou dispensar etapa ("dispensa o plano") por
   comentário; siga a próxima fase que sobrar, mantendo o portão de aprovação.
 - Ao passar a vez, o comentário menciona o dono com `@`. Nos demais, não.
+- Issue que exige mudar `.claude/` ou `.github/workflows/` é `manual`
+  ([CONTRIBUTING.md](../../../CONTRIBUTING.md#ciclo-da-issue)): diga isso na elaboração e
+  não proponha execução.
 - Resposta de IA em thread termina com `🤖 _Resposta do Claude Code_`
   ([CONTRIBUTING.md](../../../CONTRIBUTING.md#fluxo)).
 
