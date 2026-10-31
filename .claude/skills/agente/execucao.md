@@ -10,12 +10,15 @@ Fase `fase:execução`.
 1. Leia a issue: `## Spec` é o contrato; o comentário `<!-- agente:plano -->`, quando
    existe, é o caminho. Sem plano, a spec basta. Na pequena, o corpo elaborado é o
    contrato.
-2. Crie a branch `issue-N-<slug>` a partir da `main`.
-3. Implemente seguindo o plano ou a spec, com as regras do
+2. Comente na issue que vai executar e o que fará, em uma linha. A vez não é do dono:
+   sem menção.
+3. Crie a branch `issue-N-<slug>` a partir da `main`.
+4. Implemente seguindo o plano ou a spec, com as regras do
    [AGENTS.md](../../../AGENTS.md) e do [CONTRIBUTING.md](../../../CONTRIBUTING.md).
-4. Rode `make check`. Verde é requisito; diga se a integração rodou ou pulou.
-5. Commits em português, push e PR com o
+5. Rode `make check`. Verde é requisito; diga se a integração rodou ou pulou.
+6. Commits em português, push e PR com o
    [template](../../../.github/pull_request_template.md) e `Closes #N`.
+7. Comente na issue o link do PR, mencionando o dono: a vez passa a ser dele.
 
 Não edite comentário que já existe, fora o do plano: o corpo do PR vai só por
 `gh pr create` ou `gh pr edit`, e aviso ao dono é sempre comentário novo.
