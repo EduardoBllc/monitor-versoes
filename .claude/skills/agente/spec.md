@@ -38,7 +38,8 @@ gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> -F body=@spec.md      
 gh issue comment N --body-file spec.md                                          # se não achou
 ```
 
-Fixe o comentário pelo `node_id` (num comentário recém-criado, busque de novo):
+Só ao criar o comentário, fixe-o pelo `node_id` (busque de novo depois de criar); numa
+revisão ele já está fixado e a edição não muda isso:
 
 ```bash
 gh api graphql -f query='mutation($id: ID!) {
