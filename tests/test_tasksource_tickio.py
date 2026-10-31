@@ -191,3 +191,36 @@ def test_base_url_malformada_ao_buscar_chamados_vira_errodeentrada_nao_invalidur
 
     with pytest.raises(ErroDeEntrada, match="TICKIO_BASE_URL"):
         fonte.fetch("13.34.0")
+
+
+# -- verificar_credenciais (motor diagnostico) --------------------------------
+
+
+def test_verificar_credenciais_so_autentica():
+    chamadas = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        chamadas.append(request.url.path)
+        return httpx.Response(200, json={"access": "tok"})
+
+    _fonte(handler).verificar_credenciais()
+
+    assert chamadas == ["/api/v1/ws/token/"]
+
+
+def test_verificar_credenciais_recusada():
+    with pytest.raises(BackendIndisponivel):
+        _fonte(lambda r: httpx.Response(401, json={})).verificar_credenciais()
+
+
+def test_verificar_credenciais_sem_access():
+    with pytest.raises(RespostaInvalida):
+        _fonte(lambda r: httpx.Response(200, json={})).verificar_credenciais()
+
+
+def test_verificar_credenciais_url_invalida():
+    fonte = TickioRest(
+        base_url="http://exemplo:porta", usuario="u", senha="p", sistema_id=1
+    )
+    with pytest.raises(ErroDeEntrada):
+        fonte.verificar_credenciais()

@@ -17,6 +17,7 @@ from collections.abc import Set as AbstractSet
 from typing import TextIO
 
 from motor.adapters.estado.postgres import PostgresEstado
+from motor.diagnostico import diagnosticar, falhou, formatar, head_do_alembic
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -199,6 +200,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "tui",
         help="abre a interface interativa de consulta, verificacao e atualizacao",
+    )
+
+    sub.add_parser(
+        "diagnostico",
+        help="checa cada peça da instalação e diz como corrigir o que falhar",
     )
 
     p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
@@ -473,6 +479,19 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if args.comando == "tui":
             _iniciar_tui()
+            return
+
+        if args.comando == "diagnostico":
+            resultados = diagnosticar(
+                os.environ,
+                abrir_sessao=abrir_sessao,
+                head=head_do_alembic(os.path.dirname(os.path.dirname(__file__))),
+                ambiente=args.env,
+            )
+            for resultado in resultados:
+                print(formatar(resultado))
+            if falhou(resultados):
+                sys.exit(1)
             return
 
         if args.comando == "repo":

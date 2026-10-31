@@ -37,16 +37,7 @@ class TickioRest:
         # podem travar por credencial de um servico que nao vao consultar. Sem
         # esta checagem, base_url vazia sai como reclamacao de protocolo do
         # httpx, que nao nomeia a variavel que falta.
-        if faltando := [
-            nome
-            for nome, valor in (
-                ("TICKIO_BASE_URL", self.base_url),
-                ("TICKIO_USER", self.usuario),
-                ("TICKIO_PASSWORD", self.senha),
-            )
-            if not valor
-        ]:
-            raise ErroDeEntrada(f"faltando no .env: {', '.join(faltando)}")
+        self._exigir_variaveis()
 
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
@@ -80,6 +71,28 @@ class TickioRest:
                 raise RespostaInvalida(f"decodificando resposta do Tickio: {e}") from e
 
             return _extrair_chamados(corpo)
+
+    def verificar_credenciais(self) -> None:
+        """Autentica e mais nada: não chama a rota de chamados. Usado pelo
+        `motor diagnostico`."""
+        self._exigir_variaveis()
+        with contextlib.ExitStack() as pilha:
+            cliente = self.client
+            if cliente is None:
+                cliente = pilha.enter_context(httpx.Client())
+            self._autenticar(cliente)
+
+    def _exigir_variaveis(self) -> None:
+        if faltando := [
+            nome
+            for nome, valor in (
+                ("TICKIO_BASE_URL", self.base_url),
+                ("TICKIO_USER", self.usuario),
+                ("TICKIO_PASSWORD", self.senha),
+            )
+            if not valor
+        ]:
+            raise ErroDeEntrada(f"faltando no .env: {', '.join(faltando)}")
 
     def _autenticar(self, cliente: httpx.Client) -> str:
         if self._access:

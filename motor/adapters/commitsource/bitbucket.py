@@ -64,6 +64,45 @@ def _casa(pr: PrIndex, padrao: re.Pattern[str]) -> bool:
     return padrao.match(pr.titulo) is not None or padrao.search(pr.branch) is not None
 
 
+def _cabecalho_basic(email: str, token: str) -> str:
+    credenciais = base64.b64encode(f"{email}:{token}".encode()).decode()
+    return f"Basic {credenciais}"
+
+
+def verificar_credenciais(
+    token: str,
+    email: str,
+    *,
+    base_url: str = "",
+    client: httpx.Client | None = None,
+) -> None:
+    """Chamada autenticada de leitura (`GET /user`), independente de repositório.
+
+    O endpoint exige escopo de leitura de conta no token. Usado pelo
+    `motor diagnostico`.
+    """
+    if not email:
+        raise ErroDeEntrada("BITBUCKET_TOKEN configurado sem BITBUCKET_EMAIL")
+    url = f"{base_url or _BASE_URL_PADRAO}/user"
+    with contextlib.ExitStack() as pilha:
+        if client is None:
+            client = pilha.enter_context(httpx.Client())
+        try:
+            resp = client.get(
+                url, headers={"Authorization": _cabecalho_basic(email, token)}
+            )
+        except httpx.HTTPError as e:
+            raise BackendIndisponivel(f"consultando o Bitbucket: {e}") from e
+        if resp.status_code != httpx.codes.OK:
+            raise BackendIndisponivel(
+                f"Bitbucket respondeu {resp.status_code} ao validar a credencial"
+            )
+        try:
+            resp.json()
+        except ValueError as e:
+            raise RespostaInvalida(f"decodificando resposta do Bitbucket: {e}") from e
+
+
 def parse_workspace_repo(url: str) -> tuple[str, str]:
     """Extrai (workspace, repo) da URL do remote origin."""
     # remove o penúltimo segmento so quando ha host embutido: pega os dois
@@ -112,8 +151,7 @@ class BitbucketPRCommitSource:
         return self.workspace, self.repo
 
     def _auth_header(self) -> str:
-        credenciais = base64.b64encode(f"{self.email}:{self.token}".encode()).decode()
-        return f"Basic {credenciais}"
+        return _cabecalho_basic(self.email, self.token)
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
