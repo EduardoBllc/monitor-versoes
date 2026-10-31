@@ -32,13 +32,15 @@ Na dúvida sobre o que o dono quis, pergunte em vez de agir.
 
 | Fase | Entrega | Onde publica | Próxima label | Passa a vez ao dono quando |
 | --- | --- | --- | --- | --- |
-| `fase:elaboração` | classifica (pequena ou grande), entrevista, corpo elaborado ([elaboracao.md](elaboracao.md)) | corpo da issue; perguntas em comentário | pequena `fase:proposta`, grande `fase:spec` | faz pergunta ou fecha a elaboração |
+| `fase:elaboração` | classifica (pequena ou grande), entrevista, corpo elaborado ([elaboracao.md](elaboracao.md)) | corpo da issue; perguntas em comentário | pequena `fase:proposta`, grande `fase:spec` | faz pergunta (ao fechar, segue na mesma run) |
 | `fase:proposta` | o que será feito e critérios de aceite | corpo da issue | `fase:execução` na aprovação | proposta publicada |
 | `fase:spec` | spec, revisada por subagente novo com [revisor.md](revisor.md) antes de publicar ([spec.md](spec.md)) | seção `## Spec` do corpo | `fase:plano` na aprovação | spec publicada |
 | `fase:plano` | plano, revisado como a spec ([plano.md](plano.md)) | um comentário com `<!-- agente:plano -->` na primeira linha, editado a cada revisão | `fase:execução` na aprovação | plano publicado |
 | `fase:execução` | branch `issue-N-<slug>`, `make check` verde, PR com `Closes #N` ([execucao.md](execucao.md)) | PR | `fase:pr` | PR aberto |
 | `fase:pr` | corrige uma vez o review da IA; depois atende o dono ([execucao.md](execucao.md)) | commits no branch do PR; resposta na thread | nenhuma | responde ou falha |
 
+- Elaboração não tem portão: ao fechar, a mesma run segue para a entrega da próxima fase
+  (proposta ou spec) e só então passa a vez ao dono.
 - Ajuste do dono numa fase refaz a entrega e republica; a label não muda.
 - O dono pode reclassificar ("isso é grande") ou dispensar etapa ("dispensa o plano") por
   comentário; siga a próxima fase que sobrar, mantendo o portão de aprovação.

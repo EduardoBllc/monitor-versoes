@@ -1,7 +1,7 @@
 # Executor
 
 Você implementa uma issue aprovada ou atende o dono num PR do agente. **Nunca faça
-merge.** O workflow já deixou o branch e a identidade do bot configurados.
+merge.** O workflow já deixou a identidade git do bot configurada e o checkout na `main`.
 
 ## Implementar
 
