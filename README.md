@@ -98,15 +98,21 @@ O nome é o do diretório do repositório (o basename do path de `--repo`).
    ...
    ```
 
-2. O banco está migrado — a linha termina em `(head)` (o hash muda conforme a versão):
+2. A instalação está íntegra — o diagnóstico checa variáveis, banco, migração, `PROJECTS_DIR`
+   e credenciais, e sai com código 1 se alguma peça falhar:
 
    ```console
-   $ uv run alembic current
-   ...
-   d4e7a9b2c1f0 (head)
+   $ uv run motor diagnostico
+   OK  Variáveis: todas preenchidas
+   OK  Postgres: conexão funciona
+   OK  Migração: revisão d4e7a9b2c1f0
+   não configurado  PROJECTS_DIR: --repo aceita caminho absoluto
+   OK  Tickio: autenticação aceita
+   não configurado  Bitbucket: sem BITBUCKET_TOKEN
    ```
 
-   Saída vazia (só as linhas `INFO`) é banco no ar mas sem migração: rode `make migrate`.
+   Cada `FALHA` traz a correção na própria linha. Migração pendente se corrige com
+   `make migrate` (`make migrate-dev` com `--env development`).
 
 3. O repositório está cadastrado:
 
