@@ -98,9 +98,10 @@ jobs:
           REVIEW: ${{ github.event.review.id }}
           CORPO: ${{ github.event.review.body }}
         run: |
-          sem_assinatura=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMERO/reviews/$REVIEW/comments" \
-            --jq '[.[] | select(.body | contains("Resposta do Claude Code") | not)] | length')
-          if [ "$sem_assinatura" -eq 0 ] && { [ -z "$CORPO" ] || [[ "$CORPO" == *"Resposta do Claude Code"* ]]; }; then
+          # Com --paginate o --jq roda por página: basta saber se algum id saiu.
+          sem_assinatura=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUMERO/reviews/$REVIEW/comments" \
+            --jq '.[] | select(.body | contains("Resposta do Claude Code") | not) | .id')
+          if [ -z "$sem_assinatura" ] && { [ -z "$CORPO" ] || [[ "$CORPO" == *"Resposta do Claude Code"* ]]; }; then
             echo "Review assinado por IA: nada a fazer."
             echo "seguir=false" >> "$GITHUB_OUTPUT"
           else
