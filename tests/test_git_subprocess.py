@@ -927,6 +927,55 @@ def test_worktree_gc_ignora_worktree_que_nao_e_de_versao(tmp_path):
     assert os.path.isdir(_wt(repo, "experimento"))
 
 
+def _worktree_detached(repo: str, versao: str) -> None:
+    _run_git(repo, "worktree", "add", "--detach", _wt(repo, versao), "master")
+
+
+def test_worktree_gc_remove_worktree_em_detached_head(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    _worktree_detached(repo, "13.1.0")
+    g.worktree_add("13.9.0", "master")
+
+    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert not os.path.exists(_wt(repo, "13.1.0"))
+
+
+def test_worktree_gc_nao_remove_detached_com_alteracao_rastreada(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    _worktree_detached(repo, "13.1.0")
+    g.worktree_add("13.9.0", "master")
+    with open(os.path.join(_wt(repo, "13.1.0"), "arquivo.txt"), "w") as f:
+        f.write("editado a mao\n")
+
+    assert g.worktree_gc(1, "13.9.0") == []
+    assert os.path.isdir(_wt(repo, "13.1.0"))
+
+
+def test_worktree_gc_nao_remove_detached_com_commit_inalcancavel(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    _worktree_detached(repo, "13.1.0")
+    wt = _wt(repo, "13.1.0")
+    with open(os.path.join(wt, "arquivo.txt"), "w") as f:
+        f.write("so aqui\n")
+    _run_git(wt, "commit", "-am", "commit solto")
+    g.worktree_add("13.9.0", "master")
+
+    assert g.worktree_gc(1, "13.9.0") == []
+    assert os.path.isdir(wt)
+
+
+def test_worktree_gc_ignora_diretorio_fora_do_padrao_em_detached(tmp_path):
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    _run_git(repo, "worktree", "add", "--detach", _wt(repo, "experimento"), "master")
+
+    assert g.worktree_gc(0, "") == []
+    assert os.path.isdir(_wt(repo, "experimento"))
+
+
 def test_worktree_gc_mru_ilegivel_cai_em_semver_desc(tmp_path):
     repo = _repo_para_gc(tmp_path)
     g = new_git_subprocess(repo)

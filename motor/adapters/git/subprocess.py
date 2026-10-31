@@ -757,39 +757,41 @@ class GitSubprocess:
         return removidas
 
     def _worktrees_de_versao(self) -> list[str]:
-        """Branches X.Y.Z com worktree dentro de `<repo>-worktrees/`, pelo
+        """Versoes X.Y.Z com worktree dentro de `<repo>-worktrees/`, pelo
         registro do proprio git.
 
-        Filtra por caminho **e** por formato: worktree que o operador criou na
-        mao, ou em cima de branch que nao e versao, nao e nossa para apagar. O
-        proprio repo principal cai fora pelo filtro de caminho, e worktree em
-        detached HEAD nao tem linha `branch`.
+        Identifica pelo **nome do diretorio**, nao pela linha `branch`:
+        `use_worktree` em versao ja lancada resolve o nome pela tag e cria a
+        worktree em detached HEAD, sem branch. Filtra por caminho **e** por
+        formato: worktree que o operador criou na mao, fora do padrao X.Y.Z,
+        nao e nossa para apagar. O proprio repo principal cai fora pelo filtro
+        de caminho.
         """
         # realpath nos dois lados: com um symlink no caminho (o classico
         # /tmp -> /private/tmp do macOS) o git reporta o caminho resolvido e a
         # comparacao textual nao casa — o GC viraria no-op silencioso, que e
         # pior que falhar, porque ninguem descobre.
-        prefixo = os.path.realpath(self._dir_worktrees()) + os.sep
+        raiz = os.path.realpath(self._dir_worktrees())
         encontradas: list[str] = []
-        caminho = ""
         for linha in self._output(
             self.repo_path, "worktree", "list", "--porcelain"
         ).split("\n"):
-            if linha.startswith("worktree "):
-                caminho = os.path.realpath(linha.removeprefix("worktree "))
-            elif linha.startswith("branch refs/heads/"):
-                nome = linha.removeprefix("branch refs/heads/")
-                if caminho.startswith(prefixo) and _PADRAO_BRANCH_VERSAO.match(nome):
-                    encontradas.append(nome)
+            if not linha.startswith("worktree "):
+                continue
+            caminho = os.path.realpath(linha.removeprefix("worktree "))
+            nome = os.path.basename(caminho)
+            if os.path.dirname(caminho) == raiz and _PADRAO_BRANCH_VERSAO.match(nome):
+                encontradas.append(nome)
         return encontradas
 
     def _descartavel(self, branch: str) -> bool:
         """Worktree que pode ser apagada sem perder trabalho.
 
-        Commit nao entra na conta: `worktree remove` desanexa o checkout e a
-        branch continua em refs/heads, entao commit local sobrevive mesmo sem
-        push. O que morre com o diretorio e alteracao nao commitada e resolucao
-        de conflito em andamento — e so isso que as duas guardas cobrem.
+        Com branch, commit nao entra na conta: `worktree remove` desanexa o
+        checkout e a branch continua em refs/heads. O que morre com o diretorio
+        e alteracao nao commitada e resolucao de conflito em andamento. Em
+        detached HEAD nao ha branch, entao commit inalcancavel por qualquer
+        ref tambem conta.
         """
         dir_ = self._worktree_dir(branch)
         if not os.path.isdir(dir_):
@@ -806,7 +808,26 @@ class GitSubprocess:
             # -uno: cruft nao rastreado (deps instaladas, .env) e justamente o
             # que o --force existe para descartar - nao pode prender a worktree
             # viva.
-            return self._output(dir_, "status", "--porcelain", "-uno") == ""
+            if self._output(dir_, "status", "--porcelain", "-uno") != "":
+                return False
+            if self._output(dir_, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD":
+                # Detached: sem branch para guardar commit local. Se o HEAD
+                # tem commit que nenhuma ref alcanca, remover o diretorio o
+                # perde. (`--all` incluiria o proprio HEAD, por isso a lista.)
+                return (
+                    self._output(
+                        dir_,
+                        "rev-list",
+                        "-n1",
+                        "HEAD",
+                        "--not",
+                        "--branches",
+                        "--tags",
+                        "--remotes",
+                    )
+                    == ""
+                )
+            return True
         except MotorError:
             # Diretorio existe mas o git nao consegue le-lo (metadado de
             # worktree corrompido). O `worktree_remove` antigo so tocava a
