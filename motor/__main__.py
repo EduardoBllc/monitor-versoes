@@ -30,6 +30,7 @@ from motor.engine.atualizar import (
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
+from motor.engine.migrar_estado import migrar_estado
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.errors import MotorError, formatar_com_notas
@@ -205,6 +206,20 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "diagnostico",
         help="checa cada peça da instalação e diz como corrigir o que falhar",
+    )
+
+    p_migrar = sub.add_parser(
+        "migrar-estado",
+        help="copia o estado completo de um banco para outro (SQLite <-> Postgres)",
+    )
+    p_migrar.add_argument(
+        "--de",
+        required=True,
+        metavar="URL",
+        help="origem: sqlite:///<caminho> ou postgresql://...",
+    )
+    p_migrar.add_argument(
+        "--para", required=True, metavar="URL", help="destino vazio, no mesmo formato"
     )
 
     p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
@@ -457,6 +472,25 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
     )
 
 
+def _migrar_estado(args: argparse.Namespace) -> None:
+    # Sem abrir_sessao nem database_url(): as URLs vem so dos argumentos.
+    resumo = migrar_estado(args.de, args.para)
+    for tabela, n in resumo.linhas.items():
+        print(f"{tabela}: {n}")
+    print(f"estado copiado: {resumo.total} linhas")
+
+
+def _comando_repo(args: argparse.Namespace) -> None:
+    with abrir_sessao() as sessao:
+        estado = PostgresEstado(sessao=sessao)
+        if args.acao_repo == "piso":
+            estado.definir_piso(args.nome, args.versao)
+            print(f"repo '{args.nome}': piso {args.versao}")
+            return
+        estado.registrar_repo(args.nome, args.tickio_sistema_id)
+    print(f"repo '{args.nome}' adicionado")
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     _carregar_ambiente(argv)
@@ -494,15 +528,12 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit(1)
             return
 
+        if args.comando == "migrar-estado":
+            _migrar_estado(args)
+            return
+
         if args.comando == "repo":
-            with abrir_sessao() as sessao:
-                estado = PostgresEstado(sessao=sessao)
-                if args.acao_repo == "piso":
-                    estado.definir_piso(args.nome, args.versao)
-                    print(f"repo '{args.nome}': piso {args.versao}")
-                    return
-                estado.registrar_repo(args.nome, args.tickio_sistema_id)
-            print(f"repo '{args.nome}' adicionado")
+            _comando_repo(args)
             return
 
         repo = _resolver_repo(args.repo)
