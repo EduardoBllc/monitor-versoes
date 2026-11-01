@@ -72,7 +72,7 @@ de git é exercitado com git de verdade em repositório criado em `tmp_path`.
 
 **Integração usa Postgres efêmero.** Teste que precisa de banco pede o fixture
 `sessao_postgres` e leva `@pytest.mark.integracao`. O `_postgres_efemero` sobe
-um container (testcontainers), migra com `alembic upgrade head` — não
+um container (testcontainers), migra com `motor.migracoes.migrar` — não
 `create_all`, que perderia as triggers — e o derruba no fim da sessão. É lazy:
 quem não pede banco não toca no Docker. Sem Docker, esses testes pulam; pulado
 não é verde, e a saída do portão diz qual dos dois aconteceu.

@@ -12,8 +12,11 @@ Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, Docker e `make`.
 ```bash
 make setup         # uv sync --all-extras, cria .env.development, instala o pre-commit
 make db-dev        # sobe o Postgres de desenvolvimento (porta 5434)
-make migrate-dev   # alembic upgrade head contra o .env.development
+make migrate-dev   # motor --env development migrar
 ```
+
+Para criar uma migração nova (com o banco de desenvolvimento já migrado):
+`make migracao m="descrição"`; a revisão nasce em `motor/migracoes/versions/`.
 
 Para rodar o CLI contra o banco de desenvolvimento, passe `--env development`:
 
@@ -23,7 +26,7 @@ Para rodar o CLI contra o banco de desenvolvimento, passe `--env development`:
 
 ## Produção é o padrão; desenvolvimento é explícito
 
-CLI, `compose.yml` e Alembic leem `.env` — **produção**, porta 5433. O ambiente de
+CLI e `compose.yml` leem `.env` (o CLI o procura no diretório atual) — **produção**, porta 5433. O ambiente de
 desenvolvimento (`.env.development`, porta **5434**) só entra quando pedido: alvos
 `-dev` do Makefile e `--env development` no CLI.
 
@@ -53,9 +56,9 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 
 | Sintoma | Causa e saída |
 | --- | --- |
-| `uv run pytest` morre na coleta com `SyntaxError: future feature annotations is not defined` | Um `VIRTUAL_ENV` de outro projeto (Python antigo) vazou para o shell e o `uv` o prefere ao `.venv`. Não é erro de código. Use `make` (ele faz `unexport VIRTUAL_ENV`), ou `unset VIRTUAL_ENV`, ou chame `./.venv/bin/python -m pytest` (idem `mypy`, `ruff`, `alembic`). Sem `.venv`: `unset VIRTUAL_ENV; uv sync --all-extras`. |
-| `docker compose up -d` subiu, mas não é o banco de desenvolvimento | Sem `--env-file`, o compose lê `.env` (produção, porta 5433). Desenvolvimento é `make db-dev`, ou `docker compose --env-file .env.development up -d --wait`. |
-| `alembic upgrade head` migrou o banco errado | O `load_dotenv()` do Alembic não sobrescreve variável já presente no ambiente — e sem nada exportado lê `.env`. Use `make migrate-dev`, ou exporte antes: `set -a; . ./.env.development; set +a; ./.venv/bin/python -m alembic upgrade head`. |
+| `uv run pytest` morre na coleta com `SyntaxError: future feature annotations is not defined` | Um `VIRTUAL_ENV` de outro projeto (Python antigo) vazou para o shell e o `uv` o prefere ao `.venv`. Não é erro de código. Use `make` (ele faz `unexport VIRTUAL_ENV`), ou `unset VIRTUAL_ENV`, ou chame `./.venv/bin/python -m pytest` (idem `mypy`, `ruff`). Sem `.venv`: `unset VIRTUAL_ENV; uv sync --all-extras`. |
+| `docker compose up -d` subiu, mas não é o banco de desenvolvimento | Sem `--env-file`, o compose lê `.env` (produção, porta 5433). Desenvolvimento é `make db-dev`, ou `docker compose -f motor/modelos/compose.yml --project-directory . --env-file .env.development up -d --wait`. |
+| `motor migrar` migrou o banco errado | Sem `--env development`, o motor lê `.env` (produção). Use `make migrate-dev`, ou `motor --env development migrar`. |
 
 ## Fluxo
 

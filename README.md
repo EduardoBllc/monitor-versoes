@@ -34,35 +34,79 @@ sem adaptação:
 | [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | [Docker](https://docs.docker.com/engine/install/) com Compose | Postgres do estado | Linux: `curl -fsSL https://get.docker.com \| sh`; macOS: [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) |
 | git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install` |
-| make | atalhos da instalação (opcional — veja "sem make") | Debian/Ubuntu: `sudo apt install make`; macOS: `xcode-select --install` |
-
-É preciso clonar o repositório: as migrações do banco (`alembic/`) não vão no pacote, então
-`uv tool install` não basta.
 
 ## Instalação
 
-```bash
-git clone https://github.com/EduardoBllc/monitor-versoes.git
-cd monitor-versoes
-make install && make db && make migrate
-```
-
-`make install` instala as dependências e cria o `.env` a partir do
-[.env.example](.env.example) (sem sobrescrever um que já exista); `make db` sobe o Postgres
-em Docker (porta 5433); `make migrate` cria as tabelas.
-
-<details>
-<summary>Sem make</summary>
+Em um diretório de trabalho qualquer (não precisa clonar o repositório):
 
 ```bash
-unset VIRTUAL_ENV          # veja a ressalva em "Uso"
-uv sync
-cp -n .env.example .env
-docker compose up -d --wait
-uv run alembic upgrade head
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes
+motor init                      # escreve compose.yml e .env no diretório atual
+docker compose up -d --wait     # Postgres do estado (porta 5433)
+motor migrar                    # cria as tabelas
 ```
 
-</details>
+Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
+
+`motor init` não sobrescreve arquivo existente. Se preferir, copie os dois arquivos abaixo.
+
+`compose.yml`:
+
+<!-- modelo: compose.yml -->
+```yaml
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    ports: ["${DATABASE_PORT}:5432"]
+    # /var/lib/postgresql, nao /var/lib/postgresql/data: no postgres:18-alpine o
+    # PGDATA e /var/lib/postgresql/18/docker, entao montar em /data criaria um
+    # diretorio vazio irmao do PGDATA e os dados sumiriam na recriacao do volume.
+    volumes: [pgdata:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+```
+
+`.env` (modelo `.env.example`):
+
+<!-- modelo: env.example -->
+```bash
+# Produção — o compose.yml lê estas mesmas variáveis
+DATABASE_HOST=localhost
+DATABASE_PORT=5433
+DATABASE_NAME=monitor_versoes
+DATABASE_USER=motor
+DATABASE_PASSWORD=motor
+
+# Tickio
+TICKIO_BASE_URL=
+TICKIO_USER=
+TICKIO_PASSWORD=
+
+# Bitbucket (opcional — ativa descoberta de commits por PR)
+BITBUCKET_TOKEN=
+BITBUCKET_EMAIL=
+
+# Worktrees de versao mantidas em disco entre operacoes (default 3).
+# Levantar uma worktree e um checkout inteiro; mantendo as ultimas usadas, o
+# comando seguinte na mesma versao reusa o diretorio. 0 = descarta a cada run.
+WORKTREES_MANTIDAS=3
+
+# Raiz onde --repo <nome> e procurado
+PROJECTS_DIR=
+```
+
+Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Configurar o `.env`
 
@@ -74,8 +118,8 @@ Preencha no `.env`:
   `--repo meu-repo` é `/home/voce/Projetos/meu-repo`; use path absoluto, `~` não é expandido). Sem ela, passe o path em `--repo`.
 - `BITBUCKET_TOKEN`, `BITBUCKET_EMAIL` — opcionais; veja "Fontes de tasks e de commits".
 
-As variáveis `DATABASE_*` já apontam para o Postgres do `make db`. Cada variável está
-comentada no [.env.example](.env.example).
+As variáveis `DATABASE_*` já apontam para o Postgres do `docker compose` acima. Cada variável
+está comentada no `.env`.
 
 ### Cadastrar os repositórios
 
@@ -83,7 +127,7 @@ Cada repositório é cadastrado uma vez, antes do primeiro comando nele, com o i
 correspondente no Tickio:
 
 ```bash
-uv run motor repo adicionar meu-repo --tickio-sistema-id 7
+motor repo adicionar meu-repo --tickio-sistema-id 7
 ```
 
 O nome é o do diretório do repositório (o basename do path de `--repo`).
@@ -93,7 +137,7 @@ O nome é o do diretório do repositório (o basename do path de `--repo`).
 1. O CLI responde:
 
    ```console
-   $ uv run motor --help
+   $ motor --help
    usage: motor [-h] [--env {development,production}] comando ...
    ...
    ```
@@ -102,7 +146,7 @@ O nome é o do diretório do repositório (o basename do path de `--repo`).
    e credenciais, e sai com código 1 se alguma peça falhar:
 
    ```console
-   $ uv run motor diagnostico
+   $ motor diagnostico
    OK  Variáveis: todas preenchidas
    OK  Postgres: conexão funciona
    OK  Migração: revisão d4e7a9b2c1f0
@@ -112,12 +156,12 @@ O nome é o do diretório do repositório (o basename do path de `--repo`).
    ```
 
    Cada `FALHA` traz a correção na própria linha. Migração pendente se corrige com
-   `make migrate` (`make migrate-dev` com `--env development`).
+   `motor migrar` (`motor --env development migrar` no desenvolvimento).
 
 3. O repositório está cadastrado:
 
    ```console
-   $ uv run motor repo adicionar meu-repo --tickio-sistema-id 7
+   $ motor repo adicionar meu-repo --tickio-sistema-id 7
    repo 'meu-repo' adicionado
    ```
 
@@ -126,23 +170,19 @@ O nome é o do diretório do repositório (o basename do path de `--repo`).
 ## Uso
 
 ```bash
-uv run motor verificar 13.34.0 --repo meu-repo             # verde? tasks, faltantes
-uv run motor verificar 13.34.0 --repo meu-repo --auditar   # versão liberada, sem escrever
-uv run motor consulta  13.34.0 --repo meu-repo             # snapshot salvo, sem recalcular
-uv run motor criar     13.35.0 --repo meu-repo             # cria a branch e compõe
-uv run motor atualizar 13.35.0 --repo meu-repo             # aplica os commits faltantes
-uv run motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
-uv run motor atualizar 13.35.0 --repo meu-repo --abort
-uv run motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
-uv run motor tui                                           # interface interativa
+motor verificar 13.34.0 --repo meu-repo             # verde? tasks, faltantes
+motor verificar 13.34.0 --repo meu-repo --auditar   # versão liberada, sem escrever
+motor consulta  13.34.0 --repo meu-repo             # snapshot salvo, sem recalcular
+motor criar     13.35.0 --repo meu-repo             # cria a branch e compõe
+motor atualizar 13.35.0 --repo meu-repo             # aplica os commits faltantes
+motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
+motor atualizar 13.35.0 --repo meu-repo --abort
+motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
+motor tui                                           # interface interativa
 ```
 
-> **Ressalva:** se o shell tiver um `VIRTUAL_ENV` ativo de outro projeto, o `uv run` pode usar
-> o interpretador dele e o `motor` falha ao importar. Rode `unset VIRTUAL_ENV` (ou
-> `deactivate`) antes; os alvos do `make` já fazem isso.
-
 Todos os comandos de versão aceitam `--repo` (path, ou nome dentro de `PROJECTS_DIR`),
-`--debug`, `--sem-progresso`, `--task-source` e `--lista`. `uv run motor <comando> -h` lista
+`--debug`, `--sem-progresso`, `--task-source` e `--lista`. `motor <comando> -h` lista
 o resto.
 
 ### Fontes de tasks e de commits
@@ -166,13 +206,12 @@ commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pul
 
 | Sintoma | Causa e saída |
 | --- | --- |
-| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | O Postgres não está no ar. `make db` (ou `docker compose up -d --wait`). |
-| `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração. `make migrate`. |
-| `ERROR: repo 'meu-repo' desconhecido. Cadastre com: uv run motor repo adicionar 'meu-repo' --tickio-sistema-id <id>` | O repositório não foi cadastrado. Rode o comando sugerido com o id do sistema no Tickio. |
+| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | O Postgres não está no ar. `docker compose up -d --wait`. |
+| `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração. `motor migrar`. |
+| `ERROR: repo 'meu-repo' desconhecido. Cadastre com: motor repo adicionar 'meu-repo' --tickio-sistema-id <id>` | O repositório não foi cadastrado. Rode o comando sugerido com o id do sistema no Tickio. |
 | `ERROR: faltando no .env: TICKIO_BASE_URL, TICKIO_USER, TICKIO_PASSWORD` | Credenciais do Tickio vazias no `.env`. Preencha, ou use `--task-source manual --lista arquivo.txt`. |
 | `--repo nao encontrado: tentou 'meu-repo' e '(PROJECTS_DIR nao setada)'` | `--repo` não é um path existente e `PROJECTS_DIR` está vazia. Preencha `PROJECTS_DIR` no `.env` ou passe o path do repositório. |
 | `--repo nao encontrado: tentou 'meu-repo' e '/home/voce/Projetos/meu-repo'` | O diretório não existe dentro de `PROJECTS_DIR`. Confira o nome e o valor da variável. |
-| `uv run motor` falha na importação, com erro de sintaxe ou do Python errado | Um `VIRTUAL_ENV` de outro projeto ativo no shell. `unset VIRTUAL_ENV` (ou `deactivate`) e repita. |
 
 ## Próximos passos
 

@@ -6,19 +6,19 @@ unexport VIRTUAL_ENV
 # `python -m`, como o pre-commit e o CI sempre rodaram: a raiz entra no sys.path.
 DEV := uv run --extra dev python -m
 
-.PHONY: install db migrate setup db-dev migrate-dev check fmt fmt-check lint typecheck test
+.PHONY: install db migrate setup db-dev migrate-dev migracao check fmt fmt-check lint typecheck test
 
 # --- Usuário: produção (.env, porta 5433) ---
 
 install:
 	uv sync
-	cp -n .env.example .env
+	uv run motor init
 
 db:
-	docker compose up -d --wait
+	docker compose -f motor/modelos/compose.yml --project-directory . up -d --wait
 
 migrate:
-	uv run alembic upgrade head
+	uv run motor migrar
 
 # --- Contribuidor: desenvolvimento (.env.development, porta 5434) ---
 
@@ -28,12 +28,16 @@ setup:
 	$(DEV) pre_commit install
 
 db-dev:
-	docker compose --env-file .env.development up -d --wait
+	docker compose -f motor/modelos/compose.yml --project-directory . --env-file .env.development up -d --wait
 
-# set -a exporta as variáveis do arquivo: o load_dotenv() do Alembic não
-# sobrescreve variável já presente, então o .env de produção não entra.
 migrate-dev:
-	set -a; . ./.env.development; set +a; uv run alembic upgrade head
+	uv run motor --env development migrar
+
+# Gera uma revisão por autogenerate contra o banco de desenvolvimento (já
+# migrado). O env.py não carrega .env: set -a exporta as variáveis do arquivo.
+migracao:
+	@test -n "$(m)" || { echo 'uso: make migracao m="descrição"'; exit 1; }
+	set -a; . ./.env.development; set +a; uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
 
 # Mesma sequência das etapas do CI (.github/workflows/ci.yml chama estes alvos).
 check: fmt-check lint typecheck test
