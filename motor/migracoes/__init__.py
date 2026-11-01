@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy.exc import OperationalError
 
-from alembic import command
 from motor.errors import BackendIndisponivel
 
 

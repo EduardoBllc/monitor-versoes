@@ -1,6 +1,6 @@
+from alembic import context
 from sqlalchemy import create_engine, pool
 
-from alembic import context
 from motor.adapters.estado.models import Base
 from motor.config import database_url
 

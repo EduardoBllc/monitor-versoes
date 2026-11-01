@@ -380,7 +380,7 @@ def test_gravar_commits_de_pr_e_idempotente(estado):
 
 
 def test_cache_de_pr_e_por_repo(estado):
-    # pr_id do Bitbucket e sequencial POR repositorio: sem o repo na chave, a
+    # pr_id do host e sequencial POR repositorio: sem o repo na chave, a
     # PR 7 de um repo devolveria os commits da PR 7 do outro.
     estado.registrar_repo("outro", 99)
     estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})

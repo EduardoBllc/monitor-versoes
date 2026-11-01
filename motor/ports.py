@@ -74,7 +74,7 @@ class TaskSource(Protocol):
 
 
 class CommitSource(Protocol):
-    """Fonte de commits de uma tarefa (grep em master, PR do Bitbucket).
+    """Fonte de commits de uma tarefa (grep em master, PR do host).
 
     Recebe o lote inteiro para permitir uma varredura unica — grep com o
     --grep de todos os chamados juntos. Pode omitir chamado sem commit; a
@@ -221,7 +221,7 @@ class GitRepo(Protocol):
         ...
 
     def remote_url(self, remote: str, /) -> str:
-        """URL do remoto (ex: git@bitbucket.org:ws/repo.git)."""
+        """URL do remoto (ex: git@host:ws/repo.git)."""
         ...
 
     def push_branch(self, remote: str, branch: str, /) -> None:

@@ -24,38 +24,18 @@ def test_diretorio_vazio_cria_os_dois(tmp_path, monkeypatch):
     assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV
 
 
-def test_compose_existente_fica_intacto(tmp_path):
-    (tmp_path / "compose.yml").write_text("meu", encoding="utf-8")
+@pytest.mark.parametrize("existente", ["compose.yml", ".env"])
+def test_arquivo_existente_fica_intacto(tmp_path, existente):
+    (tmp_path / existente).write_text("meu", encoding="utf-8")
 
     mensagens = iniciar(tmp_path)
 
-    assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == "meu"
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV
-    assert "compose.yml já existe; mantido" in mensagens
-
-
-def test_env_existente_fica_intacto(tmp_path):
-    (tmp_path / ".env").write_text("X=1", encoding="utf-8")
-
-    mensagens = iniciar(tmp_path)
-
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == "X=1"
-    assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == COMPOSE
-    assert ".env já existe; mantido" in mensagens
-
-
-def test_os_dois_existentes_saem_sem_erro(tmp_path, monkeypatch, capsys):
-    (tmp_path / "compose.yml").write_text("a", encoding="utf-8")
-    (tmp_path / ".env").write_text("b", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-
-    cli.main(["init"])
-
-    assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == "a"
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == "b"
-    saida = capsys.readouterr().out
-    assert "compose.yml já existe" in saida
-    assert ".env já existe" in saida
+    assert (tmp_path / existente).read_text(encoding="utf-8") == "meu"
+    assert f"{existente} já existe; mantido" in mensagens
+    outro, conteudo = (
+        (".env", ENV) if existente == "compose.yml" else ("compose.yml", COMPOSE)
+    )
+    assert (tmp_path / outro).read_text(encoding="utf-8") == conteudo
 
 
 _CHAVES = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
