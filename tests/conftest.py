@@ -51,7 +51,7 @@ def _postgres_efemero() -> Iterator[Any]:
     """
     from testcontainers.community.postgres import PostgresContainer
 
-    # Mesma imagem do compose.yml: o schema tem trigger em plpgsql e checks de
+    # Mesma imagem do modelos/compose.yml: o schema tem trigger em plpgsql e checks de
     # dominio, e divergencia de major do Postgres apareceria como teste de
     # trigger falhando por motivo que nao e o codigo.
     container = PostgresContainer("postgres:18-alpine", driver="psycopg")
@@ -64,9 +64,8 @@ def _postgres_efemero() -> Iterator[Any]:
         pytest.skip(f"Docker inalcancavel ({type(erro).__name__}) — {erro}")
 
     try:
-        # O ambiente e o que o alembic/env.py le (via database_url()), e o
-        # load_dotenv() de la nao sobrescreve variavel ja presente — mesmo
-        # mecanismo do `set -a` documentado no README.
+        # O ambiente e o que o migracoes/env.py le (via database_url()); ele
+        # nao carrega .env, so le o que ja esta exportado.
         os.environ.update(
             DATABASE_HOST=container.get_container_host_ip(),
             DATABASE_PORT=str(container.get_exposed_port(5432)),
@@ -78,11 +77,9 @@ def _postgres_efemero() -> Iterator[Any]:
         # versao nascem em migration, nao no metadata. Com create_all o schema
         # sobe sem elas e os testes de trigger falham dizendo "escrita
         # permitida" — sintoma que nao aponta para a causa.
-        from alembic.config import Config
+        from motor.migracoes import migrar
 
-        from alembic import command
-
-        command.upgrade(Config(str(RAIZ / "alembic.ini")), "head")
+        migrar()
         yield container
     finally:
         container.stop()

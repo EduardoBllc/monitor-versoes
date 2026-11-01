@@ -14,10 +14,11 @@ import textwrap
 import time
 from collections.abc import Callable
 from collections.abc import Set as AbstractSet
+from pathlib import Path
 from typing import TextIO
 
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.diagnostico import diagnosticar, falhou, formatar, head_do_alembic
+from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -33,6 +34,8 @@ from motor.engine.deps import Deps
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.errors import MotorError, formatar_com_notas
+from motor.init import iniciar
+from motor.migracoes import head, migrar
 from motor.montagem import (
     CredenciaisBitbucket,
     FonteTasks,
@@ -84,8 +87,38 @@ def _carregar_ambiente(argv: list[str]) -> None:
     seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE, default="production")
     ambiente = seletor.parse_known_args(argv)[0].env
     if load_dotenv:
-        raiz = os.path.dirname(os.path.dirname(__file__))
-        load_dotenv(os.path.join(raiz, _ARQUIVOS_AMBIENTE[ambiente]), override=True)
+        load_dotenv(Path.cwd() / _ARQUIVOS_AMBIENTE[ambiente], override=True)
+
+
+def _init(_args: argparse.Namespace) -> None:
+    for mensagem in iniciar(Path.cwd()):
+        print(mensagem)
+
+
+def _migrar(_args: argparse.Namespace) -> None:
+    migrar()
+    print("migrações aplicadas")
+
+
+def _diagnostico(args: argparse.Namespace) -> None:
+    resultados = diagnosticar(
+        os.environ,
+        abrir_sessao=abrir_sessao,
+        head=head(),
+        ambiente=args.env,
+    )
+    for resultado in resultados:
+        print(formatar(resultado))
+    if falhou(resultados):
+        sys.exit(1)
+
+
+# Comandos que não abrem sessão nem exigem DATABASE_* antes da hora.
+_SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
+    "init": _init,
+    "migrar": _migrar,
+    "diagnostico": _diagnostico,
+}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -201,6 +234,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "tui",
         help="abre a interface interativa de consulta, verificacao e atualizacao",
     )
+
+    sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
+
+    sub.add_parser("init", help="escreve compose.yml e .env no diretório atual")
 
     sub.add_parser(
         "diagnostico",
@@ -481,17 +518,8 @@ def main(argv: list[str] | None = None) -> None:
             _iniciar_tui()
             return
 
-        if args.comando == "diagnostico":
-            resultados = diagnosticar(
-                os.environ,
-                abrir_sessao=abrir_sessao,
-                head=head_do_alembic(os.path.dirname(os.path.dirname(__file__))),
-                ambiente=args.env,
-            )
-            for resultado in resultados:
-                print(formatar(resultado))
-            if falhou(resultados):
-                sys.exit(1)
+        if args.comando in _SEM_BANCO:
+            _SEM_BANCO[args.comando](args)
             return
 
         if args.comando == "repo":

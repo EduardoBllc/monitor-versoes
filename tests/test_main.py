@@ -883,7 +883,7 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
 
     estado = Estado.FALHA if falha else Estado.OK
     monkeypatch.setattr(cli, "load_dotenv", None)
-    monkeypatch.setattr(cli, "head_do_alembic", lambda raiz: "rev")
+    monkeypatch.setattr(cli, "head", lambda: "rev")
     monkeypatch.setattr(
         cli,
         "diagnosticar",
