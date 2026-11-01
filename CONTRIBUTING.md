@@ -59,8 +59,8 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 
 ## Fluxo
 
-1. **Trabalho nasce na issue.** A spec (ou a proposta, na issue pequena) vai no corpo; o plano,
-   em comentário nela. A issue avança pelo [ciclo da issue](#ciclo-da-issue).
+1. **Trabalho nasce na issue.** A proposta, na issue pequena, vai no corpo; a spec, em
+   comentário fixado, e o plano, em comentário. A issue avança pelo [ciclo da issue](#ciclo-da-issue).
 2. **Branch e PR.** A `main` é protegida: toda mudança entra por PR, e o merge exige os
    checks `ruff format`, `ruff check`, `mypy` e `pytest` verdes — para todos, dono
    incluído.
@@ -100,7 +100,7 @@ comentário.
 | --- | --- |
 | `fase:elaboração` | classificação e perguntas; sem label, a issue está aqui |
 | `fase:proposta` | issue pequena: o que será feito e critérios de aceite, esperando o dono |
-| `fase:spec` | issue grande: spec no corpo, esperando o dono |
+| `fase:spec` | issue grande: spec em comentário fixado, esperando o dono |
 | `fase:plano` | issue grande: plano em comentário, esperando o dono |
 | `fase:execução` | agente implementando |
 | `fase:pr` | PR aberto; o agente atende o review da IA e os comentários do dono |
