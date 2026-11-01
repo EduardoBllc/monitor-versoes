@@ -17,7 +17,7 @@ from collections.abc import Set as AbstractSet
 from typing import TextIO
 
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.diagnostico import diagnosticar, falhou, formatar, head_do_alembic
+from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -33,6 +33,7 @@ from motor.engine.deps import Deps
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.errors import MotorError, formatar_com_notas
+from motor.migracoes import head
 from motor.montagem import (
     CredenciaisBitbucket,
     FonteTasks,
@@ -485,7 +486,7 @@ def main(argv: list[str] | None = None) -> None:
             resultados = diagnosticar(
                 os.environ,
                 abrir_sessao=abrir_sessao,
-                head=head_do_alembic(os.path.dirname(os.path.dirname(__file__))),
+                head=head(),
                 ambiente=args.env,
             )
             for resultado in resultados:

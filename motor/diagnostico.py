@@ -14,8 +14,6 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 
 import httpx
-from alembic.config import Config
-from alembic.script import ScriptDirectory
 from sqlalchemy.orm import Session
 
 from motor.adapters.commitsource.bitbucket import verificar_credenciais
@@ -52,15 +50,6 @@ _VARIAVEIS_BANCO = (
     "DATABASE_PASSWORD",
 )
 _VARIAVEIS_TICKIO = ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD")
-
-
-def head_do_alembic(raiz: str) -> str:
-    """Revisão `head` dos scripts do alembic em `raiz` (onde vive `alembic.ini`)."""
-    config = Config(os.path.join(raiz, "alembic.ini"))
-    config.set_main_option("script_location", os.path.join(raiz, "alembic"))
-    head = ScriptDirectory.from_config(config).get_current_head()
-    assert head is not None  # o repo sempre tem ao menos uma migração
-    return head
 
 
 def _falha(peca: str, erro: MotorError, correcao: str) -> Resultado:
@@ -231,5 +220,4 @@ __all__ = [
     "diagnosticar",
     "falhou",
     "formatar",
-    "head_do_alembic",
 ]

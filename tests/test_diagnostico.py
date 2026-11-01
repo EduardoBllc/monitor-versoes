@@ -16,8 +16,8 @@ from motor.diagnostico import (
     Resultado,
     diagnosticar,
     falhou,
-    head_do_alembic,
 )
+from motor.migracoes import head
 
 HEAD = "rev2"
 ENV_OK = {
@@ -79,12 +79,13 @@ def _rodar(env=None, *, abrir=None, ambiente="production", handler=_tickio_ok):
     return {r.peca: r for r in resultados}, resultados
 
 
-def test_head_do_alembic_e_uma_das_revisoes_dos_scripts():
-    raiz = os.path.dirname(os.path.dirname(__file__))
-    versoes = os.path.join(raiz, "alembic", "versions")
+def test_head_e_uma_das_revisoes_dos_scripts():
+    versoes = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "motor", "migracoes", "versions"
+    )
     revisoes = {f.split("_", 1)[0] for f in os.listdir(versoes) if f.endswith(".py")}
 
-    assert head_do_alembic(raiz) in revisoes
+    assert head() in revisoes
 
 
 def test_instalacao_integra():

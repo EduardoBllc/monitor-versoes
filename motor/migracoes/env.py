@@ -1,18 +1,10 @@
-from logging.config import fileConfig
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, pool
 
 from alembic import context
 from motor.adapters.estado.models import Base
 from motor.config import database_url
 
-load_dotenv()
-
 config = context.config
-
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
 
