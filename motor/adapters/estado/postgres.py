@@ -338,16 +338,16 @@ class PostgresEstado:
                 updated_on=linha.updated_on,
             )
             for linha in self._scalars(
-                select(models.BitbucketPr)
-                .where(models.BitbucketPr.repo_id == repo_id)
-                .order_by(models.BitbucketPr.pr_id)
+                select(models.PrMergeada)
+                .where(models.PrMergeada.repo_id == repo_id)
+                .order_by(models.PrMergeada.pr_id)
             )
         ]
 
     def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
         linha = self._scalar(
-            select(models.BitbucketVarredura).where(
-                models.BitbucketVarredura.repo_id == self._repo_id(repo)
+            select(models.VarreduraPr).where(
+                models.VarreduraPr.repo_id == self._repo_id(repo)
             )
         )
         return None if linha is None else linha.ate
@@ -365,7 +365,7 @@ class PostgresEstado:
             # merge: a varredura incremental reentrega PR que so mudou de
             # titulo, e um add duplicaria a chave.
             self.sessao.merge(
-                models.BitbucketPr(
+                models.PrMergeada(
                     repo_id=repo_id,
                     pr_id=pr.pr_id,
                     titulo=pr.titulo,
@@ -373,7 +373,7 @@ class PostgresEstado:
                     updated_on=pr.updated_on,
                 )
             )
-        self.sessao.merge(models.BitbucketVarredura(repo_id=repo_id, ate=ate))
+        self.sessao.merge(models.VarreduraPr(repo_id=repo_id, ate=ate))
         self._commit()
 
     # -- internos --------------------------------------------------------

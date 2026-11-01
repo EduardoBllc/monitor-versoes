@@ -147,7 +147,7 @@ class SemEntrega(Base):
 
 
 class PrCommitCache(Base):
-    """Commits de uma PR mergeada do Bitbucket — cache puro de fato imutavel.
+    """Commits de uma PR mergeada do host — cache puro de fato imutavel.
 
     Existe para cortar o `GET /pullrequests/{id}/commits`, que hoje roda uma vez
     por PR a cada `verificar`. A busca das PRs do chamado continua batendo na
@@ -163,7 +163,7 @@ class PrCommitCache(Base):
     __tablename__ = "pr_commit_cache"
 
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
-    # BigInteger: o pr_id vem do Bitbucket, nao e nosso para caber em int4.
+    # BigInteger: o pr_id vem do host, nao e nosso para caber em int4.
     pr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     hash_origem: Mapped[str] = mapped_column(primary_key=True)
     parent: Mapped[str]
@@ -171,7 +171,7 @@ class PrCommitCache(Base):
     msg: Mapped[str]
 
 
-class BitbucketPr(Base):
+class PrMergeada(Base):
     """Indice local das PRs mergeadas — o que substitui uma busca na API por
     chamado por uma leitura de tabela.
 
@@ -181,7 +181,7 @@ class BitbucketPr(Base):
     silencio.
     """
 
-    __tablename__ = "bitbucket_pr"
+    __tablename__ = "pr_mergeada"
 
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
     pr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -190,7 +190,7 @@ class BitbucketPr(Base):
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
 
 
-class BitbucketVarredura(Base):
+class VarreduraPr(Base):
     """Marca d'agua da varredura incremental: ate quando o indice esta completo.
 
     Ausente = nunca varrido, e a proxima varredura baixa o historico inteiro.
@@ -199,7 +199,7 @@ class BitbucketVarredura(Base):
     porque o `updated_on` dela e maior que este inicio.
     """
 
-    __tablename__ = "bitbucket_varredura"
+    __tablename__ = "varredura_pr"
 
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
     ate: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
