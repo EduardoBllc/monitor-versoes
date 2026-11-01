@@ -276,3 +276,42 @@ def test_sem_entrega(sessao_postgres):
     assert estado.sem_entrega("vendabemweb") == {
         "555444": "chamado administrativo, sem commit"
     }
+
+
+def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_postgres):
+    from alembic.config import Config
+
+    from alembic import command
+    from tests.conftest import RAIZ
+
+    _semear_repo(sessao_postgres)
+    sessao_postgres.execute(
+        text(
+            "insert into pr_mergeada (repo_id, pr_id, titulo, branch, updated_on) "
+            "select id, 7, 't', 'b', now() from repo"
+        )
+    )
+    sessao_postgres.execute(
+        text("insert into varredura_pr (repo_id, ate) select id, now() from repo")
+    )
+    sessao_postgres.commit()
+    # Fecha a transacao aberta: o ALTER TABLE do alembic espera o lock dela.
+    sessao_postgres.close()
+    cfg = Config(str(RAIZ / "alembic.ini"))
+
+    command.downgrade(cfg, "d4e7a9b2c1f0")
+    try:
+        antigos = [
+            sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
+            for t in ("bitbucket_pr", "bitbucket_varredura")
+        ]
+        sessao_postgres.rollback()
+    finally:
+        command.upgrade(cfg, "head")
+
+    assert antigos == [1, 1]
+    novos = [
+        sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
+        for t in ("pr_mergeada", "varredura_pr")
+    ]
+    assert novos == [1, 1]
