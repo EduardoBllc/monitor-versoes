@@ -172,3 +172,32 @@ def test_validadores_levantam_erro_de_entrada():
         validar_nome_repo("pasta/backend")
     with pytest.raises(ErroDeEntrada, match="inteiro positivo"):
         validar_sistema_id("0")
+
+
+def test_primeiro_uso_cria_arquivo_e_esquema_do_sqlite(monkeypatch, tmp_path):
+    from sqlalchemy import text
+
+    from motor.montagem import abrir_sessao
+
+    caminho = tmp_path / "novo" / "estado.db"
+    monkeypatch.delenv("DATABASE_BACKEND", raising=False)
+    monkeypatch.setenv("DATABASE_SQLITE_PATH", str(caminho))
+
+    with abrir_sessao() as sessao:
+        revisao = sessao.execute(
+            text("select version_num from alembic_version")
+        ).scalar()
+
+    assert caminho.is_file()
+    assert revisao is not None
+
+
+def test_diagnostico_nao_cria_esquema(monkeypatch, tmp_path):
+    from motor.adapters.estado.postgres import PostgresEstado
+    from motor.montagem import abrir_sessao
+
+    monkeypatch.delenv("DATABASE_BACKEND", raising=False)
+    monkeypatch.setenv("DATABASE_SQLITE_PATH", str(tmp_path / "estado.db"))
+
+    with abrir_sessao(garantir=False) as sessao:
+        assert PostgresEstado(sessao=sessao).revisao_migracao() is None

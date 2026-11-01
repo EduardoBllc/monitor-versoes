@@ -68,6 +68,7 @@ def _postgres_efemero() -> Iterator[Any]:
         # load_dotenv() de la nao sobrescreve variavel ja presente — mesmo
         # mecanismo do `set -a` documentado no README.
         os.environ.update(
+            DATABASE_BACKEND="postgres",
             DATABASE_HOST=container.get_container_host_ip(),
             DATABASE_PORT=str(container.get_exposed_port(5432)),
             DATABASE_NAME=container.dbname,
@@ -118,5 +119,25 @@ def sessao_postgres(_postgres_efemero: Any) -> Iterator[Any]:
         with fabrica() as sessao:
             yield sessao
         _limpar(engine)
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def sessao_sqlite(tmp_path: Any) -> Iterator[Any]:
+    """Sessao contra um SQLite novo em `tmp_path`, migrado como no primeiro uso.
+
+    Sem Docker: roda no `make check` comum.
+    """
+    from sqlalchemy.orm import Session
+
+    from motor.adapters.estado.engine import criar_engine, garantir_esquema
+
+    url = f"sqlite:///{tmp_path / 'estado.db'}"
+    garantir_esquema(url)
+    engine = criar_engine(url)
+    try:
+        with Session(engine) as sessao:
+            yield sessao
     finally:
         engine.dispose()
