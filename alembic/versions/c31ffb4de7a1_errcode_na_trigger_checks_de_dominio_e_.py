@@ -23,8 +23,60 @@ depends_on: str | Sequence[str] | None = None
 # Classe MV: nao colide com nenhuma classe do padrao (Appendix A do Postgres).
 ERRCODE = "MV001"
 
+_TABELAS = ("atribuicao", "atribuicao_commit")
+_EVENTOS = ("insert", "update", "delete")
+
+
+def _liberada(coluna: str) -> str:
+    return (
+        f"exists (select 1 from versao where id = {coluna} and liberada_em is not null)"
+    )
+
+
+def _remover_triggers_sqlite() -> None:
+    # O batch recria `versao` (drop + rename) e o SQLite recusa o rename com
+    # trigger apontando para a tabela: sai antes, volta depois. Mesma definicao
+    # de bae96c9be3c9 (copiada: migration nao importa de outra).
+    for tabela in _TABELAS:
+        for evento in _EVENTOS:
+            op.execute(f"drop trigger if exists {tabela}_congelada_{evento}")
+
+
+def _recriar_triggers_sqlite() -> None:
+    condicoes = {
+        "insert": _liberada("new.versao_id"),
+        "update": f"{_liberada('old.versao_id')} or {_liberada('new.versao_id')}",
+        "delete": _liberada("old.versao_id"),
+    }
+    for tabela in _TABELAS:
+        for evento, condicao in condicoes.items():
+            op.execute(
+                f"create trigger {tabela}_congelada_{evento} "
+                f"before {evento} on {tabela} for each row when {condicao} "
+                f"begin select raise(abort, '{ERRCODE}: versao liberada e imutavel'); end"
+            )
+
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        # Sem errcode nem rename constraint: o marcador MV001 ja esta na
+        # mensagem das triggers; o resto e recriacao em lote.
+        _remover_triggers_sqlite()
+        with op.batch_alter_table("versao") as lote:
+            lote.drop_constraint("uq_versao_repo_id", type_="unique")
+            lote.create_unique_constraint(
+                "uq_versao_repo_id_numero", ["repo_id", "numero"]
+            )
+            lote.create_check_constraint(
+                "ck_versao_tipo", "tipo in ('fechada', 'ajustada', 'cliente')"
+            )
+        with op.batch_alter_table("atribuicao") as lote:
+            lote.create_check_constraint(
+                "ck_atribuicao_estado", "estado in ('pendente', 'aplicado')"
+            )
+        _recriar_triggers_sqlite()
+        return
+
     # 1. A trigger passa a levantar com errcode proprio. Antes o adapter
     # identificava o congelamento por `"imutavel" in str(e.orig)`, entao
     # reescrever esta mensagem quebrava a traducao em silencio, em outro arquivo.
@@ -70,6 +122,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        _remover_triggers_sqlite()
+        with op.batch_alter_table("atribuicao") as lote:
+            lote.drop_constraint("ck_atribuicao_estado", type_="check")
+        with op.batch_alter_table("versao") as lote:
+            lote.drop_constraint("ck_versao_tipo", type_="check")
+            lote.drop_constraint("uq_versao_repo_id_numero", type_="unique")
+            lote.create_unique_constraint("uq_versao_repo_id", ["repo_id", "numero"])
+        _recriar_triggers_sqlite()
+        return
     op.execute("alter table atribuicao drop constraint ck_atribuicao_estado")
     op.execute("alter table versao drop constraint ck_versao_tipo")
     op.execute(

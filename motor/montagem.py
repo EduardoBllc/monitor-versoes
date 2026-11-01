@@ -19,12 +19,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
+from motor.adapters.estado.engine import criar_engine, garantir_esquema
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
@@ -89,7 +89,7 @@ def validar_sistema_id(valor: str) -> int:
 
 
 @contextmanager
-def abrir_sessao() -> Iterator[Session]:
+def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
     """Ciclo de vida do banco: uma engine e uma sessao por comando.
 
     O CLI e um processo de segundos, entao nao ha o que reaproveitar de um pool
@@ -97,8 +97,15 @@ def abrir_sessao() -> Iterator[Session]:
     Nada disso vive em nivel de modulo: a suite roda sem banco, e uma sessao
     montada no import (ou na construcao do parser) exigiria banco de pe so
     para rodar `--help`.
+
+    `garantir` aplica as migrations se o banco ainda nao tem esquema (primeiro
+    uso, sem o usuario rodar `alembic`). O `motor diagnostico` passa `False`:
+    ele so olha.
     """
-    engine = create_engine(database_url())
+    url = database_url()
+    if garantir:
+        garantir_esquema(url)
+    engine = criar_engine(url)
     try:
         with Session(engine) as sessao:
             yield sessao

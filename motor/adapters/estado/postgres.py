@@ -446,6 +446,11 @@ class PostgresEstado:
         """
         self.sessao.rollback()
         sqlstate = getattr(e.orig, "sqlstate", None)
+        if sqlstate is None and ERRCODE_VERSAO_CONGELADA in str(e.orig):
+            # SQLite: a trigger nao tem errcode, o marcador vai na mensagem.
+            raise RecusaDeInvariante(
+                "versao liberada e imutavel — remarque a tarefa para a proxima versao"
+            ) from e
         if sqlstate == ERRCODE_VERSAO_CONGELADA or (
             # fallback para banco que ainda nao rodou a migracao do errcode
             sqlstate is not None and "imutavel" in str(e.orig)
@@ -454,7 +459,9 @@ class PostgresEstado:
                 "versao liberada e imutavel — remarque a tarefa para a proxima versao"
             ) from e
         if sqlstate is None:
-            raise BackendIndisponivel(
-                f"banco inacessivel: {e.orig}. Suba com: docker compose up -d"
-            ) from e
+            if type(e.orig).__module__.startswith("sqlite3"):
+                dica = "Confira DATABASE_SQLITE_PATH e as permissoes do arquivo"
+            else:
+                dica = "Suba com: docker compose up -d"
+            raise BackendIndisponivel(f"banco inacessivel: {e.orig}. {dica}") from e
         raise MotorError(f"erro do banco: {e.orig}") from e

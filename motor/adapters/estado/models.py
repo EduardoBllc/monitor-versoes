@@ -10,7 +10,6 @@ import datetime
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
-    DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -18,7 +17,9 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import DateTime, TypeDecorator
 
 # Nomes deterministicos de constraint: sem isso o autogenerate do Alembic
 # nomeia por reflexao e as migracoes ficam instaveis entre maquinas.
@@ -29,6 +30,32 @@ CONVENCAO = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
+
+
+class DataComFuso(TypeDecorator[datetime.datetime]):
+    """`timestamptz` que volta com fuso nos dois backends.
+
+    O Postgres ja guarda e devolve o instante com fuso. O SQLite guarda texto
+    sem fuso e devolveria datetime ingenuo — que comparado com um datetime com
+    fuso estoura `TypeError`. Aqui o SQLite grava em UTC e le como UTC.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: datetime.datetime | None, dialect: Dialect
+    ) -> datetime.datetime | None:
+        if value is not None and dialect.name == "sqlite" and value.tzinfo:
+            return value.astimezone(datetime.UTC)
+        return value
+
+    def process_result_value(
+        self, value: datetime.datetime | None, dialect: Dialect
+    ) -> datetime.datetime | None:
+        if value is not None and dialect.name == "sqlite" and value.tzinfo is None:
+            return value.replace(tzinfo=datetime.UTC)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -78,7 +105,7 @@ class Versao(Base):
     base_commit: Mapped[str]
     # null = em construcao. Preenchida com a data do commit apontado pela tag.
     liberada_em: Mapped[datetime.datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
+        DataComFuso(), default=None
     )
 
 
@@ -167,7 +194,7 @@ class PrCommitCache(Base):
     pr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     hash_origem: Mapped[str] = mapped_column(primary_key=True)
     parent: Mapped[str]
-    commit_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    commit_date: Mapped[datetime.datetime] = mapped_column(DataComFuso())
     msg: Mapped[str]
 
 
@@ -187,7 +214,7 @@ class PrMergeada(Base):
     pr_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     titulo: Mapped[str]
     branch: Mapped[str]
-    updated_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    updated_on: Mapped[datetime.datetime] = mapped_column(DataComFuso())
 
 
 class VarreduraPr(Base):
@@ -202,4 +229,4 @@ class VarreduraPr(Base):
     __tablename__ = "varredura_pr"
 
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
-    ate: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    ate: Mapped[datetime.datetime] = mapped_column(DataComFuso())
