@@ -6,11 +6,11 @@
 
 Como o hash muda, a presença é respondida cruzando três camadas:
 
-| Fonte                  | Representa                                           | Muda quando                                                                                                     |
-| ---------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Tickio**             | o que _deveria_ estar (alvo)                         | task marcada para uma versão ([005](005-alvo-distribuicao-entre-versoes.md))                                    |
-| **estado (SQLite/Postgres)**| o que o tool _declarou_ colocar (intenção auditável) | `verificar`/`atualizar` sobrescrevem; versão liberada nunca muda ([010](010-travas-publicada-e-liberada.md))     |
-| **git (trailer `-x`)** | o que está _fisicamente_ aplicado (prova)            | um cherry-pick acontece                                                                                         |
+| Fonte                        | Representa                                           | Muda quando                                                                                                     |
+| ---------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Tickio**                   | o que _deveria_ estar (alvo)                         | task marcada para uma versão ([005](005-alvo-distribuicao-entre-versoes.md))                                    |
+| **estado (SQLite/Postgres)** | o que o tool _declarou_ colocar (intenção auditável) | `verificar`/`atualizar` sobrescrevem; versão liberada nunca muda ([010](010-travas-publicada-e-liberada.md))     |
+| **git (trailer `-x`)**       | o que está _fisicamente_ aplicado (prova)            | um cherry-pick acontece                                                                                         |
 
 Verde só quando `Tickio = estado = git`. Cada camada pega o que a outra não pega:
 

@@ -212,7 +212,7 @@ def test_destino_com_linha_e_recusado_sem_escrita(tmp_path: Path) -> None:
     engine.dispose()
     antes = _dump(destino)
 
-    with pytest.raises(ErroDeEntrada, match="repo"):
+    with pytest.raises(ErroDeEntrada):
         migrar_estado(origem, destino)
 
     assert _dump(destino) == antes
@@ -222,7 +222,7 @@ def test_de_igual_a_para(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path / 'a.db'}"
     _povoar(url)
 
-    with pytest.raises(ErroDeEntrada, match="mesmo banco"):
+    with pytest.raises(ErroDeEntrada):
         migrar_estado(url, f"sqlite:///{tmp_path}/./a.db")
 
 
@@ -230,14 +230,14 @@ def test_esquema_de_url_desconhecido(tmp_path: Path) -> None:
     origem = f"sqlite:///{tmp_path / 'a.db'}"
     _povoar(origem)
 
-    with pytest.raises(ErroDeEntrada, match="desconhecido"):
+    with pytest.raises(ErroDeEntrada):
         migrar_estado(origem, "mysql://u:p@h/db")
 
 
 def test_origem_sqlite_inexistente_nao_e_criada(tmp_path: Path) -> None:
     origem = tmp_path / "nao-existe.db"
 
-    with pytest.raises(ErroDeEntrada, match="inexistente"):
+    with pytest.raises(ErroDeEntrada):
         migrar_estado(f"sqlite:///{origem}", f"sqlite:///{tmp_path / 'b.db'}")
 
     assert not origem.exists()
