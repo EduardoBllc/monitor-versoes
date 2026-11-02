@@ -45,7 +45,7 @@ class FakeEstado:
         if info is None:
             raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  uv run motor repo adicionar '{basename}' "
+                f"  motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
             )
         return info

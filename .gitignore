@@ -12,8 +12,6 @@ __pycache__/
 conflitos/
 
 # Secrets / ambiente
-# `motor init` também escreve compose.yml na raiz do clone; aqui ele é inútil.
-/compose.yml
 .env
 .env.*
 !.env.development.example

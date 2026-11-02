@@ -113,7 +113,8 @@ def _diagnostico(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-# Comandos que não abrem sessão nem exigem DATABASE_* antes da hora.
+# Comandos que não passam pela montagem de dependências do `main()` (repos,
+# Tickio, fontes): cada um cuida do próprio banco, ou não usa.
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "init": _init,
     "migrar": _migrar,

@@ -12,7 +12,7 @@ DEV := uv run --extra dev python -m
 
 install:
 	uv sync
-	uv run motor init
+	cp -n motor/modelos/env.example .env
 
 db:
 	docker compose -f motor/modelos/compose.yml --project-directory . up -d --wait
