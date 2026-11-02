@@ -1,4 +1,4 @@
-"""Contrato de EstadoRepo: as MESMAS assercoes contra o fake e contra o Postgres.
+"""Contrato de EstadoRepo: as MESMAS assercoes contra o fake, o Postgres e o SQLite.
 
 Por que este arquivo existe. `FakeEstado` e o que a suite inteira usa no lugar do
 banco. Onde ele e o `PostgresEstado` discordam, a suite fica verde num
@@ -9,9 +9,10 @@ fake devolvia ordem de insercao onde o adapter usa ORDER BY.
 
 Antes deste arquivo o contrato existia so como prosa num relatorio de processo, e
 as duas implementacoes eram cobertas por duas suites escritas a mao em paralelo —
-que e exatamente como a divergencia volta. Aqui cada assercao roda duas vezes: uma
-sem banco, uma contra o Postgres de verdade. O parametro `postgres` carrega
-`integracao`, entao pula junto com os outros quando nao ha banco.
+que e exatamente como a divergencia volta. Aqui cada assercao roda tres vezes: uma
+sem banco, uma contra o SQLite (arquivo em tmp_path, sem Docker) e uma contra o
+Postgres de verdade. O parametro `postgres` carrega `integracao`, entao pula
+junto com os outros quando nao ha banco.
 
 Ao acrescentar comportamento em `EstadoRepo`, a assercao vem para ca. Teste que
 existe so num dos lados nao e contrato, e uma opiniao.
@@ -55,14 +56,15 @@ def _base(numero: str = "13.34.0") -> VersaoInfo:
 @pytest.fixture(
     params=[
         "fake",
+        "sqlite",
         pytest.param("postgres", marks=pytest.mark.integracao),
     ]
 )
 def estado(request):
     """Uma implementacao de EstadoRepo com o repo canonico e o alias semeados.
 
-    Semear e a unica coisa que difere entre as duas: o fake recebe dicts, o
-    Postgres recebe linhas. Tudo depois disto e identico por contrato.
+    Semear e a unica coisa que difere: o fake recebe dicts, os bancos recebem
+    linhas. Tudo depois disto e identico por contrato.
     """
     if request.param == "fake":
         return FakeEstado(
@@ -72,7 +74,10 @@ def estado(request):
 
     from motor.adapters.estado.postgres import PostgresEstado
 
-    sessao = request.getfixturevalue("sessao_postgres")
+    if request.param == "sqlite":
+        sessao = request.getfixturevalue("sessao_sqlite")
+    else:
+        sessao = request.getfixturevalue("sessao_postgres")
     sessao.execute(
         text("insert into repo (nome, tickio_sistema_id) values (:n, :s)"),
         {"n": REPO, "s": SISTEMA_ID},

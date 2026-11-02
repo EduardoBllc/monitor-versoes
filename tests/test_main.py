@@ -900,3 +900,60 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     else:
         main(["diagnostico"])
     assert estado.value in capsys.readouterr().out
+
+
+# -- migrar-estado ------------------------------------------------------------
+
+
+def test_migrar_estado_exige_de_e_para():
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["migrar-estado", "--de", "sqlite:///a.db"])
+
+
+def test_migrar_estado_copia_e_nao_avisa_do_backend_padrao(
+    monkeypatch, capsys, tmp_path
+):
+    from sqlalchemy import insert
+
+    from motor.adapters.estado.engine import criar_engine, garantir_esquema
+    from motor.adapters.estado.models import Repo
+
+    origem = f"sqlite:///{tmp_path / 'a.db'}"
+    garantir_esquema(origem)
+    engine = criar_engine(origem)
+    with engine.begin() as con:
+        con.execute(insert(Repo).values(nome="r", tickio_sistema_id=1))
+    engine.dispose()
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    monkeypatch.setattr(
+        cli, "abrir_sessao", lambda: pytest.fail("migrar-estado não abre sessão")
+    )
+    # as cinco partes sem DATABASE_BACKEND dispararia o aviso se a config fosse lida
+    for parte, valor in {
+        "HOST": "h",
+        "PORT": "1",
+        "NAME": "n",
+        "USER": "u",
+        "PASSWORD": "p",
+    }.items():
+        monkeypatch.setenv(f"DATABASE_{parte}", valor)
+    monkeypatch.delenv("DATABASE_BACKEND", raising=False)
+
+    main(["migrar-estado", "--de", origem, "--para", f"sqlite:///{tmp_path / 'b.db'}"])
+
+    captured = capsys.readouterr()
+    assert "repo: 1" in captured.out
+    assert "DATABASE_BACKEND" not in captured.err
+
+
+def test_migrar_estado_recusa_sai_com_codigo_de_erro_e_mensagem(
+    monkeypatch, caplog, tmp_path
+):
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    url = f"sqlite:///{tmp_path / 'a.db'}"
+
+    with pytest.raises(SystemExit) as saida:
+        main(["migrar-estado", "--de", url, "--para", url])
+
+    assert saida.value.code == 1
+    assert "mesmo banco" in caplog.text

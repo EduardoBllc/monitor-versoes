@@ -7,12 +7,12 @@ como escrever código e teste, em [docs/padroes/codigo.md](docs/padroes/codigo.m
 
 ## Setup de desenvolvimento
 
-Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, Docker e `make`.
+Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, `make` e, para o Postgres de desenvolvimento e os testes de integração, Docker.
 
 ```bash
 make setup         # uv sync --all-extras, cria .env.development, instala o pre-commit
-make db-dev        # sobe o Postgres de desenvolvimento (porta 5434)
-make migrate-dev   # motor --env development migrar
+make db-dev        # sobe o Postgres de desenvolvimento (porta 5434; opt-in)
+make migrate-dev   # motor --env development migrar (DATABASE_BACKEND=postgres)
 ```
 
 Para criar uma migração nova (com o banco de desenvolvimento já migrado):
@@ -30,7 +30,8 @@ CLI e `compose.yml` leem `.env` (o CLI o procura no diretório atual) — **prod
 desenvolvimento (`.env.development`, porta **5434**) só entra quando pedido: alvos
 `-dev` do Makefile e `--env development` no CLI.
 
-A suíte de testes não usa nenhum dos dois. Os testes de integração sobem um Postgres
+A suíte de testes não usa nenhum dos dois. O contrato do estado roda também num SQLite em
+`tmp_path`, sem Docker. Os testes de integração sobem um Postgres
 **efêmero** (testcontainers), migram e o derrubam no fim; a URL vem do container, nunca
 do ambiente, então o `TRUNCATE` dos testes não alcança banco nenhum seu. Sem Docker,
 esses testes pulam — e pulado não é verde. Detalhes em

@@ -14,9 +14,11 @@ install:
 	uv sync
 	cp -n motor/modelos/env.example .env
 
+# Postgres opt-in (DATABASE_BACKEND=postgres): o padrao do motor e SQLite, sem Docker.
 db:
 	docker compose -f motor/modelos/compose.yml --project-directory . up -d --wait
 
+# Exige DATABASE_BACKEND=postgres no .env; no SQLite o primeiro uso migra sozinho.
 migrate:
 	uv run motor migrar
 

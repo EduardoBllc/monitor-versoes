@@ -10,6 +10,41 @@ from collections.abc import Sequence
 
 from alembic import op
 
+# Marcador estavel que o adapter procura na mensagem do SQLite (sem errcode).
+MARCADOR = "MV001"
+
+_EVENTOS_SQLITE = {
+    "insert": "new.versao_id",
+    "update": "old.versao_id",
+    "delete": "old.versao_id",
+}
+_TABELAS = ("atribuicao", "atribuicao_commit")
+
+
+def _liberada(coluna: str) -> str:
+    return (
+        f"exists (select 1 from versao where id = {coluna} and liberada_em is not null)"
+    )
+
+
+def _triggers_sqlite() -> None:
+    # SQLite nao tem trigger multi-evento nem errcode: uma por evento, e a
+    # recusa carrega o marcador na mensagem. UPDATE olha old e new (mover linha
+    # PARA FORA de versao liberada tambem e recusado).
+    condicoes = {
+        "insert": _liberada("new.versao_id"),
+        "update": f"{_liberada('old.versao_id')} or {_liberada('new.versao_id')}",
+        "delete": _liberada("old.versao_id"),
+    }
+    for tabela in _TABELAS:
+        for evento, condicao in condicoes.items():
+            op.execute(
+                f"create trigger {tabela}_congelada_{evento} "
+                f"before {evento} on {tabela} for each row when {condicao} "
+                f"begin select raise(abort, '{MARCADOR}: versao liberada e imutavel'); end"
+            )
+
+
 # revision identifiers, used by Alembic.
 revision: str = "bae96c9be3c9"
 down_revision: str | Sequence[str] | None = "a2c11a78f505"
@@ -19,6 +54,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    if op.get_bind().dialect.name == "sqlite":
+        _triggers_sqlite()
+        return
     op.execute("""
         create or replace function trava_versao_liberada() returns trigger as $$
         declare vid int;
@@ -44,6 +82,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    if op.get_bind().dialect.name == "sqlite":
+        for tabela in _TABELAS:
+            for evento in _EVENTOS_SQLITE:
+                op.execute(f"drop trigger if exists {tabela}_congelada_{evento}")
+        return
     op.execute(
         "drop trigger if exists atribuicao_commit_congelada on atribuicao_commit"
     )

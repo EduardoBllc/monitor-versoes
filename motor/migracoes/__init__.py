@@ -15,9 +15,12 @@ from sqlalchemy.exc import OperationalError
 from motor.errors import BackendIndisponivel
 
 
-def config_alembic() -> Config:
+def config_alembic(url: str | None = None) -> Config:
+    """Config do Alembic; `url` (já normalizada) tem precedência sobre a do ambiente."""
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent))
+    if url is not None:
+        config.attributes["url"] = url
     return config
 
 

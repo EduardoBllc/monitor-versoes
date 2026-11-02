@@ -6,7 +6,11 @@
   [010](010-travas-publicada-e-liberada.md), [011](011-congelamento-no-banco.md),
   [021](021-motor-nao-interativo.md)
 
-Mora em Postgres, escopado por repo. Guarda duas coisas de natureza diferente:
+Mora em SQLite (padrão, um arquivo local, sem Docker) ou em Postgres (opt-in), escolhido por
+`DATABASE_BACKEND`, escopado por repo. O contrato do estado é o mesmo nos dois, e a suíte de
+contrato roda contra ambos. `migrar-estado --de <url> --para <url>` copia o estado completo
+(inclusive o julgamento humano, abaixo) de um para o outro, nos dois sentidos; ele não troca
+o backend sozinho. Guarda duas coisas de natureza diferente:
 
 **Projeção, recuperável** — a derivação task → commits. `reconstruir-estado` regenera:
 número, tipo e base saem do nome da branch mais a inferência
@@ -14,7 +18,8 @@ número, tipo e base saem do nome da branch mais a inferência
 `cherry picked from <hash>` em `base..HEAD`, reagrupados por `ch<num>`.
 
 **Julgamento humano, não recuperável** — exclusões ("esse commit o grep pegou mas não entra")
-e registros de "não houve entrega". Só existe no banco. Para commit sem `ch<num>` na mensagem,
+e registros de "não houve entrega". Só existe no banco — por isso trocar de backend é
+`migrar-estado`, não `reconstruir-estado`. Para commit sem `ch<num>` na mensagem,
 `reconstruir-estado` devolve `PENDING_JUDGMENT{orfaos}` e para; quem pergunta ao humano é o
 front-end, nunca o motor ([021](021-motor-nao-interativo.md)).
 

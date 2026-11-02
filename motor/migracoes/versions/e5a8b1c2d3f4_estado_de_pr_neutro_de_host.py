@@ -24,6 +24,10 @@ _RENOMEIA = (("bitbucket_pr", "pr_mergeada"), ("bitbucket_varredura", "varredura
 
 def _renomear(origem: str, destino: str) -> None:
     op.rename_table(origem, destino)
+    if op.get_bind().dialect.name == "sqlite":
+        # SQLite nao tem RENAME CONSTRAINT; os nomes de PK/FK ficam como estao
+        # (nao tem efeito la) e o rename da tabela basta.
+        return
     op.execute(f"ALTER TABLE {destino} RENAME CONSTRAINT pk_{origem} TO pk_{destino}")
     op.execute(
         f"ALTER TABLE {destino} RENAME CONSTRAINT "

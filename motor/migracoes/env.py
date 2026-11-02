@@ -11,7 +11,10 @@ target_metadata = Base.metadata
 # Nunca via config.set_main_option: configparser interpola "%" e uma senha
 # como "se%40nha%25x" (ja com quote() aplicado) quebra com ValueError antes
 # de qualquer tentativa de conexao. A url vai direto para o engine.
-url = database_url()
+#
+# `attributes["url"]` vem de quem chama por codigo (primeiro uso e
+# `migrar-estado`); sem ele, a URL sai da config, sem o aviso de backend padrao.
+url = config.attributes.get("url") or database_url(avisar=False)
 
 
 def run_migrations_offline() -> None:
@@ -19,6 +22,7 @@ def run_migrations_offline() -> None:
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
+        render_as_batch=url.startswith("sqlite"),
         dialect_opts={"paramstyle": "named"},
     )
     with context.begin_transaction():
@@ -28,7 +32,13 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     connectable = create_engine(url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # batch: o SQLite nao tem ALTER para constraint; a revisao recria a
+        # tabela. FKs ficam desligadas aqui (padrao do SQLite) pelo mesmo motivo.
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=connection.dialect.name == "sqlite",
+        )
         with context.begin_transaction():
             context.run_migrations()
 
