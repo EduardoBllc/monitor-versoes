@@ -21,6 +21,7 @@ from motor.diagnostico import (
 
 HEAD = "rev2"
 ENV_OK = {
+    "DATABASE_BACKEND": "postgres",
     "DATABASE_HOST": "h",
     "DATABASE_PORT": "5433",
     "DATABASE_NAME": "n",
@@ -34,7 +35,7 @@ ENV_OK = {
 
 def _sessao_com(revisao: str | None):
     @contextlib.contextmanager
-    def abrir():
+    def abrir(garantir=True):
         with Session(create_engine("sqlite://")) as sessao:
             if revisao is not None:
                 sessao.execute(text("CREATE TABLE alembic_version (version_num TEXT)"))
@@ -47,7 +48,7 @@ def _sessao_com(revisao: str | None):
 
 
 @contextlib.contextmanager
-def _banco_fora():
+def _banco_fora(garantir=True):
     class _Quebra(Session):
         def execute(self, *a, **k):
             raise OperationalError("select 1", None, Exception("connection refused"))
@@ -56,7 +57,7 @@ def _banco_fora():
         yield sessao
 
 
-def _abrir_proibido():
+def _abrir_proibido(garantir=True):
     raise AssertionError("não devia abrir sessão")
 
 
@@ -228,3 +229,39 @@ def test_nao_verificada_e_nao_configurado_nao_falham():
             Resultado("b", Estado.NAO_CONFIGURADO),
         ]
     )
+
+
+ENV_SQLITE = {k: v for k, v in ENV_OK.items() if not k.startswith("DATABASE_")}
+
+
+def test_sqlite_nao_exige_partes_do_banco_e_rotula_o_backend():
+    por_peca, resultados = _rodar(ENV_SQLITE)
+
+    assert not falhou(resultados)
+    assert "Postgres" not in por_peca
+    assert por_peca["SQLite"].estado is Estado.OK
+    assert por_peca["Migração"].estado is Estado.OK
+
+
+def test_sqlite_sem_migracao_nao_sugere_docker_nem_make():
+    por_peca, _ = _rodar(ENV_SQLITE, abrir=_sessao_com(None))
+
+    assert por_peca["Migração"].estado is Estado.FALHA
+    assert "docker" not in por_peca["Migração"].correcao
+
+
+def test_sqlite_fora_nao_sugere_docker():
+    por_peca, _ = _rodar(ENV_SQLITE, abrir=_banco_fora)
+
+    assert por_peca["SQLite"].estado is Estado.FALHA
+    assert "docker" not in por_peca["SQLite"].correcao
+    assert por_peca["Migração"].estado is Estado.NAO_VERIFICADA
+
+
+def test_backend_desconhecido_e_variavel_invalida():
+    por_peca, _ = _rodar(
+        {**ENV_SQLITE, "DATABASE_BACKEND": "mysql"}, abrir=_abrir_proibido
+    )
+
+    assert por_peca["Variáveis"].estado is Estado.FALHA
+    assert "DATABASE_BACKEND" in por_peca["Variáveis"].detalhe

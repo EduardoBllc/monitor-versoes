@@ -195,3 +195,37 @@ def test_verificar_conexao_com_sqlstate_nao_e_backend_indisponivel():
         PostgresEstado(sessao=_como_sessao(sessao)).verificar_conexao()
 
     assert not isinstance(e.value, BackendIndisponivel)
+
+
+def test_erro_sqlite_com_marcador_vira_recusa_de_invariante():
+    import sqlite3
+
+    from sqlalchemy.exc import IntegrityError
+
+    class _Sessao:
+        def rollback(self):
+            pass
+
+    estado = PostgresEstado(sessao=_Sessao())  # type: ignore[arg-type]
+    erro = IntegrityError(
+        "update", None, sqlite3.IntegrityError("MV001: versao liberada e imutavel")
+    )
+    with pytest.raises(RecusaDeInvariante):
+        estado._traduzir_erro(erro)
+
+
+def test_erro_sqlite_sem_marcador_nao_sugere_docker():
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    class _Sessao:
+        def rollback(self):
+            pass
+
+    estado = PostgresEstado(sessao=_Sessao())  # type: ignore[arg-type]
+    erro = OperationalError("select 1", None, sqlite3.OperationalError("disk I/O"))
+    with pytest.raises(BackendIndisponivel) as e:
+        estado._traduzir_erro(erro)
+    assert "docker" not in str(e.value)
+    assert "DATABASE_SQLITE_PATH" in str(e.value)

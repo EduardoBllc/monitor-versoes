@@ -51,7 +51,7 @@ portão tanto quanto o `pytest`.
 
 **Comportamento novo de `EstadoRepo` é asserido em
 `tests/test_estado_contrato.py`,** que roda as mesmas asserções contra
-`FakeEstado` e `PostgresEstado`. Teste que existe só num dos lados não é
+`FakeEstado`, `PostgresEstado` no Postgres e no SQLite. Teste que existe só num dos lados não é
 contrato: fake mais permissivo que o banco deixa a suíte verde num caminho que
 quebra em produção, e o projeto já pagou por isso três vezes (FK, ordem, fake de
 git divergente).
@@ -70,9 +70,12 @@ tipo e texto.
 A suíte roda sem rede, sem banco de pé e sem os repositórios reais: o adapter
 de git é exercitado com git de verdade em repositório criado em `tmp_path`.
 
-**Integração usa Postgres efêmero.** Teste que precisa de banco pede o fixture
+**O SQLite roda no portão comum.** O parâmetro `sqlite` do contrato usa o fixture
+`sessao_sqlite` (arquivo em `tmp_path`, migrado como no primeiro uso), sem Docker e sem marca.
+
+**Integração com Postgres usa Postgres efêmero.** Teste que precisa de banco pede o fixture
 `sessao_postgres` e leva `@pytest.mark.integracao`. O `_postgres_efemero` sobe
-um container (testcontainers), migra com `alembic upgrade head` — não
+um container (testcontainers), exporta `DATABASE_BACKEND=postgres`, migra com `alembic upgrade head` — não
 `create_all`, que perderia as triggers — e o derruba no fim da sessão. É lazy:
 quem não pede banco não toca no Docker. Sem Docker, esses testes pulam; pulado
 não é verde, e a saída do portão diz qual dos dois aconteceu.

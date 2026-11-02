@@ -9,7 +9,7 @@ comparar hashes não responde nada. O `motor` cruza três fontes:
 | Fonte | Representa |
 | --- | --- |
 | **rastreador de tasks** (Tickio, ou lista manual) | o que _deveria_ estar na versão |
-| **estado** (Postgres) | o que a ferramenta _declarou_ ter colocado |
+| **estado** (SQLite ou Postgres) | o que a ferramenta _declarou_ ter colocado |
 | **git** (trailer do `cherry-pick -x`) | o que está _de fato_ aplicado |
 
 A versão só fica verde quando as três concordam. O porquê de cada decisão está em
@@ -32,7 +32,7 @@ sem adaptação:
 | Ferramenta | Para quê | Instalação |
 | --- | --- | --- |
 | [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| [Docker](https://docs.docker.com/engine/install/) com Compose | Postgres do estado | Linux: `curl -fsSL https://get.docker.com \| sh`; macOS: [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) |
+| [Docker](https://docs.docker.com/engine/install/) com Compose | só se for usar Postgres no estado (opcional; o padrão é SQLite) | Linux: `curl -fsSL https://get.docker.com \| sh`; macOS: [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) |
 | git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install` |
 | make | atalhos da instalação (opcional — veja "sem make") | Debian/Ubuntu: `sudo apt install make`; macOS: `xcode-select --install` |
 
@@ -44,12 +44,13 @@ sem adaptação:
 ```bash
 git clone https://github.com/EduardoBllc/monitor-versoes.git
 cd monitor-versoes
-make install && make db && make migrate
+make install
 ```
 
 `make install` instala as dependências e cria o `.env` a partir do
-[.env.example](.env.example) (sem sobrescrever um que já exista); `make db` sobe o Postgres
-em Docker (porta 5433); `make migrate` cria as tabelas.
+[.env.example](.env.example) (sem sobrescrever um que já exista). O estado fica num arquivo SQLite
+(`~/.local/share/monitor-versoes/estado.db`), criado com as tabelas no primeiro uso: não há
+Docker nem migração a rodar. Para usar Postgres, veja "Estado em Postgres" abaixo.
 
 <details>
 <summary>Sem make</summary>
@@ -58,8 +59,6 @@ em Docker (porta 5433); `make migrate` cria as tabelas.
 unset VIRTUAL_ENV          # veja a ressalva em "Uso"
 uv sync
 cp -n .env.example .env
-docker compose up -d --wait
-uv run alembic upgrade head
 ```
 
 </details>
@@ -74,8 +73,29 @@ Preencha no `.env`:
   `--repo meu-repo` é `/home/voce/Projetos/meu-repo`; use path absoluto, `~` não é expandido). Sem ela, passe o path em `--repo`.
 - `BITBUCKET_TOKEN`, `BITBUCKET_EMAIL` — opcionais; veja "Fontes de tasks e de commits".
 
-As variáveis `DATABASE_*` já apontam para o Postgres do `make db`. Cada variável está
-comentada no [.env.example](.env.example).
+Cada variável está comentada no [.env.example](.env.example).
+
+### Estado: SQLite (padrão) ou Postgres
+
+`DATABASE_BACKEND` escolhe onde o estado mora: `sqlite` (padrão, sem configuração) ou
+`postgres`. O arquivo SQLite é `~/.local/share/monitor-versoes/estado.db`, ou o caminho de
+`DATABASE_SQLITE_PATH`. Valor desconhecido é erro.
+
+Para usar Postgres: suba o banco (`make db`, que usa o `compose.yml`), defina
+`DATABASE_BACKEND=postgres` e as cinco `DATABASE_HOST/PORT/NAME/USER/PASSWORD` no `.env`
+(só são lidas nesse caso) e rode `make migrate` (ou deixe o primeiro comando aplicar as
+migrações). Se as cinco partes estiverem preenchidas e `DATABASE_BACKEND` não, o motor usa
+SQLite e avisa em stderr.
+
+Trocar de backend não leva o estado junto. Copie-o com o comando explícito, que preserva
+tudo (inclusive exclusões e registros de "não houve entrega") e só funciona com destino vazio:
+
+```bash
+uv run motor migrar-estado --de sqlite:///$HOME/.local/share/monitor-versoes/estado.db \
+    --para postgresql://motor:motor@localhost:5433/monitor_versoes
+```
+
+Depois, troque `DATABASE_BACKEND` no `.env`: o comando não altera a configuração.
 
 ### Cadastrar os repositórios
 
@@ -104,7 +124,7 @@ O nome é o do diretório do repositório (o basename do path de `--repo`).
    ```console
    $ uv run motor diagnostico
    OK  Variáveis: todas preenchidas
-   OK  Postgres: conexão funciona
+   OK  SQLite: conexão funciona
    OK  Migração: revisão d4e7a9b2c1f0
    não configurado  PROJECTS_DIR: --repo aceita caminho absoluto
    OK  Tickio: autenticação aceita
@@ -166,8 +186,8 @@ commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pul
 
 | Sintoma | Causa e saída |
 | --- | --- |
-| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | O Postgres não está no ar. `make db` (ou `docker compose up -d --wait`). |
-| `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração. `make migrate`. |
+| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | Só com `DATABASE_BACKEND=postgres`: o Postgres não está no ar. `make db` (ou `docker compose up -d --wait`). No SQLite, confira `DATABASE_SQLITE_PATH` e as permissões do arquivo. |
+| `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração (Postgres). `make migrate`; no SQLite o primeiro uso migra sozinho. |
 | `ERROR: repo 'meu-repo' desconhecido. Cadastre com: uv run motor repo adicionar 'meu-repo' --tickio-sistema-id <id>` | O repositório não foi cadastrado. Rode o comando sugerido com o id do sistema no Tickio. |
 | `ERROR: faltando no .env: TICKIO_BASE_URL, TICKIO_USER, TICKIO_PASSWORD` | Credenciais do Tickio vazias no `.env`. Preencha, ou use `--task-source manual --lista arquivo.txt`. |
 | `--repo nao encontrado: tentou 'meu-repo' e '(PROJECTS_DIR nao setada)'` | `--repo` não é um path existente e `PROJECTS_DIR` está vazia. Preencha `PROJECTS_DIR` no `.env` ou passe o path do repositório. |

@@ -71,7 +71,16 @@ def _variaveis_ausentes(env: Mapping[str, str], nomes: tuple[str, ...]) -> list[
     return [n for n in nomes if not env.get(n, "").strip()]
 
 
+def _backend(env: Mapping[str, str]) -> str:
+    return env.get("DATABASE_BACKEND", "").strip().lower() or "sqlite"
+
+
 def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
+    backend = _backend(env)
+    if backend == "sqlite":
+        return []
+    if backend != "postgres":
+        return [f"DATABASE_BACKEND (aceitos: sqlite, postgres; veio {backend!r})"]
     problemas = _variaveis_ausentes(env, _VARIAVEIS_BANCO)
     porta = env.get("DATABASE_PORT", "")
     if porta and not porta.isdigit():
@@ -82,7 +91,7 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
 def diagnosticar(
     env: Mapping[str, str],
     *,
-    abrir_sessao: Callable[[], AbstractContextManager[Session]],
+    abrir_sessao: Callable[..., AbstractContextManager[Session]],
     head: str,
     ambiente: str,
     cliente: httpx.Client | None = None,
@@ -104,48 +113,59 @@ def diagnosticar(
         if problemas
         else Resultado("Variáveis", Estado.OK, "todas preenchidas")
     ]
-    resultados += _banco(abrir_sessao, problemas_banco, head, migrar)
+    resultados += _banco(
+        abrir_sessao, problemas_banco, head, migrar, _backend(env) == "sqlite"
+    )
     resultados.append(_projects_dir(env))
     resultados.append(_tickio(env, ausentes_tickio, cliente))
     resultados.append(_bitbucket(env, cliente))
     return resultados
 
 
-def _postgres_fora(erro: MotorError, dica: str) -> list[Resultado]:
-    """Postgres fora implica Migração não verificada."""
+def _banco_fora(peca: str, erro: MotorError, dica: str) -> list[Resultado]:
+    """Banco fora implica Migração não verificada."""
     return [
-        _falha("Postgres", erro, dica),
-        Resultado("Migração", Estado.NAO_VERIFICADA, "Postgres indisponível"),
+        _falha(peca, erro, dica),
+        Resultado("Migração", Estado.NAO_VERIFICADA, f"{peca} indisponível"),
     ]
 
 
 def _banco(
-    abrir_sessao: Callable[[], AbstractContextManager[Session]],
+    abrir_sessao: Callable[..., AbstractContextManager[Session]],
     problemas_banco: list[str],
     head: str,
     migrar: str,
+    sqlite: bool = False,
 ) -> list[Resultado]:
+    peca = "SQLite" if sqlite else "Postgres"
     if problemas_banco:
         motivo = "variáveis do banco inválidas"
         return [
-            Resultado("Postgres", Estado.NAO_VERIFICADA, motivo),
+            Resultado(peca, Estado.NAO_VERIFICADA, motivo),
             Resultado("Migração", Estado.NAO_VERIFICADA, motivo),
         ]
-    dica_banco = "docker compose up -d e conferir DATABASE_*"
+    if sqlite:
+        dica_banco = "conferir DATABASE_SQLITE_PATH e as permissões do arquivo"
+        migrar = (
+            "rodar qualquer comando do motor (aplica as migrations no primeiro uso)"
+        )
+    else:
+        dica_banco = "docker compose up -d e conferir DATABASE_*"
     try:
-        with abrir_sessao() as sessao:
+        # garantir=False: o diagnóstico só olha, não cria arquivo nem esquema.
+        with abrir_sessao(garantir=False) as sessao:
             estado = PostgresEstado(sessao=sessao)
             try:
                 estado.verificar_conexao()
             except MotorError as e:
-                return _postgres_fora(e, dica_banco)
-            postgres = Resultado("Postgres", Estado.OK, "conexão funciona")
+                return _banco_fora(peca, e, dica_banco)
+            postgres = Resultado(peca, Estado.OK, "conexão funciona")
             try:
                 revisao = estado.revisao_migracao()
             except MotorError as e:
                 return [postgres, _falha("Migração", e, dica_banco)]
     except MotorError as e:
-        return _postgres_fora(e, dica_banco)
+        return _banco_fora(peca, e, dica_banco)
     if revisao is None:
         migracao = Resultado(
             "Migração", Estado.FALHA, "banco sem migração aplicada", migrar

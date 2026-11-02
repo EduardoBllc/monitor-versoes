@@ -14,9 +14,11 @@ install:
 	uv sync
 	cp -n .env.example .env
 
+# Postgres opt-in (DATABASE_BACKEND=postgres): o padrao do motor e SQLite, sem Docker.
 db:
 	docker compose up -d --wait
 
+# Exige DATABASE_BACKEND=postgres no .env; no SQLite o primeiro uso migra sozinho.
 migrate:
 	uv run alembic upgrade head
 

@@ -21,6 +21,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    if op.get_bind().dialect.name == "sqlite":
+        # As triggers do SQLite ja nascem olhando old e new (bae96c9be3c9), e
+        # a coluna de data guarda texto: nada a fazer.
+        return
     # A versao anterior so olhava new.versao_id: um UPDATE que move uma
     # atribuicao PARA FORA de uma versao liberada (new = versao aberta,
     # old = versao liberada) passava o guard e esvaziava silenciosamente
@@ -59,6 +63,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
+    if op.get_bind().dialect.name == "sqlite":
+        return
     op.alter_column(
         "versao",
         "liberada_em",

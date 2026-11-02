@@ -29,6 +29,18 @@ def upgrade() -> None:
         "repo",
         sa.Column("piso_versao", sa.String(), nullable=False, server_default="13.0.0"),
     )
+    if op.get_bind().dialect.name == "sqlite":
+        # Sem regex no SQLite: tres grupos numericos separados por ponto, via glob.
+        with op.batch_alter_table("repo") as lote:
+            lote.create_check_constraint(
+                "ck_repo_piso_versao",
+                "piso_versao glob '[0-9]*.[0-9]*.[0-9]*' "
+                "and piso_versao not glob '*[^0-9.]*' "
+                "and piso_versao not glob '*..*' "
+                "and piso_versao not glob '*.*.*.*' "
+                "and piso_versao not glob '*.'",
+            )
+        return
     # Mesmo motivo de ck_versao_tipo: o schema e corrigido via psql, e um piso
     # digitado errado so estouraria no proximo verificar, longe da causa.
     op.execute(
@@ -38,5 +50,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("repo") as lote:
+            lote.drop_constraint("ck_repo_piso_versao", type_="check")
+            lote.drop_column("piso_versao")
+        return
     op.drop_constraint("ck_repo_piso_versao", "repo")
     op.drop_column("repo", "piso_versao")
