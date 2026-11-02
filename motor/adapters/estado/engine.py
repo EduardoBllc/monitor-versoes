@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from alembic.config import Config
+from alembic import command
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session
 
-from alembic import command
 from motor.adapters.estado.postgres import PostgresEstado
-
-RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from motor.migracoes import config_alembic
 
 
 def normalizar_url(url: str) -> str:
@@ -41,10 +38,7 @@ def criar_engine(url: str) -> Engine:
 
 def aplicar_migracoes(url: str) -> None:
     """`alembic upgrade head` por codigo, na `url` dada (nao a da config)."""
-    config = Config(os.path.join(RAIZ, "alembic.ini"))
-    config.set_main_option("script_location", os.path.join(RAIZ, "alembic"))
-    config.attributes["url"] = normalizar_url(url)
-    command.upgrade(config, "head")
+    command.upgrade(config_alembic(normalizar_url(url)), "head")
 
 
 def garantir_esquema(url: str) -> bool:

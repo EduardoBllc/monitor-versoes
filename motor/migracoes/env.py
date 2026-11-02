@@ -1,20 +1,10 @@
-from logging.config import fileConfig
-
-from dotenv import load_dotenv
+from alembic import context
 from sqlalchemy import create_engine, pool
 
-from alembic import context
 from motor.adapters.estado.models import Base
 from motor.config import database_url
 
-load_dotenv()
-
 config = context.config
-
-# Chamado por codigo (`attributes["url"]`), o logging e do chamador: fileConfig
-# desligaria os loggers ja configurados do motor.
-if config.config_file_name is not None and "url" not in config.attributes:
-    fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
 

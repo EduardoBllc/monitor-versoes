@@ -279,10 +279,9 @@ def test_sem_entrega(sessao_postgres):
 
 
 def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_postgres):
-    from alembic.config import Config
-
     from alembic import command
-    from tests.conftest import RAIZ
+
+    from motor.migracoes import config_alembic
 
     _semear_repo(sessao_postgres)
     sessao_postgres.execute(
@@ -297,7 +296,7 @@ def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_postgres):
     sessao_postgres.commit()
     # Fecha a transacao aberta: o ALTER TABLE do alembic espera o lock dela.
     sessao_postgres.close()
-    cfg = Config(str(RAIZ / "alembic.ini"))
+    cfg = config_alembic()
 
     command.downgrade(cfg, "d4e7a9b2c1f0")
     try:

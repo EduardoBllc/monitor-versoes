@@ -5,20 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from alembic.config import Config
+from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
-from alembic import command
 from motor.adapters.estado.models import Base
-
-RAIZ = Path(__file__).resolve().parent.parent
-
-
-def _config(url: str) -> Config:
-    config = Config(str(RAIZ / "alembic.ini"))
-    config.set_main_option("script_location", str(RAIZ / "alembic"))
-    config.attributes["url"] = url
-    return config
+from motor.migracoes import config_alembic
 
 
 @pytest.fixture
@@ -27,7 +18,7 @@ def url(tmp_path: Path) -> str:
 
 
 def test_upgrade_cria_todas_as_tabelas_e_o_indice_unico(url: str) -> None:
-    command.upgrade(_config(url), "head")
+    command.upgrade(config_alembic(url), "head")
 
     engine = create_engine(url)
     insp = inspect(engine)
@@ -59,8 +50,8 @@ def test_upgrade_cria_todas_as_tabelas_e_o_indice_unico(url: str) -> None:
 
 
 def test_downgrade_base_funciona(url: str) -> None:
-    command.upgrade(_config(url), "head")
-    command.downgrade(_config(url), "base")
+    command.upgrade(config_alembic(url), "head")
+    command.downgrade(config_alembic(url), "base")
 
     with create_engine(url).connect() as con:
         restantes = inspect(con).get_table_names()

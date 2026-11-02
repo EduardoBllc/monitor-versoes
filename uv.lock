@@ -515,7 +515,7 @@ wheels = [
 ]
 
 [[package]]
-name = "motor-versoes"
+name = "monitor-versoes"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

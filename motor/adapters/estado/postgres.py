@@ -106,7 +106,7 @@ class PostgresEstado:
         if linha is None:
             raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  uv run motor repo adicionar '{basename}' "
+                f"  motor repo adicionar '{basename}' "
                 f"--tickio-sistema-id <id>"
             )
         return _repo_info(linha)

@@ -43,7 +43,7 @@ def _partes_postgres() -> dict[str, str]:
 def _url_postgres() -> str:
     """Monta a URL do Postgres a partir das partes.
 
-    As partes existem separadas porque o compose.yml le as mesmas variaveis do
+    As partes existem separadas porque o compose.yml (modelo) le as mesmas variaveis do
     mesmo .env — uma fonte so para aplicacao e container.
     """
     v = _partes_postgres()

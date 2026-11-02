@@ -1,5 +1,5 @@
 [project]
-name = "motor-versoes"
+name = "monitor-versoes"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
@@ -29,6 +29,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["motor*"]
+
+[tool.setuptools.package-data]
+motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -14,7 +14,6 @@ conflitos/
 # Secrets / ambiente
 .env
 .env.*
-!.env.example
 !.env.development.example
 
 # IDEs
@@ -64,3 +63,4 @@ docs/superpowers/*
 
 .claude/worktrees
 .worktrees/
+/build/
