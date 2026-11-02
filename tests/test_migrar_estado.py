@@ -88,13 +88,11 @@ def _povoar(url: str) -> None:
                  "commit_date": LIBERADA, "msg": "m"},
             )  # fmt: skip
             con.execute(
-                insert(T["bitbucket_pr"]),
+                insert(T["pr_mergeada"]),
                 {"repo_id": 5, "pr_id": 2**40, "titulo": "ch100", "branch": "b",
                  "updated_on": LIBERADA},
             )  # fmt: skip
-            con.execute(
-                insert(T["bitbucket_varredura"]), {"repo_id": 5, "ate": LIBERADA}
-            )
+            con.execute(insert(T["varredura_pr"]), {"repo_id": 5, "ate": LIBERADA})
     finally:
         engine.dispose()
 
