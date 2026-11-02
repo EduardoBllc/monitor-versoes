@@ -679,11 +679,11 @@ def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
 ):
     """`atualizar --abort` e `reconstruir-estado` montam a fonte de tarefas mas
     nunca chamam fetch. Sao os comandos de recuperacao: exigir TICKIO_USER/
-    TICKIO_PASSWORD (vazios no .env.example) travaria justamente o comando que
+    TICKIO_PASSWORD (vazios no env.example) travaria justamente o comando que
     se usa quando algo ja esta quebrado.
     """
     # "" e nao delenv: o que se testa aqui e credencial vazia, o caso do
-    # .env.example — nao a variavel ausente.
+    # env.example — nao a variavel ausente.
     for var in ("TICKIO_USER", "TICKIO_PASSWORD"):
         monkeypatch.setenv(var, "")
 
@@ -696,7 +696,7 @@ def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
 def test_lista_manual_nao_exige_variavel_do_tickio(
     bordas, tmp_path, monkeypatch, capsys
 ):
-    # TICKIO_USER/TICKIO_PASSWORD sao vazios no .env.example: quem usa --lista
+    # TICKIO_USER/TICKIO_PASSWORD sao vazios no env.example: quem usa --lista
     # nao pode ser obrigado a preencher.
     for var in ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD"):
         monkeypatch.setenv(var, "")

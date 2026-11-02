@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import dotenv
@@ -55,8 +56,6 @@ def test_carrega_env_do_diretorio_atual(tmp_path, monkeypatch, argv, arquivo):
     monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
 
     cli._carregar_ambiente(argv)
-
-    import os
 
     assert os.environ["DATABASE_HOST"] == "do_host"
     assert os.environ["DATABASE_PASSWORD"] == "do_password"
