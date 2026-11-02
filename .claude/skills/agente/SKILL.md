@@ -26,8 +26,10 @@ O agente não guarda estado entre runs. A cada evento:
 - a fase é a label `fase:` da issue; sem label, é `fase:elaboração`. Num PR não há label
   `fase:`: a fase é `fase:pr` e a issue vem do `Closes #N`;
 - o evento vem no prompt; releia o corpo, todos os comentários e, num PR, as threads;
-- se a issue é sub-issue (`gh api repos/{owner}/{repo}/issues/N/parent`), leia também o pai
-  e as irmãs: decisão registrada lá vale aqui e não se pergunta de novo;
+- se a issue (num PR, a do `Closes #N`) é sub-issue, leia também o pai e as irmãs:
+  `gh api repos/{owner}/{repo}/issues/N/parent` devolve 404 quando não há pai, e aí segue
+  normal. Decisão do dono registrada lá vale aqui e não se pergunta de novo; se contradiz o
+  que o dono disse nesta issue, pergunte;
 - a intenção vem dos comentários do dono desde a última ação do agente (a fila pode juntar
   vários eventos): aprovação, ajuste ou resposta.
 
