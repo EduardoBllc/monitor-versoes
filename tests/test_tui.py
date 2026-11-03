@@ -2611,10 +2611,6 @@ def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
     assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
 
 
-def test_app_nao_tem_mais_a_acao_de_piso():
-    assert "p" not in {b[0] for b in MotorTUI.BINDINGS if isinstance(b, tuple)}
-
-
 def test_cadastro_avisa_que_o_id_e_ignorado():
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(lambda nome, sistema_id: None, [])

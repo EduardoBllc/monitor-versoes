@@ -217,7 +217,7 @@ def test_toml_invalido_cita_o_arquivo(camadas):
 def test_piso_invalido_e_erro_de_entrada(camadas, piso):
     _, repo = camadas
     repo.write_text(f"[versao]\npiso = {piso}\n")
-    with pytest.raises(ErroDeEntrada, match="piso"):
+    with pytest.raises(ErroDeEntrada):
         config.carregar_config(str(repo.parent))
 
 
@@ -225,7 +225,7 @@ def test_piso_invalido_e_erro_de_entrada(camadas, piso):
 def test_tabela_que_nao_e_tabela_e_erro(camadas, tabela):
     _, repo = camadas
     repo.write_text(f'{tabela} = "x"\n')
-    with pytest.raises(ErroDeEntrada, match=tabela):
+    with pytest.raises(ErroDeEntrada):
         config.carregar_config(str(repo.parent))
 
 

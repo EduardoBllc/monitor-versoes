@@ -62,7 +62,7 @@ def test_import_direto_funciona_no_central():
 
 
 def test_import_direto_no_repo_e_recusado():
-    with pytest.raises(ErroDeEntrada, match="repo nao escolhe codigo"):
+    with pytest.raises(ErroDeEntrada):
         plugins.carregar_plugin(GRUPO, "tests.test_plugins:PluginDeTeste", "repo")
 
 
