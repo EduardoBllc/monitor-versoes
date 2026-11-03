@@ -157,16 +157,6 @@ def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
     assert capsys.readouterr().out == "repo 'backend' adicionado\n"
 
 
-def test_repo_adicionar_sem_id_cadastra(monkeypatch, capsys):
-    estado = FakeEstado()
-    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
-
-    main(["repo", "adicionar", "backend"])
-
-    assert estado.resolver_repo("backend") == RepoInfo(nome="backend")
-
-
 def test_ajuda_de_repo_adicionar_avisa_que_o_id_e_ignorado(capsys):
     with pytest.raises(SystemExit):
         _build_parser().parse_args(["repo", "adicionar", "--help"])

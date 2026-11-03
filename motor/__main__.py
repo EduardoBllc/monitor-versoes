@@ -267,9 +267,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_adicionar.add_argument(
         "--tickio-sistema-id",
-        default=0,
+        required=True,
         type=_tipo_cli(validar_sistema_id),
-        help="opcional e ignorado até a #117: o sistema vem de [tarefas] sistema na config",
+        help="ignorado até a #117: o sistema vem de [tarefas] sistema na config",
     )
 
     return parser
