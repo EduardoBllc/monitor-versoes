@@ -41,7 +41,7 @@ Na dúvida sobre o que o dono quis, pergunte em vez de agir.
 | `fase:spec` | spec, revisada por subagente novo com [revisor.md](revisor.md) antes de publicar ([spec.md](spec.md)) | um comentário fixado com `<!-- agente:spec -->` na primeira linha, editado a cada revisão; perguntas em comentário à parte | `fase:plano` na aprovação | spec publicada |
 | `fase:plano` | plano, revisado como a spec ([plano.md](plano.md)) | um comentário com `<!-- agente:plano -->` na primeira linha, editado a cada revisão | `fase:execução` na aprovação | plano publicado |
 | `fase:execução` | branch `issue-N-<slug>`, `make check` verde, PR com `Closes #N` ([execucao.md](execucao.md)) | PR | `fase:pr` | PR aberto |
-| `fase:pr` | corrige uma vez o review da IA; depois atende o dono ([execucao.md](execucao.md)) | commits no branch do PR; resposta na thread | nenhuma | responde ou falha |
+| `fase:pr` | corrige o review da IA até o veredito ou a 3ª revisão; atende o dono ([execucao.md](execucao.md)) | commits no branch do PR; resposta na thread | nenhuma | responde ou falha |
 
 - Elaboração não tem portão: ao fechar, a mesma run segue para a entrega da próxima fase
   (proposta ou spec) e só então passa a vez ao dono.

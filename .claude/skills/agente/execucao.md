@@ -29,9 +29,12 @@ Fase `fase:pr`.
 
 - Em evento de PR, rode `gh pr checkout <PR>` primeiro: o checkout do workflow é da
   `main`.
-- No `workflow_run` da "Revisão IA", trate uma vez os apontamentos dela (threads e o
-  comentário de resumo) e nunca peça novo review. Responda e resolva as threads da IA que
-  atendeu, como nas do dono.
+- No `workflow_run` da "Revisão IA", leia o último comentário de resumo dela no PR (o que
+  tem `**Veredito:**`) e conte quantos desses há. Pare e mencione o dono, dizendo por quê,
+  se o veredito for `aprovaria` ou se já houver 3. Senão, trate os apontamentos (threads e
+  resumo), responda e resolva as threads da IA que atendeu, como nas do dono, e faça um
+  único push no fim: o push dispara a próxima revisão. Nunca peça review. Sem nada a
+  commitar, mencione o dono e pare.
 - Em pedido do dono, faça o commit no branch do PR, responda na thread e resolva-a, no
   formato do [CONTRIBUTING.md](../../../CONTRIBUTING.md#fluxo). Se for pergunta, só
   responda.
