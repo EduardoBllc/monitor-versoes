@@ -29,5 +29,5 @@ class Deps:
     # testes de engine falando de uma worktree so; o default de produto sai de
     # WORKTREES_MANTIDAS, lido em motor.montagem — o engine nao ve ambiente.
     worktrees_mantidas: int = 0
-    # Da linha `repo`, como o nome: o engine nao le o estado para isso.
+    # Da config do projeto (`[versao] piso`); `None` = nada e cortado.
     piso_versao: str | None = None
