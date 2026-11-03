@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from motor.domain.types import (
     Atribuicao,
@@ -37,7 +37,7 @@ class FakeEstado:
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         if nome in self.repos or nome in self.aliases:
             raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
-        self.repos[nome] = RepoInfo(nome=nome, tickio_sistema_id=tickio_sistema_id)
+        self.repos[nome] = RepoInfo(nome=nome)
 
     def resolver_repo(self, basename: str, /) -> RepoInfo:
         nome = self.aliases.get(basename, basename)
@@ -49,10 +49,6 @@ class FakeEstado:
                 f"--tickio-sistema-id <id>"
             )
         return info
-
-    def definir_piso(self, nome: str, piso_versao: str, /) -> None:
-        info = self.resolver_repo(nome)
-        self.repos[info.nome] = replace(info, piso_versao=piso_versao)
 
     def listar_repos(self) -> list[RepoInfo]:
         return [self.repos[nome] for nome in sorted(self.repos)]

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from motor.domain.version import PISO_PADRAO
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
 from motor.progresso import RelatorProgresso, silencioso
 
@@ -30,5 +29,5 @@ class Deps:
     # testes de engine falando de uma worktree so; o default de produto sai de
     # WORKTREES_MANTIDAS, lido em motor.montagem — o engine nao ve ambiente.
     worktrees_mantidas: int = 0
-    # Da linha `repo`, como o nome: o engine nao le o estado para isso.
-    piso_versao: str = PISO_PADRAO
+    # Da config do projeto (`[versao] piso`); `None` = nada e cortado.
+    piso_versao: str | None = None

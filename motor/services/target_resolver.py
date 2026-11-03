@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from motor.domain.types import Alvo, TaskTarget
-from motor.domain.version import PISO_PADRAO, fontes_de_alvo
+from motor.domain.version import fontes_de_alvo
 from motor.errors import MotorError
 from motor.ports import CommitSource, TaskSource
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -17,7 +17,7 @@ class TargetResolver:
     tasks: TaskSource
     commits: CommitSource
     progresso: RelatorProgresso = silencioso
-    piso: str = PISO_PADRAO
+    piso: str | None = None
 
     def resolve(
         self,

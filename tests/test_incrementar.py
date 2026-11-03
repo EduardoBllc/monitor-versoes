@@ -87,7 +87,7 @@ def _git(classe: type[FakeGit] = FakeGit) -> FakeGit:
 
 
 def _estado() -> FakeEstado:
-    return FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    return FakeEstado(repos={"r": RepoInfo(nome="r")})
 
 
 def _deps(
@@ -301,7 +301,7 @@ def test_atualizar_continue_recusa_versao_com_tag():
 
 def test_atualizar_recusa_versao_com_tag():
     git = FakeGit(branches={"13.34.0": "b1"}, tags={"13.34.0": True})
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     deps = Deps(
         git=git,
         tasks=FakeTaskSource(),

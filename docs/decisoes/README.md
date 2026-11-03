@@ -26,11 +26,12 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 13. [013](013-conflito-e-checkpoint.md) — conflito: `rerere` com `autoUpdate`, nunca auto-resolve, checkpoint resumível.
 14. [014](014-ordem-de-aplicacao-pelo-grafo.md) — o lote se aplica na ordem do grafo; data não entra.
 15. [015](015-estado-regravado-ao-final-do-lote.md) — o estado é regravado uma vez, ao final do lote.
-16. [016](016-multi-projeto-premissas.md) — multi-projeto barato: o projeto é uma linha de tabela, não config.
+16. [016](016-multi-projeto-premissas.md) — multi-projeto barato (o ponto "sem config por projeto" foi revogado pela [024](024-config-por-projeto.md)).
 17. [017](017-corte-por-projeto-na-fonte.md) — o Tickio já separa o alvo por projeto; o nome do repo vem do path.
 18. [018](018-portas-e-adaptadores.md) — portas-e-adaptadores com núcleo puro e fakes fiéis.
 19. [019](019-montagem-no-front-end.md) — `motor/montagem.py` monta os adapters, sem I/O.
 20. [020](020-contrato-de-erro-por-tipo.md) — adapter só levanta `MotorError`; o contrato é por tipo.
 21. [021](021-motor-nao-interativo.md) — o motor nunca pergunta: retorna um valor.
 22. [022](022-fetch-origin-em-todo-entry-point.md) — todo entry point faz `git fetch origin` antes de ler refs.
-23. [023](023-onde-nao-se-abstrai.md) — sem clock, sem config por projeto, sem cache de tag, sem trigger em `versao`.
+23. [023](023-onde-nao-se-abstrai.md) — sem clock, sem cache de tag, sem trigger em `versao` (o "sem config por projeto" foi revogado pela [024](024-config-por-projeto.md)).
+24. [024](024-config-por-projeto.md) — config por projeto em duas camadas (global e repo), piso sem padrão, import path só no central.

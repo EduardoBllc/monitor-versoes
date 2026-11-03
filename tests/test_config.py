@@ -156,3 +156,109 @@ def test_worktrees_mantidas_recusa_valor_invalido(monkeypatch, valor):
     with pytest.raises(ErroDeEntrada) as erro:
         worktrees_mantidas()
     assert "WORKTREES_MANTIDAS" in str(erro.value)
+
+
+# --- config em camadas ---
+
+
+@pytest.fixture
+def camadas(tmp_path, monkeypatch):
+    """(global, repo): XDG e raiz do repo isolados em tmp_path."""
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (xdg / "monitor-versoes").mkdir(parents=True)
+    return xdg / "monitor-versoes" / "config.toml", repo / ".monitor-versoes.toml"
+
+
+def test_piso_so_no_global(camadas):
+    glob, repo = camadas
+    glob.write_text('[versao]\npiso = "1.0.0"\n')
+    assert config.carregar_config(str(repo.parent)).piso == "1.0.0"
+
+
+def test_piso_so_no_repo(camadas):
+    _, repo = camadas
+    repo.write_text('[versao]\npiso = "2.0.0"\n')
+    assert config.carregar_config(str(repo.parent)).piso == "2.0.0"
+
+
+def test_piso_nos_dois_vence_o_repo(camadas):
+    glob, repo = camadas
+    glob.write_text('[versao]\npiso = "1.0.0"\n')
+    repo.write_text('[versao]\npiso = "2.0.0"\n')
+    assert config.carregar_config(str(repo.parent)).piso == "2.0.0"
+
+
+def test_sem_piso_nas_duas_camadas_e_none(camadas):
+    _, repo = camadas
+    assert config.carregar_config(str(repo.parent)).piso is None
+
+
+def test_tarefas_parcial_no_repo_sobrescreve_so_a_chave_declarada(camadas):
+    glob, repo = camadas
+    glob.write_text("[tarefas]\nsistema = 1\noutra = 'x'\n")
+    repo.write_text("[tarefas]\nsistema = 2\n")
+    assert dict(config.carregar_config(str(repo.parent)).tarefas) == {
+        "sistema": 2,
+        "outra": "x",
+    }
+
+
+def test_toml_invalido_cita_o_arquivo(camadas):
+    _, repo = camadas
+    repo.write_text("isto = = nao\n")
+    with pytest.raises(ErroDeEntrada, match=r"\.monitor-versoes\.toml"):
+        config.carregar_config(str(repo.parent))
+
+
+@pytest.mark.parametrize("piso", ['"1.2"', "1.2", "12", '"abc"'])
+def test_piso_invalido_e_erro_de_entrada(camadas, piso):
+    _, repo = camadas
+    repo.write_text(f"[versao]\npiso = {piso}\n")
+    with pytest.raises(ErroDeEntrada):
+        config.carregar_config(str(repo.parent))
+
+
+@pytest.mark.parametrize("tabela", ["versao", "tarefas"])
+def test_tabela_que_nao_e_tabela_e_erro(camadas, tabela):
+    _, repo = camadas
+    repo.write_text(f'{tabela} = "x"\n')
+    with pytest.raises(ErroDeEntrada):
+        config.carregar_config(str(repo.parent))
+
+
+def test_xdg_config_home_e_respeitado(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert config.caminho_config_global() == str(
+        tmp_path / "monitor-versoes" / "config.toml"
+    )
+
+
+@pytest.mark.parametrize("xdg", [None, ""])
+def test_sem_xdg_cai_em_config_do_home(tmp_path, monkeypatch, xdg):
+    if xdg is None:
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_CONFIG_HOME", xdg)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert config.caminho_config_global() == str(
+        tmp_path / ".config" / "monitor-versoes" / "config.toml"
+    )
+
+
+def test_arquivos_traz_global_primeiro(camadas):
+    glob, repo = camadas
+    assert config.carregar_config(str(repo.parent)).arquivos == (str(glob), str(repo))
+
+
+def test_sem_raiz_ignora_a_camada_do_repo(camadas):
+    glob, _ = camadas
+    assert config.carregar_config(None).arquivos == (str(glob),)
+
+
+def test_chave_esquema_e_ignorada(camadas):
+    glob, _ = camadas
+    glob.write_text('esquema = "vendabem"\n')
+    assert config.carregar_config(None) == config.ConfigProjeto(arquivos=(str(glob),))

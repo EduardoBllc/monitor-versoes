@@ -61,6 +61,13 @@ def chave(numero: str) -> tuple[int, int, int]:
     return _parse_versao(numero)
 
 
+def validar_versao(valor: str) -> str:
+    """Numero X.Y.Z, como o motor ordena versoes."""
+    aparado = valor.strip()
+    chave(aparado)
+    return aparado
+
+
 def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
     """Em construcao = existe como versao e nao tem tag homonima.
 
@@ -71,22 +78,21 @@ def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
     return sorted(set(todas) - set(tags), key=chave)
 
 
-PISO_PADRAO = "13.0.0"
-
-
 def fontes_de_alvo(
-    alvo: str, candidatas: list[str], piso: str = PISO_PADRAO
+    alvo: str, candidatas: list[str], piso: str | None = None
 ) -> list[str]:
     """Versoes cujas tarefas caem no alvo: candidatas entre o piso e o alvo.
 
     E a regra de distribuicao vista pelo lado da versao
     (docs/decisoes/005-alvo-distribuicao-entre-versoes.md). Quem monta
     `candidatas` e o chamador — abertas mais o que `liberadas_no_alvo` devolve.
-    O piso e por repo (`repo.piso_versao`): descarta branch legada sem tag, que
-    o Tickio nao conhece e responderia 404.
+    O piso vem da config do projeto (`[versao] piso`): descarta branch legada sem
+    tag, que o Tickio nao conhece e responderia 404. Sem piso, nada e cortado.
     """
-    corte = chave(piso)
     k = chave(alvo)
+    if piso is None:
+        return [v for v in candidatas if chave(v) <= k]
+    corte = chave(piso)
     return [v for v in candidatas if corte <= chave(v) <= k]
 
 

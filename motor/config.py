@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+import tomllib
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from urllib.parse import quote
 
+from motor.domain.version import validar_versao
 from motor.errors import ErroDeEntrada
 
 _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
@@ -122,3 +126,79 @@ def worktrees_mantidas() -> int:
             f"WORKTREES_MANTIDAS invalido: {valor!r} (esperado inteiro >= 0)"
         )
     return int(valor)
+
+
+#: Nome do arquivo de config na raiz do repo-alvo.
+ARQUIVO_CONFIG_REPO = ".monitor-versoes.toml"
+
+
+@dataclass(frozen=True)
+class ConfigProjeto:
+    """Config por projeto, mesclada das duas camadas (repo vence o global).
+
+    `tarefas` e opaco ao nucleo: quem le as chaves e o adapter do tracker.
+    """
+
+    piso: str | None = None
+    tarefas: Mapping[str, object] = field(default_factory=dict)
+    arquivos: tuple[str, ...] = ()
+
+
+def caminho_config_global() -> str:
+    """`$XDG_CONFIG_HOME/monitor-versoes/config.toml`, ou `~/.config/...`."""
+    base = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, "monitor-versoes", "config.toml")
+
+
+def _ler_toml(caminho: str) -> dict[str, object]:
+    try:
+        with open(caminho, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        return {}
+    except tomllib.TOMLDecodeError as e:
+        raise ErroDeEntrada(f"{caminho}: TOML invalido ({e})") from e
+    except OSError as e:
+        raise ErroDeEntrada(f"{caminho}: nao foi possivel ler ({e})") from e
+
+
+def _tabela(
+    dados: Mapping[str, object], nome: str, caminho: str
+) -> Mapping[str, object]:
+    valor = dados.get(nome, {})
+    if not isinstance(valor, dict):
+        raise ErroDeEntrada(f"{caminho}: [{nome}] deve ser uma tabela")
+    return valor
+
+
+def _piso(dados: Mapping[str, object], caminho: str) -> str | None:
+    bruto = _tabela(dados, "versao", caminho).get("piso")
+    if bruto is None:
+        return None
+    if not isinstance(bruto, str):
+        raise ErroDeEntrada(f"{caminho}: [versao] piso deve ser texto X.Y.Z")
+    try:
+        return validar_versao(bruto)
+    except ErroDeEntrada as e:
+        raise ErroDeEntrada(f"{caminho}: [versao] piso invalido ({e})") from e
+
+
+def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
+    """Le o global e, havendo `raiz_repo`, o `.monitor-versoes.toml` dela.
+
+    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So `piso`
+    e `[tarefas]` sao lidos; o resto e ignorado.
+    """
+    caminhos = [caminho_config_global()]
+    if raiz_repo is not None:
+        caminhos.append(os.path.join(raiz_repo, ARQUIVO_CONFIG_REPO))
+    piso: str | None = None
+    tarefas: dict[str, object] = {}
+    for caminho in caminhos:
+        dados = _ler_toml(caminho)
+        if (p := _piso(dados, caminho)) is not None:
+            piso = p
+        tarefas.update(_tabela(dados, "tarefas", caminho))
+    return ConfigProjeto(piso=piso, tarefas=tarefas, arquivos=tuple(caminhos))

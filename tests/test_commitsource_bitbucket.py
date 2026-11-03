@@ -81,9 +81,7 @@ def _fonte(handler, git: FakeGit, estado=None) -> BitbucketPRCommitSource:
 
 
 def _estado_vazio() -> FakeEstado:
-    return FakeEstado(
-        repos={REPO_ESTADO: RepoInfo(nome=REPO_ESTADO, tickio_sistema_id=1)}
-    )
+    return FakeEstado(repos={REPO_ESTADO: RepoInfo(nome=REPO_ESTADO)})
 
 
 def _handler_pr(

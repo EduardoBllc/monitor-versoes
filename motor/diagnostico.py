@@ -198,8 +198,6 @@ def _tickio(
         base_url=env["TICKIO_BASE_URL"],
         usuario=env["TICKIO_USER"],
         senha=env["TICKIO_PASSWORD"],
-        # Só autentica: o sistema_id não entra no login, então 0 é placeholder.
-        sistema_id=0,
         client=cliente,
     )
     try:

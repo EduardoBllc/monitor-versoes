@@ -44,7 +44,7 @@ def test_reconstroi_atribuicoes_dos_trailers():
         "ch123456 alfa\n\n(cherry picked from commit aaa)",
         msg_da_origem="ch123456 alfa",
     )
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
 
     resultado = reconstruir_estado(_deps(git, estado), "13.34.0")
 
@@ -57,7 +57,7 @@ def test_reconstroi_atribuicoes_dos_trailers():
 
 def test_commit_direto_na_branch_e_sua_propria_origem():
     git = _git_com_pick("ch123456 alfa")
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
 
     reconstruir_estado(_deps(git, estado), "13.34.0")
 
@@ -66,7 +66,7 @@ def test_commit_direto_na_branch_e_sua_propria_origem():
 
 def test_commit_sem_chamado_vira_orfao():
     git = _git_com_pick("ajuste solto sem identificador")
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
 
     resultado = reconstruir_estado(_deps(git, estado), "13.34.0")
 
@@ -101,7 +101,7 @@ def test_reconstruir_estado_busca_antes_de_resolver_a_base():
     git.add_commit("base", "", "raiz", D)
     git.add_commit("p1", "base", "ch123456 alfa", D)
     git.set_branch("13.34.0", "p1")
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
 
     resultado = reconstruir_estado(_deps(git, estado), "13.34.0")
 

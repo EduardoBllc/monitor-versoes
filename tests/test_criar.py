@@ -56,7 +56,7 @@ def _git(classe: type[FakeGit] = FakeGit) -> FakeGit:
 
 
 def _estado() -> FakeEstado:
-    return FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    return FakeEstado(repos={"r": RepoInfo(nome="r")})
 
 
 def _deps(git, estado) -> Deps:

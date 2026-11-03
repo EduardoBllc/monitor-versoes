@@ -23,7 +23,7 @@ def _deps(git, tasks, commits, estado) -> Deps:
 
 
 def _estado_com_repo() -> FakeEstado:
-    return FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    return FakeEstado(repos={"r": RepoInfo(nome="r")})
 
 
 class _GitQueTagueiaNoFetch(FakeGit):

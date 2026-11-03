@@ -36,9 +36,10 @@ from textual.widgets.option_list import Option
 
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
+from motor.config import carregar_config
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
-from motor.domain.version import PISO_PADRAO, chave, inferir_base, inferir_tipo
+from motor.domain.version import chave, inferir_base, inferir_tipo
 from motor.engine.atualizar import (
     AtualizarResult,
     AtualizarStatus,
@@ -50,13 +51,12 @@ from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.errors import MotorError, NaoEncontrado, formatar_com_notas
+from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, formatar_com_notas
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
     validar_nome_repo,
     validar_sistema_id,
-    validar_versao,
 )
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
@@ -66,7 +66,8 @@ from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencio
 class RepoOption:
     nome: str
     caminho: str | None
-    piso_versao: str = PISO_PADRAO
+    # Piso da config do projeto (`[versao] piso`); None = nada cortado.
+    piso_versao: str | None = None
 
     @property
     def disponivel(self) -> bool:
@@ -99,7 +100,6 @@ class ContinueRunner(Protocol):
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
 RepoRegistrar = Callable[[str, int], None]
-PisoDefiner = Callable[[str, str], None]
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,6 @@ class Runners:
     consultar_versao: ConsultaRunner | None = None
     registrar_repo: RepoRegistrar | None = None
     criar_repo: CriarRunner | None = None
-    definir_piso: PisoDefiner | None = None
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -178,7 +177,10 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
             caixa.border_subtitle = "esc para cancelar"
             yield Static("nome", classes="rotulo")
             yield Input(placeholder="nome canônico, sem caminho", id="cadastro-nome")
-            yield Static("tickio_sistema_id", classes="rotulo")
+            yield Static(
+                "tickio_sistema_id (ignorado até a #117; vale [tarefas] sistema da config)",
+                classes="rotulo",
+            )
             yield Input(placeholder="inteiro positivo", id="cadastro-sistema")
             yield Static(id="cadastro-erro")
             with Horizontal(id="cadastro-botoes"):
@@ -207,68 +209,6 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
             self.query_one("#cadastro-erro", Static).update(str(erro))
             return
         self.dismiss((nome, sistema_id))
-
-
-class PisoModal(ModalScreen["str | None"]):
-    """Piso de versao do repo: a menor versao cujos chamados o verificar busca
-    no Tickio. Valida o formato aqui; repo sumido do banco sai pelo caminho de
-    erro normal do app, como no cadastro.
-    """
-
-    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
-    DEFAULT_CSS = """
-    PisoModal { align: center middle; }
-    PisoModal > Vertical {
-        width: 60;
-        height: auto;
-        padding: 1 2;
-        border: round $primary;
-        background: $surface;
-    }
-    PisoModal .rotulo { height: auto; color: $text-muted; }
-    #piso-erro { height: auto; color: $error; }
-    #piso-botoes { height: auto; align-horizontal: right; padding-top: 1; }
-    #piso-botoes Button { margin-left: 1; }
-    """
-
-    def __init__(self, repo: str, atual: str) -> None:
-        super().__init__()
-        self._repo = repo
-        self._atual = atual
-
-    def compose(self) -> ComposeResult:
-        with Vertical() as caixa:
-            caixa.border_title = f"Piso de versão — {self._repo}"
-            caixa.border_subtitle = "esc para cancelar"
-            yield Static(
-                "versões abaixo do piso não são buscadas no Tickio",
-                classes="rotulo",
-            )
-            yield Input(value=self._atual, placeholder="X.Y.Z", id="piso-versao")
-            yield Static(id="piso-erro")
-            with Horizontal(id="piso-botoes"):
-                yield Button("Cancelar", id="piso-cancelar")
-                yield Button("Salvar", id="piso-salvar", variant="primary")
-
-    def action_cancelar(self) -> None:
-        self.dismiss(None)
-
-    def on_button_pressed(self, evento: Button.Pressed) -> None:
-        if evento.button.id == "piso-salvar":
-            self._salvar()
-        else:
-            self.dismiss(None)
-
-    def on_input_submitted(self, evento: Input.Submitted) -> None:
-        self._salvar()
-
-    def _salvar(self) -> None:
-        try:
-            piso = validar_versao(self.query_one("#piso-versao", Input).value)
-        except MotorError as erro:
-            self.query_one("#piso-erro", Static).update(str(erro))
-            return
-        self.dismiss(piso)
 
 
 class AbortarModal(ModalScreen[bool]):
@@ -558,7 +498,6 @@ class MotorTUI(App[None]):
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
         ("n", "cadastrar", "Cadastrar repo"),
-        ("p", "piso", "Piso de versão"),
     ]
     CSS = """
     #barra { height: auto; padding: 1; align-vertical: middle; }
@@ -596,10 +535,6 @@ class MotorTUI(App[None]):
         self._consultar = runners.consultar_versao
         self._registrar = runners.registrar_repo
         self._criar = runners.criar_repo
-        self._definir_piso = runners.definir_piso
-        # Piso vigente por repo. Fica aqui e nao no RepoOption do Select: trocar
-        # o piso nao recarrega a lista, que zeraria a selecao de repo e versao.
-        self._pisos: dict[str, str] = {}
         self._repo: RepoOption | None = None
         self._versao: VersionOption | None = None
         self._ocupado = False
@@ -915,7 +850,6 @@ class MotorTUI(App[None]):
         )
         select.query_one(OptionList).disable_option_at_index(0)
         self._tem_repos = bool(opcoes)
-        self._pisos = {opcao.nome: opcao.piso_versao for opcao in opcoes}
         self._bloquear(False)
         if opcoes and not any(opcao.disponivel for opcao in opcoes):
             self._erro("nenhum checkout local encontrado; confira PROJECTS_DIR")
@@ -1034,39 +968,6 @@ class MotorTUI(App[None]):
         self._exibir_resultado(f"repo '{nome}' cadastrado.")
         self._ocupar_resultado()
         self.carregar_repos_worker()
-
-    def action_piso(self) -> None:
-        if self._ocupado or self._definir_piso is None or self._repo is None:
-            return
-        nome = self._repo.nome
-        self.push_screen(
-            PisoModal(nome, self._pisos.get(nome, PISO_PADRAO)),
-            partial(self._piso_escolhido, nome),
-        )
-
-    def _piso_escolhido(self, nome: str, piso: str | None) -> None:
-        if piso is None:
-            return
-        self._bloquear(True)
-        self.piso_worker(nome, piso)
-
-    @work(thread=True, exclusive=True, group="cadastro")
-    def piso_worker(self, nome: str, piso: str) -> None:
-        try:
-            if self._definir_piso is not None:
-                self._definir_piso(nome, piso)
-        except Exception as erro:
-            self.call_from_thread(self._falha, erro)
-            self.call_from_thread(self._bloquear, False)
-            return
-        self.call_from_thread(self._piso_definido, nome, piso)
-
-    def _piso_definido(self, nome: str, piso: str) -> None:
-        self._pisos[nome] = piso
-        self._bloquear(False)
-        # _apresentar: com a lista de chamados na tela, o aviso vai num modal
-        # por cima dela em vez de apaga-la.
-        self._apresentar(f"piso de '{nome}' agora é {piso}.")
 
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:
@@ -1315,8 +1216,9 @@ def descobrir_repos(
     progresso(Progresso("lendo os repos cadastrados"))
     repos = estado.listar_repos()
     if not projects_dir:
+        piso_global = _piso_da_config(None)
         return [
-            RepoOption(nome=repo.nome, caminho=None, piso_versao=repo.piso_versao)
+            RepoOption(nome=repo.nome, caminho=None, piso_versao=piso_global)
             for repo in repos
         ]
     canonicos = {repo.nome: repo for repo in repos}
@@ -1342,14 +1244,24 @@ def descobrir_repos(
             if atual is None or (caminho.name == info.nome and atual.name != info.nome):
                 encontrados[info.nome] = caminho
 
-    return [
-        RepoOption(
-            nome=repo.nome,
-            caminho=str(encontrados[repo.nome]) if repo.nome in encontrados else None,
-            piso_versao=repo.piso_versao,
+    opcoes = []
+    for repo in repos:
+        achado = str(encontrados[repo.nome]) if repo.nome in encontrados else None
+        opcoes.append(
+            RepoOption(
+                nome=repo.nome, caminho=achado, piso_versao=_piso_da_config(achado)
+            )
         )
-        for repo in repos
-    ]
+    return opcoes
+
+
+def _piso_da_config(raiz: str | None) -> str | None:
+    """Piso da config em camadas; config invalida deixa `None` em vez de
+    derrubar a lista (o erro aparece ao operar o repo, pela montagem)."""
+    try:
+        return carregar_config(raiz).piso
+    except ErroDeEntrada:
+        return None
 
 
 def descobrir_versoes(
@@ -1374,11 +1286,6 @@ def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[Repo
 def _registrar_no_banco(nome: str, sistema_id: int) -> None:
     with abrir_sessao() as sessao:
         PostgresEstado(sessao=sessao).registrar_repo(nome, sistema_id)
-
-
-def _definir_piso_no_banco(nome: str, piso: str) -> None:
-    with abrir_sessao() as sessao:
-        PostgresEstado(sessao=sessao).definir_piso(nome, piso)
 
 
 def _versoes_do_repo(
@@ -1471,7 +1378,6 @@ def run_tui() -> None:
             partial(_consultar_repo, progresso=slot.relatar),
             _registrar_no_banco,
             partial(_criar_repo, progresso=slot.relatar),
-            _definir_piso_no_banco,
         ),
         slot=slot,
     ).run()

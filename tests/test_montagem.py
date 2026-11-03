@@ -16,6 +16,7 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.tickio import TickioRest
+from motor.config import ConfigProjeto
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.montagem import (
@@ -64,7 +65,7 @@ def test_com_token_a_pr_vem_antes_do_grep():
     fonte = montar_commit_source(
         FakeGit(),
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
-        estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
+        estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo="r",
     )
 
@@ -78,7 +79,7 @@ def test_com_token_a_pr_vem_antes_do_grep():
 def test_a_fonte_de_pr_recebe_o_cache_do_estado():
     # sem o estado e o nome canonico do repo, a fonte roda sem cache e volta a
     # pedir os commits de toda PR a cada verificar.
-    estado = FakeEstado(repos={"vbweb": RepoInfo(nome="vbweb", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"vbweb": RepoInfo(nome="vbweb")})
 
     fonte = montar_commit_source(
         FakeGit(),
@@ -111,7 +112,7 @@ def test_task_source_manual_ignora_as_variaveis_do_tickio(tmp_path):
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
-    fonte = montar_task_source(7, fonte="manual", lista_manual=str(lista))
+    fonte = montar_task_source(ConfigProjeto(), fonte="manual", lista_manual=str(lista))
 
     assert fonte.fetch("13.34.0") == ["123456"]
 
@@ -121,10 +122,13 @@ def test_task_source_tickio_nao_cobra_credencial_na_montagem(monkeypatch):
     for var in ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD"):
         monkeypatch.setenv(var, "")
 
-    fonte = montar_task_source(7)
+    fonte = montar_task_source(
+        ConfigProjeto(tarefas={"sistema": 7}, arquivos=("/a.toml", "/b.toml"))
+    )
 
     assert isinstance(fonte, TickioRest)
-    assert fonte.sistema_id == 7
+    assert fonte.sistema == 7
+    assert fonte.arquivos == ("/a.toml", "/b.toml")
 
 
 # -- validadores --------------------------------------------------------------

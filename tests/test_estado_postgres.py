@@ -37,7 +37,6 @@ def test_resolver_repo_por_alias(sessao_postgres):
     estado = PostgresEstado(sessao=sessao_postgres)
 
     assert estado.resolver_repo("vbweb").nome == "vendabemweb"
-    assert estado.resolver_repo("vbweb").tickio_sistema_id == 1
 
 
 def test_resolver_repo_desconhecido(sessao_postgres):
