@@ -15,7 +15,7 @@ def _fonte(handler, **kwargs) -> TickioRest:
         base_url="http://testserver",
         usuario="u",
         senha="p",
-        sistema_id=1,
+        sistema=1,
         client=client,
         **kwargs,
     )
@@ -146,7 +146,7 @@ def test_repr_nao_vaza_senha_nem_jwt():
         base_url="http://testserver",
         usuario="u",
         senha="senha-secreta",
-        sistema_id=1,
+        sistema=1,
         client=client,
     )
     fonte.fetch("13.34.0")
@@ -167,7 +167,7 @@ def test_formato_inesperado_e_resposta_invalida_nao_backend_fora():
 
 
 def test_variavel_faltando_e_erro_de_entrada_nao_backend():
-    fonte = TickioRest(base_url="", usuario="", senha="", sistema_id=7)
+    fonte = TickioRest(base_url="", usuario="", senha="", sistema=7)
 
     with pytest.raises(ErroDeEntrada, match=r"faltando no \.env"):
         fonte.fetch("13.34.0")
@@ -178,7 +178,7 @@ def test_base_url_malformada_ao_autenticar_vira_errodeentrada_nao_invalidurl():
     a captura extra, um TICKIO_BASE_URL com porta invalida escapava do
     `except httpx.HTTPError` como traceback em vez de erro de entrada.
     """
-    fonte = TickioRest(base_url="http://h:porta", usuario="u", senha="p", sistema_id=1)
+    fonte = TickioRest(base_url="http://h:porta", usuario="u", senha="p", sistema=1)
 
     with pytest.raises(ErroDeEntrada, match="TICKIO_BASE_URL"):
         fonte.fetch("13.34.0")
@@ -186,7 +186,7 @@ def test_base_url_malformada_ao_autenticar_vira_errodeentrada_nao_invalidurl():
 
 def test_base_url_malformada_ao_buscar_chamados_vira_errodeentrada_nao_invalidurl():
     """Mesmo defeito no segundo site (busca de chamados, depois de autenticado)."""
-    fonte = TickioRest(base_url="http://h:porta", usuario="u", senha="p", sistema_id=1)
+    fonte = TickioRest(base_url="http://h:porta", usuario="u", senha="p", sistema=1)
     fonte._access = "token-ja-obtido"  # pula _autenticar, exercita o GET de chamados
 
     with pytest.raises(ErroDeEntrada, match="TICKIO_BASE_URL"):
@@ -220,7 +220,35 @@ def test_verificar_credenciais_sem_access():
 
 def test_verificar_credenciais_url_invalida():
     fonte = TickioRest(
-        base_url="http://exemplo:porta", usuario="u", senha="p", sistema_id=1
+        base_url="http://exemplo:porta", usuario="u", senha="p", sistema=1
     )
     with pytest.raises(ErroDeEntrada):
         fonte.verificar_credenciais()
+
+
+@pytest.mark.parametrize("sistema", [None, "1", True])
+def test_sistema_ausente_ou_invalido_falha_no_fetch_sem_rede(sistema):
+    chamadas = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        chamadas.append(request)
+        return httpx.Response(200, json={})
+
+    fonte = _fonte(handler, arquivos=("/g/config.toml", "/r/.monitor-versoes.toml"))
+    fonte.sistema = sistema
+
+    with pytest.raises(
+        ErroDeEntrada,
+        match=r"\[tarefas\] sistema.*config\.toml.*\.monitor-versoes\.toml",
+    ):
+        fonte.fetch("13.34.0")
+    assert chamadas == []
+
+
+def test_verificar_credenciais_nao_exige_sistema():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"access": "tok"})
+
+    fonte = _fonte(handler)
+    fonte.sistema = None
+    fonte.verificar_credenciais()

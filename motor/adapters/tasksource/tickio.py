@@ -26,7 +26,9 @@ class TickioRest:
     # repr=False na senha e no JWT: com --debug o logging sobe para DEBUG, e um
     # dump do dataclass (deps, repr de excecao) imprimiria credencial em claro.
     senha: str = field(repr=False)
-    sistema_id: int
+    # Valor cru de `[tarefas] sistema` da config; validado so em `fetch`.
+    sistema: object = None
+    arquivos: tuple[str, ...] = ()
     client: httpx.Client | None = None
     _access: str = field(default="", init=False, repr=False)
 
@@ -38,6 +40,7 @@ class TickioRest:
         # esta checagem, base_url vazia sai como reclamacao de protocolo do
         # httpx, que nao nomeia a variavel que falta.
         self._exigir_variaveis()
+        self._exigir_sistema()
 
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
@@ -49,7 +52,7 @@ class TickioRest:
             try:
                 resp = cliente.get(
                     f"{self.base_url}{_ROTA_CHAMADOS}",
-                    params={"sistema": self.sistema_id, "versao": versao},
+                    params={"sistema": str(self.sistema), "versao": versao},
                     headers={"Authorization": f"Bearer {token}"},
                 )
             except httpx.InvalidURL as e:
@@ -93,6 +96,15 @@ class TickioRest:
             if not valor
         ]:
             raise ErroDeEntrada(f"faltando no .env: {', '.join(faltando)}")
+
+    def _exigir_sistema(self) -> None:
+        # bool e subclasse de int: `sistema = true` no TOML nao e um id.
+        if isinstance(self.sistema, int) and not isinstance(self.sistema, bool):
+            return
+        onde = " e ".join(self.arquivos) or "a config"
+        raise ErroDeEntrada(
+            f"faltando ou invalido: [tarefas] sistema (inteiro) em {onde}"
+        )
 
     def _autenticar(self, cliente: httpx.Client) -> str:
         if self._access:

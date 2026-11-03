@@ -153,29 +153,22 @@ def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
 
     main(["repo", "adicionar", "backend", "--tickio-sistema-id", "42"])
 
-    assert estado.resolver_repo("backend") == RepoInfo(
-        nome="backend", tickio_sistema_id=42
-    )
+    assert estado.resolver_repo("backend") == RepoInfo(nome="backend")
     assert capsys.readouterr().out == "repo 'backend' adicionado\n"
 
 
-def test_repo_piso_altera_o_repo(monkeypatch, capsys):
-    estado = FakeEstado(repos={"backend": RepoInfo(nome="backend")})
-    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
-
-    main(["repo", "piso", "backend", "14.0.0"])
-
-    assert estado.resolver_repo("backend").piso_versao == "14.0.0"
-    assert capsys.readouterr().out == "repo 'backend': piso 14.0.0\n"
-
-
-def test_repo_piso_recusa_versao_fora_do_formato(capsys):
+def test_repo_piso_nao_existe_mais(capsys):
     with pytest.raises(SystemExit) as saida:
-        _build_parser().parse_args(["repo", "piso", "backend", "14.0"])
+        _build_parser().parse_args(["repo", "piso", "backend", "14.0.0"])
 
     assert saida.value.code != 0
-    assert "X.Y.Z" in capsys.readouterr().err
+
+
+def test_ajuda_de_repo_adicionar_avisa_que_o_id_e_ignorado(capsys):
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["repo", "adicionar", "--help"])
+
+    assert "ignorado até a #117" in " ".join(capsys.readouterr().out.split())
 
 
 @pytest.mark.parametrize(
@@ -299,7 +292,7 @@ def _git() -> FakeGit:
 
 
 @pytest.fixture
-def bordas(monkeypatch):
+def bordas(monkeypatch, tmp_path_factory):
     """Troca as tres bordas de IO da montagem e devolve os doubles.
 
     Duas delas moram em `motor.montagem` (git e adapter de estado), que e onde o
@@ -308,16 +301,17 @@ def bordas(monkeypatch):
     Todo o resto de main() roda de verdade: parse, resolucao do repo, montagem
     de Deps, escolha da fonte de tasks, despacho e impressao.
     """
+    tmp_path = tmp_path_factory.mktemp("cfg")
     git = _git()
-    estado = FakeEstado(
-        repos={"vendabemweb": RepoInfo(nome="vendabemweb", tickio_sistema_id=7)}
-    )
+    estado = FakeEstado(repos={"vendabemweb": RepoInfo(nome="vendabemweb")})
     for var, valor in (
         ("TICKIO_BASE_URL", "http://tickio.exemplo"),
         ("TICKIO_USER", "u"),
         ("TICKIO_PASSWORD", "p"),
     ):
         monkeypatch.setenv(var, valor)
+    # config global isolada: o teste nao le o ~/.config de quem roda a suite
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
@@ -410,7 +404,7 @@ def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
     assert ("vendabemweb", "13.34.0") in estado.versoes
 
 
-def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
+def test_tickio_recebe_o_sistema_da_config_do_repo(bordas, tmp_path, monkeypatch):
     monkeypatch.setenv("TICKIO_BASE_URL", "http://tickio.exemplo")
     monkeypatch.setenv("TICKIO_USER", "u")
     monkeypatch.setenv("TICKIO_PASSWORD", "p")
@@ -420,7 +414,8 @@ def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
         base_url: str
         usuario: str
         senha: str
-        sistema_id: int
+        sistema: object
+        arquivos: tuple[str, ...]
 
         def __post_init__(self) -> None:
             construidos.append(self)
@@ -432,11 +427,15 @@ def test_tickio_recebe_o_sistema_id_do_repo(bordas, tmp_path, monkeypatch):
     monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
 
     # sem --task-source: prova que o default do CLI e tickio
-    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write("[tarefas]\nsistema = 7\n")
+    main(["verificar", "13.34.0", "--repo", repo])
 
     assert len(construidos) == 1
-    # 7 e o tickio_sistema_id da linha `repo`, lida pelo adapter de estado
-    assert construidos[0].sistema_id == 7
+    # 7 vem do .monitor-versoes.toml do repo, nao do banco
+    assert construidos[0].sistema == 7
+    assert construidos[0].arquivos[-1] == f"{repo}/.monitor-versoes.toml"
     assert construidos[0].base_url == "http://tickio.exemplo"
     assert (construidos[0].usuario, construidos[0].senha) == ("u", "p")
 
@@ -843,8 +842,9 @@ def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
 def test_verificar_nao_busca_no_tickio_versao_abaixo_do_piso_do_repo(
     bordas, tmp_path, monkeypatch
 ):
-    _, estado = bordas
-    estado.definir_piso("vendabemweb", "13.34.0")
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write('[versao]\npiso = "13.34.0"\n')
     buscadas: list[str] = []
 
     @dataclass
@@ -852,7 +852,31 @@ def test_verificar_nao_busca_no_tickio_versao_abaixo_do_piso_do_repo(
         base_url: str
         usuario: str
         senha: str
-        sistema_id: int
+        sistema: object
+        arquivos: tuple[str, ...]
+
+        def fetch(self, versao: str) -> list[str]:
+            buscadas.append(versao)
+            return []
+
+    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
+
+    main(["verificar", "13.34.0", "--repo", repo])
+
+    # 13.33.0 esta aberta e seria fonte sem o piso
+    assert buscadas == ["13.34.0"]
+
+
+def test_sem_piso_nenhuma_versao_e_cortada(bordas, tmp_path, monkeypatch):
+    buscadas: list[str] = []
+
+    @dataclass
+    class TickioSpy:
+        base_url: str
+        usuario: str
+        senha: str
+        sistema: object
+        arquivos: tuple[str, ...]
 
         def fetch(self, versao: str) -> list[str]:
             buscadas.append(versao)
@@ -862,8 +886,7 @@ def test_verificar_nao_busca_no_tickio_versao_abaixo_do_piso_do_repo(
 
     main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
-    # 13.33.0 esta aberta e seria fonte com o piso padrao
-    assert buscadas == ["13.34.0"]
+    assert "13.33.0" in buscadas and "13.34.0" in buscadas
 
 
 # -- diagnostico --------------------------------------------------------------

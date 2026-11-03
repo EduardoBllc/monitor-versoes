@@ -22,7 +22,7 @@ def _deps(git: FakeGit, estado: FakeEstado) -> Deps:
 
 
 def _estado(atribuicoes: list[Atribuicao]) -> FakeEstado:
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     estado.registrar_versao("r", VersaoInfo(numero="13.34.0"))
     estado.substituir_atribuicoes("r", "13.34.0", atribuicoes)
     return estado

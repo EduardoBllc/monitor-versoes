@@ -7,8 +7,8 @@ ver so `motor.ports`.
 **Montar nao e usar.** Nada aqui faz I/O de rede, nem valida credencial, nem
 consulta o git: `atualizar --abort` e `reconstruir-estado` recebem as mesmas
 fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
-Unica excecao deliberada: `resolver_repo`, porque o nome canonico e o
-`tickio_sistema_id` decidem *como* montar o resto. O I/O do `motor diagnostico`
+Unica excecao deliberada: `resolver_repo`, porque o nome canonico decide
+*como* montar o resto. O I/O do `motor diagnostico`
 vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
 """
 
@@ -29,7 +29,12 @@ from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
-from motor.config import database_url, worktrees_mantidas
+from motor.config import (
+    ConfigProjeto,
+    carregar_config,
+    database_url,
+    worktrees_mantidas,
+)
 from motor.domain.version import validar_versao as validar_versao  # reexporta
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada
@@ -107,20 +112,21 @@ def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
 
 
 def montar_task_source(
-    sistema_id: int, *, fonte: str = "tickio", lista_manual: str = ""
+    config: ConfigProjeto, *, fonte: str = "tickio", lista_manual: str = ""
 ) -> TaskSource:
-    """A fonte de tasks depende do repo: o `sistema_id` sai da linha `repo` do
-    banco, lida antes daqui via `EstadoRepo.resolver_repo`.
+    """A fonte de tasks depende do projeto: o `sistema` sai de `[tarefas]` da
+    config em camadas.
 
-    Sem validar as variaveis aqui — quem cobra credencial e o `TickioRest`, na
-    primeira busca.
+    Sem validar as variaveis nem o `sistema` aqui — quem cobra e o `TickioRest`,
+    na primeira busca.
     """
     if fonte == "tickio":
         return TickioRest(
             base_url=os.environ.get("TICKIO_BASE_URL", ""),
             usuario=os.environ.get("TICKIO_USER", ""),
             senha=os.environ.get("TICKIO_PASSWORD", ""),
-            sistema_id=sistema_id,
+            sistema=config.tarefas.get("sistema"),
+            arquivos=config.arquivos,
         )
     return ManualList(caminho=lista_manual)
 
@@ -174,12 +180,14 @@ def montar_deps(
     git = new_git_subprocess(caminho_repo, progresso=progresso)
     estado = PostgresEstado(sessao=sessao)
     # O estado vem antes das fontes: o nome canonico do repo e o
-    # tickio_sistema_id saem da linha `repo` (que aceita nome ou alias).
+    # nome canonico sai da linha `repo` (que aceita nome ou alias); piso e
+    # sistema, da config em camadas.
     info = estado.resolver_repo(os.path.basename(caminho_repo))
+    config = carregar_config(caminho_repo)
     return Deps(
         git=git,
         tasks=montar_task_source(
-            info.tickio_sistema_id, fonte=tasks.fonte, lista_manual=tasks.lista_manual
+            config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
         ),
         estado=estado,
         repo=info.nome,
@@ -195,5 +203,5 @@ def montar_deps(
         ),
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
-        piso_versao=info.piso_versao,
+        piso_versao=config.piso,
     )

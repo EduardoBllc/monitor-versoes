@@ -45,11 +45,7 @@ _Linha = TypeVar("_Linha")
 
 
 def _repo_info(linha: models.Repo) -> RepoInfo:
-    return RepoInfo(
-        nome=linha.nome,
-        tickio_sistema_id=linha.tickio_sistema_id,
-        piso_versao=linha.piso_versao,
-    )
+    return RepoInfo(nome=linha.nome)
 
 
 @dataclass
@@ -110,13 +106,6 @@ class PostgresEstado:
                 f"--tickio-sistema-id <id>"
             )
         return _repo_info(linha)
-
-    def definir_piso(self, nome: str, piso_versao: str, /) -> None:
-        canonico = self.resolver_repo(nome).nome
-        linha = self._scalar(select(models.Repo).where(models.Repo.nome == canonico))
-        assert linha is not None  # resolver_repo acabou de acha-la
-        linha.piso_versao = piso_versao
-        self._commit()
 
     def listar_repos(self) -> list[RepoInfo]:
         return [

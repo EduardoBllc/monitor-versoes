@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Event
 from typing import cast
 
+import pytest
 from rich.console import Console
 from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 
@@ -58,9 +59,9 @@ def _checkout(raiz: Path, nome: str) -> Path:
 def _estado() -> FakeEstado:
     return FakeEstado(
         repos={
-            "alpha": RepoInfo(nome="alpha", tickio_sistema_id=1),
-            "beta": RepoInfo(nome="beta", tickio_sistema_id=2),
-            "gamma": RepoInfo(nome="gamma", tickio_sistema_id=3),
+            "alpha": RepoInfo(nome="alpha"),
+            "beta": RepoInfo(nome="beta"),
+            "gamma": RepoInfo(nome="gamma"),
         },
         aliases={"beta-local": "beta"},
     )
@@ -106,9 +107,7 @@ def test_descobrir_repos_ignora_naoencontrado_mesmo_sem_a_palavra_desconhecido(
             raise NaoEncontrado("unknown repo")
 
     _checkout(tmp_path, "nao-cadastrado")
-    estado = EstadoQueFalaIngles(
-        repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=1)}
-    )
+    estado = EstadoQueFalaIngles(repos={"alpha": RepoInfo(nome="alpha")})
 
     opcoes = descobrir_repos(estado, str(tmp_path))
 
@@ -159,7 +158,7 @@ def test_app_exibe_loading_enquanto_carrega_repos():
 
 
 def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     checkout = _checkout(tmp_path, "alpha")
     monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
@@ -169,7 +168,7 @@ def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
 
 
 def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     _checkout(tmp_path, "alpha")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("PROJECTS_DIR", raising=False)
@@ -222,14 +221,17 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
     assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
 
 
-def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(tmp_path, monkeypatch):
+def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
+    tmp_path, monkeypatch, xdg_isolado
+):
     checkout = _checkout(tmp_path, "alpha")
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
 
     class TickioSpy:
-        def __init__(self, base_url, usuario, senha, sistema_id):
-            self.sistema_id = sistema_id
+        def __init__(self, base_url, usuario, senha, sistema, arquivos):
+            self.sistema = sistema
 
     def verificar_spy(deps, versao, auditar=False):
         # a TUI nao tem flag de credencial: token e email chegam do ambiente,
@@ -239,7 +241,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(tmp_path, monkey
             repo=deps.repo,
             versao=versao,
             auditar=auditar,
-            tickio_sistema_id=deps.tasks.sistema_id,
+            tickio_sistema_id=deps.tasks.sistema,
             bitbucket_token=pr.token,
             bitbucket_email=pr.email,
         )
@@ -270,21 +272,22 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(tmp_path, monkey
     assert "dev@example.com" not in texto
 
 
-def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
+def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
 
     class TickioSpy:
-        def __init__(self, base_url, usuario, senha, sistema_id):
-            self.sistema_id = sistema_id
+        def __init__(self, base_url, usuario, senha, sistema, arquivos):
+            self.sistema = sistema
 
     def atualizar_spy(deps, versao):
         capturado.update(
             repo=deps.repo,
             versao=versao,
-            tickio_sistema_id=deps.tasks.sistema_id,
+            tickio_sistema_id=deps.tasks.sistema,
         )
         return esperado
 
@@ -308,7 +311,7 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch):
 
 def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     checkout = _checkout(tmp_path, "alpha")
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
 
@@ -334,7 +337,7 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
 
 def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
     checkout = _checkout(tmp_path, "alpha")
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", tickio_sistema_id=7)})
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
 
     def abort_spy(deps, versao):
@@ -514,7 +517,6 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
 
     [app] = apps
     assert app._registrar is tui._registrar_no_banco
-    assert app._definir_piso is tui._definir_piso_no_banco
     ligados = {
         tui._repos_do_ambiente: app._carregar_repos,
         tui._versoes_do_repo: app._carregar_versoes,
@@ -2560,87 +2562,67 @@ def test_renderizar_chamado_mostra_o_descendente_no_topo():
     assert texto.index("Commit novo") < texto.index("Commit antigo")
 
 
-def test_descobrir_repos_carrega_o_piso_do_estado(tmp_path):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha", piso_versao="14.0.0")})
+@pytest.fixture
+def xdg_isolado(tmp_path, monkeypatch):
+    """Config global isolada; devolve o caminho do config.toml central."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    caminho = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
+    caminho.parent.mkdir(parents=True)
+    return caminho
 
-    assert [o.piso_versao for o in descobrir_repos(estado, "")] == ["14.0.0"]
+
+def test_descobrir_repos_le_o_piso_do_toml_do_checkout(tmp_path, xdg_isolado):
+    checkout = tmp_path / "projetos" / "alpha"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / ".monitor-versoes.toml").write_text('[versao]\npiso = "14.0.0"\n')
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
+
+    opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
+
+    assert [o.piso_versao for o in opcoes] == ["14.0.0"]
 
 
-def _app_de_piso(definir) -> MotorTUI:
-    return MotorTUI(
-        Runners(
-            carregar_repos=lambda: [
-                RepoOption(
-                    nome="alpha", caminho="/projetos/alpha", piso_versao="13.0.0"
-                )
-            ],
-            carregar_versoes=lambda opcao: [],
-            executar=_nunca_executa,
-            definir_piso=definir,
-        )
+def test_descobrir_repos_sem_checkout_usa_so_o_piso_global(tmp_path, xdg_isolado):
+    xdg_isolado.write_text('[versao]\npiso = "12.0.0"\n')
+    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
+
+    assert [o.piso_versao for o in descobrir_repos(estado, "")] == ["12.0.0"]
+    assert [o.piso_versao for o in descobrir_repos(estado, str(tmp_path / "x"))] == [
+        "12.0.0"
+    ]
+
+
+def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
+    tmp_path, xdg_isolado
+):
+    for nome, conteudo in (
+        ("alpha", "isto = = nao\n"),
+        ("beta", '[versao]\npiso = "1.0.0"\n'),
+    ):
+        checkout = tmp_path / "projetos" / nome
+        (checkout / ".git").mkdir(parents=True)
+        (checkout / ".monitor-versoes.toml").write_text(conteudo)
+    estado = FakeEstado(
+        repos={"alpha": RepoInfo(nome="alpha"), "beta": RepoInfo(nome="beta")}
     )
 
+    opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
 
-async def _abrir_piso(app: MotorTUI, pilot) -> None:
-    await app.workers.wait_for_complete()
-    app.query_one("#repo", Select).value = app.query_one("#repo", Select)._options[1][1]
-    await pilot.pause()
-    await app.workers.wait_for_complete()
-    await pilot.press("p")
-    await pilot.pause()
+    assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
 
 
-def test_app_piso_parte_do_atual_grava_e_reabre_com_o_novo():
-    chamadas: list[tuple[str, str]] = []
+def test_app_nao_tem_mais_a_acao_de_piso():
+    assert "p" not in {b[0] for b in MotorTUI.BINDINGS if isinstance(b, tuple)}
 
+
+def test_cadastro_avisa_que_o_id_e_ignorado():
     async def executar_fluxo() -> None:
-        app = _app_de_piso(lambda nome, piso: chamadas.append((nome, piso)))
-        async with app.run_test(size=(120, 36)) as pilot:
-            await _abrir_piso(app, pilot)
-            campo = app.screen.query_one("#piso-versao", Input)
-            assert campo.value == "13.0.0"
-            campo.value = "14.0.0"
-            await pilot.click("#piso-salvar")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
-
-            assert chamadas == [("alpha", "14.0.0")]
-            assert "14.0.0" in _texto(app.query_one("#resultado", Static).content)
-            # sem recarregar a lista: o repo continua selecionado
-            await pilot.press("p")
-            await pilot.pause()
-            assert app.screen.query_one("#piso-versao", Input).value == "14.0.0"
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_piso_recusa_formato_invalido_e_mantem_modal():
-    def definir(nome: str, piso: str) -> None:
-        raise AssertionError("piso invalido nao pode chegar ao banco")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_piso(definir)
-        async with app.run_test(size=(120, 36)) as pilot:
-            await _abrir_piso(app, pilot)
-            app.screen.query_one("#piso-versao", Input).value = "14.0"
-            await pilot.click("#piso-salvar")
-            await pilot.pause()
-
-            assert isinstance(app.screen, tui.PisoModal)
-            assert "X.Y.Z" in _texto(app.screen.query_one("#piso-erro", Static).content)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_piso_sem_repo_selecionado_nao_abre():
-    async def executar_fluxo() -> None:
-        app = _app_de_piso(lambda nome, piso: None)
+        app = _app_de_cadastro(lambda nome, sistema_id: None, [])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await pilot.press("p")
+            await pilot.press("n")
             await pilot.pause()
-
-            assert not isinstance(app.screen, tui.PisoModal)
+            textos = " ".join(_texto(w.content) for w in app.screen.query(Static))
+            assert "ignorado até a #117" in textos
 
     asyncio.run(executar_fluxo())

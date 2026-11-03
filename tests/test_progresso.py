@@ -106,7 +106,7 @@ def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
         git=FakeGit(),
         client=httpx.Client(transport=httpx.MockTransport(sem_prs)),
         progresso=relatos.append,
-        estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
+        estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo_estado="r",
     )
 
@@ -137,7 +137,7 @@ def test_verificar_relata_suas_fases_na_ordem():
     e a ultima coisa, e que as fases contaveis chegam com feito <= total.
     """
     git = _git_verificar()
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     estado.registrar_versao(
         "r",
         VersaoInfo(
@@ -201,7 +201,7 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
     deps = Deps(
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514", "255515"]}),
-        estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
+        estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo="r",
         commit_source=FakeCommitSource(
             por_chamado={
@@ -245,7 +245,7 @@ def test_consultar_conta_os_chamados_do_snapshot():
     git = FakeGit()
     git.add_commit("a1", "", "ch9 antigo", D)
     git.add_commit("b1", "", "ch25 novo", D)
-    estado = FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)})
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     estado.registrar_versao("r", VersaoInfo(numero="13.34.0"))
     estado.substituir_atribuicoes(
         "r",
@@ -288,7 +288,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
         Deps(
             git=git,
             tasks=FakeTaskSource(),
-            estado=FakeEstado(repos={"r": RepoInfo(nome="r", tickio_sistema_id=1)}),
+            estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
             repo="r",
             progresso=relatos.append,
         ),

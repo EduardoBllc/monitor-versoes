@@ -68,7 +68,7 @@ def estado(request):
     """
     if request.param == "fake":
         return FakeEstado(
-            repos={REPO: RepoInfo(nome=REPO, tickio_sistema_id=SISTEMA_ID)},
+            repos={REPO: RepoInfo(nome=REPO)},
             aliases={ALIAS: REPO},
         )
 
@@ -94,7 +94,7 @@ def estado(request):
 
 
 def test_resolver_repo_por_nome_e_por_alias(estado):
-    assert estado.resolver_repo(REPO).tickio_sistema_id == SISTEMA_ID
+    assert estado.resolver_repo(REPO).nome == REPO
     # o alias devolve o nome CANONICO: e ele que chaveia todo o resto do estado
     assert estado.resolver_repo(ALIAS).nome == REPO
 
@@ -108,32 +108,14 @@ def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
 def test_registrar_repo_o_torna_resolvivel(estado):
     estado.registrar_repo("novo-repo", 23)
 
-    assert estado.resolver_repo("novo-repo") == RepoInfo(
-        nome="novo-repo", tickio_sistema_id=23
-    )
-
-
-def test_repo_nasce_com_o_piso_padrao(estado):
-    # no Postgres, prova o server_default: a semente acima nao passa piso
-    assert estado.resolver_repo(REPO).piso_versao == "13.0.0"
-
-
-def test_definir_piso_pelo_alias_altera_o_canonico(estado):
-    estado.definir_piso(ALIAS, "14.0.0")
-
-    assert estado.resolver_repo(REPO).piso_versao == "14.0.0"
-
-
-def test_definir_piso_de_repo_desconhecido(estado):
-    with pytest.raises(NaoEncontrado):
-        estado.definir_piso("nao-existe", "14.0.0")
+    assert estado.resolver_repo("novo-repo") == RepoInfo(nome="novo-repo")
 
 
 def test_registrar_repo_recusa_nome_duplicado(estado):
     with pytest.raises(RecusaDeInvariante):
         estado.registrar_repo(REPO, 99)
 
-    assert estado.resolver_repo(REPO).tickio_sistema_id == SISTEMA_ID
+    assert estado.resolver_repo(REPO).nome == REPO
 
 
 def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
@@ -148,9 +130,9 @@ def test_listar_repos_devolve_canonicos_em_ordem_sem_alias(estado):
     estado.registrar_repo("aaa", 11)
 
     assert estado.listar_repos() == [
-        RepoInfo(nome="aaa", tickio_sistema_id=11),
-        RepoInfo(nome=REPO, tickio_sistema_id=SISTEMA_ID),
-        RepoInfo(nome="zzz", tickio_sistema_id=99),
+        RepoInfo(nome="aaa"),
+        RepoInfo(nome=REPO),
+        RepoInfo(nome="zzz"),
     ]
 
 
