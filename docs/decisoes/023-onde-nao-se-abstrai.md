@@ -1,6 +1,7 @@
 # Onde deliberadamente não se abstrai
 
-- **Status:** aceita
+- **Status:** substituída por [024](024-config-por-projeto.md) no ponto "sem config por
+  projeto"; vale nos demais pontos
 - **Data:** 2026-08-21
 - **Depende de:** [011](011-congelamento-no-banco.md), [014](014-ordem-de-aplicacao-pelo-grafo.md),
   [016](016-multi-projeto-premissas.md), [018](018-portas-e-adaptadores.md),

@@ -162,7 +162,26 @@ correspondente no Tickio:
 motor repo adicionar meu-repo --tickio-sistema-id 7
 ```
 
-O nome é o do diretório do repositório (o basename do path de `--repo`).
+O nome é o do diretório do repositório (o basename do path de `--repo`). O id é ignorado
+por enquanto: o sistema do Tickio vem da config abaixo.
+
+### Configurar por projeto
+
+Dois arquivos TOML, mesclados chave a chave com o do repo vencendo: o padrão do operador em
+`~/.config/monitor-versoes/config.toml` (ou `$XDG_CONFIG_HOME/monitor-versoes/config.toml`) e
+o específico do projeto em `.monitor-versoes.toml`, na raiz do repositório. Credenciais
+continuam no `.env`.
+
+```toml
+[versao]
+piso = "13.0.0"   # menor versão cujas tarefas são buscadas; sem ele nada é cortado
+
+[tarefas]
+sistema = 7       # id do sistema no Tickio; obrigatório para a busca no Tickio
+```
+
+Sem `sistema`, a primeira busca no Tickio falha apontando os dois arquivos; `atualizar
+--abort` e `reconstruir-estado` seguem funcionando.
 
 ## Verificar que funcionou
 
