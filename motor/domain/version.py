@@ -61,6 +61,13 @@ def chave(numero: str) -> tuple[int, int, int]:
     return _parse_versao(numero)
 
 
+def validar_versao(valor: str) -> str:
+    """Numero X.Y.Z, como o motor ordena versoes."""
+    aparado = valor.strip()
+    chave(aparado)
+    return aparado
+
+
 def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
     """Em construcao = existe como versao e nao tem tag homonima.
 

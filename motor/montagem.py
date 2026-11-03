@@ -30,7 +30,7 @@ from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import database_url, worktrees_mantidas
-from motor.domain.version import chave
+from motor.domain.version import validar_versao as validar_versao  # reexporta
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
@@ -68,13 +68,6 @@ def validar_nome_repo(valor: str) -> str:
     if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
         raise ErroDeEntrada("use um nome simples, sem caminho")
     return valor
-
-
-def validar_versao(valor: str) -> str:
-    """Numero X.Y.Z, como o motor ordena versoes."""
-    aparado = valor.strip()
-    chave(aparado)
-    return aparado
 
 
 def validar_sistema_id(valor: str) -> int:
