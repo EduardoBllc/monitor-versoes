@@ -14,6 +14,7 @@ vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aq
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -34,6 +35,11 @@ from motor.config import (
     carregar_config,
     database_url,
     worktrees_mantidas,
+)
+from motor.domain.referencia import (
+    FonteReferencia,
+    Referencia,
+    resolver_referencia,
 )
 from motor.domain.version import validar_versao as validar_versao  # reexporta
 from motor.engine.deps import Deps
@@ -131,6 +137,16 @@ def montar_task_source(
     return ManualList(caminho=lista_manual)
 
 
+def _proposta(tasks: TaskSource) -> Referencia | None:
+    """A referencia que o adapter do tracker propoe, se propoe alguma.
+
+    Atributo proprio do adapter, fora da porta: o nucleo nao sabe de Tickio, e a
+    lista manual, que nao propoe nada, nao precisa declarar ausencia.
+    """
+    proposta = getattr(tasks, "referencia", None)
+    return proposta if isinstance(proposta, Referencia) else None
+
+
 def montar_commit_source(
     git: GitRepo,
     *,
@@ -184,11 +200,20 @@ def montar_deps(
     # sistema, da config em camadas.
     info = estado.resolver_repo(os.path.basename(caminho_repo))
     config = carregar_config(caminho_repo)
+    fonte_tasks = montar_task_source(
+        config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
+    )
+    # Partial, nao valor: resolver aqui faria a falta de padrao derrubar a
+    # montagem, e com ela `atualizar --abort`.
+    referencia: FonteReferencia = functools.partial(
+        resolver_referencia,
+        _proposta(fonte_tasks),
+        config.padrao_referencia,
+        config.arquivos,
+    )
     return Deps(
         git=git,
-        tasks=montar_task_source(
-            config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
-        ),
+        tasks=fonte_tasks,
         estado=estado,
         repo=info.nome,
         commit_source=montar_commit_source(
@@ -204,4 +229,5 @@ def montar_deps(
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
         piso_versao=config.piso,
+        referencia=referencia,
     )

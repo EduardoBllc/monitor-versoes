@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from motor import montagem
 from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
@@ -17,11 +18,14 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import ConfigProjeto
+from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.montagem import (
     CredenciaisBitbucket,
+    FonteTasks,
     montar_commit_source,
+    montar_deps,
     montar_task_source,
     validar_nome_repo,
     validar_sistema_id,
@@ -129,6 +133,53 @@ def test_task_source_tickio_nao_cobra_credencial_na_montagem(monkeypatch):
     assert isinstance(fonte, TickioRest)
     assert fonte.sistema == 7
     assert fonte.arquivos == ("/a.toml", "/b.toml")
+
+
+# -- referencia de tarefa ----------------------------------------------------
+
+
+@pytest.fixture
+def repo_montavel(monkeypatch, tmp_path):
+    """Raiz de repo com git e estado fakes e config global isolada."""
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    estado = FakeEstado(repos={"repo": RepoInfo(nome="repo")})
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda *_, **__: FakeGit())
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    return raiz
+
+
+def _lista(raiz):
+    lista = raiz.parent / "lista.txt"
+    lista.write_text("123456\n", encoding="utf-8")
+    return FonteTasks(fonte="manual", lista_manual=str(lista))
+
+
+def test_tickio_sem_config_propoe_a_referencia_dele(repo_montavel):
+    deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
+
+    assert deps.referencia() == Referencia("ch{id}", "0-9")
+
+
+def test_lista_manual_sem_padrao_monta_e_so_cobra_no_uso(repo_montavel):
+    # montar nao pode falhar: `atualizar --abort` nao usa a referencia.
+    deps = montar_deps(str(repo_montavel), None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
+
+    with pytest.raises(ErroDeEntrada) as e:
+        deps.referencia()
+    # O texto é requisito: diz a chave que falta.
+    assert "[referencia] padrao" in str(e.value)
+
+
+def test_lista_manual_com_padrao_usa_o_alfabeto_default(repo_montavel):
+    (repo_montavel / ".monitor-versoes.toml").write_text(
+        '[referencia]\npadrao = "ch{id}"\n'
+    )
+
+    deps = montar_deps(str(repo_montavel), None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
+
+    assert deps.referencia() == Referencia("ch{id}", ALFABETO_PADRAO)
 
 
 # -- validadores --------------------------------------------------------------
