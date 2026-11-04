@@ -302,11 +302,15 @@ def _preparar_auditoria(
     return info, _datas_das_tags(deps, tags, versao, congelar=False)
 
 
-def _preparar_worktree(deps: Deps, versao: str) -> None:
+def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.progresso(Progresso("preparando worktree"))
     deps.git.use_worktree(versao)
     if deps.git.remote_branch_exists("origin", versao):
         deps.git.pull_branch("origin", versao)
+
+
+# O parâmetro homônimo de `verificar_sem_fetch` sombreia o nome público lá dentro.
+_preparar_worktree = preparar_worktree
 
 
 def _base_commit(deps: Deps, versao: str, info: VersaoInfo | None) -> str:

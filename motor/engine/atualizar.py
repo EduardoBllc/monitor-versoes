@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -7,7 +8,8 @@ from enum import IntEnum
 
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
-from motor.engine.verificar import ordem_de_aplicacao, verificar
+from motor.engine.verificar import preparar_worktree, verificar_sem_fetch
+from motor.engine.vigencia import verificacao_vigente
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
@@ -45,6 +47,8 @@ class AtualizarResult:
     # historico reescrito debaixo de um commit ja aplicado, e o verificar ja
     # sobrescreveu a linha de estado que guardava a evidencia.
     status_versao: VersionStatus | None = None
+    # o `verificado_em` do carimbo reaproveitado; None = verificou agora
+    reaproveitada_de: datetime.datetime | None = None
 
 
 def _recusar_se_liberada(deps: Deps, versao: str) -> None:
@@ -64,6 +68,25 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
             f"versao {versao} ja liberada (tem tag) - remarque a tarefa "
             "para a proxima versao em construcao"
         )
+
+
+def _status_do_lote(
+    deps: Deps, versao: str
+) -> tuple[VersionStatus, datetime.datetime | None]:
+    preparar_worktree(deps, versao)
+    vigente = verificacao_vigente(deps, versao)
+    if vigente is not None:
+        return vigente.status, vigente.verificado_em
+    status = verificar_sem_fetch(
+        deps, versao, manter_worktree=True, auditar=False, preparar_worktree=False
+    )
+    return status, None
+
+
+def previa_atualizacao(deps: Deps, versao: str) -> VersionStatus:
+    """O lote que o `atualizar` aplicaria, deixando o carimbo para ele reaproveitar."""
+    _recusar_se_liberada(deps, versao)
+    return _status_do_lote(deps, versao)[0]
 
 
 def _pick(deps: Deps, hash_origem: str) -> CherryPickOutcome:
@@ -92,7 +115,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     """
     _recusar_se_liberada(deps, versao)
 
-    status = verificar(deps, versao, manter_worktree=True)
+    status, reaproveitada_de = _status_do_lote(deps, versao)
 
     if status.suspeitos_conteudo:
         hashes = ", ".join(c.hash_origem[:8] for c in status.suspeitos_conteudo)
@@ -102,9 +125,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
             "Confirme manualmente (exclua no estado se ja aplicado) antes de rodar atualizar de novo."
         )
 
-    faltam = ordem_de_aplicacao(deps, status.faltantes)
-
-    deps.git.use_worktree(versao)
+    faltam = status.faltantes
 
     aplicados: list[CommitRef] = []
     vazios: list[CommitRef] = []
@@ -139,6 +160,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
                 vazios=vazios,
                 ja_presentes=ja_presentes,
                 status_versao=status,
+                reaproveitada_de=reaproveitada_de,
             )
         aplicados.append(c)
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
@@ -168,6 +190,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
         vazios=vazios,
         ja_presentes=ja_presentes,
         status_versao=status,
+        reaproveitada_de=reaproveitada_de,
     )
 
 
