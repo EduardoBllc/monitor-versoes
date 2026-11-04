@@ -9,6 +9,7 @@ from motor.domain.types import Exclusion, Verificacao
 from motor.engine.deps import Deps
 
 VALIDADE_VERIFICACAO = datetime.timedelta(minutes=5)
+ZERO = datetime.timedelta()
 
 
 def impressao_do_julgamento(
@@ -21,7 +22,10 @@ def impressao_do_julgamento(
 
 def verificacao_vigente(deps: Deps, versao: str) -> Verificacao | None:
     v = deps.estado.verificacao(deps.repo, versao)
-    if v is None or deps.agora() - v.verificado_em > VALIDADE_VERIFICACAO:
+    if v is None:
+        return None
+    # Carimbo do futuro (relógio diferente entre máquinas) não vale.
+    if not ZERO <= deps.agora() - v.verificado_em <= VALIDADE_VERIFICACAO:
         return None
     if v.tip != deps.git.resolve_ref(versao):
         return None

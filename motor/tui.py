@@ -259,10 +259,9 @@ class ConfirmarModal(ModalScreen[bool]):
     """O lote na tela antes do primeiro cherry-pick.
 
     E o que substitui a exigencia de rodar um Verificar antes do Atualizar. A
-    exigencia nao protegia nada: o `atualizar` do motor chama o `verificar` ele
-    mesmo e recalcula o lote do git na hora, entao o status da tela anterior
-    nunca era o que embarcava. Aqui o status mostrado e o da mesma varredura que
-    vai alimentar os picks, e a decisao acontece antes de qualquer escrita.
+    exigencia nao protegia nada: o lock da tag roda primeiro e o lote sai do
+    carimbo valido ou de uma verificacao nova. Aqui o carimbo da previa e o que
+    embarca enquanto valer, e a decisao acontece antes de qualquer escrita.
 
     Mesma tabela do Verificar, de proposito: as secoes vermelhas (ambiguas, sem
     commits, commits sumidos, suspeitos) tem de estar na frente do operador no
@@ -661,9 +660,9 @@ class MotorTUI(App[None]):
         """Atualizar depende da selecao, nao de ter rodado um Verificar antes.
 
         Derivado em vez de gravado num flag porque a pre-condicao que o flag
-        guardava (ter um status fresco na tela) nao era pre-condicao de nada: o
-        `atualizar` do motor abre chamando o `verificar`, e o lote sai dessa
-        varredura, nao da anterior. O que existe no lugar e o `ConfirmarModal`,
+        guardava (ter um status fresco na tela) nao era pre-condicao de nada: o lock
+        da tag roda primeiro e o lote sai do carimbo valido ou de uma verificacao
+        nova, nao do status da tela. O que existe no lugar e o `ConfirmarModal`,
         que mostra o lote de verdade antes do primeiro pick.
 
         Lote bloqueado sem runner de continuacao e o unico caso que trava o

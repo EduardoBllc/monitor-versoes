@@ -25,6 +25,7 @@ TIP = "t1"
 HORA = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 UM_SEGUNDO = datetime.timedelta(seconds=1)
 A = Exclusion(hash_origem="a", versao_numero=None, motivo="x")
+A_NA_VERSAO = Exclusion(hash_origem="a", versao_numero=VERSAO, motivo="x")
 B = Exclusion(hash_origem="b", versao_numero=VERSAO, motivo="y")
 
 
@@ -76,7 +77,12 @@ def test_impressao_independe_da_ordem():
 
 
 def test_impressao_aceita_exclusao_com_e_sem_versao():
-    assert impressao_do_julgamento([A, B], {})
+    assert impressao_do_julgamento([A, A_NA_VERSAO], {}) == impressao_do_julgamento(
+        [A_NA_VERSAO, A], {}
+    )
+    assert impressao_do_julgamento([A, A_NA_VERSAO], {}) != impressao_do_julgamento(
+        [A], {}
+    )
 
 
 def test_vigente_dentro_da_validade_inclusive_no_limite():
@@ -87,6 +93,10 @@ def test_vigente_dentro_da_validade_inclusive_no_limite():
 def test_vencida_apos_cinco_minutos():
     deps = _montar(agora=HORA + VALIDADE_VERIFICACAO + UM_SEGUNDO)
     assert verificacao_vigente(deps, VERSAO) is None
+
+
+def test_carimbo_do_futuro_nao_vale():
+    assert verificacao_vigente(_montar(agora=HORA - UM_SEGUNDO), VERSAO) is None
 
 
 def test_tip_diferente_nao_vale():

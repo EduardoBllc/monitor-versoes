@@ -165,8 +165,8 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
         aplicados.append(c)
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
 
-    # O estado ja foi gravado pelo verificar no comeco do run, com a presenca de
-    # ANTES dos picks; regrava com o lote aplicado para o `estado` das
+    # O estado veio da verificacao em uso (carimbo valido ou nova), com a presenca
+    # de ANTES dos picks; regrava com o lote aplicado para o `estado` das
     # atribuicoes refletir a realidade. Tarefa sem commit nenhum continua
     # pendente: o lote nao entregou nada dela.
     aplicadas = [

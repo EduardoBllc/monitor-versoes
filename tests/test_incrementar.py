@@ -500,6 +500,16 @@ UMA_VEZ = 1
 @dataclass
 class _GitContado(FakeGit):
     ordenacoes: int = 0
+    predicoes: int = 0
+    ancestrais: int = 0
+
+    def predict_merge(self, *args):
+        self.predicoes += 1
+        return super().predict_merge(*args)
+
+    def is_ancestor(self, *args):
+        self.ancestrais += 1
+        return super().is_ancestor(*args)
 
     def ordem_topologica(self, hashes: list[str], /) -> list[str]:
         self.ordenacoes += 1
@@ -561,13 +571,16 @@ def _cenario(
 
 def test_atualizar_reaproveita_verificacao_recente():
     c = _cenario()
+    assert isinstance(c.git, _GitContado)
     verificar(c.deps, "13.7.0")
     varredura = c.buscas()
+    oraculo = (c.git.predicoes, c.git.ancestrais)
     c.hora = D + UM_MINUTO
 
     resultado = atualizar(c.deps, "13.7.0")
 
     assert c.buscas() == varredura, "o atualizar varreu de novo"
+    assert (c.git.predicoes, c.git.ancestrais) == oraculo, "rodou o oraculo"
     assert resultado.reaproveitada_de == D
     assert resultado.status == AtualizarStatus.DONE
     assert [x.hash_origem for x in resultado.aplicados] == ["a0"]
@@ -684,10 +697,12 @@ def test_atualizar_faz_um_fetch_um_pull_e_uma_ordenacao(com_carimbo, ordenacoes)
 
 def test_previa_e_atualizar_fazem_uma_varredura():
     c = _cenario()
-    previa = previa_atualizacao(c.deps, "13.7.0")
+    verificar(c.deps, "13.7.0")
     varredura = c.buscas()
     c.hora = D + UM_MINUTO
 
+    previa = previa_atualizacao(c.deps, "13.7.0")
+    assert c.buscas() == varredura, "a previa varreu de novo"
     resultado = atualizar(c.deps, "13.7.0")
 
     assert c.buscas() == varredura, "o atualizar varreu de novo"
