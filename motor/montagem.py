@@ -147,9 +147,12 @@ def _proposta(tasks: TaskSource) -> Referencia | None:
     return proposta if isinstance(proposta, Referencia) else None
 
 
-def montar_commit_source(
+# Seis parametros, cinco deles nomeados e com default salvo a referencia: e
+# configuracao da montagem, nao uma funcao que faz cinco coisas.
+def montar_commit_source(  # noqa: PLR0913
     git: GitRepo,
     *,
+    referencia: FonteReferencia,
     bitbucket: CredenciaisBitbucket = _SEM_BITBUCKET,
     estado: EstadoRepo | None = None,
     repo: str = "",
@@ -163,7 +166,7 @@ def montar_commit_source(
     agora faria todo comando pagar uma chamada de git — e `atualizar --abort`
     num clone sem `origin` passaria a falhar na montagem.
     """
-    grep = GrepCommitSource(git=git, progresso=progresso)
+    grep = GrepCommitSource(git=git, progresso=progresso, referencia=referencia)
     # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
     if not bitbucket.token or estado is None:
         return grep
@@ -176,6 +179,7 @@ def montar_commit_source(
         # incremental no lugar de uma busca por chamado.
         estado=estado,
         repo_estado=repo,
+        referencia=referencia,
     )
     return ChainCommitSource(sources=[pr, grep])
 
@@ -218,6 +222,7 @@ def montar_deps(
         repo=info.nome,
         commit_source=montar_commit_source(
             git,
+            referencia=referencia,
             bitbucket=CredenciaisBitbucket(
                 token=bitbucket.token or os.environ.get("BITBUCKET_TOKEN", ""),
                 email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),

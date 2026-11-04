@@ -9,9 +9,10 @@ mensagem. É a fonte de fallback; o Bitbucket (PR) é a primária.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from motor.domain.commits import match_exato
+from motor.domain.referencia import FonteReferencia, formatar_referencia
 from motor.domain.types import CommitRef
 from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -22,6 +23,7 @@ class GrepCommitSource:
     git: GitRepo
     ref: str = "origin/master"
     progresso: RelatorProgresso = silencioso
+    referencia: FonteReferencia = field(kw_only=True)
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         if not chamados:
@@ -29,11 +31,15 @@ class GrepCommitSource:
 
         # Varredura unica: nao ha o que contar, so avisar que comecou.
         self.progresso(Progresso("commits dos chamados no hist\u00f3rico"))
-        candidatos = self.git.search_commits(["ch" + c for c in chamados], self.ref)
+        # Resolvida so aqui, com chamado a buscar: lote vazio nao exige padrao.
+        ref = self.referencia()
+        candidatos = self.git.search_commits(
+            [formatar_referencia(ref, c) for c in chamados], self.ref
+        )
 
         resultado: dict[str, list[CommitRef]] = {}
         for chamado in chamados:
-            commits = match_exato(candidatos, chamado)
+            commits = match_exato(candidatos, chamado, ref)
             if not commits:
                 continue
             # search_commits nao sabe de chamado — carimba aqui.

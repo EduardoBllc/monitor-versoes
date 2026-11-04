@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import datetime
 
+import pytest
+
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.git.fake import FakeGit
+from motor.adapters.tasksource.tickio import TickioRest
+from motor.domain.referencia import Referencia
 
 
 def _git_com_commits(*mensagens: str) -> FakeGit:
@@ -24,7 +28,9 @@ def _git_com_commits(*mensagens: str) -> FakeGit:
 def test_grep_agrupa_por_chamado_e_carimba():
     git = _git_com_commits("ch123456 alfa", "ch999111 beta")
 
-    achados = GrepCommitSource(git=git).resolve(["123456", "999111"])
+    achados = GrepCommitSource(
+        git=git, referencia=lambda: TickioRest.referencia
+    ).resolve(["123456", "999111"])
 
     assert set(achados) == {"123456", "999111"}
     assert [c.hash_origem for c in achados["123456"]] == ["c0"]
@@ -34,16 +40,45 @@ def test_grep_agrupa_por_chamado_e_carimba():
 def test_grep_nao_casa_chamado_como_substring():
     git = _git_com_commits("ch255514 alfa")
 
-    assert GrepCommitSource(git=git).resolve(["5514"]) == {}
+    assert (
+        GrepCommitSource(git=git, referencia=lambda: TickioRest.referencia).resolve(
+            ["5514"]
+        )
+        == {}
+    )
 
     # colisao de prefixo: "123" nao pode casar dentro de "ch1234" (search_commits
     # traz o candidato bruto por substring; match_exato precisa rejeitar aqui).
     git_prefixo = _git_com_commits("ch1234 outra correcao")
 
-    assert GrepCommitSource(git=git_prefixo).resolve(["123"]) == {}
+    assert (
+        GrepCommitSource(
+            git=git_prefixo, referencia=lambda: TickioRest.referencia
+        ).resolve(["123"])
+        == {}
+    )
 
 
 def test_grep_omite_chamado_sem_commit():
     git = _git_com_commits("ajuste sem identificador")
 
-    assert GrepCommitSource(git=git).resolve(["123456"]) == {}
+    assert (
+        GrepCommitSource(git=git, referencia=lambda: TickioRest.referencia).resolve(
+            ["123456"]
+        )
+        == {}
+    )
+
+
+@pytest.mark.parametrize(
+    ("padrao", "chamado", "mensagem"),
+    [("{id}", "PAY-123", "PAY-123 corrige"), ("[{id}]", "PAY-12", "[PAY-12] x")],
+)
+def test_grep_acha_referencia_do_padrao_configurado(padrao, chamado, mensagem):
+    git = _git_com_commits(mensagem, "ajuste sem referencia")
+
+    achados = GrepCommitSource(git=git, referencia=lambda: Referencia(padrao)).resolve(
+        [chamado]
+    )
+
+    assert [c.hash_origem for c in achados[chamado]] == ["c0"]

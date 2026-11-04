@@ -48,7 +48,7 @@ class GitQueGritaSeUsado(FakeGit):
 
 def test_sem_token_a_fonte_e_so_o_grep():
     # sem cadeia: um ChainCommitSource de um elemento so seria indireção pura.
-    fonte = montar_commit_source(FakeGit())
+    fonte = montar_commit_source(FakeGit(), referencia=lambda: TickioRest.referencia)
 
     assert isinstance(fonte, GrepCommitSource)
 
@@ -57,7 +57,9 @@ def test_sem_estado_nao_monta_a_fonte_de_pr():
     # a fonte de PR le o indice local de PRs, que vive no estado. Sem banco ela
     # nao teria o que ler e devolveria vazio para todo chamado — pior que o grep.
     fonte = montar_commit_source(
-        FakeGit(), bitbucket=CredenciaisBitbucket("tok", "dev@x.com")
+        FakeGit(),
+        referencia=lambda: TickioRest.referencia,
+        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
     )
 
     assert isinstance(fonte, GrepCommitSource)
@@ -68,6 +70,7 @@ def test_com_token_a_pr_vem_antes_do_grep():
     # grep fica de fallback para o chamado que nenhuma PR casou.
     fonte = montar_commit_source(
         FakeGit(),
+        referencia=lambda: TickioRest.referencia,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo="r",
@@ -87,6 +90,7 @@ def test_a_fonte_de_pr_recebe_o_cache_do_estado():
 
     fonte = montar_commit_source(
         FakeGit(),
+        referencia=lambda: TickioRest.referencia,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=estado,
         repo="vbweb",
@@ -105,7 +109,9 @@ def test_montar_nao_toca_o_git(token):
     clone sem `origin` passaria a falhar na montagem em vez de na busca.
     """
     montar_commit_source(
-        GitQueGritaSeUsado(), bitbucket=CredenciaisBitbucket(token, "dev@x.com")
+        GitQueGritaSeUsado(),
+        referencia=lambda: TickioRest.referencia,
+        bitbucket=CredenciaisBitbucket(token, "dev@x.com"),
     )
 
 

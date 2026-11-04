@@ -21,6 +21,8 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.adapters.tasksource.tickio import TickioRest
+from motor.domain.referencia import Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import (
     BackendIndisponivel,
@@ -62,7 +64,9 @@ def _git_com_master(*hashes_na_master: str, classe: type[FakeGit] = FakeGit) -> 
     return g
 
 
-def _fonte(handler, git: FakeGit, estado=None) -> BitbucketPRCommitSource:
+def _fonte(
+    handler, git: FakeGit, estado=None, referencia=TickioRest.referencia
+) -> BitbucketPRCommitSource:
     estado = _estado_vazio() if estado is None else estado
     client = httpx.Client(
         transport=httpx.MockTransport(handler), base_url="http://testserver"
@@ -77,6 +81,7 @@ def _fonte(handler, git: FakeGit, estado=None) -> BitbucketPRCommitSource:
         client=client,
         estado=estado,
         repo_estado=REPO_ESTADO,
+        referencia=lambda: referencia,
     )
 
 
@@ -354,6 +359,7 @@ def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
         base_url="http://h:porta",
         estado=_estado_vazio(),
         repo_estado=REPO_ESTADO,
+        referencia=lambda: TickioRest.referencia,
     )
 
     with pytest.raises(ErroDeEntrada):
@@ -391,6 +397,7 @@ def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         estado=_estado_vazio(),
         repo_estado=REPO_ESTADO,
+        referencia=lambda: TickioRest.referencia,
     )
     assert urls_pedidas == [], "construir nao pode tocar o git"
 
@@ -759,3 +766,45 @@ def test_verificar_credenciais_sem_email_nao_faz_requisicao():
         verificar_credenciais(
             "tok", "", base_url="http://bb/2.0", client=_cliente(handler)
         )
+
+
+# -- referencia configuravel ---------------------------------------------------
+
+
+def _pr_ref(pr_id: int, titulo: str, branch: str) -> JSON:
+    return {"id": pr_id, "title": titulo, "source": {"branch": {"name": branch}}}
+
+
+def _commit_da_pr(hash_: str) -> list[JSON]:
+    return [
+        {
+            "hash": hash_,
+            "date": "2024-01-02T10:00:00+00:00",
+            "message": "x",
+            "parents": [{"hash": "c1"}],
+        }
+    ]
+
+
+def _casadas(prs: list[JSON], referencia: Referencia, chamado: str) -> list[str]:
+    """Hashes achados para `chamado`; a PR `n` entrega o commit `c<n+1>`."""
+    g = _git_com_master("c1", *(f"c{pr['id'] + 1}" for pr in prs))
+    commits = {pr["id"]: _commit_da_pr(f"c{pr['id'] + 1}") for pr in prs}
+    fonte = _fonte(_handler_pr(prs, commits), g, referencia=referencia)
+    return [c.hash_origem for c in fonte.resolve([chamado]).get(chamado, [])]
+
+
+def test_pr_com_padrao_id_casa_pelo_titulo_e_protege_os_dois_lados_da_branch():
+    ref = Referencia("{id}")
+    assert _casadas([_pr_ref(1, "PAY-123 corrige", "feature/x")], ref, "PAY-123") == [
+        "c2"
+    ]
+    # Fronteira nos dois lados pelo alfabeto: nem prefixo nem sufixo do ID.
+    prs = [_pr_ref(1, "outra", "x-PAY-12"), _pr_ref(2, "outra", "XPAY-1")]
+    assert _casadas(prs, ref, "PAY-1") == []
+
+
+def test_pr_com_padrao_entre_colchetes_casa_na_branch_colada():
+    # A ponta `]` nao e do alfabeto: o lado direito fica livre.
+    prs = [_pr_ref(1, "outra", "[PAY-12]x")]
+    assert _casadas(prs, Referencia("[{id}]"), "PAY-12") == ["c2"]

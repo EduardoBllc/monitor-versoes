@@ -2,34 +2,32 @@
 
 from __future__ import annotations
 
-import re
-
+from motor.domain.referencia import Referencia, regex_de_extracao, regex_do_chamado
 from motor.domain.types import CommitRef
 
-# IGNORECASE: o prefixo e convencao digitada a mao, e "CH254473." aparece no
-# historico real tanto quanto "ch254473." — a caixa nao e dado.
-padrao_chamado = re.compile(r"\bch(\d+)\b", re.IGNORECASE)
 
-
-def match_exato(candidatos: list[CommitRef], chamado: str) -> list[CommitRef]:
-    """Filtra candidatos de grep por word-boundary: `ch5514` nao pode casar
-    dentro de `ch255514`. search_commits do GitRepo so traz candidatos brutos.
+def match_exato(
+    candidatos: list[CommitRef], chamado: str, ref: Referencia
+) -> list[CommitRef]:
+    """Filtra candidatos de grep pela fronteira da referencia: no Tickio,
+    `ch5514` nao pode casar dentro de `ch255514`. search_commits do GitRepo so
+    traz candidatos brutos.
 
     Sem olhar caixa, em par com o `-i` do `search_commits`: quem traz o
     candidato "CH5514" nao pode perde-lo aqui.
     """
     if not chamado:
         return []
-    padrao = re.compile(r"\bch" + re.escape(chamado) + r"\b", re.IGNORECASE)
+    padrao = regex_do_chamado(ref, chamado)
     return [c for c in candidatos if padrao.search(c.msg)]
 
 
-def extrair_chamado(msg: str) -> str | None:
-    """Acha o numero do chamado na mensagem. Usado na reconstrucao do estado,
+def extrair_chamado(msg: str, ref: Referencia) -> str | None:
+    """Acha o ID da tarefa na mensagem. Usado na reconstrucao do estado,
     para reagrupar por chamado a partir do trailer de cherry-pick.
     """
-    m = padrao_chamado.search(msg)
-    return None if m is None else m.group(1)
+    m = regex_de_extracao(ref).search(msg)
+    return None if m is None else m.group("id")
 
 
 def agrupar_por_chamado(commits: list[CommitRef]) -> dict[str, list[CommitRef]]:

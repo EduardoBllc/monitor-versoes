@@ -11,6 +11,7 @@ import datetime
 import pytest
 
 from motor.adapters.git.fake import FakeGit
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.errors import MotorError
 from motor.services.reconstrutor import extrair_trailer, reconstruir_atribuicoes
 
@@ -50,7 +51,9 @@ def test_reagrupa_por_chamado_guardando_o_hash_de_origem():
     git.add_commit("aaa", "", "ch123456 primeira", D)
     git.add_commit("zzz", "", "ch123456 segunda", D)
 
-    atribuicoes, orfaos = reconstruir_atribuicoes(git, "base", "13.34.0")
+    atribuicoes, orfaos = reconstruir_atribuicoes(
+        git, "base", "13.34.0", TickioRest.referencia
+    )
 
     assert orfaos == []
     assert [a.chamado for a in atribuicoes] == ["123456"]
@@ -64,7 +67,9 @@ def test_reagrupa_por_chamado_guardando_o_hash_de_origem():
 def test_commit_direto_na_branch_e_sua_propria_origem():
     git = _git("ch123456 alfa")
 
-    atribuicoes, _ = reconstruir_atribuicoes(git, "base", "13.34.0")
+    atribuicoes, _ = reconstruir_atribuicoes(
+        git, "base", "13.34.0", TickioRest.referencia
+    )
 
     assert atribuicoes[0].commits == ["p1"]
 
@@ -72,7 +77,9 @@ def test_commit_direto_na_branch_e_sua_propria_origem():
 def test_commit_sem_chamado_vira_orfao():
     git = _git("ajuste solto sem identificador")
 
-    atribuicoes, orfaos = reconstruir_atribuicoes(git, "base", "13.34.0")
+    atribuicoes, orfaos = reconstruir_atribuicoes(
+        git, "base", "13.34.0", TickioRest.referencia
+    )
 
     assert atribuicoes == []
     assert orfaos == ["p1"]
@@ -84,7 +91,9 @@ def test_origem_que_sumiu_do_historico_e_ignorada():
     quem manda e a mensagem da origem."""
     git = _git("ch123456 alfa\n\n(cherry picked from commit desaparecido)")
 
-    atribuicoes, orfaos = reconstruir_atribuicoes(git, "base", "13.34.0")
+    atribuicoes, orfaos = reconstruir_atribuicoes(
+        git, "base", "13.34.0", TickioRest.referencia
+    )
 
     assert atribuicoes == []
     assert orfaos == []
@@ -97,7 +106,7 @@ def test_falha_do_git_vira_erro_limpo():
     git.commits_in_range_err = MotorError("git morreu")
 
     with pytest.raises(MotorError) as capturado:
-        reconstruir_atribuicoes(git, "base", "13.34.0")
+        reconstruir_atribuicoes(git, "base", "13.34.0", TickioRest.referencia)
 
     assert "varrendo commits" in capturado.value.__notes__
 
@@ -107,4 +116,4 @@ def test_excecao_fora_do_contrato_propaga_sem_embrulho():
     git.commits_in_range_err = RuntimeError("git morreu de verdade")
 
     with pytest.raises(RuntimeError, match="git morreu de verdade"):
-        reconstruir_atribuicoes(git, "base", "13.34.0")
+        reconstruir_atribuicoes(git, "base", "13.34.0", TickioRest.referencia)

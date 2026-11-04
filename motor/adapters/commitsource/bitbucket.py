@@ -1,9 +1,9 @@
 """BitbucketPRCommitSource: descobre commits de uma tarefa via PRs do Bitbucket Cloud.
 
 Mais robusto que o grep de mensagem: associa commit->chamado pela PR (título
-que começa com `ch<chamado>`, ou nome da branch de origem que contém
-`ch<chamado>` — caixa ignorada nos dois), não pela formatação do trailer que o
-dev pode errar.
+que começa com a referência da tarefa, ou nome da branch de origem que a
+contém — caixa ignorada nos dois), não pela formatação do trailer que o dev
+pode errar.
 Considera só PRs MERGED e só commits que já estão em `origin/master`
 (is_ancestor) — commit fora dela não entra.
 
@@ -28,6 +28,7 @@ from typing import Any
 
 import httpx
 
+from motor.domain.referencia import FonteReferencia, Referencia, regex_do_chamado
 from motor.domain.types import SEM_DATA, CommitRef, PrIndex
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 from motor.ports import EstadoRepo, GitRepo
@@ -43,19 +44,21 @@ _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 _PADRAO_REMOTE = re.compile(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$")
 
 
-def _padrao_do_chamado(chamado: str) -> re.Pattern[str]:
-    """`ch<numero>` com fronteira a direita, sem olhar caixa.
+def _padrao_do_chamado(ref: Referencia, chamado: str) -> re.Pattern[str]:
+    """A referencia do chamado com fronteira so pelo alfabeto, sem olhar caixa.
 
-    O `(?!\\d)` e o conserto de um bug antigo: com `startswith`/`in` crus, o
-    chamado 255514 casava com a PR de 2555145 — nada via onde o numero
-    terminava, e o chamado curto roubava a entrega do longo.
+    A fronteira e o conserto de um bug antigo: com `startswith`/`in` crus, o
+    chamado 255514 casava com a PR de 2555145 — nada via onde o ID terminava,
+    e o chamado curto roubava a entrega do longo. So pelo alfabeto (e nao pelo
+    `\\w` do dominio) porque branch cola a referencia em letra: no Tickio, a
+    ponta `c` de `ch` fica livre e a direita vira o `(?!\\d)` de sempre.
 
     `IGNORECASE` e o conserto do segundo: a PR "CH254473 - ..." nao casava, e
     como a PR anterior do mesmo chamado casava, a cadeia (§ChainCommitSource)
-    dava o chamado por resolvido e nem o grep via a segunda entrega. O prefixo
-    e convencao humana digitada a mao; a caixa dele nao e dado.
+    dava o chamado por resolvido e nem o grep via a segunda entrega. A
+    referencia e digitada a mao; a caixa dela nao e dado.
     """
-    return re.compile(re.escape("ch" + chamado) + r"(?!\d)", re.IGNORECASE)
+    return regex_do_chamado(ref, chamado, so_alfabeto=True)
 
 
 def _casa(pr: PrIndex, padrao: re.Pattern[str]) -> bool:
@@ -141,6 +144,7 @@ class BitbucketPRCommitSource:
     # `repo` do Bitbucket — e para isso que aliases existem.
     estado: EstadoRepo = field(kw_only=True)
     repo_estado: str = field(kw_only=True)
+    referencia: FonteReferencia = field(kw_only=True)
 
     def _workspace_repo(self) -> tuple[str, str]:
         """Resolve (workspace, repo) do remote uma vez por instancia."""
@@ -155,6 +159,9 @@ class BitbucketPRCommitSource:
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
+        # Antes da varredura: a falta de padrao nao pode custar rede nem
+        # escrita no indice. Sem chamado a casar, nao ha o que exigir.
+        ref = self.referencia() if any(chamados) else None
         # Fecha so o que criamos: cliente injetado pertence a quem injetou.
         with contextlib.ExitStack() as pilha:
             client = self.client
@@ -174,9 +181,10 @@ class BitbucketPRCommitSource:
                         "commits dos chamados no Bitbucket", posicao, len(chamados)
                     )
                 )
-                if not chamado:  # sem numero nao tem como casar PR
+                if not chamado:  # sem ID nao tem como casar PR
                     continue
-                commits = self._commits_do_chamado(client, chamado, indice)
+                assert ref is not None  # algum chamado nao vazio existe
+                commits = self._commits_do_chamado(client, ref, chamado, indice)
                 if commits:
                     resultado[chamado] = commits
         return resultado
@@ -224,9 +232,13 @@ class BitbucketPRCommitSource:
         return f"{base}/repositories/{workspace}/{repo}/pullrequests"
 
     def _commits_do_chamado(
-        self, client: httpx.Client, chamado: str, indice: list[PrIndex]
+        self,
+        client: httpx.Client,
+        ref: Referencia,
+        chamado: str,
+        indice: list[PrIndex],
     ) -> list[CommitRef]:
-        padrao = _padrao_do_chamado(chamado)
+        padrao = _padrao_do_chamado(ref, chamado)
         pr_ids = [pr.pr_id for pr in indice if _casa(pr, padrao)]
 
         por_pr = self.estado.commits_de_pr(self.repo_estado, pr_ids)
