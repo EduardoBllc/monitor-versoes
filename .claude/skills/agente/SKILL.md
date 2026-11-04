@@ -29,8 +29,9 @@ O agente não guarda estado entre runs. A cada evento:
   issue for sub-issue (`gh api repos/{owner}/{repo}/issues/N/parent`), o pai e as irmãs;
 - a intenção vem dos comentários do dono desde a última ação do agente (a fila pode juntar
   vários eventos): aprovação, ajuste ou resposta. No `workflow_dispatch`, a intenção é
-  retomar a execução que parou no limite de turnos; comentário do dono desde a última ação
-  do agente continua valendo e prevalece.
+  retomar a execução que parou no limite de turnos. O aviso de retomada do workflow não
+  conta como ação do agente: comentário do dono desde a ação anterior a ele continua
+  valendo e prevalece.
 
 Na dúvida sobre o que o dono quis, pergunte em vez de agir.
 

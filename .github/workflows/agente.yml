@@ -15,9 +15,11 @@ on:
     inputs:
       numero:
         description: issue em execução
+        type: number
         required: true
       retomada:
         description: número desta retomada
+        type: number
         required: true
 
 # Um agente por issue ou PR; o evento seguinte espera em vez de cancelar o que está em curso.
@@ -210,7 +212,7 @@ jobs:
         run: |
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           avisar_dono() {
-            gh issue comment "$NUMERO" --body "@$DONO a run do agente parou ($1) e não será retomada sozinha: $run_url. Retomada só acontece no limite de turnos, em \`$FASE_EXECUCAO\`, com commit novo na branch e até $MAX_RETOMADAS vezes (esta foi a $RETOMADA). O que teve push está na branch; comente para retomar.
+            gh issue comment "$NUMERO" --body "@$DONO a run do agente parou ($1) e não será retomada sozinha: $run_url. Retomada só acontece no limite de turnos, em \`$FASE_EXECUCAO\`, com commit novo na branch e até $MAX_RETOMADAS vezes (retomadas feitas: $RETOMADA). O que teve push está na branch; comente para retomar.
 
           $ASSINATURA"
           }
