@@ -44,7 +44,7 @@ jobs:
 
             1. Leia o diff com `gh pr diff ${{ env.PR }}` e a descrição com `gh pr view ${{ env.PR }}`.
             2. Leia as revisões anteriores: os resumos com `gh pr view ${{ env.PR }} --comments` e as
-               threads de linha com `gh api repos/${{ github.repository }}/pulls/${{ env.PR }}/comments`.
+               threads de linha com `gh api repos/${{ github.repository }}/pulls/${{ env.PR }}/comments --paginate`.
                Não repita apontamento já atendido ou respondido com justificativa, a menos que a
                resposta não se sustente; nesse caso, diga por quê.
             3. Se a descrição tiver `Closes #M`, leia a issue com `gh issue view M` e confira os
