@@ -109,7 +109,8 @@ class GitRepo(Protocol):
         ...
 
     def search_commits(self, padroes: list[str], refs: str, /) -> list[CommitRef]:
-        """Busca commits que correspondem a padrões."""
+        """Commits cuja mensagem contém algum dos termos, como texto literal e
+        sem olhar caixa."""
         ...
 
     def commits_in_range(self, from_: str, to: str, /) -> list[CommitRef]:

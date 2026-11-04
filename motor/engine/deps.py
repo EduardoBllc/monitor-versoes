@@ -6,8 +6,14 @@ import datetime
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from motor.domain.referencia import FonteReferencia, Referencia, resolver_referencia
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
 from motor.progresso import RelatorProgresso, silencioso
+
+
+def _sem_referencia() -> Referencia:
+    """Sem proposta nem config, como a lista manual sem `[referencia]`."""
+    return resolver_referencia(None, None, ())
 
 
 @dataclass
@@ -35,3 +41,7 @@ class Deps:
     piso_versao: str | None = None
     # Relógio injetável: a validade do carimbo da verificação depende dele.
     agora: Callable[[], datetime.datetime] = lambda: datetime.datetime.now(datetime.UTC)
+    # Referencia de tarefa (padrao e alfabeto), resolvida so por quem a usa: a
+    # falta de padrao nao pode derrubar `atualizar --abort`. Quem usa o default
+    # cobra a falta do padrao.
+    referencia: FonteReferencia = _sem_referencia

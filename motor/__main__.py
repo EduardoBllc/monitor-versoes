@@ -20,6 +20,7 @@ from typing import TextIO
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
+from motor.domain.referencia import FonteReferencia, formatar_referencia
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
@@ -309,6 +310,7 @@ def _imprimir_commits_por_task(
     suspeitos: AbstractSet[str] = frozenset(),
     causado_por: dict[str, list[str]] | None = None,
 ) -> None:
+    """`causado_por` leva as referencias ja formatadas, prontas para imprimir."""
     grupos = agrupar_por_chamado(commits)
     print(f"{titulo} ({len(commits)} em {len(grupos)} tasks):")
     for chave, itens in grupos.items():
@@ -322,7 +324,7 @@ def _imprimir_commits_por_task(
                 culpados = (causado_por or {}).get(c.hash_origem, [])
                 tag = (
                     " [CONFLITANTE: depende de "
-                    + ", ".join("ch" + ch for ch in culpados)
+                    + ", ".join(culpados)
                     + ", fora desta versao]"
                     if culpados
                     else " [CONFLITANTE]"
@@ -352,7 +354,24 @@ def _imprimir_alertas(s: VersionStatus) -> None:
             print(f"  - {hash_[:8]}")
 
 
-def imprimir_status(s: VersionStatus) -> None:
+def _referencias_dos_culpados(
+    causado_por: dict[str, list[str]], referencia: FonteReferencia
+) -> dict[str, list[str]]:
+    """Culpados pela referencia da tarefa (`ch123` no Tickio).
+
+    Resolvida so se ha culpado: snapshot e status sem conflito atribuido nao
+    passam a exigir padrao de referencia.
+    """
+    if not any(causado_por.values()):
+        return causado_por
+    ref = referencia()
+    return {
+        h: [formatar_referencia(ref, ch) for ch in chamados]
+        for h, chamados in causado_por.items()
+    }
+
+
+def imprimir_status(s: VersionStatus, referencia: FonteReferencia) -> None:
     if s.liberada_em is not None:
         # Snapshot de versao liberada (docs/decisoes/010-travas-publicada-e-liberada.md):
         # nada foi recalculado, e sem
@@ -376,7 +395,11 @@ def imprimir_status(s: VersionStatus) -> None:
     conflitantes = {c.hash_origem for c in s.conflitantes}
     suspeitos = {c.hash_origem for c in s.suspeitos_conteudo}
     _imprimir_commits_por_task(
-        "faltantes", s.faltantes, conflitantes, suspeitos, s.conflito_causado_por
+        "faltantes",
+        s.faltantes,
+        conflitantes,
+        suspeitos,
+        _referencias_dos_culpados(s.conflito_causado_por, referencia),
     )
 
 
@@ -484,7 +507,7 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
         status = verificar(deps, args.versao, auditar=args.auditar)
         if args.auditar:
             print(f"auditoria da tag {args.versao} (snapshot nao alterado)")
-        imprimir_status(status)
+        imprimir_status(status, deps.referencia)
     elif args.comando == "criar":
         imprimir_atualizacao(criar(deps, args.versao))
     elif args.comando == "atualizar":
@@ -503,7 +526,7 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
         resultado = reconstruir_estado(deps, args.versao)
         print(f"status: {resultado.status.name}, orfaos: {len(resultado.orfaos)}")
         for hash_ in resultado.orfaos:
-            print(f"  - {hash_[:8]} (sem ch<num> na mensagem)")
+            print(f"  - {hash_[:8]} (sem referencia de tarefa na mensagem)")
     logging.debug(
         "comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio
     )

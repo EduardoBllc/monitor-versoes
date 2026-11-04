@@ -18,6 +18,7 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
@@ -78,7 +79,12 @@ def test_grep_relata_a_varredura_sem_contagem():
     git.set_branch("master", "a1")
     relatos: list[Progresso] = []
 
-    GrepCommitSource(git=git, ref="master", progresso=relatos.append).resolve(["1"])
+    GrepCommitSource(
+        git=git,
+        referencia=lambda: TickioRest.referencia,
+        ref="master",
+        progresso=relatos.append,
+    ).resolve(["1"])
 
     assert _fases(relatos) == [("commits dos chamados no histórico", 0, 0)]
 
@@ -108,6 +114,7 @@ def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
         progresso=relatos.append,
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo_estado="r",
+        referencia=lambda: TickioRest.referencia,
     )
 
     fonte.resolve(["1", "2", "3"])
@@ -291,6 +298,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
             estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
             repo="r",
             progresso=relatos.append,
+            referencia=lambda: TickioRest.referencia,
         ),
         "13.34.0",
     )

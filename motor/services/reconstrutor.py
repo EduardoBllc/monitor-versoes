@@ -7,6 +7,7 @@ por cima dele. Se o banco for perdido, isto regenera as atribuicoes.
 from __future__ import annotations
 
 from motor.domain.commits import extrair_chamado
+from motor.domain.referencia import Referencia
 from motor.domain.types import Atribuicao
 from motor.errors import MotorError
 from motor.ports import GitRepo
@@ -24,11 +25,12 @@ def extrair_trailer(msg: str) -> str | None:
 
 
 def reconstruir_atribuicoes(
-    git: GitRepo, base_commit: str, branch: str
+    git: GitRepo, base_commit: str, branch: str, referencia: Referencia
 ) -> tuple[list[Atribuicao], list[str]]:
     """Varre base..branch e reagrupa por chamado.
 
-    Devolve (atribuicoes, orfaos) — orfao e commit sem `ch<num>` na mensagem,
+    Devolve (atribuicoes, orfaos) — orfao e commit sem referencia de tarefa na
+    mensagem,
     que nao e atribuivel a tarefa nenhuma e precisa de julgamento humano.
     """
     try:
@@ -51,7 +53,7 @@ def reconstruir_atribuicoes(
             except MotorError:
                 continue  # origem sumiu do historico
 
-        chamado = extrair_chamado(meta.msg)
+        chamado = extrair_chamado(meta.msg, referencia)
         if chamado is None:
             orfaos.append(origem)
             continue

@@ -29,6 +29,8 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.adapters.tasksource.tickio import TickioRest
+from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
@@ -194,7 +196,10 @@ def test_nao_existe_flag_de_token_do_tickio():
 def test_imprimir_status_mostra_as_ambiguas(capsys):
     # tasks_ambiguas derruba o verde; sem imprimi-las o operador ve
     # "verde: False" com todas as secoes vazias e nenhuma explicacao.
-    imprimir_status(VersionStatus(estado_integro=True, tasks_ambiguas=["123456"]))
+    imprimir_status(
+        VersionStatus(estado_integro=True, tasks_ambiguas=["123456"]),
+        lambda: TickioRest.referencia,
+    )
 
     saida = capsys.readouterr().out
     assert "123456" in saida
@@ -202,7 +207,10 @@ def test_imprimir_status_mostra_as_ambiguas(capsys):
 
 
 def test_imprimir_status_aponta_sem_entrega_no_banco(capsys):
-    imprimir_status(VersionStatus(estado_integro=True, tasks_sem_commits=["123456"]))
+    imprimir_status(
+        VersionStatus(estado_integro=True, tasks_sem_commits=["123456"]),
+        lambda: TickioRest.referencia,
+    )
 
     saida = capsys.readouterr().out
     assert "sem_entrega" in saida
@@ -222,7 +230,8 @@ def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
             estado_integro=True,
             liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
             chamados=["255514", "256308"],
-        )
+        ),
+        lambda: TickioRest.referencia,
     )
 
     saida = capsys.readouterr().out
@@ -283,6 +292,14 @@ def _repo_dir(tmp_path, nome: str = "vendabemweb") -> str:
     return str(caminho)
 
 
+def _repo_com_padrao(tmp_path) -> str:
+    """Repo com `padrao = "ch{id}"`: a lista manual nao propoe referencia."""
+    caminho = _repo_dir(tmp_path)
+    with open(f"{caminho}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write('[referencia]\npadrao = "ch{id}"\n')
+    return caminho
+
+
 def _git() -> FakeGit:
     """m0 e a raiz das versoes; a0 so existe no master (logo, faltante)."""
     git = FakeGit()
@@ -333,7 +350,7 @@ def test_verificar_ponta_a_ponta_com_lista_manual(bordas, tmp_path, capsys):
             "verificar",
             "13.34.0",
             "--repo",
-            _repo_dir(tmp_path),
+            _repo_com_padrao(tmp_path),
             "--task-source",
             "manual",
             "--lista",
@@ -370,7 +387,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
             "verificar",
             "13.34.0",
             "--repo",
-            _repo_dir(tmp_path),
+            _repo_com_padrao(tmp_path),
             "--task-source",
             "manual",
             "--lista",
@@ -455,7 +472,7 @@ def test_reconstruir_estado_ponta_a_ponta(bordas, tmp_path, capsys):
 
     saida = capsys.readouterr().out
     assert "status: PENDING_JUDGMENT, orfaos: 1" in saida
-    assert "p1" in saida and "sem ch<num> na mensagem" in saida
+    assert "p1" in saida and "sem referencia de tarefa na mensagem" in saida
 
 
 def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, capsys):
@@ -499,7 +516,7 @@ def test_criar_ponta_a_ponta(bordas, tmp_path, capsys):
             "criar",
             "13.35.0",
             "--repo",
-            _repo_dir(tmp_path),
+            _repo_com_padrao(tmp_path),
             "--task-source",
             "manual",
             "--lista",
@@ -712,7 +729,7 @@ def test_lista_manual_nao_exige_variavel_do_tickio(
             "verificar",
             "13.34.0",
             "--repo",
-            _repo_dir(tmp_path),
+            _repo_com_padrao(tmp_path),
             "--task-source",
             "manual",
             "--lista",
@@ -761,7 +778,9 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
         estado=FakeEstado(),
         repo="r",
         commit_source=montagem.montar_commit_source(
-            _git(), bitbucket=CredenciaisBitbucket("tok123", "dev@x.com")
+            _git(),
+            referencia=lambda: TickioRest.referencia,
+            bitbucket=CredenciaisBitbucket("tok123", "dev@x.com"),
         ),
     )
 
@@ -818,13 +837,54 @@ def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):
             faltantes=[faltante],
             conflitantes=[faltante],
             conflito_causado_por={"a0a0a0a0a0": ["255101", "254800"]},
-        )
+        ),
+        lambda: TickioRest.referencia,
     )
 
     saida = capsys.readouterr().out
     assert "CONFLITANTE" in saida
     assert "ch255101" in saida
     assert "ch254800" in saida
+
+
+def test_imprimir_status_nomeia_culpado_pelo_padrao_da_referencia(capsys):
+    faltante = CommitRef(hash_origem="a0a0a0a0a0", chamado="PAY-1", msg="PAY-1 x")
+    imprimir_status(
+        VersionStatus(
+            estado_integro=True,
+            faltantes=[faltante],
+            conflitantes=[faltante],
+            conflito_causado_por={"a0a0a0a0a0": ["PAY-123"]},
+        ),
+        lambda: Referencia("{id}"),
+    )
+
+    saida = capsys.readouterr().out
+    assert "depende de PAY-123," in saida
+
+
+def test_lista_manual_sem_padrao_de_referencia_sai_1(bordas, tmp_path):
+    lista = tmp_path / "lista.txt"
+    lista.write_text("123456\n", encoding="utf-8")
+    argv = ["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)]
+
+    with pytest.raises(SystemExit) as e:
+        main([*argv, "--task-source", "manual", "--lista", str(lista)])
+
+    assert e.value.code == 1
+
+
+def test_abort_com_lista_manual_nao_exige_padrao_de_referencia(
+    bordas, tmp_path, capsys
+):
+    # Recuperacao nao usa a referencia: a falta dela nao pode travar o abort.
+    lista = tmp_path / "lista.txt"
+    lista.write_text("123456\n", encoding="utf-8")
+    argv = ["atualizar", "13.34.0", "--repo", _repo_dir(tmp_path), "--abort"]
+
+    main([*argv, "--task-source", "manual", "--lista", str(lista)])
+
+    assert capsys.readouterr().out == "abortado\n"
 
 
 def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
@@ -836,7 +896,8 @@ def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
             estado_integro=True,
             faltantes=[faltante],
             conflitantes=[faltante],
-        )
+        ),
+        lambda: TickioRest.referencia,
     )
 
     saida = capsys.readouterr().out

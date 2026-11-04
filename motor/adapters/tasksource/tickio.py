@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import httpx
 
+from motor.domain.referencia import Referencia
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 _ROTA_TOKEN = "/api/v1/ws/token/"
@@ -21,6 +23,10 @@ _ROTA_CHAMADOS = "/api/v1/ws/versoes/chamados/"
 
 @dataclass
 class TickioRest:
+    # A convenção da VendaBem, proposta ao núcleo: o commit cita `ch<numero>`, e
+    # o ID do Tickio é só dígitos — `ch254473-fix` cita o chamado 254473.
+    referencia: ClassVar[Referencia] = Referencia("ch{id}", "0-9")
+
     base_url: str
     usuario: str
     # repr=False na senha e no JWT: com --debug o logging sobe para DEBUG, e um
