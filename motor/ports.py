@@ -37,6 +37,7 @@ from motor.domain.types import (
     Exclusion,
     PrIndex,
     RepoInfo,
+    Verificacao,
     VersaoInfo,
 )
 
@@ -350,4 +351,14 @@ class EstadoRepo(Protocol):
         A atomicidade e o contrato, nao um detalhe: marca avancada por cima de
         indice incompleto deixa as PRs que faltaram fora de toda janela futura.
         """
+        ...
+
+    def gravar_verificacao(self, repo: str, versao: str, v: Verificacao, /) -> None:
+        """Upsert do carimbo, um por versão. NaoEncontrado se a versão não
+        existir no estado."""
+        ...
+
+    def verificacao(self, repo: str, versao: str, /) -> Verificacao | None:
+        """O carimbo da versão; None se não há ou se está ilegível (cache:
+        ilegível equivale a ausente)."""
         ...

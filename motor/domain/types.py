@@ -159,3 +159,13 @@ class VersionStatus:
     # "recusou-se a recalcular".
     liberada_em: datetime.datetime | None = None
     chamados: list[str] = field(default_factory=list)  # chamados do snapshot congelado
+
+
+@dataclass(frozen=True)
+class Verificacao:
+    """Resultado de uma verificação, carimbado com o que o torna reaproveitável."""
+
+    tip: str
+    impressao: str
+    verificado_em: datetime.datetime
+    status: VersionStatus

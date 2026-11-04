@@ -15,6 +15,7 @@ def test_metadata_tem_todas_as_tabelas():
         "pr_commit_cache",
         "pr_mergeada",
         "varredura_pr",
+        "verificacao",
     }
 
 

@@ -32,7 +32,9 @@ from motor.domain.types import (
     CommitRef,
     PrIndex,
     RepoInfo,
+    Verificacao,
     VersaoInfo,
+    VersionStatus,
     VersionType,
 )
 from motor.errors import NaoEncontrado, RecusaDeInvariante
@@ -449,3 +451,90 @@ def test_indice_de_pr_e_por_repo(estado):
     estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
     assert estado.prs_indexadas("outro") == []
     assert estado.marca_varredura("outro") is None
+
+
+# -- carimbo da verificacao ---------------------------------------------------
+
+CARIMBO_TIP = "tip111"
+CARIMBO_IMPRESSAO = "impressao111"
+
+
+def _verificacao(**campos) -> Verificacao:
+    fuso = datetime.timezone(datetime.timedelta(hours=-3))
+    commit = CommitRef(
+        hash_origem="abc",
+        parent="def",
+        chamado="255514",
+        commit_date=datetime.datetime(2026, 1, 10, 9, 0, tzinfo=fuso),
+        msg="ch255514 corrige",
+    )
+    status = VersionStatus(
+        verde=True,
+        tasks_novas=["1"],
+        tasks_removidas=["2"],
+        estado_integro=True,
+        tasks_ambiguas=["3"],
+        commits_sumidos=["zzz"],
+        faltantes=[commit],
+        ancestrais=[commit],
+        conflitantes=[commit],
+        suspeitos_conteudo=[commit],
+        conflito_causado_por={"abc": ["999"]},
+        tasks_sem_commits=["4"],
+        liberada_em=DEPOIS,
+        chamados=["255514"],
+    )
+    base = {
+        "tip": CARIMBO_TIP,
+        "impressao": CARIMBO_IMPRESSAO,
+        "verificado_em": QUANDO,
+        "status": status,
+    }
+    return Verificacao(**{**base, **campos})
+
+
+def test_verificacao_ausente_devolve_none(estado):
+    estado.registrar_versao(REPO, _base())
+    assert estado.verificacao(REPO, "13.34.0") is None
+
+
+def test_gravar_e_ler_verificacao_devolve_o_mesmo_status(estado):
+    estado.registrar_versao(REPO, _base())
+    v = _verificacao()
+
+    estado.gravar_verificacao(REPO, "13.34.0", v)
+
+    assert estado.verificacao(REPO, "13.34.0") == v
+
+
+def test_gravar_verificacao_sobrescreve_a_anterior(estado):
+    estado.registrar_versao(REPO, _base())
+    estado.gravar_verificacao(REPO, "13.34.0", _verificacao())
+    nova = _verificacao(tip="tip222", verificado_em=DEPOIS, status=VersionStatus())
+
+    estado.gravar_verificacao(REPO, "13.34.0", nova)
+
+    assert estado.verificacao(REPO, "13.34.0") == nova
+
+
+def test_gravar_verificacao_em_versao_nao_registrada_levanta_nao_encontrado(estado):
+    with pytest.raises(NaoEncontrado):
+        estado.gravar_verificacao(REPO, "13.34.0", _verificacao())
+
+
+@pytest.mark.parametrize(
+    "status_ilegivel",
+    ["{nao e json", '{"campo_que_nao_existe": 1}'],
+    ids=["json_corrompido", "chave_desconhecida"],
+)
+def test_verificacao_ilegivel_devolve_none(estado, status_ilegivel):
+    if isinstance(estado, FakeEstado):
+        pytest.skip("o fake guarda o objeto, nao texto")
+    estado.registrar_versao(REPO, _base())
+    estado.gravar_verificacao(REPO, "13.34.0", _verificacao())
+    estado.sessao.execute(
+        text("update verificacao set status = :s"), {"s": status_ilegivel}
+    )
+    estado.sessao.commit()
+
+    assert estado.verificacao(REPO, "13.34.0") is None

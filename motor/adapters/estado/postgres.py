@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from sqlalchemy import Select, delete, inspect, select, text
 from sqlalchemy.exc import DBAPIError
@@ -18,7 +20,9 @@ from motor.domain.types import (
     Exclusion,
     PrIndex,
     RepoInfo,
+    Verificacao,
     VersaoInfo,
+    VersionStatus,
     VersionType,
 )
 from motor.errors import (
@@ -42,6 +46,32 @@ _TEXTO_PARA_TIPO = {v: k for k, v in _TIPO_PARA_TEXTO.items()}
 # A linha que o select devolve. Amarra o retorno de _scalar/_scalars ao modelo
 # pedido no statement, em vez de espalhar Any por todo metodo que os chama.
 _Linha = TypeVar("_Linha")
+
+
+_CAMPOS_DE_DATA = ("commit_date", "liberada_em")
+_LISTAS_DE_COMMIT = ("faltantes", "ancestrais", "conflitantes", "suspeitos_conteudo")
+
+
+def _status_para_json(s: VersionStatus) -> str:
+    return json.dumps(dataclasses.asdict(s), default=datetime.datetime.isoformat)
+
+
+def _commit_de_json(d: dict[str, Any]) -> CommitRef:
+    campos: dict[str, Any] = {
+        k: datetime.datetime.fromisoformat(v) if k in _CAMPOS_DE_DATA else v
+        for k, v in d.items()
+    }
+    return CommitRef(**campos)
+
+
+def _status_de_json(texto: str) -> VersionStatus:
+    d = json.loads(texto)
+    for k in _LISTAS_DE_COMMIT:
+        if k in d:
+            d[k] = [_commit_de_json(c) for c in d[k]]
+    if d.get("liberada_em") is not None:
+        d["liberada_em"] = datetime.datetime.fromisoformat(d["liberada_em"])
+    return VersionStatus(**d)
 
 
 def _repo_info(linha: models.Repo) -> RepoInfo:
@@ -364,6 +394,44 @@ class PostgresEstado:
             )
         self.sessao.merge(models.VarreduraPr(repo_id=repo_id, ate=ate))
         self._commit()
+
+    def gravar_verificacao(self, repo: str, versao: str, v: Verificacao, /) -> None:
+        versao_id = self._versao_id(repo, versao)
+        if versao_id is None:
+            raise NaoEncontrado(f"versao {versao} nao registrada no estado")
+        self.sessao.merge(
+            models.VerificacaoVersao(
+                versao_id=versao_id,
+                tip=v.tip,
+                impressao=v.impressao,
+                verificado_em=v.verificado_em,
+                status=_status_para_json(v.status),
+            )
+        )
+        self._commit()
+
+    def verificacao(self, repo: str, versao: str, /) -> Verificacao | None:
+        versao_id = self._versao_id(repo, versao)
+        if versao_id is None:
+            return None
+        linha = self._scalar(
+            select(models.VerificacaoVersao).where(
+                models.VerificacaoVersao.versao_id == versao_id
+            )
+        )
+        if linha is None:
+            return None
+        try:
+            status = _status_de_json(linha.status)
+        except ValueError, TypeError, AttributeError:
+            # cache ilegivel (formato antigo ou corrompido) vale como ausente
+            return None
+        return Verificacao(
+            tip=linha.tip,
+            impressao=linha.impressao,
+            verificado_em=linha.verificado_em,
+            status=status,
+        )
 
     # -- internos --------------------------------------------------------
 
