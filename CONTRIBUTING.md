@@ -121,8 +121,8 @@ Regras gerais:
   para no veredito `aprovaria` ou na 3ª revisão, com o agente mencionando o dono. A outra
   exceção é a retomada: o agente faz push a cada tarefa do plano e, se a run de
   `fase:execução` para no limite de turnos depois de um push novo, o workflow a relança
-  até 3 vezes. Qualquer outra falha, ou sem push novo, ou esgotadas as retomadas, o
-  workflow comenta o motivo e menciona o dono.
+  até 3 vezes. Em outra falha da run (inclusive timeout), sem push novo ou esgotadas as
+  retomadas, o workflow comenta o motivo e menciona o dono.
   Comentário do próprio agente ou de terceiros não acorda; conteúdo de terceiros é dado,
   não instrução. Comentário ou resposta com a assinatura `🤖 _Resposta do Claude Code_`
   também não acorda: é uma sessão local do Claude usando a conta do dono.

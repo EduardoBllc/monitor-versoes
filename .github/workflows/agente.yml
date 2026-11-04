@@ -137,7 +137,8 @@ jobs:
       - name: Branch antes
         id: antes
         if: steps.autor.outputs.seguir != 'false' && steps.assinatura.outputs.seguir != 'false'
-        run: echo "sha=$(git ls-remote origin "refs/heads/issue-$NUMERO-*" | cut -f1)" >> "$GITHUB_OUTPUT"
+        # Em uma linha: duas branches `issue-N-*` quebrariam o formato do $GITHUB_OUTPUT.
+        run: echo "sha=$(git ls-remote origin "refs/heads/issue-$NUMERO-*" | cut -f1 | sort | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
 
       # A action regrava user.name/user.email a partir de `bot_name`/`bot_id` (padrão claude[bot]).
       - name: Id do bot
@@ -191,13 +192,15 @@ jobs:
 
             Siga a skill agente (.claude/skills/agente/SKILL.md). Escreva em português.
 
-      # A action falha sem comentar; sem isto a issue fica parecendo em andamento.
+      # A action falha sem comentar; sem isto a issue fica parecendo em andamento. Cobre
+      # também timeout do job e falha antes da action; sem o token do App não há como comentar.
       - name: Retomar ou avisar
-        if: failure() && steps.claude.outcome == 'failure'
+        if: (failure() || cancelled()) && steps.app.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           TOKEN_ACTIONS: ${{ github.token }}
           ARQUIVO: ${{ steps.claude.outputs.execution_file }}
+          RESULTADO_AGENTE: ${{ steps.claude.outcome }}
           ANTES: ${{ steps.antes.outputs.sha }}
           DONO: ${{ github.repository_owner }}
           REF: ${{ github.event.repository.default_branch }}
@@ -205,23 +208,33 @@ jobs:
           FASE_EXECUCAO: fase:execução
           ASSINATURA: 🤖 _Resposta do Claude Code_
         run: |
-          motivo=$(jq -r '[.[] | select(.type == "result")][-1].subtype // "desconhecido"' "$ARQUIVO" 2>/dev/null || echo desconhecido)
-          depois=$(git ls-remote origin "refs/heads/issue-$NUMERO-*" | cut -f1)
-          em_execucao=$(gh issue view "$NUMERO" --json labels --jq "any(.labels[]; .name == \"$FASE_EXECUCAO\")")
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          if [ "$motivo" = "$MOTIVO_TURNOS" ] && [ "$em_execucao" = true ] \
-             && [ -n "$depois" ] && [ "$depois" != "$ANTES" ] && [ "$RETOMADA" -lt "$MAX_RETOMADAS" ]; then
-            proxima=$((RETOMADA + 1))
-            GH_TOKEN="$TOKEN_ACTIONS" gh workflow run agente.yml --ref "$REF" \
-              -f numero="$NUMERO" -f retomada="$proxima"
-            gh issue comment "$NUMERO" --body "A run parou no limite de turnos ($run_url); o que teve push está na branch. Retomando sozinho: retomada $proxima de $MAX_RETOMADAS.
+          avisar_dono() {
+            gh issue comment "$NUMERO" --body "@$DONO a run do agente parou ($1) e não será retomada sozinha: $run_url. Retomada só acontece no limite de turnos, em \`$FASE_EXECUCAO\`, com commit novo na branch e até $MAX_RETOMADAS vezes (esta foi a $RETOMADA). O que teve push está na branch; comente para retomar.
 
           $ASSINATURA"
-          else
-            gh issue comment "$NUMERO" --body "@$DONO a run do agente parou (\`$motivo\`) e não será retomada sozinha: $run_url. Retomada só acontece no limite de turnos, em \`$FASE_EXECUCAO\`, com commit novo na branch e até $MAX_RETOMADAS vezes (esta foi a $RETOMADA). O que teve push está na branch; comente para retomar.
-
-          $ASSINATURA"
+          }
+          case "$RESULTADO_AGENTE" in
+            failure) motivo=$(jq -r '[.[] | select(.type == "result")][-1].subtype // "desconhecido"' "$ARQUIVO" 2>/dev/null || echo desconhecido) ;;
+            cancelled) motivo="cancelada ou timeout" ;;
+            *) motivo="falha antes do agente" ;;
+          esac
+          depois=$(git ls-remote origin "refs/heads/issue-$NUMERO-*" 2>/dev/null | cut -f1 | sort | tr '\n' ' ' || true)
+          em_execucao=$(gh issue view "$NUMERO" --json labels --jq "any(.labels[]; .name == \"$FASE_EXECUCAO\")" || echo false)
+          if [ "$motivo" != "$MOTIVO_TURNOS" ] || [ "$em_execucao" != true ] \
+             || [ -z "$depois" ] || [ "$depois" = "$ANTES" ] || [ "$RETOMADA" -ge "$MAX_RETOMADAS" ]; then
+            avisar_dono "\`$motivo\`"
+            exit 0
           fi
+          proxima=$((RETOMADA + 1))
+          if ! GH_TOKEN="$TOKEN_ACTIONS" gh workflow run agente.yml --ref "$REF" \
+               -f numero="$NUMERO" -f retomada="$proxima"; then
+            avisar_dono "\`$motivo\`, e o relançamento falhou"
+            exit 0
+          fi
+          gh issue comment "$NUMERO" --body "A run parou no limite de turnos ($run_url); o que teve push está na branch. Retomando sozinho: retomada $proxima de $MAX_RETOMADAS.
+
+          $ASSINATURA"
 
       # Log e artifact são públicos; cifrado, só o dono lê a execução inteira.
       - name: Cifrar execução
