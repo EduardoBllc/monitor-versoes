@@ -29,8 +29,8 @@ Fase `fase:pr`.
 
 - Em evento de PR, rode `gh pr checkout <PR>` primeiro: o checkout do workflow é da
   `main`.
-- No `workflow_run` da "Revisão IA", leia o último comentário de resumo dela no PR (o que
-  tem `**Veredito:**`) e conte quantos desses há. Pare e mencione o dono, dizendo por quê,
+- No `workflow_run` da "Revisão IA", leia o último comentário de resumo dela no PR (o de
+  `github-actions[bot]` que tem `**Veredito:**`) e conte quantos desse autor há. Pare e mencione o dono, dizendo por quê,
   se o veredito for `aprovaria` ou se já houver 3. Senão, trate os apontamentos (threads e
   resumo), responda e resolva as threads da IA que atendeu, como nas do dono, e faça um
   único push no fim: o push dispara a próxima revisão. Nunca peça review. Sem nada a
