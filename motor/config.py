@@ -138,6 +138,8 @@ class ConfigProjeto:
     """Config por projeto, mesclada das duas camadas (repo vence o global).
 
     `tarefas` e opaco ao nucleo: quem le as chaves e o adapter do tracker.
+    `padrao_referencia` e o `[referencia] padrao` mesclado; `None` quando nenhuma
+    camada o define (vale o proposto pelo adapter).
     """
 
     piso: str | None = None
