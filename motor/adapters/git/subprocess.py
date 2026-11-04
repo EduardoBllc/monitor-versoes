@@ -390,10 +390,14 @@ class GitSubprocess:
             "log",
             refs,
             "--no-merges",
-            # -i: o `ch<numero>` na mensagem e digitado a mao e aparece como
-            # "CH254473." no historico real. O match exato por word-boundary
-            # (match_exato) tambem ignora caixa — os dois andam juntos.
+            # -i: a referencia da tarefa e digitada a mao, e a caixa dela nao e
+            # dado. O match exato (match_exato) tambem ignora caixa — os dois
+            # andam juntos.
             "-i",
+            # -F: o termo vem do padrao de referencia e do ID, que sao texto,
+            # nao regex. Sem ele, `[PAY-12]` vira classe de caracteres e o git
+            # recusa o intervalo `Y-1`.
+            "-F",
             f"--format=%H{SEPARADOR_CAMPO}%aI{SEPARADOR_CAMPO}%B{SEPARADOR_REGISTRO}",
         ]
         for p in padroes:
@@ -720,8 +724,8 @@ class GitSubprocess:
                 )
             else:
                 # -s: sem ele o `log -L` imprime o patch das linhas rastreadas
-                # dentro do campo %B, e extrair_chamado passaria a casar `chNNN`
-                # que estivesse no *codigo*, nao na mensagem.
+                # dentro do campo %B, e extrair_chamado passaria a casar a
+                # referencia da tarefa que estivesse no *codigo*, nao na mensagem.
                 args = ["log", "-s", formato]
                 args += [f"-L{a},{b}:{arquivo}" for a, b in ranges]
                 args.append(f"{base}..{parent}")
