@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
@@ -31,3 +33,5 @@ class Deps:
     worktrees_mantidas: int = 0
     # Da config do projeto (`[versao] piso`); `None` = nada e cortado.
     piso_versao: str | None = None
+    # Relógio injetável: a validade do carimbo da verificação depende dele.
+    agora: Callable[[], datetime.datetime] = lambda: datetime.datetime.now(datetime.UTC)

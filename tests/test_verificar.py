@@ -12,6 +12,7 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
+from motor.engine.vigencia import impressao_do_julgamento
 from motor.errors import ErroDeEntrada, MotorError
 from motor.ports import MergePrediction
 
@@ -963,3 +964,101 @@ def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
 
     assert [c.hash_origem for c in status.faltantes] == []
     assert sorted(c.hash_origem for c in status.ancestrais) == ["a0", "a1"]
+
+
+AGORA = datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC)
+
+
+def _cenario_simples():
+    git = _git()
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ]
+        }
+    )
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+    deps = _deps(git, tasks, commits, estado)
+    deps.agora = lambda: AGORA
+    return deps
+
+
+def test_verificar_grava_carimbo_com_tip_impressao_hora_e_status():
+    deps = _cenario_simples()
+
+    status = verificar(deps, "14.0.0")
+
+    carimbo = deps.estado.verificacao("r", "14.0.0")
+    assert carimbo is not None
+    assert carimbo.tip == deps.git.resolve_ref("14.0.0")
+    assert carimbo.impressao == impressao_do_julgamento([], {})
+    assert carimbo.verificado_em == AGORA
+    assert carimbo.status == status
+
+
+def test_auditar_nao_grava_carimbo():
+    git = _git(tags={"13.34.0": True})
+    estado = _estado_com_repo()
+    _versao_registrada(estado, "13.34.0")
+    estado.marcar_liberadas("r", {"13.34.0": D})
+    deps = _deps(git, FakeTaskSource(), FakeCommitSource(), estado)
+
+    verificar(deps, "13.34.0", auditar=True)
+
+    assert estado.verificacao("r", "13.34.0") is None
+
+
+def test_snapshot_de_liberada_nao_grava_carimbo():
+    git = _git(tags={"13.34.0": True})
+    estado = _estado_com_repo()
+    _versao_registrada(estado, "13.34.0")
+    estado.marcar_liberadas("r", {"13.34.0": D})
+    deps = _deps(git, FakeTaskSource(), FakeCommitSource(), estado)
+
+    verificar(deps, "13.34.0")
+
+    assert estado.verificacao("r", "13.34.0") is None
+
+
+def test_verificar_devolve_faltantes_na_ordem_do_grafo():
+    git = _git()
+    git.add_commit("a1", "a0", "ch456456 beta", D + datetime.timedelta(seconds=1))
+    # O Tickio devolve o chamado de a1 antes do de a0.
+    tasks = FakeTaskSource(chamados={"14.0.0": ["456456", "123123"]})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [
+                CommitRef(
+                    hash_origem="a0",
+                    parent="m0",
+                    chamado="123123",
+                    commit_date=D,
+                    msg="ch123123 alfa",
+                )
+            ],
+            "456456": [
+                CommitRef(
+                    hash_origem="a1",
+                    parent="a0",
+                    chamado="456456",
+                    commit_date=D + datetime.timedelta(seconds=1),
+                    msg="ch456456 beta",
+                )
+            ],
+        }
+    )
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+
+    status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
+
+    assert [c.hash_origem for c in status.faltantes] == ["a0", "a1"]
