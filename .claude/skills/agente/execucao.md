@@ -11,14 +11,16 @@ Fase `fase:execução`.
    `<!-- agente:plano -->`, quando existe, é o caminho. Sem plano, a spec basta. Na
    pequena, o corpo elaborado é o contrato.
 2. Comente na issue que vai executar e o que fará, em uma linha. A vez não é do dono:
-   sem menção.
-3. Crie a branch `issue-N-<slug>` a partir da `main`.
-4. Implemente seguindo o plano ou a spec, com as regras do
-   [AGENTS.md](../../../AGENTS.md) e do [CONTRIBUTING.md](../../../CONTRIBUTING.md).
-5. Rode `make check`. Verde é requisito; diga se a integração rodou ou pulou.
-6. Commits em português, push e PR com o
-   [template](../../../.github/pull_request_template.md) e `Closes #N`.
-7. Comente na issue o link do PR, mencionando o dono: a vez passa a ser dele.
+   sem menção. Na retomada (`workflow_dispatch`), pule: o workflow já comentou.
+3. Crie a branch `issue-N-<slug>` a partir da `main`. Se `origin/issue-N-*` já existe,
+   faça checkout dela: as tarefas cujo commit já está lá estão feitas.
+4. Implemente tarefa a tarefa do plano (sem plano, a spec é uma tarefa só), com as regras
+   do [AGENTS.md](../../../AGENTS.md) e do [CONTRIBUTING.md](../../../CONTRIBUTING.md).
+   Ao fim de cada uma: `make check` verde, commit em português e push. A run tem limite
+   de turnos; o que teve push o workflow retoma, o resto se perde.
+5. Depois da última tarefa, diga se a integração do `make check` rodou ou pulou e abra o
+   PR com o [template](../../../.github/pull_request_template.md) e `Closes #N`.
+6. Comente na issue o link do PR, mencionando o dono: a vez passa a ser dele.
 
 Não edite comentário que já existe, fora o do plano: o corpo do PR vai só por
 `gh pr create` ou `gh pr edit`, e aviso ao dono é sempre comentário novo.
