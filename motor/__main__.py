@@ -381,6 +381,9 @@ def imprimir_status(s: VersionStatus) -> None:
 
 
 def imprimir_atualizacao(r: AtualizarResult) -> None:
+    if r.reaproveitada_de is not None:
+        hora = r.reaproveitada_de.astimezone().strftime("%H:%M")
+        print(f"reaproveitando a verificacao das {hora}")
     if r.aplicados:
         _imprimir_commits_por_task("cherry-picks aplicados", r.aplicados, set())
     else:

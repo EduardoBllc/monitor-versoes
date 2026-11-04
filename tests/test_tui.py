@@ -768,6 +768,45 @@ async def _selecionar_previa(
     await pilot.pause()
 
 
+def test_atualizar_usa_o_runner_de_previa():
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    status = VersionStatus(verde=True, estado_integro=True, faltantes=[commit])
+    chamadas: list[str] = []
+
+    def executar(repo, numero, auditar) -> VersionStatus:
+        chamadas.append("executar")
+        return status
+
+    def previa(repo, numero) -> VersionStatus:
+        chamadas.append("previa")
+        return status
+
+    def atualizar_runner(repo, numero) -> AtualizarResult:
+        return AtualizarResult(status=AtualizarStatus.DONE, aplicados=[commit])
+
+    async def clicar(com_previa: bool) -> None:
+        app = MotorTUI(
+            Runners(
+                carregar_repos=lambda: [_REPO_PREVIA],
+                carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+                executar=executar,
+                atualizar_repo=atualizar_runner,
+                previa_atualizacao=previa if com_previa else None,
+            )
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+            await pilot.click("#atualizar")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+    asyncio.run(clicar(True))
+    assert chamadas == ["previa"]
+    chamadas.clear()
+    asyncio.run(clicar(False))
+    assert chamadas == ["executar"]
+
+
 def test_app_atualizar_sem_verificar_antes_pede_confirmacao_e_aplica():
     """O fluxo que a exigencia de Verificar antes cobrava sem precisar.
 
