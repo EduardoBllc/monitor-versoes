@@ -221,12 +221,48 @@ def test_piso_invalido_e_erro_de_entrada(camadas, piso):
         config.carregar_config(str(repo.parent))
 
 
-@pytest.mark.parametrize("tabela", ["versao", "tarefas"])
+@pytest.mark.parametrize("tabela", ["versao", "tarefas", "referencia"])
 def test_tabela_que_nao_e_tabela_e_erro(camadas, tabela):
     _, repo = camadas
     repo.write_text(f'{tabela} = "x"\n')
     with pytest.raises(ErroDeEntrada):
         config.carregar_config(str(repo.parent))
+
+
+def test_padrao_de_referencia_do_repo_vence_o_global(camadas):
+    glob, repo = camadas
+    glob.write_text('[referencia]\npadrao = "a{id}"\n')
+    repo.write_text('[referencia]\npadrao = "b{id}"\n')
+    assert config.carregar_config(str(repo.parent)).padrao_referencia == "b{id}"
+
+
+def test_padrao_de_referencia_so_no_global(camadas):
+    glob, repo = camadas
+    glob.write_text('[referencia]\npadrao = "a{id}"\n')
+    assert config.carregar_config(str(repo.parent)).padrao_referencia == "a{id}"
+
+
+def test_sem_referencia_o_padrao_e_none(camadas):
+    _, repo = camadas
+    assert config.carregar_config(str(repo.parent)).padrao_referencia is None
+
+
+@pytest.mark.parametrize(
+    ("conteudo", "valor"),
+    [
+        ('referencia = "x"\n', "'x'"),
+        ("[referencia]\npadrao = 1\n", "1"),
+        ('[referencia]\npadrao = "sem"\n', "'sem'"),
+    ],
+)
+def test_referencia_invalida_cita_arquivo_e_valor(camadas, conteudo, valor):
+    _, repo = camadas
+    repo.write_text(conteudo)
+    with pytest.raises(ErroDeEntrada) as e:
+        config.carregar_config(str(repo.parent))
+    # O texto é requisito: diz qual arquivo e qual valor corrigir.
+    assert str(repo) in str(e.value)
+    assert valor in str(e.value)
 
 
 def test_xdg_config_home_e_respeitado(tmp_path, monkeypatch):

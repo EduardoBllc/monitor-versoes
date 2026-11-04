@@ -9,6 +9,7 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
@@ -19,7 +20,14 @@ D = datetime.datetime(2026, 1, 1)
 
 
 def _deps(git, tasks, commits, estado) -> Deps:
-    return Deps(git=git, tasks=tasks, estado=estado, repo="r", commit_source=commits)
+    return Deps(
+        git=git,
+        tasks=tasks,
+        estado=estado,
+        repo="r",
+        commit_source=commits,
+        referencia=lambda: TickioRest.referencia,
+    )
 
 
 def _estado_com_repo() -> FakeEstado:

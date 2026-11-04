@@ -204,6 +204,19 @@ def test_git_subprocess_search_commits_ignora_merge(tmp_path):
     )
 
 
+def test_git_subprocess_search_commits_busca_texto_literal(tmp_path):
+    # Sem -F, o git le `[PAY-12]` como regex e recusa o intervalo `Y-1`.
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    _run_git(dir_, "commit", "--allow-empty", "-m", "[PAY-12] x")
+    _run_git(dir_, "commit", "--allow-empty", "-m", "P-12 y")
+
+    candidatos = new_git_subprocess(dir_).search_commits(["[PAY-12]"], "master")
+
+    assert [c.msg.splitlines()[0] for c in candidatos] == ["[PAY-12] x"]
+
+
 def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
     """Quando uma versao tem tag com o mesmo nome da branch (ex.: fechada mas
     ainda nao limpa), `%(refname:short)` fica ambigua entre refs/heads/X e

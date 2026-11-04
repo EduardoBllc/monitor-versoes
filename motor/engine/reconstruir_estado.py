@@ -42,6 +42,9 @@ class ReconstructResult:
 
 
 def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
+    # Antes do fetch: sem padrao de referencia nao ha o que reagrupar, e falhar
+    # depois de buscar e registrar a versao seria I/O a toa.
+    referencia = deps.referencia()
     # Antes de ler qualquer ref, nao depois: a base de uma versao nunca
     # registrada sai do ref store local (list_version_branches, tag_exists em
     # BaseResolver) e o commits_in_range abaixo le o tip local da branch alvo.
@@ -73,7 +76,9 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
         base_commit = info.base_commit
 
     deps.progresso(Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git"))
-    atribuicoes, orfaos = reconstruir_atribuicoes(deps.git, base_commit, versao)
+    atribuicoes, orfaos = reconstruir_atribuicoes(
+        deps.git, base_commit, versao, referencia
+    )
     deps.estado.substituir_atribuicoes(deps.repo, versao, atribuicoes)
 
     if orfaos:

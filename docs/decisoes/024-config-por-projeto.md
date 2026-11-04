@@ -14,13 +14,19 @@ duas **nesse ponto**; nos demais elas seguem valendo.
 - **Duas camadas, mescladas chave a chave, o repo vencendo:**
   `~/.config/monitor-versoes/config.toml` (padrão do operador; respeita `XDG_CONFIG_HOME`) e
   `.monitor-versoes.toml` na raiz do repo-alvo. Credenciais continuam no `.env`.
-- **Chaves lidas:** `[versao] piso` e `[tarefas] sistema`. O resto é ignorado. `[tarefas]` é
+- **Chaves lidas:** `[versao] piso`, `[tarefas] sistema` e `[referencia] padrao`. O resto é
+  ignorado. `[tarefas]` é
   opaco ao núcleo: quem lê as chaves é o adapter do tracker.
 - **Piso sem padrão.** Sem `piso` em nenhuma camada, nenhuma versão é cortada.
 - **`sistema` é cobrado pelo adapter Tickio, na primeira busca**, como as credenciais
   ([008](008-autenticacao-tickio.md)). A montagem ([019](019-montagem-no-front-end.md)) só
   carrega a config e nunca falha por isso, para não quebrar `atualizar --abort` nem
   `reconstruir-estado`.
+- **`[referencia] padrao` sobrescreve o padrão proposto pelo adapter do tracker.** É um
+  template com um `{id}` (Tickio: `ch{id}`); a precedência é adapter < global < repo. A falta
+  em todas as origens é cobrada no uso (busca de commits, `reconstruir-estado`, `verificar`,
+  impressão de culpados), não na montagem; valor inválido falha na leitura, como o `piso`. O
+  alfabeto do id vem do adapter (default letras, dígitos, `_` e `-`) e a config não o muda.
 - **Import path só no arquivo central.** O carregador de plugins aceita um nome sem `:`
   (entry point instalado) ou `modulo:Classe` (import direto). O `.monitor-versoes.toml` só
   escolhe entre entry points já instalados: rodar o monitor num repo não pode executar código

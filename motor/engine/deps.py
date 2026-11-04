@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from motor.domain.referencia import FonteReferencia, Referencia, resolver_referencia
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
 from motor.progresso import RelatorProgresso, silencioso
+
+
+def _sem_referencia() -> Referencia:
+    """Sem proposta nem config, como a lista manual sem `[referencia]`."""
+    return resolver_referencia(None, None, ())
 
 
 @dataclass
@@ -31,3 +37,7 @@ class Deps:
     worktrees_mantidas: int = 0
     # Da config do projeto (`[versao] piso`); `None` = nada e cortado.
     piso_versao: str | None = None
+    # Referencia de tarefa (padrao e alfabeto), resolvida so por quem a usa: a
+    # falta de padrao nao pode derrubar `atualizar --abort`. Quem usa o default
+    # cobra a falta do padrao.
+    referencia: FonteReferencia = _sem_referencia

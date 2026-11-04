@@ -24,7 +24,7 @@ sem adaptação:
   homônima, criada pelo processo de release (a ferramenta só lê).
 - **Esquema de versão fixo:** `X.0.0` sai de `master`, `X.Y.0` da versão ajustada anterior,
   `X.Y.Z` de qualquer versão anterior.
-- **Commits citam a task** na mensagem como `ch<num>`.
+- **Commits citam a task** na mensagem pelo padrão de referência (`ch<num>` no Tickio).
 - **Build está fora:** a ferramenta monta e verifica, não constrói.
 
 ## Pré-requisitos
@@ -178,10 +178,24 @@ piso = "13.0.0"   # menor versão cujas tarefas são buscadas; sem ele nada é c
 
 [tarefas]
 sistema = 7       # id do sistema no Tickio; obrigatório para a busca no Tickio
+
+[referencia]
+# padrao = "ch{id}"   # como a tarefa aparece no commit; o tracker propõe um, a config sobrescreve
 ```
 
 Sem `sistema`, a primeira busca no Tickio falha apontando os dois arquivos; `atualizar
 --abort` e `reconstruir-estado` seguem funcionando.
+
+O `padrao` é um template com exatamente um `{id}`; o resto é literal e a caixa é ignorada.
+O alfabeto do id (que caracteres ele pode ter) vem do adapter do tracker e a config não o
+muda: o Tickio propõe só dígitos; sem proposta, valem letras, dígitos, `_` e `-`, com o id
+começando por letra ou dígito.
+
+- `padrao = "{id}"` puro pede id com formato distintivo (como `PAY-123`): sem prefixo, a
+  primeira palavra de qualquer mensagem vira id (`Merge branch` extrairia `Merge`).
+- A lista manual não propõe padrão: sem `padrao` na config, os comandos que precisam dele
+  falham pedindo a chave. Com `padrao = "ch{id}"` ela usa o alfabeto padrão, e
+  `ch254473-fix` extrai `254473-fix` (no Tickio, `254473`).
 
 ## Verificar que funcionou
 
@@ -239,10 +253,10 @@ o resto.
 ### Fontes de tasks e de commits
 
 - **Tasks:** Tickio por padrão. Sem ele, `--task-source manual --lista arquivo.txt` lê um
-  número de task por linha (`#` comenta).
+  id de task por linha (`#` comenta).
 - **Commits:** com `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` (ou `--bitbucket-token` /
-  `--bitbucket-email`), os commits de cada task vêm dos PRs do Bitbucket; o grep por
-  `ch<num>` em `master` fica como fallback. Sem credenciais, só o grep.
+  `--bitbucket-email`), os commits de cada task vêm dos PRs do Bitbucket; o grep pela
+  referência em `master` fica como fallback. Sem credenciais, só o grep.
 
 ### Worktrees mantidas em disco
 

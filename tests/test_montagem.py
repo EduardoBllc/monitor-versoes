@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from motor import montagem
 from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
@@ -17,11 +18,14 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import ConfigProjeto
+from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.montagem import (
     CredenciaisBitbucket,
+    FonteTasks,
     montar_commit_source,
+    montar_deps,
     montar_task_source,
     validar_nome_repo,
     validar_sistema_id,
@@ -44,7 +48,7 @@ class GitQueGritaSeUsado(FakeGit):
 
 def test_sem_token_a_fonte_e_so_o_grep():
     # sem cadeia: um ChainCommitSource de um elemento so seria indireção pura.
-    fonte = montar_commit_source(FakeGit())
+    fonte = montar_commit_source(FakeGit(), referencia=lambda: TickioRest.referencia)
 
     assert isinstance(fonte, GrepCommitSource)
 
@@ -53,7 +57,9 @@ def test_sem_estado_nao_monta_a_fonte_de_pr():
     # a fonte de PR le o indice local de PRs, que vive no estado. Sem banco ela
     # nao teria o que ler e devolveria vazio para todo chamado — pior que o grep.
     fonte = montar_commit_source(
-        FakeGit(), bitbucket=CredenciaisBitbucket("tok", "dev@x.com")
+        FakeGit(),
+        referencia=lambda: TickioRest.referencia,
+        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
     )
 
     assert isinstance(fonte, GrepCommitSource)
@@ -64,6 +70,7 @@ def test_com_token_a_pr_vem_antes_do_grep():
     # grep fica de fallback para o chamado que nenhuma PR casou.
     fonte = montar_commit_source(
         FakeGit(),
+        referencia=lambda: TickioRest.referencia,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo="r",
@@ -83,6 +90,7 @@ def test_a_fonte_de_pr_recebe_o_cache_do_estado():
 
     fonte = montar_commit_source(
         FakeGit(),
+        referencia=lambda: TickioRest.referencia,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=estado,
         repo="vbweb",
@@ -101,7 +109,9 @@ def test_montar_nao_toca_o_git(token):
     clone sem `origin` passaria a falhar na montagem em vez de na busca.
     """
     montar_commit_source(
-        GitQueGritaSeUsado(), bitbucket=CredenciaisBitbucket(token, "dev@x.com")
+        GitQueGritaSeUsado(),
+        referencia=lambda: TickioRest.referencia,
+        bitbucket=CredenciaisBitbucket(token, "dev@x.com"),
     )
 
 
@@ -129,6 +139,53 @@ def test_task_source_tickio_nao_cobra_credencial_na_montagem(monkeypatch):
     assert isinstance(fonte, TickioRest)
     assert fonte.sistema == 7
     assert fonte.arquivos == ("/a.toml", "/b.toml")
+
+
+# -- referencia de tarefa ----------------------------------------------------
+
+
+@pytest.fixture
+def repo_montavel(monkeypatch, tmp_path):
+    """Raiz de repo com git e estado fakes e config global isolada."""
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    estado = FakeEstado(repos={"repo": RepoInfo(nome="repo")})
+    monkeypatch.setattr(montagem, "new_git_subprocess", lambda *_, **__: FakeGit())
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    return raiz
+
+
+def _lista(raiz):
+    lista = raiz.parent / "lista.txt"
+    lista.write_text("123456\n", encoding="utf-8")
+    return FonteTasks(fonte="manual", lista_manual=str(lista))
+
+
+def test_tickio_sem_config_propoe_a_referencia_dele(repo_montavel):
+    deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
+
+    assert deps.referencia() == Referencia("ch{id}", "0-9")
+
+
+def test_lista_manual_sem_padrao_monta_e_so_cobra_no_uso(repo_montavel):
+    # montar nao pode falhar: `atualizar --abort` nao usa a referencia.
+    deps = montar_deps(str(repo_montavel), None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
+
+    with pytest.raises(ErroDeEntrada) as e:
+        deps.referencia()
+    # O texto é requisito: diz a chave que falta.
+    assert "[referencia] padrao" in str(e.value)
+
+
+def test_lista_manual_com_padrao_usa_o_alfabeto_default(repo_montavel):
+    (repo_montavel / ".monitor-versoes.toml").write_text(
+        '[referencia]\npadrao = "ch{id}"\n'
+    )
+
+    deps = montar_deps(str(repo_montavel), None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
+
+    assert deps.referencia() == Referencia("ch{id}", ALFABETO_PADRAO)
 
 
 # -- validadores --------------------------------------------------------------

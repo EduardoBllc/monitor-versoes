@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
+from motor.domain.referencia import validar_padrao
 from motor.domain.version import validar_versao
 from motor.errors import ErroDeEntrada
 
@@ -137,9 +138,12 @@ class ConfigProjeto:
     """Config por projeto, mesclada das duas camadas (repo vence o global).
 
     `tarefas` e opaco ao nucleo: quem le as chaves e o adapter do tracker.
+    `padrao_referencia` e o `[referencia] padrao` mesclado; `None` quando nenhuma
+    camada o define (vale o proposto pelo adapter).
     """
 
     piso: str | None = None
+    padrao_referencia: str | None = None
     tarefas: Mapping[str, object] = field(default_factory=dict)
     arquivos: tuple[str, ...] = ()
 
@@ -169,7 +173,7 @@ def _tabela(
 ) -> Mapping[str, object]:
     valor = dados.get(nome, {})
     if not isinstance(valor, dict):
-        raise ErroDeEntrada(f"{caminho}: [{nome}] deve ser uma tabela")
+        raise ErroDeEntrada(f"{caminho}: [{nome}] deve ser uma tabela, veio {valor!r}")
     return valor
 
 
@@ -185,20 +189,34 @@ def _piso(dados: Mapping[str, object], caminho: str) -> str | None:
         raise ErroDeEntrada(f"{caminho}: [versao] piso invalido ({e})") from e
 
 
+def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
+    bruto = _tabela(dados, "referencia", caminho).get("padrao")
+    return None if bruto is None else validar_padrao(bruto, caminho)
+
+
 def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
     """Le o global e, havendo `raiz_repo`, o `.monitor-versoes.toml` dela.
 
-    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So `piso`
-    e `[tarefas]` sao lidos; o resto e ignorado.
+    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So
+    `[versao] piso`, `[referencia] padrao` e `[tarefas]` sao lidos; o resto e
+    ignorado.
     """
     caminhos = [caminho_config_global()]
     if raiz_repo is not None:
         caminhos.append(os.path.join(raiz_repo, ARQUIVO_CONFIG_REPO))
     piso: str | None = None
+    padrao: str | None = None
     tarefas: dict[str, object] = {}
     for caminho in caminhos:
         dados = _ler_toml(caminho)
         if (p := _piso(dados, caminho)) is not None:
             piso = p
+        if (r := _padrao_referencia(dados, caminho)) is not None:
+            padrao = r
         tarefas.update(_tabela(dados, "tarefas", caminho))
-    return ConfigProjeto(piso=piso, tarefas=tarefas, arquivos=tuple(caminhos))
+    return ConfigProjeto(
+        piso=piso,
+        padrao_referencia=padrao,
+        tarefas=tarefas,
+        arquivos=tuple(caminhos),
+    )

@@ -14,6 +14,7 @@ from motor.domain.reconcile import (
     filtrar_excluidos,
     reconciliar,
 )
+from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
@@ -72,6 +73,9 @@ def _culpados_do_conflito(
         logger.debug("atribuicao do conflito em %s falhou: %s", meta.hash_origem, e)
         return []
     chamados: set[str] = set()
+    # Resolvida no primeiro culpado candidato, nao antes: conflito sem culpado
+    # fora da versao nao passa a exigir padrao de referencia.
+    referencia: Referencia | None = None
     for commits in por_arquivo.values():
         for c in commits:
             # Ja dobrado no tip simulado: o `atualizar` aplica esse antes, entao
@@ -84,7 +88,9 @@ def _culpados_do_conflito(
                 != Presence.AUSENTE
             ):
                 continue
-            ch = extrair_chamado(c.msg)
+            if referencia is None:
+                referencia = ctx.deps.referencia()
+            ch = extrair_chamado(c.msg, referencia)
             if ch is not None:
                 chamados.add(ch)
     return sorted(chamados)
