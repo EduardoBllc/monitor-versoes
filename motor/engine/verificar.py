@@ -168,7 +168,7 @@ def verificar(
         versao,
         manter_worktree=manter_worktree,
         auditar=auditar,
-        preparar_worktree=True,
+        com_worktree=True,
     )
 
 
@@ -178,7 +178,7 @@ def verificar_sem_fetch(
     *,
     manter_worktree: bool,
     auditar: bool,
-    preparar_worktree: bool,
+    com_worktree: bool,
 ) -> VersionStatus:
     """O `verificar` sem o fetch inicial, para quem já buscou as refs."""
     inicio = time.monotonic()
@@ -197,8 +197,8 @@ def verificar_sem_fetch(
         if info is not None and info.liberada_em is not None:
             return _snapshot_congelado(deps, versao, info.liberada_em)
 
-        if preparar_worktree:
-            _preparar_worktree(deps, versao)
+        if com_worktree:
+            preparar_worktree(deps, versao)
         ref_alvo = versao
 
     base_commit = _base_commit(deps, versao, info)
@@ -307,10 +307,6 @@ def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.git.use_worktree(versao)
     if deps.git.remote_branch_exists("origin", versao):
         deps.git.pull_branch("origin", versao)
-
-
-# O parâmetro homônimo de `verificar_sem_fetch` sombreia o nome público lá dentro.
-_preparar_worktree = preparar_worktree
 
 
 def _base_commit(deps: Deps, versao: str, info: VersaoInfo | None) -> str:

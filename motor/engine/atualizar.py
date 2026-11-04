@@ -78,7 +78,7 @@ def _status_do_lote(
     if vigente is not None:
         return vigente.status, vigente.verificado_em
     status = verificar_sem_fetch(
-        deps, versao, manter_worktree=True, auditar=False, preparar_worktree=False
+        deps, versao, manter_worktree=True, auditar=False, com_worktree=False
     )
     return status, None
 
@@ -202,7 +202,8 @@ def atualizar_continue(
 
     Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
     foram aplicados. Nao precisa reconstruir nada a mao: o `atualizar` abaixo
-    chama `verificar`, que reprojeta o estado a partir do git de verdade.
+    verifica de novo, porque o pick resolvido mudou o tip da branch e o carimbo
+    deixou de valer, e a verificacao reprojeta o estado a partir do git de verdade.
 
     A recusa por tag e reavaliada aqui, antes do `continue_cherry_pick`: se a
     versao foi liberada enquanto o conflito estava aberto, deixar o pick entrar
