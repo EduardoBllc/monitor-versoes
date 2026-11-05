@@ -33,6 +33,7 @@ from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import (
     ConfigProjeto,
+    Escolhido,
     carregar_config,
     database_url,
     worktrees_mantidas,
@@ -42,11 +43,23 @@ from motor.domain.referencia import (
     Referencia,
     resolver_referencia,
 )
-from motor.domain.version import validar_versao as validar_versao  # reexporta
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada
-from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
+from motor.plugins import carregar_plugin
+from motor.ports import (
+    CommitSource,
+    EsquemaVersao,
+    EstadoRepo,
+    GitRepo,
+    PoliticaAtribuicao,
+    TaskSource,
+)
 from motor.progresso import RelatorProgresso, silencioso
+from motor.services.versionamento import (
+    BRANCH_VERSAO_PADRAO,
+    PRINCIPAL_PADRAO,
+    Versionamento,
+)
 
 
 @dataclass(frozen=True)
@@ -169,8 +182,69 @@ def _identidade_das_entradas(
             sorted(config.tarefas.items()),
             config.padrao_referencia,
             config.piso,
+            # Esquema e politica decidem as fontes do alvo; liberacao e branches,
+            # quais versoes sao abertas e liberadas.
+            [
+                None if e is None else e.valor
+                for e in (
+                    config.esquema,
+                    config.atribuicao,
+                    config.tag_liberacao,
+                    config.branch_versao,
+                    config.branch_principal,
+                )
+            ],
         )
     )
+
+
+def _plugin(grupo: str, escolhido: Escolhido | None, padrao: str) -> type:
+    """A classe escolhida na config, ou a do padrao embutido."""
+    if escolhido is None:
+        return carregar_plugin(grupo, padrao, "central")
+    return carregar_plugin(grupo, escolhido.valor, escolhido.origem)
+
+
+def resolver_versionamento(config: ConfigProjeto) -> Versionamento:
+    """Esquema, politica, piso e nomes nas camadas config > esquema > padrao.
+
+    O piso e validado aqui, pelo esquema em uso, e nao na leitura da config: um
+    piso que o esquema nao reconhece falha so em quem usa o versionamento.
+    """
+    esquema: EsquemaVersao = _plugin(
+        "monitor_versoes.esquemas", config.esquema, "semver"
+    )()
+    politica: PoliticaAtribuicao = _plugin(
+        "monitor_versoes.atribuicoes", config.atribuicao, "exata"
+    )()
+    piso = config.piso
+    if piso is not None:
+        try:
+            piso = esquema.validar(piso)
+        except ErroDeEntrada as e:
+            raise ErroDeEntrada(
+                f"{config.arquivo_piso}: [versao] piso invalido: {config.piso!r} ({e})"
+            ) from e
+    return Versionamento(
+        esquema=esquema,
+        politica=politica,
+        piso=piso,
+        branch_versao=_camada(
+            config.branch_versao, esquema.branch_versao, BRANCH_VERSAO_PADRAO
+        ),
+        principal=_camada(
+            config.branch_principal, esquema.branch_principal, PRINCIPAL_PADRAO
+        ),
+        tag_liberacao=None
+        if config.tag_liberacao is None
+        else config.tag_liberacao.valor,
+    )
+
+
+def _camada(config: Escolhido | None, do_esquema: str | None, padrao: str) -> str:
+    if config is not None:
+        return config.valor
+    return padrao if do_esquema is None else do_esquema
 
 
 # Seis parametros, cinco deles nomeados e com default salvo a referencia: e
@@ -260,7 +334,10 @@ def montar_deps(
         commit_source=commit_source,
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
-        piso_versao=config.piso,
+        # Cache: resolvido uma vez por invocacao, na primeira vez que alguem usa.
+        versionamento=functools.cache(
+            functools.partial(resolver_versionamento, config)
+        ),
         referencia=referencia,
         identidade_das_entradas=_identidade_das_entradas(
             fonte_tasks, commit_source, config

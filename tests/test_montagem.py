@@ -29,7 +29,6 @@ from motor.montagem import (
     montar_task_source,
     validar_nome_repo,
     validar_sistema_id,
-    validar_versao,
 )
 
 
@@ -262,17 +261,6 @@ def test_nome_repo_recusa_o_que_fragmentaria_o_estado(valor):
     # duas linhas paralelas para o mesmo repo, sem erro nenhum aparecer.
     with pytest.raises(ErroDeEntrada, match="nome simples"):
         validar_nome_repo(valor)
-
-
-@pytest.mark.parametrize("valor", ["2.3.1", " 2.3.1 "])
-def test_versao_devolve_o_valor_aparado(valor):
-    assert validar_versao(valor) == "2.3.1"
-
-
-@pytest.mark.parametrize("valor", ["abc", "  "])
-def test_versao_recusa_o_que_nao_e_versao(valor):
-    with pytest.raises(ErroDeEntrada):
-        validar_versao(valor)
 
 
 def test_sistema_id_converte_para_int():

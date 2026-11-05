@@ -56,6 +56,7 @@ from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, formatar_com_
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
+    resolver_versionamento,
     validar_nome_repo,
     validar_sistema_id,
 )
@@ -1262,7 +1263,7 @@ def _piso_da_config(raiz: str | None) -> str | None:
     """Piso da config em camadas; config invalida deixa `None` em vez de
     derrubar a lista (o erro aparece ao operar o repo, pela montagem)."""
     try:
-        return carregar_config(raiz).piso
+        return resolver_versionamento(carregar_config(raiz)).piso
     except ErroDeEntrada:
         return None
 

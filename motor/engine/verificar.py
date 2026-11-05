@@ -351,7 +351,7 @@ def _target_resolver(deps: Deps) -> TargetResolver:
         tasks=deps.tasks,
         commits=deps.commit_source,
         progresso=deps.progresso,
-        piso=deps.piso_versao,
+        piso=deps.versionamento().piso,
     )
 
 
