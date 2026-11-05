@@ -816,6 +816,56 @@ def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(
     assert "ch200" in msgs[0]
 
 
+def test_culpados_por_linha_aponta_quem_criou_o_arquivo_no_modify_delete(tmp_path):
+    """Caso real (vendabemweb 16.2.0): o commit altera um arquivo que o alvo
+    nao tem, porque quem o criou esta fora da versao. O culpado e o criador.
+    """
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "outro.txt").write_text("x\n")
+    _run_git(dir_, "add", "outro.txt")
+    _run_git(dir_, "commit", "-m", "feat: ch100 primeira versao")
+    base = _rev(dir_, "HEAD")
+
+    (tmp_path / "integracoes").mkdir()
+    arquivo = tmp_path / "integracoes" / "tests.py"
+    arquivo.write_text("l1\nl2\nl3\n")
+    _run_git(dir_, "add", "integracoes/tests.py")
+    _run_git(dir_, "commit", "-m", "feat: ch257056 cria integracoes/tests.py")
+    parent = _rev(dir_, "HEAD")
+
+    arquivo.write_text("l1\nl2-ch255105\nl3\n")
+    _run_git(dir_, "commit", "-am", "fix: ch255105 altera integracoes/tests.py")
+    commit = _rev(dir_, "HEAD")
+
+    # Pina que o cenario e mesmo modify/delete, como no caso real.
+    _run_git(dir_, "checkout", "-q", "-b", "alvo", base)
+    pick = subprocess.run(
+        ["git", "cherry-pick", commit],
+        cwd=dir_,
+        env=_git_env(),
+        check=False,
+        capture_output=True,
+    )
+    assert pick.returncode != 0
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=dir_,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "DU integracoes/tests.py" in status.splitlines(), status
+
+    g = new_git_subprocess(dir_)
+    culpados = g.culpados_por_linha(base, parent, commit, ["integracoes/tests.py"])
+
+    msgs = [c.msg for c in culpados["integracoes/tests.py"]]
+    assert len(msgs) == 1, f"culpados = {msgs!r}"
+    assert "ch257056" in msgs[0]
+
+
 # --- worktree_gc: GC das worktrees por uso recente ---
 #
 # Os caminhos abaixo repetem o layout do adapter de proposito: se
