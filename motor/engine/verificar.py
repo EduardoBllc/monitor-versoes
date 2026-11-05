@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class _Contexto:
+class ContextoDoAlvo:
     """O que as passadas de presenca e de conflito consultam: o oraculo do
     run (um so, pelo cache) e o par (base gravada, ref do alvo) que ele cruza.
     """
@@ -53,8 +53,12 @@ class _Contexto:
     ref_alvo: str
 
 
-def _culpados_do_conflito(
-    ctx: _Contexto, meta: CommitRef, arquivos: list[str], ja_simulados: set[str]
+def culpados_do_conflito(
+    ctx: ContextoDoAlvo,
+    commit: str,
+    parent: str,
+    arquivos: list[str],
+    ja_aplicados: set[str],
 ) -> list[str]:
     """Chamados que tocaram as mesmas linhas antes do commit conflitante e que
     nao estao nesta versao — a resposta a "de que alteracao esse cherry-pick
@@ -65,14 +69,14 @@ def _culpados_do_conflito(
         return []
     try:
         por_arquivo = ctx.deps.git.culpados_por_linha(
-            ctx.base_commit, meta.parent, meta.hash_origem, arquivos
+            ctx.base_commit, parent, commit, arquivos
         )
     except MotorError as e:
         # Mesma politica do oraculo de presenca ("senao -> ausente",
         # docs/decisoes/003-definicao-de-presente.md): o que
         # nao da pra confirmar nao derruba o resto. Atribuicao e diagnostico em
         # cima do conflito — perde-la nao pode custar o proprio conflito.
-        logger.debug("atribuicao do conflito em %s falhou: %s", meta.hash_origem, e)
+        logger.debug("atribuicao do conflito em %s falhou: %s", commit, e)
         return []
     chamados: set[str] = set()
     # Resolvida no primeiro culpado candidato, nao antes: conflito sem culpado
@@ -82,7 +86,9 @@ def _culpados_do_conflito(
         for c in commits:
             # Ja dobrado no tip simulado: o `atualizar` aplica esse antes, entao
             # culpa-lo mandaria o operador buscar o que o proprio lote resolve.
-            if c.hash_origem in ja_simulados:
+            # So a simulacao precisa disto; no `atualizar` o pick ja aplicado
+            # leva o trailer -x e sai como presente no oraculo abaixo.
+            if c.hash_origem in ja_aplicados:
                 continue
             # Culpado que ja esta no alvo nao pode ser a causa da divergencia.
             if (
@@ -232,7 +238,7 @@ def verificar_sem_fetch(
 
     todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
 
-    ctx = _Contexto(deps, PresenceOracle(git=deps.git), base_commit, ref_alvo)
+    ctx = ContextoDoAlvo(deps, PresenceOracle(git=deps.git), base_commit, ref_alvo)
     t = time.monotonic()
     presentes, suspeitos_conteudo = _presenca(ctx, todos_os_hashes, candidatos_conflito)
     tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
@@ -375,7 +381,7 @@ def _hashes_do_lote(
 
 
 def _presenca(
-    ctx: _Contexto,
+    ctx: ContextoDoAlvo,
     todos_os_hashes: dict[str, CommitRef],
     candidatos_conflito: set[str],
 ) -> tuple[dict[str, Presence], list[CommitRef]]:
@@ -415,7 +421,7 @@ def _presenca(
 
 
 def _simular_conflitos(
-    ctx: _Contexto, candidatos: list[CommitRef], presentes: dict[str, Presence]
+    ctx: ContextoDoAlvo, candidatos: list[CommitRef], presentes: dict[str, Presence]
 ) -> tuple[str, list[CommitRef], list[CommitRef], dict[str, list[str]]]:
     git = ctx.deps.git
     # Simula o mesmo lote ordenado que `atualizar` executa. Usar sempre o tip
@@ -434,8 +440,8 @@ def _simular_conflitos(
         pred = git.predict_merge(meta.parent, tip, c.hash_origem)
         if pred.conflita:
             conflitantes.append(c)
-            culpados = _culpados_do_conflito(
-                ctx, meta, pred.arquivos_conflito, ja_simulados
+            culpados = culpados_do_conflito(
+                ctx, meta.hash_origem, meta.parent, pred.arquivos_conflito, ja_simulados
             )
             if culpados:
                 conflito_causado_por[c.hash_origem] = culpados

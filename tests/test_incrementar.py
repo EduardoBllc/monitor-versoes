@@ -11,6 +11,7 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import (
     CommitRef,
     Exclusion,
@@ -30,7 +31,8 @@ from motor.engine.atualizar import (
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_da_verificacao
-from motor.errors import RecusaDeInvariante
+from motor.errors import MotorError, RecusaDeInvariante
+from motor.ports import MergePrediction
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 OUTRAS_ENTRADAS = "lista|grep"
@@ -111,6 +113,7 @@ def _deps(
         estado=estado,
         repo="r",
         commit_source=FakeCommitSource(por_chamado=commits),
+        referencia=lambda: TickioRest.referencia,
     )
 
 
@@ -216,6 +219,134 @@ def test_atualizar_para_em_conflito():
     assert resultado.status_versao.faltantes, (
         "status_versao do BLOCKED veio vazio; quer o status que o verificar calculou"
     )
+
+
+CULPADO_AUSENTE = CommitRef(hash_origem="c900", msg="feat: ch257056 cria o arquivo")
+
+
+def _git_com_culpado_ausente(classe: type[FakeGit] = FakeGit) -> FakeGit:
+    """`_git()` mais o c900 (ch257056), que nao esta em branch nenhuma da versao."""
+    g = _git(classe)
+    g.add_commit("c900", "m0", CULPADO_AUSENTE.msg, D)
+    return g
+
+
+def _culpar(g: FakeGit, commit: str, culpado: CommitRef) -> None:
+    # O arquivo e o que o FakeGit devolve no conflito do pick.
+    g.culpados_por_linha_por_commit[commit] = {"arquivo-conflito.txt": [culpado]}
+
+
+def test_atualizar_bloqueio_aponta_o_chamado_culpado_do_commit_travado():
+    g = _git_com_culpado_ausente()
+    # Sem merge_predictions: a previsao nao pega o conflito, so o pick.
+    g.conflict_on["a0"] = True
+    _culpar(g, "a0", CULPADO_AUSENTE)
+
+    resultado = atualizar(_deps(g, _estado(), ["255514"], UM), "13.7.0")
+
+    assert (resultado.status, resultado.blocked_commit, resultado.culpados) == (
+        AtualizarStatus.BLOCKED,
+        "a0",
+        ["257056"],
+    )
+
+
+def test_atualizar_atribui_o_commit_travado_que_nao_e_o_conflito_previsto():
+    g = _git_com_culpado_ausente()
+    # A simulacao para no a0, mas o pick dele sai limpo (como se o rerere o
+    # tivesse resolvido) e o lote trava no a1.
+    g.merge_predictions["a0"] = MergePrediction(
+        conflita=True, arquivos_conflito=["arquivo-conflito.txt"]
+    )
+    g.conflict_on["a1"] = True
+    _culpar(g, "a1", CULPADO_AUSENTE)
+
+    resultado = atualizar(_deps(g, _estado(), ["255514", "255515"], DOIS), "13.7.0")
+
+    assert (resultado.blocked_commit, resultado.culpados) == ("a1", ["257056"])
+    assert resultado.status_versao is not None
+    assert "a1" not in resultado.status_versao.conflito_causado_por, (
+        "o culpado do a1 tem de vir do bloqueio, nao da simulacao"
+    )
+
+
+def test_atualizar_continue_atribui_o_commit_em_que_trava_de_novo():
+    g = _git_com_culpado_ausente()
+    g.conflict_on["a0"] = True
+    g.conflict_on["a1"] = True
+    _culpar(g, "a1", CULPADO_AUSENTE)
+    deps = _deps(g, _estado(), ["255514", "255515"], DOIS)
+    assert atualizar(deps, "13.7.0").blocked_commit == "a0"
+
+    resultado = atualizar_continue(deps, "13.7.0")
+
+    assert (resultado.status, resultado.blocked_commit, resultado.culpados) == (
+        AtualizarStatus.BLOCKED,
+        "a1",
+        ["257056"],
+    )
+
+
+def _culpado_aplicado_pelo_lote() -> tuple[FakeGit, FakeEstado]:
+    g = _git()
+    g.conflict_on["a1"] = True
+    _culpar(g, "a1", CommitRef(hash_origem="a0", msg="ch255514 corrige logs"))
+    return g, _estado()
+
+
+def _culpado_ja_no_alvo() -> tuple[FakeGit, FakeEstado]:
+    g = _git()
+    g.add_commit("p200", "m0", "fix: ch200 ja na versao", D)
+    g.set_branch("13.7.0", "p200")
+    g.conflict_on["a0"] = True
+    _culpar(g, "a0", CommitRef(hash_origem="p200", msg="fix: ch200 ja na versao"))
+    estado = _estado()
+    # Base fixada em m0: com ela, o p200 so esta no alvo por ser ancestral dele.
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.7.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.6.0",
+            base_commit="m0",
+        ),
+    )
+    return g, estado
+
+
+@pytest.mark.parametrize(
+    "cenario",
+    [_culpado_aplicado_pelo_lote, _culpado_ja_no_alvo],
+    ids=["aplicado_pelo_lote", "ja_no_alvo"],
+)
+def test_atualizar_bloqueio_nao_culpa_o_que_o_alvo_ja_tem(cenario):
+    g, estado = cenario()
+
+    resultado = atualizar(_deps(g, estado, ["255514", "255515"], DOIS), "13.7.0")
+
+    assert resultado.status == AtualizarStatus.BLOCKED
+    assert resultado.culpados == []
+
+
+class _GitSemAtribuicao(FakeGit):
+    def culpados_por_linha(
+        self, base: str, parent: str, commit: str, arquivos: list[str], /
+    ) -> dict[str, list[CommitRef]]:
+        raise MotorError("git log -L falhou")
+
+
+def test_atualizar_bloqueia_mesmo_sem_conseguir_atribuir():
+    g = _git_com_culpado_ausente(_GitSemAtribuicao)
+    g.conflict_on["a0"] = True
+
+    resultado = atualizar(_deps(g, _estado(), ["255514"], UM), "13.7.0")
+
+    assert (
+        resultado.status,
+        resultado.blocked_commit,
+        resultado.arquivos_conflito,
+        resultado.culpados,
+    ) == (AtualizarStatus.BLOCKED, "a0", ["arquivo-conflito.txt"], [])
 
 
 def test_atualizar_abort_remove_worktree():
