@@ -28,3 +28,26 @@ def test_fake_registra_e_falha_sob_demanda():
 
     with pytest.raises(BackendIndisponivel):
         FakeNotificador(falhar=True).notificar(TITULO, CORPO)
+
+
+def test_desktop_traduz_falha_do_construtor(monkeypatch: pytest.MonkeyPatch):
+    def quebra(*_a: object, **_k: object) -> None:
+        raise RuntimeError("sem backend")
+
+    monkeypatch.setattr(DesktopNotifierSync, "__init__", quebra)
+
+    with pytest.raises(BackendIndisponivel):
+        NotificadorDesktop().notificar(TITULO, CORPO)
+
+
+def test_desktop_repassa_titulo_e_corpo(monkeypatch: pytest.MonkeyPatch):
+    recebido: dict[str, object] = {}
+
+    def grava(_self: object, **kwargs: object) -> None:
+        recebido.update(kwargs)
+
+    monkeypatch.setattr(DesktopNotifierSync, "send", grava)
+
+    NotificadorDesktop().notificar(TITULO, CORPO)
+
+    assert recebido == {"title": TITULO, "message": CORPO}
