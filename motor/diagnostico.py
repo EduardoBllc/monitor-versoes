@@ -1,7 +1,7 @@
 """Diagnóstico da instalação: checa cada peça e diz qual falhou e como corrigir.
 
 Tudo chega por parâmetro (ambiente, abertura de sessão, cliente HTTP, `head` do
-alembic), para ser testável sem banco real nem rede. Não tem efeito colateral:
+alembic, config central), para ser testável sem banco real nem rede. Não tem efeito colateral:
 não escreve no banco, não roda git, não exige repo cadastrado.
 """
 
@@ -18,8 +18,9 @@ from sqlalchemy.orm import Session
 
 from motor.adapters.commitsource.bitbucket import verificar_credenciais
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.adapters.tasksource.tickio import TickioRest
+from motor.config import ConfigProjeto
 from motor.errors import MotorError, formatar_com_notas
+from motor.montagem import instanciar_fonte_tarefas
 
 
 class Estado(enum.Enum):
@@ -49,7 +50,6 @@ _VARIAVEIS_BANCO = (
     "DATABASE_USER",
     "DATABASE_PASSWORD",
 )
-_VARIAVEIS_TICKIO = ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD")
 
 
 def _falha(peca: str, erro: MotorError, correcao: str) -> Resultado:
@@ -77,20 +77,21 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
     return problemas
 
 
-def diagnosticar(
+# Seis parâmetros, cinco nomeados: cada um é uma peça injetada para o teste
+# rodar sem banco, rede nem arquivo de config reais.
+def diagnosticar(  # noqa: PLR0913
     env: Mapping[str, str],
     *,
     abrir_sessao: Callable[..., AbstractContextManager[Session]],
     head: str,
     ambiente: str,
+    config_central: Callable[[], ConfigProjeto],
     cliente: httpx.Client | None = None,
 ) -> list[Resultado]:
     arquivo = ".env.development" if ambiente == "development" else ".env"
     migrar = "make migrate-dev" if ambiente == "development" else "make migrate"
 
-    problemas_banco = _problemas_do_banco(env)
-    ausentes_tickio = _variaveis_ausentes(env, _VARIAVEIS_TICKIO)
-    problemas = problemas_banco + ausentes_tickio
+    problemas = _problemas_do_banco(env)
 
     resultados = [
         Resultado(
@@ -103,10 +104,10 @@ def diagnosticar(
         else Resultado("Variáveis", Estado.OK, "todas preenchidas")
     ]
     resultados += _banco(
-        abrir_sessao, problemas_banco, head, migrar, _backend(env) == "sqlite"
+        abrir_sessao, problemas, head, migrar, _backend(env) == "sqlite"
     )
     resultados.append(_projects_dir(env))
-    resultados.append(_tickio(env, ausentes_tickio, cliente))
+    resultados.append(_tarefas(config_central))
     resultados.append(_bitbucket(env, cliente))
     return resultados
 
@@ -187,24 +188,37 @@ def _projects_dir(env: Mapping[str, str]) -> Resultado:
     )
 
 
-def _tickio(
-    env: Mapping[str, str], ausentes: list[str], cliente: httpx.Client | None
-) -> Resultado:
-    if ausentes:
-        return Resultado(
-            "Tickio", Estado.NAO_VERIFICADA, "variáveis ausentes (ver Variáveis)"
-        )
-    fonte = TickioRest(
-        base_url=env["TICKIO_BASE_URL"],
-        usuario=env["TICKIO_USER"],
-        senha=env["TICKIO_PASSWORD"],
-        client=cliente,
-    )
+def _tarefas(config_central: Callable[[], ConfigProjeto]) -> Resultado:
+    """A fonte de tarefas do `config.toml` central: o diagnóstico não tem repo.
+
+    Credencial só é conferida se o plugin oferece `verificar_credenciais`.
+    """
+    plugins = "conferir [tarefas] fonte e os plugins instalados"
     try:
-        fonte.verificar_credenciais()
+        config = config_central()
     except MotorError as e:
-        return _falha("Tickio", e, "conferir TICKIO_*")
-    return Resultado("Tickio", Estado.OK, "autenticação aceita")
+        return _falha("Tarefas", e, plugins)
+    if config.fonte_tarefas is None:
+        return Resultado(
+            "Tarefas",
+            Estado.NAO_CONFIGURADO,
+            "sem [tarefas] fonte no config.toml central",
+            "definir [tarefas] fonte no config.toml central",
+        )
+    try:
+        fonte = instanciar_fonte_tarefas(config)
+    except MotorError as e:
+        return _falha("Tarefas", e, plugins)
+    verificar = getattr(fonte, "verificar_credenciais", None)
+    if not callable(verificar):
+        return Resultado(
+            "Tarefas", Estado.NAO_VERIFICADA, "a fonte não oferece verificação"
+        )
+    try:
+        verificar()
+    except MotorError as e:
+        return _falha("Tarefas", e, "conferir as credenciais da fonte no .env")
+    return Resultado("Tarefas", Estado.OK, "credenciais aceitas")
 
 
 def _bitbucket(env: Mapping[str, str], cliente: httpx.Client | None) -> Resultado:

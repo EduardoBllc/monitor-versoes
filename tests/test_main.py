@@ -1098,6 +1098,28 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     assert estado.value in capsys.readouterr().out
 
 
+def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text('[tarefas]\nfonte = "tests.fontes_falsas:FonteFixa"\n')
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    monkeypatch.setattr(cli, "head", lambda: "rev")
+    recebido = {}
+
+    def falso(*a, **k):
+        recebido["config"] = k["config_central"]()
+        return []
+
+    monkeypatch.setattr(cli, "diagnosticar", falso)
+
+    main(["diagnostico"])
+
+    fonte = recebido["config"].fonte_tarefas
+    assert fonte is not None and fonte.valor == "tests.fontes_falsas:FonteFixa"
+    assert fonte.origem == "central"
+
+
 # -- migrar-estado ------------------------------------------------------------
 
 

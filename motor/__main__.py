@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TextIO
 
 from motor.adapters.estado.postgres import PostgresEstado
+from motor.config import carregar_config
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.referencia import FonteReferencia, formatar_referencia
@@ -107,6 +108,7 @@ def _diagnostico(args: argparse.Namespace) -> None:
         abrir_sessao=abrir_sessao,
         head=head(),
         ambiente=args.env,
+        config_central=lambda: carregar_config(None),
     )
     for resultado in resultados:
         print(formatar(resultado))
@@ -115,7 +117,7 @@ def _diagnostico(args: argparse.Namespace) -> None:
 
 
 # Comandos que não passam pela montagem de dependências do `main()` (repos,
-# Tickio, fontes): cada um cuida do próprio banco, ou não usa.
+# fonte de tarefas, fontes de commit): cada um cuida do próprio banco, ou não usa.
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "init": _init,
     "migrar": _migrar,
