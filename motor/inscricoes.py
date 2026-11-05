@@ -33,7 +33,9 @@ log = logging.getLogger(__name__)
 INTERVALO_PADRAO = "30m"
 ARQUIVO_INSCRICOES = "inscricoes.json"
 SEM_PROCESSO = -1
-_PADRAO_INTERVALO = re.compile(r"^([1-9]\d*)([mh])$")
+PREFIXO_TITULO = "monitor-versoes"
+MENSAGEM_SEM_RESULTADO = "execução terminou com código {codigo} sem gravar resultado"
+_PADRAO_INTERVALO = re.compile(r"([1-9]\d*)([mh])")
 
 
 class UnidadeIntervalo(StrEnum):
@@ -77,7 +79,7 @@ class Inscricao:
 
 
 def parse_intervalo(texto: str) -> timedelta:
-    m = _PADRAO_INTERVALO.match(texto)
+    m = _PADRAO_INTERVALO.fullmatch(texto)
     if m is None:
         raise ErroDeEntrada(
             f"intervalo inválido: {texto!r} (esperado Nm ou Nh, N >= 1)"
@@ -143,13 +145,11 @@ def _de_json(d: dict[str, Any]) -> Inscricao:
 
 def carregar(caminho: Path) -> list[Inscricao]:
     try:
-        texto = caminho.read_text(encoding="utf-8")
+        return [_de_json(d) for d in json.loads(caminho.read_text(encoding="utf-8"))]
     except FileNotFoundError:
         return []
     except OSError as e:
         raise RespostaInvalida(f"{caminho}: não foi possível ler ({e})") from e
-    try:
-        return [_de_json(d) for d in json.loads(texto)]
     except (ValueError, KeyError, TypeError) as e:
         raise RespostaInvalida(
             f"{caminho}: arquivo de inscrições inválido ({e!r})"
@@ -195,19 +195,25 @@ def vencidas(inscricoes: list[Inscricao], agora: datetime) -> list[Inscricao]:
     ]
 
 
-def registrar_execucao(  # noqa: PLR0913 - assinatura fixada pelo plano
+def registrar_execucao(
     caminho: Path,
-    clone: str,
-    versao: str,
+    inscricao: Inscricao,
     r: Resultado,
     notificador: Notificador,
     agora: datetime,
-    titulo: str,
 ) -> None:
     atuais = carregar(caminho)
-    alvo = next((i for i in atuais if (i.clone, i.versao) == (clone, versao)), None)
+    alvo = next(
+        (
+            i
+            for i in atuais
+            if (i.clone, i.versao) == (inscricao.clone, inscricao.versao)
+        ),
+        None,
+    )
     if alvo is None:
         return
+    titulo = f"{PREFIXO_TITULO} {inscricao.versao}"
     for e in eventos(alvo.ultima, r):
         try:
             notificador.notificar(titulo, f"{_ROTULOS[e.tipo]}: {e.detalhe}")
@@ -241,18 +247,9 @@ def rodar(
         existe, depois = _ultima_de(caminho, i.clone, i.versao)
         if existe and depois == i.ultima:
             r = Resultado(
-                Desfecho.ERRO,
-                mensagem=f"execução terminou com código {codigo} sem gravar resultado",
+                Desfecho.ERRO, mensagem=MENSAGEM_SEM_RESULTADO.format(codigo=codigo)
             )
-            registrar_execucao(
-                caminho,
-                i.clone,
-                i.versao,
-                r,
-                notificador,
-                agora,
-                f"monitor-versoes {i.versao}",
-            )
+            registrar_execucao(caminho, i, r, notificador, agora)
 
 
 def disparar_subprocesso(i: Inscricao) -> int:
