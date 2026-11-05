@@ -15,6 +15,7 @@ vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aq
 from __future__ import annotations
 
 import functools
+import hashlib
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -147,6 +148,29 @@ def _proposta(tasks: TaskSource) -> Referencia | None:
     return proposta if isinstance(proposta, Referencia) else None
 
 
+def _identidade_das_entradas(
+    tasks: TaskSource, commits: CommitSource, config: ConfigProjeto
+) -> str:
+    """O que alimenta a resolucao do alvo: trocar qualquer parte invalida o
+    carimbo da verificacao."""
+    fonte_tasks = type(tasks).__name__
+    if isinstance(tasks, ManualList):
+        try:
+            with open(tasks.caminho, "rb") as f:
+                fonte_tasks += ":" + hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            pass  # a propria ManualList cobra a falta na primeira busca
+    return repr(
+        (
+            fonte_tasks,
+            type(commits).__name__,
+            _proposta(tasks),
+            config.padrao_referencia,
+            config.piso,
+        )
+    )
+
+
 # Seis parametros, cinco deles nomeados e com default salvo a referencia: e
 # configuracao da montagem, nao uma funcao que faz cinco coisas.
 def montar_commit_source(  # noqa: PLR0913
@@ -215,24 +239,28 @@ def montar_deps(
         config.padrao_referencia,
         config.arquivos,
     )
+    commit_source = montar_commit_source(
+        git,
+        referencia=referencia,
+        bitbucket=CredenciaisBitbucket(
+            token=bitbucket.token or os.environ.get("BITBUCKET_TOKEN", ""),
+            email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),
+        ),
+        estado=estado,
+        repo=info.nome,
+        progresso=progresso,
+    )
     return Deps(
         git=git,
         tasks=fonte_tasks,
         estado=estado,
         repo=info.nome,
-        commit_source=montar_commit_source(
-            git,
-            referencia=referencia,
-            bitbucket=CredenciaisBitbucket(
-                token=bitbucket.token or os.environ.get("BITBUCKET_TOKEN", ""),
-                email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),
-            ),
-            estado=estado,
-            repo=info.nome,
-            progresso=progresso,
-        ),
+        commit_source=commit_source,
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
         piso_versao=config.piso,
         referencia=referencia,
+        identidade_das_entradas=_identidade_das_entradas(
+            fonte_tasks, commit_source, config
+        ),
     )

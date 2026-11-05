@@ -31,7 +31,7 @@ from motor.domain.version import (
     versoes_abertas,
 )
 from motor.engine.deps import Deps
-from motor.engine.vigencia import impressao_do_julgamento
+from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
@@ -188,6 +188,8 @@ def verificar_sem_fetch(
 ) -> VersionStatus:
     """O `verificar` sem o fetch inicial, para quem já buscou as refs."""
     inicio = time.monotonic()
+    # Hora de antes das leituras externas: a validade conta da idade dos dados.
+    verificado_em = deps.agora()
     todas = deps.git.list_version_branches()
     tags = deps.git.list_version_tags()
     abertas = versoes_abertas(todas, tags)
@@ -263,8 +265,10 @@ def verificar_sem_fetch(
             versao,
             Verificacao(
                 tip=tip,
-                impressao=impressao_do_julgamento(exclusoes, sem_entrega),
-                verificado_em=deps.agora(),
+                impressao=impressao_da_verificacao(
+                    exclusoes, sem_entrega, deps.identidade_das_entradas
+                ),
+                verificado_em=verificado_em,
                 status=status,
             ),
         )

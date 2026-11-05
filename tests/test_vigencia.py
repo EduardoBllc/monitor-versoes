@@ -16,7 +16,7 @@ from motor.domain.types import (
 from motor.engine.deps import Deps
 from motor.engine.vigencia import (
     VALIDADE_VERIFICACAO,
-    impressao_do_julgamento,
+    impressao_da_verificacao,
     verificacao_vigente,
 )
 
@@ -27,10 +27,16 @@ UM_SEGUNDO = datetime.timedelta(seconds=1)
 A = Exclusion(hash_origem="a", versao_numero=None, motivo="x")
 A_NA_VERSAO = Exclusion(hash_origem="a", versao_numero=VERSAO, motivo="x")
 B = Exclusion(hash_origem="b", versao_numero=VERSAO, motivo="y")
+ENTRADAS = "tickio|bitbucket"
+OUTRAS_ENTRADAS = "lista|grep"
 
 
 def _montar(
-    *, agora: datetime.datetime, impressao: str | None = None, tip: str = TIP
+    *,
+    agora: datetime.datetime,
+    impressao: str | None = None,
+    tip: str = TIP,
+    entradas: str = ENTRADAS,
 ) -> Deps:
     git = FakeGit()
     git.add_commit(TIP, "", "raiz", HORA)
@@ -50,7 +56,7 @@ def _montar(
         VERSAO,
         Verificacao(
             tip=tip,
-            impressao=impressao or impressao_do_julgamento([], {}),
+            impressao=impressao or impressao_da_verificacao([], {}, ENTRADAS),
             verificado_em=HORA,
             status=VersionStatus(),
         ),
@@ -61,28 +67,41 @@ def _montar(
         estado=estado,
         repo="r",
         agora=lambda: agora,
+        identidade_das_entradas=entradas,
     )
 
 
 def test_impressao_muda_quando_exclusao_muda():
-    assert impressao_do_julgamento([A], {}) != impressao_do_julgamento([B], {})
+    assert impressao_da_verificacao([A], {}, ENTRADAS) != impressao_da_verificacao(
+        [B], {}, ENTRADAS
+    )
 
 
 def test_impressao_muda_quando_sem_entrega_muda():
-    assert impressao_do_julgamento([], {"1": "m"}) != impressao_do_julgamento([], {})
+    assert impressao_da_verificacao(
+        [], {"1": "m"}, ENTRADAS
+    ) != impressao_da_verificacao([], {}, ENTRADAS)
+
+
+def test_impressao_muda_quando_as_entradas_mudam():
+    assert impressao_da_verificacao([], {}, ENTRADAS) != impressao_da_verificacao(
+        [], {}, OUTRAS_ENTRADAS
+    )
 
 
 def test_impressao_independe_da_ordem():
-    assert impressao_do_julgamento([A, B], {}) == impressao_do_julgamento([B, A], {})
+    assert impressao_da_verificacao([A, B], {}, ENTRADAS) == impressao_da_verificacao(
+        [B, A], {}, ENTRADAS
+    )
 
 
 def test_impressao_aceita_exclusao_com_e_sem_versao():
-    assert impressao_do_julgamento([A, A_NA_VERSAO], {}) == impressao_do_julgamento(
-        [A_NA_VERSAO, A], {}
-    )
-    assert impressao_do_julgamento([A, A_NA_VERSAO], {}) != impressao_do_julgamento(
-        [A], {}
-    )
+    assert impressao_da_verificacao(
+        [A, A_NA_VERSAO], {}, ENTRADAS
+    ) == impressao_da_verificacao([A_NA_VERSAO, A], {}, ENTRADAS)
+    assert impressao_da_verificacao(
+        [A, A_NA_VERSAO], {}, ENTRADAS
+    ) != impressao_da_verificacao([A], {}, ENTRADAS)
 
 
 def test_vigente_dentro_da_validade_inclusive_no_limite():
@@ -110,3 +129,8 @@ def test_impressao_diferente_nao_vale():
 def test_sem_carimbo_nao_vale():
     deps = _montar(agora=HORA)
     assert verificacao_vigente(deps, "14.0.0") is None
+
+
+def test_entradas_diferentes_nao_vale():
+    deps = _montar(agora=HORA, entradas=OUTRAS_ENTRADAS)
+    assert verificacao_vigente(deps, VERSAO) is None

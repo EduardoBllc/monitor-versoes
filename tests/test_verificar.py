@@ -13,7 +13,7 @@ from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.engine.vigencia import impressao_do_julgamento
+from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
 from motor.ports import MergePrediction
 
@@ -1008,7 +1008,9 @@ def test_verificar_grava_carimbo_com_tip_impressao_hora_e_status():
     carimbo = deps.estado.verificacao("r", "14.0.0")
     assert carimbo is not None
     assert carimbo.tip == deps.git.resolve_ref("14.0.0")
-    assert carimbo.impressao == impressao_do_julgamento([], {})
+    assert carimbo.impressao == impressao_da_verificacao(
+        [], {}, deps.identidade_das_entradas
+    )
     assert carimbo.verificado_em == AGORA
     assert carimbo.status == status
 
@@ -1070,3 +1072,16 @@ def test_verificar_devolve_faltantes_na_ordem_do_grafo():
     status = verificar(_deps(git, tasks, commits, estado), "14.0.0")
 
     assert [c.hash_origem for c in status.faltantes] == ["a0", "a1"]
+
+
+def test_carimbo_leva_a_hora_do_inicio_da_varredura():
+    """A validade conta da idade dos dados lidos, nao do fim da varredura."""
+    deps = _cenario_simples()
+    horas = iter([AGORA, AGORA + datetime.timedelta(minutes=2)])
+    deps.agora = lambda: next(horas)
+
+    verificar(deps, "14.0.0")
+
+    carimbo = deps.estado.verificacao("r", "14.0.0")
+    assert carimbo is not None
+    assert carimbo.verificado_em == AGORA

@@ -29,10 +29,11 @@ from motor.engine.atualizar import (
 )
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
-from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_do_julgamento
+from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_da_verificacao
 from motor.errors import RecusaDeInvariante
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+OUTRAS_ENTRADAS = "lista|grep"
 D1 = D + datetime.timedelta(minutes=1)
 
 UM = {
@@ -541,6 +542,7 @@ class _Cenario:
     tarefas: _TarefasContadas
     commits: _CommitsContados
     hora: datetime.datetime = D
+    entradas: str = ""
 
     def buscas(self) -> tuple[int, int]:
         """Consultas ao Tickio e à fonte de commits: crescem a cada varredura."""
@@ -555,6 +557,7 @@ class _Cenario:
             repo="r",
             commit_source=self.commits,
             agora=lambda: self.hora,
+            identidade_das_entradas=self.entradas,
         )
 
 
@@ -628,6 +631,20 @@ def test_atualizar_verifica_de_novo_se_a_exclusao_mudou():
     assert resultado.aplicados == [], "o commit excluido nao pode ser aplicado"
 
 
+def test_atualizar_verifica_de_novo_se_as_entradas_mudaram():
+    """Outra fonte, referencia ou piso e outro pedido do operador, nao o mesmo lote."""
+    c = _cenario()
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.entradas = OUTRAS_ENTRADAS
+    c.hora = D + UM_MINUTO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() > varredura, "tinha de varrer de novo"
+    assert resultado.reaproveitada_de is None
+
+
 def test_atualizar_recusa_tag_nova_mesmo_com_carimbo_vigente():
     """A trava de tag nao usa cache: o carimbo vigente nao dispensa o fetch."""
     c = _cenario(git=_git(classe=_GitQueTagueiaNoFetch))
@@ -645,7 +662,7 @@ def test_atualizar_recusa_tag_nova_mesmo_com_carimbo_vigente():
         "13.7.0",
         Verificacao(
             tip="m0",
-            impressao=impressao_do_julgamento([], {}),
+            impressao=impressao_da_verificacao([], {}, c.deps.identidade_das_entradas),
             verificado_em=D,
             status=VersionStatus(faltantes=UM["255514"]),
         ),
@@ -675,7 +692,9 @@ def test_segundo_atualizar_seguido_verifica_de_novo():
     [(False, UMA_VEZ), (True, NENHUMA_VEZ)],
     ids=["sem_carimbo", "com_carimbo"],
 )
-def test_atualizar_faz_um_fetch_um_pull_e_uma_ordenacao(com_carimbo, ordenacoes):
+def test_atualizar_faz_um_fetch_um_pull_e_no_maximo_uma_ordenacao(
+    com_carimbo, ordenacoes
+):
     """Com carimbo a ordem vem dele: o caminho reaproveitado nao reordena."""
     git = _git(_GitContado)
     assert isinstance(git, _GitContado)

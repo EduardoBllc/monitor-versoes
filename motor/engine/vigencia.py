@@ -12,12 +12,12 @@ VALIDADE_VERIFICACAO = datetime.timedelta(minutes=5)
 ZERO = datetime.timedelta()
 
 
-def impressao_do_julgamento(
-    exclusoes: list[Exclusion], sem_entrega: dict[str, str]
+def impressao_da_verificacao(
+    exclusoes: list[Exclusion], sem_entrega: dict[str, str], entradas: str
 ) -> str:
     # repr e não tupla: versao_numero None e str não se comparam.
     itens = sorted(repr(x) for x in (*exclusoes, *sem_entrega.items()))
-    return hashlib.sha256("\n".join(itens).encode()).hexdigest()
+    return hashlib.sha256("\n".join([entradas, *itens]).encode()).hexdigest()
 
 
 def verificacao_vigente(deps: Deps, versao: str) -> Verificacao | None:
@@ -29,7 +29,9 @@ def verificacao_vigente(deps: Deps, versao: str) -> Verificacao | None:
         return None
     if v.tip != deps.git.resolve_ref(versao):
         return None
-    atual = impressao_do_julgamento(
-        deps.estado.exclusoes(deps.repo), deps.estado.sem_entrega(deps.repo)
+    atual = impressao_da_verificacao(
+        deps.estado.exclusoes(deps.repo),
+        deps.estado.sem_entrega(deps.repo),
+        deps.identidade_das_entradas,
     )
     return v if v.impressao == atual else None
