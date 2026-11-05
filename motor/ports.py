@@ -68,7 +68,7 @@ class MergePrediction:
 
 
 class TaskSource(Protocol):
-    """Fonte de tarefas (Tickio, lista manual)."""
+    """Fonte de tarefas (plugin da config, lista manual)."""
 
     def fetch(self, versao: str, /) -> list[str]:
         """Numeros de chamado marcados para a versao."""
@@ -326,7 +326,7 @@ class EstadoRepo(Protocol):
     registro unico e imutavel para versao liberada.
     """
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
+    def registrar_repo(self, nome: str, /) -> None:
         """Cadastra um repo canonico. RecusaDeInvariante se nome ou alias ja existir."""
         ...
 

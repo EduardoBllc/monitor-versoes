@@ -58,7 +58,7 @@ def test_add_note_sobrevive_ao_reraise():
     """
     with pytest.raises(BackendIndisponivel) as capturado:
         try:
-            raise BackendIndisponivel("Tickio fora do ar")
+            raise BackendIndisponivel("rastreador fora do ar")
         except MotorError as e:
             e.add_note("buscando tasks da versao 13.34.0")
             raise

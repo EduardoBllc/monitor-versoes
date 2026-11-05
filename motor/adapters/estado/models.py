@@ -67,9 +67,6 @@ class Repo(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(unique=True)  # basename do --repo
-    tickio_sistema_id: Mapped[int]  # ID do sistema NO TICKIO, vai em ?sistema=
-    # Menor versao que conta como fonte de alvo (motor.atribuicoes).
-    piso_versao: Mapped[str] = mapped_column(server_default="13.0.0")
 
 
 class RepoAlias(Base):
@@ -112,14 +109,14 @@ class Atribuicao(Base):
 
     Guarda `marcada` desnormalizado de proposito: uma tabela `tarefa` global
     faria o snapshot congelado apontar para linha viva, e o registro do que
-    saiu em 2026 mudaria ao editarem algo no Tickio em 2027.
+    saiu em 2026 mudaria ao editarem algo no rastreador em 2027.
     """
 
     __tablename__ = "atribuicao"
 
     versao_id: Mapped[int] = mapped_column(ForeignKey("versao.id"), primary_key=True)
     chamado: Mapped[str] = mapped_column(primary_key=True)
-    marcada: Mapped[str]  # versao para a qual o Tickio marcou
+    marcada: Mapped[str]  # versao para a qual o rastreador marcou
     estado: Mapped[str]  # ck_atribuicao_estado
 
 

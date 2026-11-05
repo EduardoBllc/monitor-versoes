@@ -18,7 +18,7 @@ from motor.engine.vigencia import (
     impressao_da_verificacao,
     verificacao_vigente,
 )
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 VERSAO = "13.7.0"
 TIP = "t1"
@@ -27,7 +27,7 @@ UM_SEGUNDO = datetime.timedelta(seconds=1)
 A = Exclusion(hash_origem="a", versao_numero=None, motivo="x")
 A_NA_VERSAO = Exclusion(hash_origem="a", versao_numero=VERSAO, motivo="x")
 B = Exclusion(hash_origem="b", versao_numero=VERSAO, motivo="y")
-ENTRADAS = "tickio|bitbucket"
+ENTRADAS = "fonte|bitbucket"
 
 
 def _montar(
@@ -60,13 +60,13 @@ def _montar(
         ),
     )
     return Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,
         repo="r",
         agora=lambda: agora,
-        identidade_das_entradas=ENTRADAS,
+        identidade_das_entradas=lambda: ENTRADAS,
     )
 
 

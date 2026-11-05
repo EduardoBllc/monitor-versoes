@@ -47,7 +47,7 @@ class NaoEncontrado(MotorError):
 class BackendIndisponivel(MotorError):
     """O servico nao respondeu, ou respondeu que nao da.
 
-    Banco fora do ar, binario do git ausente ou velho demais, HTTP do Tickio ou
+    Banco fora do ar, binario do git ausente ou velho demais, HTTP do rastreador ou
     do Bitbucket. E o unico ramo em que o CLI imprime dica de conserto de
     ambiente (`docker compose up -d`).
     """
@@ -58,7 +58,7 @@ class RespostaInvalida(MotorError):
 
     JSON que nao casa nenhuma forma esperada, data impossivel de parsear, saida
     de git em formato inesperado, coluna com valor fora do dominio. E a
-    categoria da issue #42 — o corpo de resposta do Tickio nunca foi
+    categoria da issue #42 — o corpo de resposta do rastreador nunca foi
     observado — e a que um adapter de terceiro mais usa.
     """
 

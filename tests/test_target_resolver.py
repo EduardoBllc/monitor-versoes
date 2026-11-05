@@ -145,15 +145,15 @@ def test_resolve_propaga_erro_da_fonte_como_motorerror():
 
 def test_o_tipo_do_adapter_sobrevive_a_fronteira_do_resolver():
     """Embrulhar em MotorError puro achatava a subclasse exatamente onde o
-    chamador precisa dela: distinguir "o Tickio esta fora" de "o Tickio
+    chamador precisa dela: distinguir "o rastreador esta fora" de "o rastreador
     respondeu lixo".
     """
 
-    class _TickioFora:
+    class _FonteFora:
         def fetch(self, versao: str, /) -> list[str]:
-            raise BackendIndisponivel("Tickio respondeu 503")
+            raise BackendIndisponivel("rastreador respondeu 503")
 
-    resolver = TargetResolver(tasks=_TickioFora(), commits=FakeCommitSource())
+    resolver = TargetResolver(tasks=_FonteFora(), commits=FakeCommitSource())
 
     with pytest.raises(BackendIndisponivel) as capturado:
         resolver.resolve("13.34.0", ["13.34.0"])
@@ -163,11 +163,11 @@ def test_o_tipo_do_adapter_sobrevive_a_fronteira_do_resolver():
 
 
 def test_excecao_fora_do_contrato_propaga_sem_embrulho():
-    class _TickioComBug:
+    class _FonteComBug:
         def fetch(self, versao: str, /) -> list[str]:
             raise RuntimeError("bug no adapter")
 
-    resolver = TargetResolver(tasks=_TickioComBug(), commits=FakeCommitSource())
+    resolver = TargetResolver(tasks=_FonteComBug(), commits=FakeCommitSource())
 
     with pytest.raises(RuntimeError, match="bug no adapter"):
         resolver.resolve("13.34.0", ["13.34.0"])

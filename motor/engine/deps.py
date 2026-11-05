@@ -57,5 +57,7 @@ class Deps:
     # cobra a falta do padrao.
     referencia: FonteReferencia = _sem_referencia
     # Fontes, referencia e piso desta invocacao, montados no front-end: o
-    # carimbo da verificacao so vale para as mesmas entradas.
-    identidade_das_entradas: str = ""
+    # carimbo da verificacao so vale para as mesmas entradas. Fonte, nao valor:
+    # calcular a identidade exige o plugin da fonte de tarefas, e a montagem
+    # nao o carrega.
+    identidade_das_entradas: Callable[[], str] = lambda: ""

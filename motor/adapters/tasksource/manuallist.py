@@ -1,4 +1,4 @@
-"""ManualList: fallback sempre disponivel quando a API do Tickio nao responde.
+"""ManualList: fallback sempre disponivel quando o rastreador nao responde.
 
 Arquivo texto com um id de tarefa por linha; `#` comenta.
 """

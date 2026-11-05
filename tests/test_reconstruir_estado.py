@@ -6,22 +6,22 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import RepoInfo
 from motor.engine.deps import Deps
 from motor.engine.reconstruir_estado import ReconstructStatus, reconstruir_estado
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.fontes_falsas import REFERENCIA_CH
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 
 def _deps(git, estado) -> Deps:
     return Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,
         repo="r",
         commit_source=FakeCommitSource(),
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
     )
 
 

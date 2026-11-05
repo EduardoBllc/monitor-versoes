@@ -6,10 +6,10 @@ import pytest
 
 from motor.atribuicoes import Composta, Exata, liberadas_apos_corte
 from motor.domain.types import ContextoAtribuicao
-from motor.esquemas.vendabem import VendaBem
 from motor.plugins import carregar_plugin
+from tests.versionamento import Escalonado
 
-_ORDENAR = VendaBem().ordenar
+_ORDENAR = Escalonado().ordenar
 
 
 def _quando(mes: int) -> datetime.datetime:
@@ -75,7 +75,7 @@ def test_composta_inclui_o_proprio_alvo_quando_ainda_nao_tem_branch():
 
 
 def test_composta_respeita_o_piso_do_repo():
-    # 13.1.0 do vb2web: branch legada sem tag que o Tickio nao conhece
+    # 13.1.0 do vb2web: branch legada sem tag que o rastreador nao conhece
     contexto = _contexto(["13.1.0", "15.2.0"], piso="14.0.0")
     assert Composta().fontes("15.2.0", contexto) == ["15.2.0"]
 

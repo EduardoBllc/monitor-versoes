@@ -18,6 +18,7 @@ dev = [
     "testcontainers[postgres]",
     "ruff>=0.17.1",
     "pre-commit>=4.7.0",
+    "tomlkit>=0.13",
 ]
 
 [project.scripts]
@@ -25,7 +26,6 @@ motor = "motor.__main__:main"
 
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"
-vendabem = "motor.esquemas.vendabem:VendaBem"
 
 [project.entry-points."monitor_versoes.atribuicoes"]
 exata = "motor.atribuicoes:Exata"
@@ -52,7 +52,7 @@ markers = [
 # pontos de atribuicao (motor/montagem.py e tests/test_conformidade.py).
 [tool.mypy]
 python_version = "3.14"
-files = ["motor", "tests"]
+files = ["motor", "tests", "scripts"]
 strict = true
 
 # Corpo de funcao de teste sem anotacao e ruido, nao defeito: exigir assinatura

@@ -21,7 +21,6 @@ from motor.adapters.commitsource.bitbucket import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.referencia import Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import (
@@ -30,6 +29,7 @@ from motor.errors import (
     MotorError,
     RespostaInvalida,
 )
+from tests.fontes_falsas import REFERENCIA_CH
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
@@ -65,7 +65,7 @@ def _git_com_master(*hashes_na_master: str, classe: type[FakeGit] = FakeGit) -> 
 
 
 def _fonte(
-    handler, git: FakeGit, estado=None, referencia=TickioRest.referencia
+    handler, git: FakeGit, estado=None, referencia=REFERENCIA_CH
 ) -> BitbucketPRCommitSource:
     estado = _estado_vazio() if estado is None else estado
     client = httpx.Client(
@@ -360,7 +360,7 @@ def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
         base_url="http://h:porta",
         estado=_estado_vazio(),
         repo_estado=REPO_ESTADO,
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         ref_principal=lambda: "origin/master",
     )
 
@@ -399,7 +399,7 @@ def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         estado=_estado_vazio(),
         repo_estado=REPO_ESTADO,
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         ref_principal=lambda: "origin/master",
     )
     assert urls_pedidas == [], "construir nao pode tocar o git"

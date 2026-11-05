@@ -11,7 +11,6 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.atribuicoes import Exata
 from motor.domain.types import (
     CommitRef,
@@ -35,7 +34,8 @@ from motor.errors import MotorError, RecusaDeInvariante
 from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
 from motor.services.versionamento import Versionamento
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.fontes_falsas import REFERENCIA_CH
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 OUTRAS_ENTRADAS = "lista|grep"
@@ -111,13 +111,13 @@ def _deps(
     git, estado, chamados: list[str], commits: dict[str, list[CommitRef]]
 ) -> Deps:
     return Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": chamados}),
         estado=estado,
         repo="r",
         commit_source=FakeCommitSource(por_chamado=commits),
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
     )
 
 
@@ -148,7 +148,7 @@ def test_atualizar_aplica_tudo():
 
 
 def test_atualizar_nao_marca_como_aplicada_tarefa_sem_commit():
-    """Chamado marcado no Tickio sem commit nenhum achado nao entregou nada, e
+    """Chamado marcado no rastreador sem commit nenhum achado nao entregou nada, e
     um lote bem-sucedido a respeito dele nao aplicou coisa alguma. Marcar tudo
     de uma vez como 'aplicado' inventaria entrega para a tarefa que ninguem
     achou.
@@ -450,7 +450,7 @@ def test_atualizar_recusa_versao_com_tag():
     git = FakeGit(branches={"13.34.0": "b1"}, tags={"13.34.0": True})
     estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     deps = Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,
@@ -681,20 +681,20 @@ class _Cenario:
     entradas: str = ""
 
     def buscas(self) -> tuple[int, int]:
-        """Consultas ao Tickio e à fonte de commits: crescem a cada varredura."""
+        """Consultas à fonte de tarefas e à fonte de commits: crescem a cada varredura."""
         return self.tarefas.buscas, self.commits.buscas
 
     @property
     def deps(self) -> Deps:
         return Deps(
-            versionamento=VENDABEM_COMPOSTA,
+            versionamento=ESCALONADO_COMPOSTA,
             git=self.git,
             tasks=self.tarefas,
             estado=self.estado,
             repo="r",
             commit_source=self.commits,
             agora=lambda: self.hora,
-            identidade_das_entradas=self.entradas,
+            identidade_das_entradas=lambda: self.entradas,
         )
 
 
@@ -799,7 +799,9 @@ def test_atualizar_recusa_tag_nova_mesmo_com_carimbo_vigente():
         "13.7.0",
         Verificacao(
             tip="m0",
-            impressao=impressao_da_verificacao([], {}, c.deps.identidade_das_entradas),
+            impressao=impressao_da_verificacao(
+                [], {}, c.deps.identidade_das_entradas()
+            ),
             verificado_em=D,
             status=VersionStatus(faltantes=UM["255514"]),
         ),

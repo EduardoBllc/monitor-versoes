@@ -50,7 +50,7 @@ def _padrao_do_chamado(ref: Referencia, chamado: str) -> re.Pattern[str]:
     A fronteira e o conserto de um bug antigo: com `startswith`/`in` crus, o
     chamado 255514 casava com a PR de 2555145 — nada via onde o ID terminava,
     e o chamado curto roubava a entrega do longo. So pelo alfabeto (e nao pelo
-    `\\w` do dominio) porque branch cola a referencia em letra: no Tickio, a
+    `\\w` do dominio) porque branch cola a referencia em letra: com `ch{id}`, a
     ponta `c` de `ch` fica livre e a direita vira o `(?!\\d)` de sempre.
 
     `IGNORECASE` e o conserto do segundo: a PR "CH254473 - ..." nao casava, e

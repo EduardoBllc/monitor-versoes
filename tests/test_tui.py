@@ -33,7 +33,8 @@ from motor.tui import (
     renderizar_chamado,
     renderizar_status,
 )
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.fontes_falsas import FonteFixa
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 
 def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -224,6 +225,15 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
     assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
 
 
+_FIXA = "tests.fontes_falsas:FonteFixa"
+
+
+def _sistema_recebido(deps) -> object:
+    """O `[tarefas] sistema` que a fonte da config recebeu ao ser carregada."""
+    deps.tasks.carregar()
+    return FonteFixa.recebidos[-1]["tarefas"]["sistema"]  # type: ignore[index]
+
+
 def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     tmp_path, monkeypatch, xdg_isolado
 ):
@@ -231,10 +241,8 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
-
-    class TickioSpy:
-        def __init__(self, base_url, usuario, senha, sistema, arquivos):
-            self.sistema = sistema
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def verificar_spy(deps, versao, auditar=False):
         # a TUI nao tem flag de credencial: token e email chegam do ambiente,
@@ -244,7 +252,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
             repo=deps.repo,
             versao=versao,
             auditar=auditar,
-            tickio_sistema_id=deps.tasks.sistema,
+            sistema=_sistema_recebido(deps),
             bitbucket_token=pr.token,
             bitbucket_email=pr.email,
         )
@@ -255,7 +263,6 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "verificar", verificar_spy)
 
     status = tui._verificar_repo(
@@ -266,7 +273,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
         "repo": "alpha",
         "versao": "14.0.0",
         "auditar": True,
-        "tickio_sistema_id": 7,
+        "sistema": 7,
         "bitbucket_token": "tok-secreto",
         "bitbucket_email": "dev@example.com",
     }
@@ -281,23 +288,20 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_i
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
-
-    class TickioSpy:
-        def __init__(self, base_url, usuario, senha, sistema, arquivos):
-            self.sistema = sistema
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def atualizar_spy(deps, versao):
         capturado.update(
             repo=deps.repo,
             versao=versao,
-            tickio_sistema_id=deps.tasks.sistema,
+            sistema=_sistema_recebido(deps),
         )
         return esperado
 
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "atualizar", atualizar_spy)
 
     resultado = tui._atualizar_repo(
@@ -308,11 +312,11 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_i
     assert capturado == {
         "repo": "alpha",
         "versao": "14.0.0",
-        "tickio_sistema_id": 7,
+        "sistema": 7,
     }
 
 
-def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
+def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
@@ -325,7 +329,7 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", lambda *a, **k: object())
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
     monkeypatch.setattr(tui, "atualizar_continue", continue_spy)
 
     resultado = tui._continuar_repo(
@@ -338,7 +342,7 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     )
 
 
-def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
+def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
@@ -349,7 +353,7 @@ def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", lambda *a, **k: object())
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
     monkeypatch.setattr(tui, "atualizar_abort", abort_spy)
 
     tui._abortar_repo(RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0")
@@ -1118,7 +1122,7 @@ def test_app_resolucao_vazia_vira_registrar_vazio_e_confirma():
 def _app_criar(
     criar_runner,
     versoes: list[VersionOption] | None = None,
-    versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+    versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
 ) -> MotorTUI:
     return MotorTUI(
         Runners(
@@ -1162,9 +1166,9 @@ def test_criar_modal_previa_mostra_tipo_e_base():
     ("versionamento", "previa_esperada"),
     [
         (versionamento_padrao(), "base main"),
-        (VENDABEM_COMPOSTA(), "ajustada · base 2.2.0"),
+        (ESCALONADO_COMPOSTA(), "ajustada · base 2.2.0"),
     ],
-    ids=["semver", "vendabem"],
+    ids=["semver", "escalonado"],
 )
 def test_criar_modal_previa_segue_o_esquema_do_repo(versionamento, previa_esperada):
     existente = VersionOption(numero="2.2.0", liberada=False)
@@ -1289,7 +1293,7 @@ def test_app_criar_seleciona_a_versao_nova_e_consulta_ela():
                 executar=_nunca_executa,
                 consultar_versao=consultar_runner,
                 criar_repo=criar_runner,
-                versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+                versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
             )
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -1355,7 +1359,7 @@ def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
                 ),
                 continuar_repo=continuar_runner,
                 criar_repo=criar_runner,
-                versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+                versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
             )
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -1818,7 +1822,7 @@ def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
     """
 
     def falhar():
-        erro = MotorError("Tickio respondeu 503")
+        erro = MotorError("rastreador respondeu 503")
         erro.add_note("buscando tasks da versao 13.34.0")
         raise erro
 
@@ -1828,7 +1832,7 @@ def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
             await app.workers.wait_for_complete()
             texto = _texto(app.query_one("#resultado", Static).content)
             assert "buscando tasks da versao 13.34.0" in texto
-            assert "Tickio respondeu 503" in texto
+            assert "rastreador respondeu 503" in texto
 
     asyncio.run(executar_fluxo())
 
@@ -2376,11 +2380,10 @@ def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
     )
 
 
-async def _preencher_cadastro(app: MotorTUI, pilot, nome: str, sistema: str) -> None:
+async def _preencher_cadastro(app: MotorTUI, pilot, nome: str) -> None:
     await pilot.press("n")
     await pilot.pause()
     app.screen.query_one("#cadastro-nome", Input).value = nome
-    app.screen.query_one("#cadastro-sistema", Input).value = sistema
     await pilot.pause()
     await pilot.click("#cadastro-salvar")
     await pilot.pause()
@@ -2390,19 +2393,19 @@ async def _preencher_cadastro(app: MotorTUI, pilot, nome: str, sistema: str) -> 
 
 def test_app_cadastra_repo_e_recarrega_lista():
     repos = ["alpha"]
-    chamadas: list[tuple[str, int]] = []
+    chamadas: list[tuple[str, ...]] = []
 
-    def registrar(nome: str, sistema_id: int) -> None:
-        chamadas.append((nome, sistema_id))
+    def registrar(nome: str) -> None:
+        chamadas.append((nome,))
         repos.append(nome)
 
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(registrar, repos)
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta", "7")
+            await _preencher_cadastro(app, pilot, "delta")
 
-            assert chamadas == [("delta", 7)]
+            assert chamadas == [("delta",)]
             assert not isinstance(app.screen, tui.CadastroModal)
             nomes = [
                 opcao.nome
@@ -2415,33 +2418,15 @@ def test_app_cadastra_repo_e_recarrega_lista():
     asyncio.run(executar_fluxo())
 
 
-def test_app_cadastro_recusa_sistema_id_nao_numerico_e_mantem_modal():
-    def registrar(nome: str, sistema_id: int) -> None:
-        raise AssertionError("id invalido nao pode chegar ao registrador")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta", "abc")
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert "inteiro positivo" in _texto(
-                app.screen.query_one("#cadastro-erro", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
 def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
-    def registrar(nome: str, sistema_id: int) -> None:
+    def registrar(nome: str) -> None:
         raise AssertionError("nome invalido nao pode chegar ao registrador")
 
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(registrar, ["alpha"])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "sub/delta", "7")
+            await _preencher_cadastro(app, pilot, "sub/delta")
 
             assert isinstance(app.screen, tui.CadastroModal)
             assert "sem caminho" in _texto(
@@ -2452,14 +2437,14 @@ def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
 
 
 def test_app_cadastro_de_repo_duplicado_mostra_erro_no_painel():
-    def registrar(nome: str, sistema_id: int) -> None:
+    def registrar(nome: str) -> None:
         raise MotorError(f"repo '{nome}' ja cadastrado")
 
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(registrar, ["alpha"])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "alpha", "1")
+            await _preencher_cadastro(app, pilot, "alpha")
 
             assert not isinstance(app.screen, tui.CadastroModal)
             assert "ja cadastrado" in _texto(
@@ -2731,14 +2716,14 @@ def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
     assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
 
 
-def test_cadastro_avisa_que_o_id_e_ignorado():
+def test_cadastro_pede_so_o_nome():
     async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome, sistema_id: None, [])
+        app = _app_de_cadastro(lambda nome: None, [])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
             await pilot.press("n")
             await pilot.pause()
-            textos = " ".join(_texto(w.content) for w in app.screen.query(Static))
-            assert "ignorado até a #117" in textos
+            campos = [w.id for w in app.screen.query(Input)]
+            assert campos == ["cadastro-nome"]
 
     asyncio.run(executar_fluxo())

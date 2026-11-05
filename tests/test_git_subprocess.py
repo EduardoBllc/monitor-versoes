@@ -21,7 +21,7 @@ from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
 from motor.services.catalogo import Catalogo
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 
 def _git_env() -> dict[str, str]:
@@ -341,7 +341,7 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     assert "refs/remotes/origin/13.35.0" in refs, f"refs apos o fetch: {refs!r}"
 
     assert "13.35.0" in g.listar_branches()
-    catalogo = Catalogo(g, VENDABEM_COMPOSTA())
+    catalogo = Catalogo(g, ESCALONADO_COMPOSTA())
     assert catalogo.com_branch() == ["13.35.0"]
     assert catalogo.liberadas() == set()
 
@@ -788,7 +788,7 @@ def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(
 
 
 def test_culpados_por_linha_aponta_quem_criou_o_arquivo_no_modify_delete(tmp_path):
-    """Caso real (vendabemweb 16.2.0): o commit altera um arquivo que o alvo
+    """Caso real (webapp 16.2.0): o commit altera um arquivo que o alvo
     nao tem, porque quem o criou esta fora da versao. O culpado e o criador.
     """
     dir_ = str(tmp_path)

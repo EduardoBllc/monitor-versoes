@@ -50,7 +50,7 @@ class PresenceOracle:
         O nivel 2 varre a branch inteira, como a decisao o escreve. Limita-lo a
         `base..branch` fazia commit herdado da base aparecer como faltante: o
         commit que carrega o trailer entrou numa versao anterior, abaixo do
-        corte (chamado 254994 na 14.11.0 do vendabemweb, 11 falsos faltantes).
+        corte (chamado 254994 na 14.11.0 de um repo real, 11 falsos faltantes).
         """
         if self.git.is_ancestor(hash_origem, branch):
             return Presence.ANCESTRAL
@@ -92,7 +92,7 @@ class PresenceOracle:
         com patch identico; o pick de um deles levou o conteudo dos dois. O
         nivel 3 do oraculo nao alcanca esse caso quando o pick esta abaixo da
         base, e varrer o patch-id da branch inteira custaria segundos (39k
-        commits no vendabemweb). O lote de candidatos e dezenas, e os patch-ids
+        commits num repo real). O lote de candidatos e dezenas, e os patch-ids
         dele ja estao memoizados aqui.
         """
         pid = self._patch_id(hash_origem)
