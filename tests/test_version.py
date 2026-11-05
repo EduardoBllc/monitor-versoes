@@ -1,16 +1,6 @@
 """Porte de internal/domain/version_test.go."""
 
-import datetime
-
-import pytest
-
-from motor.domain.version import (
-    chave,
-    fontes_de_alvo,
-    liberadas_no_alvo,
-    versoes_abertas,
-    worktrees_a_remover,
-)
+from motor.domain.version import versoes_abertas, worktrees_a_remover
 
 
 def test_versoes_abertas_e_branch_sem_tag():
@@ -26,59 +16,6 @@ def test_versoes_abertas_ordena_por_semver_nao_por_texto():
 
 def test_versoes_abertas_sem_nenhuma_aberta():
     assert versoes_abertas(["13.33.0"], ["13.33.0"]) == []
-
-
-# Cenario canonico da distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
-# Cada linha e um passo do fluxo real.
-CENARIO = [
-    # (alvo, abertas, fontes esperadas)
-    ("13.34.0", ["13.33.1", "13.34.0", "14.0.0"], ["13.33.1", "13.34.0"]),
-    ("14.0.0", ["13.33.1", "13.34.0", "14.0.0"], ["13.33.1", "13.34.0", "14.0.0"]),
-    ("13.33.1", ["13.33.1", "13.34.0", "14.0.0"], ["13.33.1"]),
-    # passo 3: 13.34.0 liberada, 13.35.0 inaugurada
-    ("13.35.0", ["13.33.1", "13.35.0", "14.0.0"], ["13.33.1", "13.35.0"]),
-    ("14.0.0", ["13.33.1", "13.35.0", "14.0.0"], ["13.33.1", "13.35.0", "14.0.0"]),
-    # passo 5: 14.0.0 liberada, 14.0.1 e 14.1.0 inauguradas
-    ("13.35.0", ["13.33.1", "13.35.0", "14.0.1", "14.1.0"], ["13.33.1", "13.35.0"]),
-    (
-        "14.0.1",
-        ["13.33.1", "13.35.0", "14.0.1", "14.1.0"],
-        ["13.33.1", "13.35.0", "14.0.1"],
-    ),
-    (
-        "14.1.0",
-        ["13.33.1", "13.35.0", "14.0.1", "14.1.0"],
-        ["13.33.1", "13.35.0", "14.0.1", "14.1.0"],
-    ),
-]
-
-
-@pytest.mark.parametrize("alvo,abertas,esperado", CENARIO)
-def test_fontes_de_alvo_cenario_canonico(alvo, abertas, esperado):
-    assert fontes_de_alvo(alvo, abertas) == esperado
-
-
-def test_fontes_de_alvo_inclui_o_proprio_alvo_quando_ainda_nao_tem_branch():
-    # `criar` chama antes da branch existir: o alvo entra por uniao
-    abertas = ["13.33.1", "14.0.0"]
-    assert fontes_de_alvo("14.1.0", sorted({*abertas, "14.1.0"}, key=chave)) == [
-        "13.33.1",
-        "14.0.0",
-        "14.1.0",
-    ]
-
-
-def test_fontes_de_alvo_respeita_o_piso_do_repo():
-    # 13.1.0 do vb2web: branch legada sem tag que o Tickio nao conhece
-    assert fontes_de_alvo("15.2.0", ["13.1.0", "15.2.0"], "14.0.0") == ["15.2.0"]
-
-
-def test_fontes_de_alvo_sem_piso_nao_corta_nada():
-    assert fontes_de_alvo("13.34.0", ["5.2.0", "13.0.0", "13.34.0"]) == [
-        "5.2.0",
-        "13.0.0",
-        "13.34.0",
-    ]
 
 
 # --- worktrees_a_remover: politica do GC de worktrees ---
@@ -139,43 +76,3 @@ def test_worktrees_a_remover_nada_quando_manter_cobre_todas():
         ["13.1.0", "13.2.0"], mru=["13.1.0"], manter=5, atual="13.1.0"
     )
     assert remover == []
-
-
-def _quando(mes: int) -> datetime.datetime:
-    return datetime.datetime(2026, mes, 1, tzinfo=datetime.UTC)
-
-
-def test_liberadas_no_alvo_entra_so_com_tag_posterior_ao_corte():
-    """As tres faixas tem de conviver num teste: a premissa velha
-    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md) era que
-    liberada nunca conta, e ela erra so numa das faixas. Separadas, o caso que
-    volta a passar sozinho e justamente o que reintroduz o bug.
-    """
-    datas = {
-        "13.34.0": _quando(1),  # liberada antes do corte: conteudo veio pela base
-        "14.6.0": _quando(5),  # liberada depois do corte: entrega que o alvo nao herdou
-        "14.5.0": _quando(3),  # tag exatamente no corte: ja e ancestral do alvo
-    }
-
-    assert liberadas_no_alvo("15.0.0", datas, _quando(3)) == ["14.6.0"]
-
-
-def test_liberadas_no_alvo_ignora_liberada_maior_que_o_alvo():
-    datas = {"14.6.0": _quando(5), "15.1.0": _quando(6)}
-
-    assert liberadas_no_alvo("15.0.0", datas, _quando(3)) == ["14.6.0"]
-
-
-def test_liberadas_no_alvo_ordena_por_semver_nao_por_texto():
-    datas = {"13.10.0": _quando(5), "13.9.0": _quando(5)}
-
-    assert liberadas_no_alvo("14.0.0", datas, _quando(3)) == ["13.9.0", "13.10.0"]
-
-
-def test_fontes_de_alvo_aceita_liberada_entre_as_candidatas():
-    """O chamador une abertas + liberadas pos-corte antes de chamar: a funcao
-    filtra a faixa, nao decide quem e aberta.
-    """
-    candidatas = sorted({"13.33.1", "14.6.0", "15.0.0"}, key=chave)
-
-    assert fontes_de_alvo("15.0.0", candidatas) == ["13.33.1", "14.6.0", "15.0.0"]

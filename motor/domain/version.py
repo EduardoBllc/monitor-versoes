@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 
+from motor.atribuicoes import ate_o_alvo, liberadas_apos_corte
 from motor.domain.types import VersionType
 from motor.esquemas import _xyz
 from motor.esquemas.vendabem import VendaBem
@@ -40,19 +41,7 @@ def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
 def fontes_de_alvo(
     alvo: str, candidatas: list[str], piso: str | None = None
 ) -> list[str]:
-    """Versoes cujas tarefas caem no alvo: candidatas entre o piso e o alvo.
-
-    E a regra de distribuicao vista pelo lado da versao
-    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md). Quem monta
-    `candidatas` e o chamador — abertas mais o que `liberadas_no_alvo` devolve.
-    O piso vem da config do projeto (`[versao] piso`): descarta branch legada sem
-    tag, que o Tickio nao conhece e responderia 404. Sem piso, nada e cortado.
-    """
-    k = chave(alvo)
-    if piso is None:
-        return [v for v in candidatas if chave(v) <= k]
-    corte = chave(piso)
-    return [v for v in candidatas if corte <= chave(v) <= k]
+    return ate_o_alvo(_xyz.ordenar, candidatas, alvo, piso)
 
 
 def liberadas_no_alvo(
@@ -60,25 +49,7 @@ def liberadas_no_alvo(
     datas_das_tags: dict[str, datetime.datetime],
     corte: datetime.datetime,
 ) -> list[str]:
-    """Liberadas que continuam sendo fonte de alvo de `alvo`
-    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
-
-    A liberada sai do conjunto aberto, e a premissa era que o conteudo dela
-    chegava por ancestralidade da base. Isso vale para `X.Y.0` sobre
-    `X.(Y-1).0`, e **nao** vale para `X.0.0`, cuja base e o master no ponto de
-    corte: entrega que virou tag depois desse corte nunca foi herdada. Uma
-    liberada nessas condicoes volta a ser fonte, e o oraculo de presenca decide
-    commit por commit o que ainda falta.
-
-    `corte` e a data do commit-base de `alvo` — o estado ja a guarda, entao nao
-    ha ponto de corte a recomputar. Tag exatamente no corte fica fora: e o caso
-    da ajustada cortada da anterior ja liberada, cujo conteudo e ancestral.
-    """
-    k = chave(alvo)
-    return sorted(
-        (n for n, data in datas_das_tags.items() if chave(n) <= k and data > corte),
-        key=chave,
-    )
+    return liberadas_apos_corte(_xyz.ordenar, alvo, datas_das_tags, corte)
 
 
 def worktrees_a_remover(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import IntEnum
 
@@ -113,6 +114,23 @@ class VersaoInfo:
     base_ref: str = ""
     base_commit: str = ""
     liberada_em: datetime.datetime | None = None
+
+
+@dataclass(frozen=True)
+class ContextoAtribuicao:
+    """O que a politica de atribuicao recebe do nucleo, ja resolvido pelo
+    esquema: ela nao acessa git nem tracker
+    (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
+
+    `liberadas` traz a data de liberacao de cada versao liberada; `corte` e a
+    data do commit-base do alvo.
+    """
+
+    ordenar: Callable[[list[str]], list[str]]
+    abertas: list[str]
+    liberadas: dict[str, datetime.datetime]
+    corte: datetime.datetime
+    piso: str | None = None
 
 
 @dataclass(frozen=True)

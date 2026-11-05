@@ -34,6 +34,7 @@ from typing import Protocol
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    ContextoAtribuicao,
     Exclusion,
     PrIndex,
     RepoInfo,
@@ -305,6 +306,15 @@ class EsquemaVersao(Protocol):
         A data vem do repositório, nunca do relógio: a suíte de conformidade
         (`motor.conformidade`) cobra isso.
         """
+        ...
+
+
+class PoliticaAtribuicao(Protocol):
+    """Decide de quais versoes vem as tarefas do alvo de uma versao
+    (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md)."""
+
+    def fontes(self, alvo: str, contexto: ContextoAtribuicao, /) -> list[str]:
+        """As versoes cujas tarefas caem no alvo, em ordem crescente."""
         ...
 
 
