@@ -45,7 +45,6 @@ from motor.montagem import (
     abrir_sessao,
     montar_deps,
     validar_nome_repo,
-    validar_sistema_id,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -267,12 +266,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p_adicionar = acoes_repo.add_parser("adicionar", help="cadastra um repositorio")
     p_adicionar.add_argument(
         "nome", type=_tipo_cli(validar_nome_repo), help="nome canonico do repo"
-    )
-    p_adicionar.add_argument(
-        "--tickio-sistema-id",
-        required=True,
-        type=_tipo_cli(validar_sistema_id),
-        help="ignorado até a #117: o sistema vem de [tarefas] sistema na config",
     )
 
     return parser
@@ -552,7 +545,7 @@ def _migrar_estado(args: argparse.Namespace) -> None:
 def _comando_repo(args: argparse.Namespace) -> None:
     with abrir_sessao() as sessao:
         estado = PostgresEstado(sessao=sessao)
-        estado.registrar_repo(args.nome, args.tickio_sistema_id)
+        estado.registrar_repo(args.nome)
     print(f"repo '{args.nome}' adicionado")
 
 

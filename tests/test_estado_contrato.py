@@ -41,7 +41,6 @@ from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 REPO = "webapp"
 ALIAS = "vbweb"
-SISTEMA_ID = 7
 QUANDO = datetime.datetime(2026, 1, 15, 10, 30, tzinfo=datetime.UTC)
 DEPOIS = datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC)
 
@@ -81,8 +80,8 @@ def estado(request):
     else:
         sessao = request.getfixturevalue("sessao_postgres")
     sessao.execute(
-        text("insert into repo (nome, tickio_sistema_id) values (:n, :s)"),
-        {"n": REPO, "s": SISTEMA_ID},
+        text("insert into repo (nome) values (:n)"),
+        {"n": REPO},
     )
     sessao.execute(
         text("insert into repo_alias (nome, repo_id) select :a, id from repo"),
@@ -104,32 +103,32 @@ def test_resolver_repo_por_nome_e_por_alias(estado):
 def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
     with pytest.raises(NaoEncontrado) as e:
         estado.resolver_repo("nao-existe")
-    assert "motor repo adicionar" in str(e.value)
+    assert str(e.value).endswith("motor repo adicionar 'nao-existe'")
 
 
 def test_registrar_repo_o_torna_resolvivel(estado):
-    estado.registrar_repo("novo-repo", 23)
+    estado.registrar_repo("novo-repo")
 
     assert estado.resolver_repo("novo-repo") == RepoInfo(nome="novo-repo")
 
 
 def test_registrar_repo_recusa_nome_duplicado(estado):
     with pytest.raises(RecusaDeInvariante):
-        estado.registrar_repo(REPO, 99)
+        estado.registrar_repo(REPO)
 
     assert estado.resolver_repo(REPO).nome == REPO
 
 
 def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
     with pytest.raises(RecusaDeInvariante):
-        estado.registrar_repo(ALIAS, 99)
+        estado.registrar_repo(ALIAS)
 
     assert estado.resolver_repo(ALIAS).nome == REPO
 
 
 def test_listar_repos_devolve_canonicos_em_ordem_sem_alias(estado):
-    estado.registrar_repo("zzz", 99)
-    estado.registrar_repo("aaa", 11)
+    estado.registrar_repo("zzz")
+    estado.registrar_repo("aaa")
 
     assert estado.listar_repos() == [
         RepoInfo(nome="aaa"),
@@ -380,7 +379,7 @@ def test_gravar_commits_de_pr_e_idempotente(estado):
 def test_cache_de_pr_e_por_repo(estado):
     # pr_id do host e sequencial POR repositorio: sem o repo na chave, a
     # PR 7 de um repo devolveria os commits da PR 7 do outro.
-    estado.registrar_repo("outro", 99)
+    estado.registrar_repo("outro")
     estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})
     assert estado.commits_de_pr("outro", [7]) == {}
 
@@ -456,7 +455,7 @@ def test_gravar_varredura_sem_pr_nenhuma_ainda_avanca_a_marca(estado):
 
 
 def test_indice_de_pr_e_por_repo(estado):
-    estado.registrar_repo("outro", 99)
+    estado.registrar_repo("outro")
     estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
     assert estado.prs_indexadas("outro") == []
     assert estado.marca_varredura("outro") is None

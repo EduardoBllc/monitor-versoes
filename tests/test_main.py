@@ -153,24 +153,17 @@ def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
 
-    main(["repo", "adicionar", "backend", "--tickio-sistema-id", "42"])
+    main(["repo", "adicionar", "backend"])
 
     assert estado.resolver_repo("backend") == RepoInfo(nome="backend")
     assert capsys.readouterr().out == "repo 'backend' adicionado\n"
 
 
-def test_ajuda_de_repo_adicionar_avisa_que_o_id_e_ignorado(capsys):
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(["repo", "adicionar", "--help"])
-
-    assert "ignorado até a #117" in " ".join(capsys.readouterr().out.split())
-
-
 @pytest.mark.parametrize(
     ("argumentos", "mensagem"),
     [
-        (["pasta/backend", "--tickio-sistema-id", "42"], "nome simples"),
-        (["backend", "--tickio-sistema-id", "0"], "inteiro positivo"),
+        (["pasta/backend"], "nome simples"),
+        ([" backend"], "nome simples"),
     ],
 )
 def test_repo_adicionar_recusa_argumentos_invalidos(argumentos, mensagem, capsys):
@@ -1138,7 +1131,7 @@ def test_migrar_estado_copia_e_nao_avisa_do_backend_padrao(
     garantir_esquema(origem)
     engine = criar_engine(origem)
     with engine.begin() as con:
-        con.execute(insert(Repo).values(nome="r", tickio_sistema_id=1))
+        con.execute(insert(Repo).values(nome="r"))
     engine.dispose()
     monkeypatch.setattr(cli, "load_dotenv", None)
     monkeypatch.setattr(

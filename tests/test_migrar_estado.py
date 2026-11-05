@@ -34,12 +34,7 @@ def _povoar(url: str) -> None:
         with engine.begin() as con:
             con.execute(
                 insert(T["repo"]),
-                {
-                    "id": 5,
-                    "nome": REPO,
-                    "tickio_sistema_id": 7,
-                    "piso_versao": "13.2.0",
-                },
+                {"id": 5, "nome": REPO},
             )
             con.execute(insert(T["repo_alias"]), {"nome": "vbweb", "repo_id": 5})
             con.execute(
@@ -231,7 +226,7 @@ def test_destino_com_linha_e_recusado_sem_escrita(tmp_path: Path) -> None:
     garantir_esquema(destino)
     engine = criar_engine(destino)
     with engine.begin() as con:
-        con.execute(insert(T["repo"]), {"nome": "outro", "tickio_sistema_id": 1})
+        con.execute(insert(T["repo"]), {"nome": "outro"})
     engine.dispose()
     antes = _dump(destino)
 

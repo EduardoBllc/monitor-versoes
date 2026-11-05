@@ -14,9 +14,7 @@ pytestmark = pytest.mark.integracao
 
 
 def _semear_repo(sessao) -> None:
-    sessao.execute(
-        text("insert into repo (nome, tickio_sistema_id) values ('webapp', 1)")
-    )
+    sessao.execute(text("insert into repo (nome) values ('webapp')"))
     sessao.execute(
         text("insert into repo_alias (nome, repo_id) select 'vbweb', id from repo")
     )
@@ -309,3 +307,56 @@ def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_postgres):
         for t in ("pr_mergeada", "varredura_pr")
     ]
     assert novos == [1, 1]
+
+
+def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(sessao_postgres):
+    from alembic import command
+    from sqlalchemy import inspect
+    from sqlalchemy.exc import IntegrityError
+
+    from motor.migracoes import config_alembic
+
+    _semear_repo(sessao_postgres)
+    sessao_postgres.execute(
+        text(
+            "insert into versao (repo_id, numero, tipo, base_ref, base_commit) "
+            "select id, '14.1.0', null, '14.0.0', 'aaa111' from repo"
+        )
+    )
+    sessao_postgres.commit()
+    # Fecha a transacao aberta: o ALTER TABLE do alembic espera o lock dela.
+    sessao_postgres.close()
+    cfg = config_alembic()
+
+    command.downgrade(cfg, "f6b9c3d2e1a7")
+    try:
+        recriadas = tuple(
+            sessao_postgres.execute(
+                text("select tickio_sistema_id, piso_versao from repo")
+            ).one()
+        )
+        with pytest.raises(IntegrityError):
+            sessao_postgres.execute(text("update repo set piso_versao = 'x'"))
+        sessao_postgres.rollback()
+        # No head anterior, com os valores que o script leva para a config.
+        sessao_postgres.execute(
+            text("update repo set tickio_sistema_id = 7, piso_versao = '14.0.0'")
+        )
+        sessao_postgres.commit()
+        sessao_postgres.close()
+        command.upgrade(cfg, "head")
+        colunas = {
+            c["name"] for c in inspect(sessao_postgres.connection()).get_columns("repo")
+        }
+        linhas = [
+            sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
+            for t in ("repo", "repo_alias", "versao")
+        ]
+        sessao_postgres.rollback()
+    finally:
+        sessao_postgres.close()
+        command.upgrade(cfg, "head")
+
+    assert recriadas == (0, "13.0.0")
+    assert colunas == {"id", "nome"}
+    assert linhas == [1, 1, 1]

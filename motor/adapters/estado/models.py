@@ -67,9 +67,6 @@ class Repo(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(unique=True)  # basename do --repo
-    tickio_sistema_id: Mapped[int]  # ID do sistema NO TICKIO, vai em ?sistema=
-    # Menor versao que conta como fonte de alvo (motor.atribuicoes).
-    piso_versao: Mapped[str] = mapped_column(server_default="13.0.0")
 
 
 class RepoAlias(Base):

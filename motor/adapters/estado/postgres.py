@@ -93,7 +93,7 @@ class PostgresEstado:
             self._traduzir_erro(e)
         return None if revisao is None else str(revisao)
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
+    def registrar_repo(self, nome: str, /) -> None:
         # Nome canonico e alias dividem o mesmo espaco de nomes, entao as duas
         # tabelas contam para "ja cadastrado". Sao duas consultas so quando a
         # primeira nao acha nada: o `or` curto-circuita.
@@ -107,7 +107,7 @@ class PostgresEstado:
         )
         if ja_cadastrado:
             raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
-        self.sessao.add(models.Repo(nome=nome, tickio_sistema_id=tickio_sistema_id))
+        self.sessao.add(models.Repo(nome=nome))
         self._commit()
 
     def resolver_repo(self, basename: str, /) -> RepoInfo:
@@ -123,8 +123,7 @@ class PostgresEstado:
         if linha is None:
             raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  motor repo adicionar '{basename}' "
-                f"--tickio-sistema-id <id>"
+                f"  motor repo adicionar '{basename}'"
             )
         return _repo_info(linha)
 

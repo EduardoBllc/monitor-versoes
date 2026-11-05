@@ -27,3 +27,12 @@ def test_nao_existe_flag_de_token_do_tickio():
         _build_parser().parse_args(
             ["criar", "1.0.0", "--repo", ".", "--tickio-token", "xyz"]
         )
+
+
+def test_repo_adicionar_recusa_tickio_sistema_id():
+    with pytest.raises(SystemExit) as saida:
+        _build_parser().parse_args(
+            ["repo", "adicionar", "backend", "--tickio-sistema-id", "42"]
+        )
+
+    assert saida.value.code == 2

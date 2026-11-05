@@ -102,17 +102,6 @@ def validar_nome_repo(valor: str) -> str:
     return valor
 
 
-def validar_sistema_id(valor: str) -> int:
-    """ID do sistema no Tickio. Vai cru na query `?sistema=`."""
-    try:
-        numero = int(valor)
-    except ValueError:
-        raise ErroDeEntrada("deve ser um inteiro positivo") from None
-    if numero <= 0:
-        raise ErroDeEntrada("deve ser um inteiro positivo")
-    return numero
-
-
 @contextmanager
 def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
     """Ciclo de vida do banco: uma engine e uma sessao por comando.

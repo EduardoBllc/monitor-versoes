@@ -326,7 +326,7 @@ class EstadoRepo(Protocol):
     registro unico e imutavel para versao liberada.
     """
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
+    def registrar_repo(self, nome: str, /) -> None:
         """Cadastra um repo canonico. RecusaDeInvariante se nome ou alias ja existir."""
         ...
 

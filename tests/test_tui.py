@@ -2380,11 +2380,10 @@ def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
     )
 
 
-async def _preencher_cadastro(app: MotorTUI, pilot, nome: str, sistema: str) -> None:
+async def _preencher_cadastro(app: MotorTUI, pilot, nome: str) -> None:
     await pilot.press("n")
     await pilot.pause()
     app.screen.query_one("#cadastro-nome", Input).value = nome
-    app.screen.query_one("#cadastro-sistema", Input).value = sistema
     await pilot.pause()
     await pilot.click("#cadastro-salvar")
     await pilot.pause()
@@ -2394,19 +2393,19 @@ async def _preencher_cadastro(app: MotorTUI, pilot, nome: str, sistema: str) -> 
 
 def test_app_cadastra_repo_e_recarrega_lista():
     repos = ["alpha"]
-    chamadas: list[tuple[str, int]] = []
+    chamadas: list[tuple[str, ...]] = []
 
-    def registrar(nome: str, sistema_id: int) -> None:
-        chamadas.append((nome, sistema_id))
+    def registrar(nome: str) -> None:
+        chamadas.append((nome,))
         repos.append(nome)
 
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(registrar, repos)
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta", "7")
+            await _preencher_cadastro(app, pilot, "delta")
 
-            assert chamadas == [("delta", 7)]
+            assert chamadas == [("delta",)]
             assert not isinstance(app.screen, tui.CadastroModal)
             nomes = [
                 opcao.nome
@@ -2419,33 +2418,15 @@ def test_app_cadastra_repo_e_recarrega_lista():
     asyncio.run(executar_fluxo())
 
 
-def test_app_cadastro_recusa_sistema_id_nao_numerico_e_mantem_modal():
-    def registrar(nome: str, sistema_id: int) -> None:
-        raise AssertionError("id invalido nao pode chegar ao registrador")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta", "abc")
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert "inteiro positivo" in _texto(
-                app.screen.query_one("#cadastro-erro", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
 def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
-    def registrar(nome: str, sistema_id: int) -> None:
+    def registrar(nome: str) -> None:
         raise AssertionError("nome invalido nao pode chegar ao registrador")
 
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(registrar, ["alpha"])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "sub/delta", "7")
+            await _preencher_cadastro(app, pilot, "sub/delta")
 
             assert isinstance(app.screen, tui.CadastroModal)
             assert "sem caminho" in _texto(
@@ -2456,14 +2437,14 @@ def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
 
 
 def test_app_cadastro_de_repo_duplicado_mostra_erro_no_painel():
-    def registrar(nome: str, sistema_id: int) -> None:
+    def registrar(nome: str) -> None:
         raise MotorError(f"repo '{nome}' ja cadastrado")
 
     async def executar_fluxo() -> None:
         app = _app_de_cadastro(registrar, ["alpha"])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "alpha", "1")
+            await _preencher_cadastro(app, pilot, "alpha")
 
             assert not isinstance(app.screen, tui.CadastroModal)
             assert "ja cadastrado" in _texto(
@@ -2735,14 +2716,14 @@ def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
     assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
 
 
-def test_cadastro_avisa_que_o_id_e_ignorado():
+def test_cadastro_pede_so_o_nome():
     async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome, sistema_id: None, [])
+        app = _app_de_cadastro(lambda nome: None, [])
         async with app.run_test(size=(120, 36)) as pilot:
             await app.workers.wait_for_complete()
             await pilot.press("n")
             await pilot.pause()
-            textos = " ".join(_texto(w.content) for w in app.screen.query(Static))
-            assert "ignorado até a #117" in textos
+            campos = [w.id for w in app.screen.query(Input)]
+            assert campos == ["cadastro-nome"]
 
     asyncio.run(executar_fluxo())

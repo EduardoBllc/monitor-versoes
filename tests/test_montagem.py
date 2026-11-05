@@ -30,7 +30,6 @@ from motor.montagem import (
     montar_deps,
     montar_task_source,
     validar_nome_repo,
-    validar_sistema_id,
 )
 from motor.services.versionamento import Versionamento
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
@@ -381,16 +380,6 @@ def test_nome_repo_recusa_o_que_fragmentaria_o_estado(valor):
         validar_nome_repo(valor)
 
 
-def test_sistema_id_converte_para_int():
-    assert validar_sistema_id("42") == 42
-
-
-@pytest.mark.parametrize("valor", ["0", "-1", "abc", "", "1.5"])
-def test_sistema_id_recusa_o_que_nao_e_inteiro_positivo(valor):
-    with pytest.raises(ErroDeEntrada, match="inteiro positivo"):
-        validar_sistema_id(valor)
-
-
 def test_validadores_levantam_erro_de_entrada():
     """O formulario da TUI captura isto. Com MotorError generico ele capturaria
     tambem erro de banco vindo do mesmo bloco, e mostraria falha de conexao
@@ -398,8 +387,6 @@ def test_validadores_levantam_erro_de_entrada():
     """
     with pytest.raises(ErroDeEntrada, match="nome simples"):
         validar_nome_repo("pasta/backend")
-    with pytest.raises(ErroDeEntrada, match="inteiro positivo"):
-        validar_sistema_id("0")
 
 
 def test_primeiro_uso_cria_arquivo_e_esquema_do_sqlite(monkeypatch, tmp_path):
