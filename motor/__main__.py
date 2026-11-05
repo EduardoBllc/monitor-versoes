@@ -184,6 +184,8 @@ def _inscricao_listar() -> None:
             ultima = (
                 f"{i.ultima.hora.astimezone():%Y-%m-%d %H:%M} {i.ultima.desfecho.value}"
             )
+            if i.ultima.mensagem:
+                ultima += f": {i.ultima.mensagem}"
         print(
             f"{i.versao}  {i.clone}  a cada {formatar_intervalo(i.intervalo)}  {ultima}"
         )

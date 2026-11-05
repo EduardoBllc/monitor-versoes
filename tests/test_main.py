@@ -9,6 +9,7 @@ importa helpers nao prova nada sobre a entrada: foi assim que um
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime
 import os
 import subprocess
@@ -1190,6 +1191,26 @@ def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
     assert _Inscr.VERSAO in saida
     assert clone in saida
     assert "nunca rodou" in saida
+
+
+def test_inscricao_listar_mostra_a_mensagem_do_erro(inscricoes_env, tmp_path, capsys):
+    from motor.domain.inscricao import Desfecho, UltimaExecucao
+    from motor.inscricoes import carregar, salvar
+
+    arquivo, _ = inscricoes_env
+    _inscrever_clone(_repo_dir(tmp_path))
+    [i] = carregar(arquivo)
+    ultima = UltimaExecucao(
+        datetime.datetime.now(datetime.UTC),
+        Desfecho.ERRO,
+        Desfecho.ERRO,
+        frozenset(),
+        _Inscr.BUG,
+    )
+    salvar(arquivo, [dataclasses.replace(i, ultima=ultima)])
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    assert f"{Desfecho.ERRO.value}: {_Inscr.BUG}" in capsys.readouterr().out
 
 
 def test_inscricao_listar_mostra_intervalo_formatado(inscricoes_env, tmp_path, capsys):

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import dataclasses
 import datetime
 import enum
 import io
@@ -43,6 +44,7 @@ from motor.tui import (
 from tests.versionamento import VENDABEM_COMPOSTA
 
 _AMBIENTE_INSCRICAO = "development"
+_MENSAGEM_ERRO = "falhou"
 
 
 def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -2769,6 +2771,20 @@ def _inscricao(versao: str, clone: str = "/projetos/alpha") -> Inscricao:
         "/diretorio",
         _AMBIENTE_INSCRICAO,
     )
+
+
+def test_linha_inscricao_mostra_a_mensagem_do_erro():
+    from motor.domain.inscricao import Desfecho, UltimaExecucao
+
+    ultima = UltimaExecucao(
+        datetime.datetime.now(datetime.UTC),
+        Desfecho.ERRO,
+        Desfecho.ERRO,
+        frozenset(),
+        _MENSAGEM_ERRO,
+    )
+    i = dataclasses.replace(_inscricao(_VERSAO_PREVIA.numero), ultima=ultima)
+    assert tui._linha_inscricao(i).endswith(f"{Desfecho.ERRO.value}: {_MENSAGEM_ERRO}")
 
 
 async def _abrir_inscricoes(app, pilot, selecionar: bool = True) -> None:

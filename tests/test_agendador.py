@@ -4,7 +4,6 @@ import plistlib
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -45,7 +44,7 @@ class Registro:
             raise BackendIndisponivel("falhou")
 
 
-def test_arquivos_linux_e_macos(tmp_path: Path) -> None:
+def test_arquivos_linux(tmp_path: Path) -> None:
     linux = arquivos(Sistema.LINUX, EXE, tmp_path)
     por_nome = {p.name: t for p, t in linux.items()}
     assert set(por_nome) == {ARQUIVO_SERVICE, ARQUIVO_TIMER}
@@ -53,6 +52,9 @@ def test_arquivos_linux_e_macos(tmp_path: Path) -> None:
         f'ExecStart="{EXE}" {" ".join(ARGUMENTOS_RODAR)}' in por_nome[ARQUIVO_SERVICE]
     )
     assert "OnCalendar=minutely" in por_nome[ARQUIVO_TIMER]
+
+
+def test_arquivos_macos(tmp_path: Path) -> None:
     mac = arquivos(Sistema.MACOS, EXE, tmp_path)
     [(caminho, texto)] = mac.items()
     assert caminho.name == ARQUIVO_PLIST
@@ -62,12 +64,15 @@ def test_arquivos_linux_e_macos(tmp_path: Path) -> None:
     assert dados[CHAVE_INTERVALO] == INTERVALO_LAUNCHD_S
 
 
-def test_agendar_escreve_e_ativa(tmp_path: Path) -> None:
+def test_agendar_escreve_e_ativa_linux(tmp_path: Path) -> None:
     r = Registro()
     agendar(Sistema.LINUX, tmp_path, EXE, r)
     assert instalado(Sistema.LINUX, tmp_path)
     assert [c[2] for c in r.comandos] == [Acao.DAEMON_RELOAD, Acao.ENABLE]
     assert r.comandos[1][-1] == ARQUIVO_TIMER
+
+
+def test_agendar_escreve_e_ativa_macos(tmp_path: Path) -> None:
     m = Registro(falhar_em=Acao.UNLOAD)
     agendar(Sistema.MACOS, tmp_path, EXE, m)
     assert m.comandos[0][1] == Acao.UNLOAD
@@ -115,14 +120,13 @@ def test_motor_fora_do_path(monkeypatch: pytest.MonkeyPatch) -> None:
         executavel_motor()
 
 
-def test_rodar_comando_traduz_erros(monkeypatch: pytest.MonkeyPatch) -> None:
-    def levanta(exc: Exception) -> Callable[..., None]:
-        def f(*_a: object, **_k: object) -> None:
-            raise exc
+@pytest.mark.parametrize("exc", [OSError("x"), subprocess.CalledProcessError(1, "x")])
+def test_rodar_comando_traduz_erros(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    def levanta(*_a: object, **_k: object) -> None:
+        raise exc
 
-        return f
-
-    for exc in (OSError("x"), subprocess.CalledProcessError(1, "x")):
-        monkeypatch.setattr(subprocess, "run", levanta(exc))
-        with pytest.raises(BackendIndisponivel):
-            rodar_comando_do_sistema(["x"])
+    monkeypatch.setattr(subprocess, "run", levanta)
+    with pytest.raises(BackendIndisponivel):
+        rodar_comando_do_sistema(["x"])

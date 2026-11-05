@@ -16,9 +16,12 @@ from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
 from motor.errors import ErroDeEntrada, RespostaInvalida
 from motor.inscricoes import (
     ARQUIVO_INSCRICOES,
+    LIMITE_EXECUCAO_S,
     MENSAGEM_SEM_RESULTADO,
+    MENSAGEM_TEMPO_ESGOTADO,
     PREFIXO_TITULO,
     SEM_PROCESSO,
+    TEMPO_ESGOTADO,
     Campo,
     Inscricao,
     carregar,
@@ -247,6 +250,32 @@ def test_disparar_subprocesso_diretorio_sumido_devolve_menos_um(
     )
 
 
+def test_disparar_subprocesso_tempo_esgotado(monkeypatch: pytest.MonkeyPatch) -> None:
+    def trava(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", trava)
+    assert disparar_subprocesso(_insc(), {}) == TEMPO_ESGOTADO
+
+
+def test_rodar_tempo_esgotado_grava_erro_e_segue(arq: Path) -> None:
+    salvar(arq, [_insc(Repo.A), _insc(Repo.B)])
+    chamadas: list[str] = []
+
+    def disparar(i: Inscricao) -> int:
+        chamadas.append(i.clone)
+        return TEMPO_ESGOTADO
+
+    rodar(arq, HORA, disparar, FakeNotificador())
+    assert chamadas == [Repo.A, Repo.B]
+    for i in carregar(arq):
+        assert i.ultima is not None
+        assert i.ultima.desfecho == Desfecho.ERRO
+        assert i.ultima.mensagem == MENSAGEM_TEMPO_ESGOTADO.format(
+            limite=LIMITE_EXECUCAO_S
+        )
+
+
 def test_arquivo_binario_da_resposta_invalida(arq: Path) -> None:
     arq.parent.mkdir(parents=True)
     arq.write_bytes(b"\xff\xfe\x00\x80")
@@ -273,6 +302,7 @@ def test_disparar_subprocesso_monta_o_comando(
     ]  # fmt: skip
     assert visto["cwd"] == i.diretorio
     assert visto["env"] == ambiente
+    assert visto["timeout"] == LIMITE_EXECUCAO_S
 
 
 @pytest.mark.parametrize(

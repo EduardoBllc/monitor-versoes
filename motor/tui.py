@@ -249,11 +249,12 @@ class InscricoesModal(ModalScreen[None]):
 
 
 def _linha_inscricao(i: Inscricao) -> str:
-    ultima = (
-        "nunca executou"
-        if i.ultima is None
-        else f"{i.ultima.hora.astimezone():%d/%m %H:%M} {i.ultima.desfecho.value}"
-    )
+    if i.ultima is None:
+        ultima = "nunca executou"
+    else:
+        ultima = f"{i.ultima.hora.astimezone():%d/%m %H:%M} {i.ultima.desfecho.value}"
+        if i.ultima.mensagem:
+            ultima += f": {i.ultima.mensagem}"
     return (
         f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
         f"  ·  {ultima}"

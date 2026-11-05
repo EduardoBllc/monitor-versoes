@@ -33,10 +33,14 @@ log = logging.getLogger(__name__)
 INTERVALO_PADRAO = "30m"
 ARQUIVO_INSCRICOES = "inscricoes.json"
 SEM_PROCESSO = -1
+TEMPO_ESGOTADO = -2
+# Folga para o pior `atualizar`; sem limite, um filho travado prende o oneshot e para todas.
+LIMITE_EXECUCAO_S = 60 * 60
 SEGUNDOS_POR_MINUTO = 60
 MINUTOS_POR_HORA = 60
 PREFIXO_TITULO = "monitor-versoes"
 MENSAGEM_SEM_RESULTADO = "execução terminou com código {codigo} sem gravar resultado"
+MENSAGEM_TEMPO_ESGOTADO = "execução excedeu {limite}s e foi interrompida"
 _PADRAO_INTERVALO = re.compile(r"([1-9]\d*)([mh])")
 
 
@@ -255,9 +259,12 @@ def rodar(
         codigo = disparar(i)
         existe, depois = _ultima_de(caminho, i.clone, i.versao)
         if existe and depois == i.ultima:
-            r = Resultado(
-                Desfecho.ERRO, mensagem=MENSAGEM_SEM_RESULTADO.format(codigo=codigo)
+            mensagem = (
+                MENSAGEM_TEMPO_ESGOTADO.format(limite=LIMITE_EXECUCAO_S)
+                if codigo == TEMPO_ESGOTADO
+                else MENSAGEM_SEM_RESULTADO.format(codigo=codigo)
             )
+            r = Resultado(Desfecho.ERRO, mensagem=mensagem)
             registrar_execucao(caminho, i, r, notificador, agora)
 
 
@@ -269,7 +276,13 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
     ]  # fmt: skip
     try:
         return subprocess.run(
-            cmd, check=False, cwd=i.diretorio, env=dict(env)
+            cmd,
+            check=False,
+            cwd=i.diretorio,
+            env=dict(env),
+            timeout=LIMITE_EXECUCAO_S,
         ).returncode
+    except subprocess.TimeoutExpired:
+        return TEMPO_ESGOTADO
     except OSError:
         return SEM_PROCESSO
