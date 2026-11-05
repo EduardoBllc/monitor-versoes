@@ -25,7 +25,6 @@ motor = "motor.__main__:main"
 
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"
-vendabem = "motor.esquemas.vendabem:VendaBem"
 
 [project.entry-points."monitor_versoes.atribuicoes"]
 exata = "motor.atribuicoes:Exata"

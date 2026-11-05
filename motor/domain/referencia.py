@@ -1,6 +1,6 @@
 """Referência de tarefa: como o ID de uma tarefa aparece na mensagem de commit.
 
-O padrão é um template com `{id}` (`ch{id}` no Tickio, `{id}` num Jira); o resto
+O padrão é um template com `{id}` (`ch{id}` num rastreador, `{id}` num Jira); o resto
 é texto literal. O alfabeto diz que caracteres um ID pode ter. O tracker propõe
 os dois; a config sobrescreve só o padrão. Domínio, grep e host de PR recebem a
 `Referencia` já resolvida e não conhecem o tracker.
@@ -15,7 +15,7 @@ from typing import Final
 
 from motor.errors import ErroDeEntrada
 
-#: Letras, dígitos, `_` e `-`: cobre `PAY-123` e o número puro do Tickio.
+#: Letras, dígitos, `_` e `-`: cobre `PAY-123` e o número puro de `ch{id}`.
 ALFABETO_PADRAO: Final = "A-Za-z0-9_-"
 
 _MARCA = "{id}"
@@ -50,7 +50,7 @@ def resolver_referencia(
     """Precedência: config (já validada e mesclada) > proposta do adapter.
 
     O alfabeto vem sempre da proposta, quando há uma: a config não o muda, e
-    sobrescrever só o padrão do Tickio não pode fazer `ch254473-fix` extrair
+    sobrescrever só o padrão de uma proposta `ch{id}` com alfabeto `0-9` não pode fazer `ch254473-fix` extrair
     `254473-fix`.
     """
     alfabeto = ALFABETO_PADRAO if proposta is None else proposta.alfabeto
@@ -65,7 +65,7 @@ def resolver_referencia(
 
 
 def formatar_referencia(ref: Referencia, chamado: str) -> str:
-    """O texto que cita `chamado` numa mensagem (`ch123` no Tickio)."""
+    """O texto que cita `chamado` numa mensagem (como `ch123`)."""
     return ref.padrao.replace(_MARCA, chamado)
 
 
@@ -81,7 +81,7 @@ def _regex_do_id(alfabeto: str) -> str:
 def _conjunto(ref: Referencia, so_alfabeto: bool) -> str:
     """O conjunto *S* da fronteira (006), como classe de regex.
 
-    No domínio, caracteres de palavra mais o alfabeto: com o Tickio, é o `\\b`
+    No domínio, caracteres de palavra mais o alfabeto: com `ch{id}`, é o `\\b`
     de sempre. No Bitbucket, só o alfabeto: `ch` colado a uma letra no começo
     da branch casa, como sempre casou.
     """
@@ -122,7 +122,7 @@ def regex_do_chamado(
 def regex_de_extracao(ref: Referencia) -> re.Pattern[str]:
     """Acha uma referência qualquer; o ID fica no grupo `id`.
 
-    O `{id}` casa o alfabeto, guloso, e a fronteira faz o resto: com o Tickio,
+    O `{id}` casa o alfabeto, guloso, e a fronteira faz o resto: com `ch{id}` e alfabeto `0-9`,
     `ch254473-fix` dá `254473` porque `-` não é dígito nem caractere de palavra.
     """
     prefixo, sufixo = ref.padrao.split(_MARCA)

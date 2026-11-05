@@ -39,7 +39,7 @@ from motor.domain.types import (
 )
 from motor.errors import NaoEncontrado, RecusaDeInvariante
 
-REPO = "vendabemweb"
+REPO = "webapp"
 ALIAS = "vbweb"
 SISTEMA_ID = 7
 QUANDO = datetime.datetime(2026, 1, 15, 10, 30, tzinfo=datetime.UTC)

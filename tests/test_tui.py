@@ -34,7 +34,7 @@ from motor.tui import (
     renderizar_status,
 )
 from tests.fontes_falsas import FonteFixa
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 
 def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -1122,7 +1122,7 @@ def test_app_resolucao_vazia_vira_registrar_vazio_e_confirma():
 def _app_criar(
     criar_runner,
     versoes: list[VersionOption] | None = None,
-    versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+    versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
 ) -> MotorTUI:
     return MotorTUI(
         Runners(
@@ -1166,9 +1166,9 @@ def test_criar_modal_previa_mostra_tipo_e_base():
     ("versionamento", "previa_esperada"),
     [
         (versionamento_padrao(), "base main"),
-        (VENDABEM_COMPOSTA(), "ajustada · base 2.2.0"),
+        (ESCALONADO_COMPOSTA(), "ajustada · base 2.2.0"),
     ],
-    ids=["semver", "vendabem"],
+    ids=["semver", "escalonado"],
 )
 def test_criar_modal_previa_segue_o_esquema_do_repo(versionamento, previa_esperada):
     existente = VersionOption(numero="2.2.0", liberada=False)
@@ -1293,7 +1293,7 @@ def test_app_criar_seleciona_a_versao_nova_e_consulta_ela():
                 executar=_nunca_executa,
                 consultar_versao=consultar_runner,
                 criar_repo=criar_runner,
-                versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+                versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
             )
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -1359,7 +1359,7 @@ def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
                 ),
                 continuar_repo=continuar_runner,
                 criar_repo=criar_runner,
-                versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+                versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
             )
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -1822,7 +1822,7 @@ def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
     """
 
     def falhar():
-        erro = MotorError("Tickio respondeu 503")
+        erro = MotorError("rastreador respondeu 503")
         erro.add_note("buscando tasks da versao 13.34.0")
         raise erro
 
@@ -1832,7 +1832,7 @@ def test_app_exibe_nota_do_motor_error_junto_com_a_causa():
             await app.workers.wait_for_complete()
             texto = _texto(app.query_one("#resultado", Static).content)
             assert "buscando tasks da versao 13.34.0" in texto
-            assert "Tickio respondeu 503" in texto
+            assert "rastreador respondeu 503" in texto
 
     asyncio.run(executar_fluxo())
 

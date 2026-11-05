@@ -6,8 +6,8 @@ import pytest
 
 from motor.conformidade import ConformidadeEsquema, verificar_liberacoes
 from motor.esquemas.semver import Semver
-from motor.esquemas.vendabem import VendaBem
 from motor.ports import EsquemaVersao, GitRepo
+from tests.versionamento import Escalonado
 
 _EXEMPLOS = ["1.0.0", "1.1.0", "1.1.1", "2.0.0"]
 
@@ -17,8 +17,8 @@ class TestSemver(ConformidadeEsquema):
     exemplos = _EXEMPLOS
 
 
-class TestVendaBem(ConformidadeEsquema):
-    esquema_cls = VendaBem
+class TestEscalonado(ConformidadeEsquema):
+    esquema_cls = Escalonado
     exemplos = _EXEMPLOS
 
 

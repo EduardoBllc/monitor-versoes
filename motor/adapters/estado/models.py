@@ -112,14 +112,14 @@ class Atribuicao(Base):
 
     Guarda `marcada` desnormalizado de proposito: uma tabela `tarefa` global
     faria o snapshot congelado apontar para linha viva, e o registro do que
-    saiu em 2026 mudaria ao editarem algo no Tickio em 2027.
+    saiu em 2026 mudaria ao editarem algo no rastreador em 2027.
     """
 
     __tablename__ = "atribuicao"
 
     versao_id: Mapped[int] = mapped_column(ForeignKey("versao.id"), primary_key=True)
     chamado: Mapped[str] = mapped_column(primary_key=True)
-    marcada: Mapped[str]  # versao para a qual o Tickio marcou
+    marcada: Mapped[str]  # versao para a qual o rastreador marcou
     estado: Mapped[str]  # ck_atribuicao_estado
 
 

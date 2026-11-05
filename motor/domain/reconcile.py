@@ -1,4 +1,4 @@
-"""Cruzamento das tres fontes: Tickio (alvo) x estado x git."""
+"""Cruzamento das tres fontes: fonte de tarefas (alvo) x estado x git."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def diff_tasks(
     alvo: TargetSet, anteriores: list[Atribuicao]
 ) -> tuple[list[str], list[str]]:
     """Diferenca simetrica entre o alvo de agora e o estado gravado no run
-    anterior. E o que detecta tarefa desmarcada no Tickio — comparar depois de
+    anterior. E o que detecta tarefa desmarcada no rastreador — comparar depois de
     sobrescrever apagaria a propria evidencia.
     """
     antes = {a.chamado for a in anteriores}

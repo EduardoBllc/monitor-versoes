@@ -19,7 +19,7 @@ from motor.engine import migrar_estado as modulo
 from motor.engine.migrar_estado import migrar_estado
 from motor.errors import ErroDeEntrada
 
-REPO = "vendabemweb"
+REPO = "webapp"
 LIBERADA = datetime.datetime(
     2026, 3, 1, 12, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=-3))
 )

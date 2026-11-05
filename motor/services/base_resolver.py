@@ -27,7 +27,7 @@ class BaseResolver:
         # A base e o PONTO DE CORTE, nao o tip da ref-base. Para versao que ja
         # existe, o corte e o merge-base entre as duas: a principal anda todo dia,
         # e resolver so a ref-base gravava o tip do dia em que o motor viu a
-        # versao pela primeira vez. Na 15.0.0 do vendabemweb isso deu 20 dias de
+        # versao pela primeira vez. Na 15.0.0 de um repo real isso deu 20 dias de
         # erro, e com eles dez liberadas 14.x fora do alvo
         # (docs/decisoes/005-alvo-distribuicao-entre-versoes.md) — silenciosas,
         # porque tarefa que nao esta no alvo nao e cobrada por ninguem.

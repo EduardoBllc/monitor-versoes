@@ -33,7 +33,7 @@ from motor.progresso import Progresso, SlotProgresso, silencioso
 from motor.services.target_resolver import TargetResolver
 from motor.tui import renderizar_progresso
 from tests.fontes_falsas import REFERENCIA_CH
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -65,8 +65,8 @@ def test_resolver_relata_uma_fase_por_versao_consultada():
     resolver.resolve("13.34.0", ["13.33.0", "13.34.0"])
 
     assert _fases(relatos) == [
-        ("chamados marcados no Tickio", 1, 2),
-        ("chamados marcados no Tickio", 2, 2),
+        ("chamados marcados no rastreador", 1, 2),
+        ("chamados marcados no rastreador", 2, 2),
     ]
 
 
@@ -157,7 +157,7 @@ def test_verificar_relata_suas_fases_na_ordem():
     )
     relatos: list[Progresso] = []
     deps = Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.33.1": ["123123"]}),
         estado=estado,
@@ -183,9 +183,9 @@ def test_verificar_relata_suas_fases_na_ordem():
     assert _fases(relatos) == [
         ("buscando refs do origin", 0, 0),
         ("preparando worktree", 0, 0),
-        ("chamados marcados no Tickio", 1, 3),
-        ("chamados marcados no Tickio", 2, 3),
-        ("chamados marcados no Tickio", 3, 3),
+        ("chamados marcados no rastreador", 1, 3),
+        ("chamados marcados no rastreador", 2, 3),
+        ("chamados marcados no rastreador", 3, 3),
         ("presença dos commits", 1, 1),
         ("simulando conflitos", 1, 1),
         ("gravando estado", 0, 0),
@@ -208,7 +208,7 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
     git.set_branch("13.7.0", "m0")
     relatos: list[Progresso] = []
     deps = Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514", "255515"]}),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
@@ -269,7 +269,7 @@ def test_consultar_conta_os_chamados_do_snapshot():
 
     consultar(
         Deps(
-            versionamento=VENDABEM_COMPOSTA,
+            versionamento=ESCALONADO_COMPOSTA,
             git=git,
             tasks=FakeTaskSource(),
             estado=estado,
@@ -297,7 +297,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
 
     reconstruir_estado(
         Deps(
-            versionamento=VENDABEM_COMPOSTA,
+            versionamento=ESCALONADO_COMPOSTA,
             git=git,
             tasks=FakeTaskSource(),
             estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),

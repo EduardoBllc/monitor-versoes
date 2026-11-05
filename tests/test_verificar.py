@@ -19,14 +19,14 @@ from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
 from motor.services.versionamento import Versionamento
 from tests.fontes_falsas import REFERENCIA_CH
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
 
 def _deps(git, tasks, commits, estado) -> Deps:
     return Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=tasks,
         estado=estado,
@@ -286,7 +286,7 @@ def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
     "a guarda funciona" de "nenhum commit conflita".
     """
     git = _git()
-    git.add_commit("sumido", "", "ch999999 tarefa que saiu do Tickio", D)
+    git.add_commit("sumido", "", "ch999999 tarefa que saiu do rastreador", D)
     git.merge_predictions["a0"] = MergePrediction(conflita=True, arquivos_conflito=[])
     git.merge_predictions["sumido"] = MergePrediction(
         conflita=True, arquivos_conflito=[]
@@ -437,7 +437,7 @@ def test_verificar_busca_antes_de_ler_as_refs_e_congela_tag_nova_no_mesmo_run():
             )
         ],
     )
-    # tarefa nova no Tickio: e com ela que o run reescreveria o snapshot
+    # tarefa nova no rastreador: e com ela que o run reescreveria o snapshot
     tasks = FakeTaskSource(chamados={"13.34.0": ["999111"]})
 
     status = verificar(_deps(git, tasks, FakeCommitSource(), estado), "13.34.0")
@@ -753,7 +753,7 @@ def test_verificar_cobra_a_fonte_de_commits_nao_montada():
     estado = _estado_com_repo()
     _versao_registrada(estado)
     deps = Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,
@@ -946,7 +946,7 @@ def test_verificar_nao_recobra_liberada_que_e_a_propria_base_da_ajustada():
 
 def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
     """Branch rebasada e depois mergeada de volta deixa DOIS commits de origem
-    com o mesmo patch (aconteceu no ch254994 da 14.11.0 do vendabemweb, PR
+    com o mesmo patch (aconteceu no ch254994 da 14.11.0 do webapp, PR
     1132). O pick de um levou o conteudo do outro, mas o nivel 3 do oraculo
     varre so `base..alvo` e o pick esta abaixo da base — o gemeo aparecia como
     faltante, e o operador nao tem o que aplicar.
@@ -1068,7 +1068,7 @@ def test_snapshot_de_liberada_nao_grava_carimbo():
 def test_verificar_devolve_faltantes_na_ordem_do_grafo():
     git = _git()
     git.add_commit("a1", "a0", "ch456456 beta", D + datetime.timedelta(seconds=1))
-    # O Tickio devolve o chamado de a1 antes do de a0.
+    # A fonte devolve o chamado de a1 antes do de a0.
     tasks = FakeTaskSource(chamados={"14.0.0": ["456456", "123123"]})
     commits = FakeCommitSource(
         por_chamado={
@@ -1159,12 +1159,12 @@ def test_tag_do_template_da_config_libera_e_a_homonima_nao(tag, liberada):
 # -- politica `exata` (critério 5 da #115) ------------------------------------
 
 
-def _vendabem_exata() -> Versionamento:
-    return replace(VENDABEM_COMPOSTA(), politica=Exata())
+def _escalonado_exata() -> Versionamento:
+    return replace(ESCALONADO_COMPOSTA(), politica=Exata())
 
 
 def _deps_exata(git, tasks, commits, estado) -> Deps:
-    return replace(_deps(git, tasks, commits, estado), versionamento=_vendabem_exata)
+    return replace(_deps(git, tasks, commits, estado), versionamento=_escalonado_exata)
 
 
 def _commit_m1() -> FakeCommitSource:

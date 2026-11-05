@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integracao
 
 def _semear_repo(sessao) -> None:
     sessao.execute(
-        text("insert into repo (nome, tickio_sistema_id) values ('vendabemweb', 1)")
+        text("insert into repo (nome, tickio_sistema_id) values ('webapp', 1)")
     )
     sessao.execute(
         text("insert into repo_alias (nome, repo_id) select 'vbweb', id from repo")
@@ -36,7 +36,7 @@ def test_resolver_repo_por_alias(sessao_postgres):
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
 
-    assert estado.resolver_repo("vbweb").nome == "vendabemweb"
+    assert estado.resolver_repo("vbweb").nome == "webapp"
 
 
 def test_resolver_repo_desconhecido(sessao_postgres):
@@ -48,12 +48,12 @@ def test_resolver_repo_desconhecido(sessao_postgres):
 def test_ciclo_de_atribuicoes(sessao_postgres):
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
-    estado.registrar_versao("vendabemweb", _info("13.34.0"))
+    estado.registrar_versao("webapp", _info("13.34.0"))
 
     # dois chamados, cada um com seus proprios hashes: exercita o
     # agrupamento commits-por-chamado, nao so o caso trivial de um so.
     estado.substituir_atribuicoes(
-        "vendabemweb",
+        "webapp",
         "13.34.0",
         [
             Atribuicao(
@@ -68,7 +68,7 @@ def test_ciclo_de_atribuicoes(sessao_postgres):
         ],
     )
 
-    lidas = estado.atribuicoes("vendabemweb", "13.34.0")
+    lidas = estado.atribuicoes("webapp", "13.34.0")
     assert [a.chamado for a in lidas] == ["123456", "789012"]
     assert sorted(lidas[0].commits) == ["aaa", "bbb"]
     assert sorted(lidas[1].commits) == ["ccc"]
@@ -79,9 +79,9 @@ def test_trigger_recusa_escrita_em_versao_liberada(sessao_postgres):
     tem que existir no banco de verdade."""
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
-    estado.registrar_versao("vendabemweb", _info("13.34.0"))
+    estado.registrar_versao("webapp", _info("13.34.0"))
     estado.substituir_atribuicoes(
-        "vendabemweb",
+        "webapp",
         "13.34.0",
         [
             Atribuicao(
@@ -89,11 +89,11 @@ def test_trigger_recusa_escrita_em_versao_liberada(sessao_postgres):
             ),
         ],
     )
-    estado.marcar_liberadas("vendabemweb", {"13.34.0": datetime.datetime(2026, 8, 1)})
+    estado.marcar_liberadas("webapp", {"13.34.0": datetime.datetime(2026, 8, 1)})
 
     with pytest.raises(MotorError, match="imutavel"):
         estado.substituir_atribuicoes(
-            "vendabemweb",
+            "webapp",
             "13.34.0",
             [
                 Atribuicao(
@@ -106,9 +106,7 @@ def test_trigger_recusa_escrita_em_versao_liberada(sessao_postgres):
         )
 
     # e o snapshot antigo continua intacto
-    assert [a.chamado for a in estado.atribuicoes("vendabemweb", "13.34.0")] == [
-        "123456"
-    ]
+    assert [a.chamado for a in estado.atribuicoes("webapp", "13.34.0")] == ["123456"]
 
 
 def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_postgres):
@@ -121,9 +119,9 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
     trigger direto via SQL, por fora do adapter."""
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
-    estado.registrar_versao("vendabemweb", _info("13.34.0"))
+    estado.registrar_versao("webapp", _info("13.34.0"))
     estado.registrar_versao(
-        "vendabemweb",
+        "webapp",
         VersaoInfo(
             numero="13.35.0",
             tipo="ajustada",
@@ -132,7 +130,7 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
         ),
     )
     estado.substituir_atribuicoes(
-        "vendabemweb",
+        "webapp",
         "13.34.0",
         [
             Atribuicao(
@@ -140,7 +138,7 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
             ),
         ],
     )
-    estado.marcar_liberadas("vendabemweb", {"13.34.0": datetime.datetime(2026, 8, 1)})
+    estado.marcar_liberadas("webapp", {"13.34.0": datetime.datetime(2026, 8, 1)})
 
     versao_livre_id = sessao_postgres.execute(
         text("select id from versao where numero = '13.35.0'")
@@ -154,26 +152,24 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
     sessao_postgres.rollback()
 
     # a atribuicao continua presa na versao liberada, nao migrou para a livre
-    assert [a.chamado for a in estado.atribuicoes("vendabemweb", "13.34.0")] == [
-        "123456"
-    ]
-    assert estado.atribuicoes("vendabemweb", "13.35.0") == []
+    assert [a.chamado for a in estado.atribuicoes("webapp", "13.34.0")] == ["123456"]
+    assert estado.atribuicoes("webapp", "13.35.0") == []
 
 
 def test_marcar_liberadas_nao_reescreve_data(sessao_postgres):
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
-    estado.registrar_versao("vendabemweb", _info("13.34.0"))
+    estado.registrar_versao("webapp", _info("13.34.0"))
     # timezone.utc explicito: a coluna e timestamptz (migracao eafc77e6d0ce),
     # e um datetime naive de volta do banco nunca compara igual a um aware.
     primeira = datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC)
-    estado.marcar_liberadas("vendabemweb", {"13.34.0": primeira})
+    estado.marcar_liberadas("webapp", {"13.34.0": primeira})
     estado.marcar_liberadas(
-        "vendabemweb",
+        "webapp",
         {"13.34.0": datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)},
     )
 
-    gravada = estado.versao("vendabemweb", "13.34.0")
+    gravada = estado.versao("webapp", "13.34.0")
     assert gravada is not None
     assert gravada.liberada_em == primeira
 
@@ -181,12 +177,12 @@ def test_marcar_liberadas_nao_reescreve_data(sessao_postgres):
 def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
-    estado.registrar_versao("vendabemweb", _info("13.34.0"))
+    estado.registrar_versao("webapp", _info("13.34.0"))
     # tipo diferente do primeiro registro (_info usa AJUSTADA): uma
     # implementacao que reescrevesse tipo/base_ref mas nao base_commit
     # passaria pelo assert antigo, que so checava base_commit.
     estado.registrar_versao(
-        "vendabemweb",
+        "webapp",
         VersaoInfo(
             numero="13.34.0",
             tipo="cliente",
@@ -195,7 +191,7 @@ def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
         ),
     )
 
-    gravada = estado.versao("vendabemweb", "13.34.0")
+    gravada = estado.versao("webapp", "13.34.0")
     assert gravada is not None
     assert gravada.tipo == "ajustada"
     assert gravada.base_ref == "13.33.0"
@@ -212,11 +208,11 @@ def test_substituir_atribuicoes_recusa_versao_liberada_com_snapshot_vazio(
     checasse liberada_em antes."""
     _semear_repo(sessao_postgres)
     estado = PostgresEstado(sessao=sessao_postgres)
-    estado.registrar_versao("vendabemweb", _info("13.34.0"))
-    estado.marcar_liberadas("vendabemweb", {"13.34.0": datetime.datetime(2026, 8, 1)})
+    estado.registrar_versao("webapp", _info("13.34.0"))
+    estado.marcar_liberadas("webapp", {"13.34.0": datetime.datetime(2026, 8, 1)})
 
     with pytest.raises(MotorError, match="imutavel"):
-        estado.substituir_atribuicoes("vendabemweb", "13.34.0", [])
+        estado.substituir_atribuicoes("webapp", "13.34.0", [])
 
 
 def test_exclusoes(sessao_postgres):
@@ -231,7 +227,7 @@ def test_exclusoes(sessao_postgres):
     """
     _semear_repo(sessao_postgres)
     repo_id = sessao_postgres.execute(
-        text("select id from repo where nome = 'vendabemweb'")
+        text("select id from repo where nome = 'webapp'")
     ).scalar_one()
     sessao_postgres.execute(
         text(
@@ -245,7 +241,7 @@ def test_exclusoes(sessao_postgres):
 
     estado = PostgresEstado(sessao=sessao_postgres)
 
-    assert estado.exclusoes("vendabemweb") == [
+    assert estado.exclusoes("webapp") == [
         Exclusion(
             hash_origem="aaa111", versao_numero=None, motivo="revertido em master"
         ),
@@ -260,7 +256,7 @@ def test_exclusoes(sessao_postgres):
 def test_sem_entrega(sessao_postgres):
     _semear_repo(sessao_postgres)
     repo_id = sessao_postgres.execute(
-        text("select id from repo where nome = 'vendabemweb'")
+        text("select id from repo where nome = 'webapp'")
     ).scalar_one()
     sessao_postgres.execute(
         text(
@@ -272,7 +268,7 @@ def test_sem_entrega(sessao_postgres):
     sessao_postgres.commit()
 
     estado = PostgresEstado(sessao=sessao_postgres)
-    assert estado.sem_entrega("vendabemweb") == {
+    assert estado.sem_entrega("webapp") == {
         "555444": "chamado administrativo, sem commit"
     }
 

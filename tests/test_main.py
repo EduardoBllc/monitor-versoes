@@ -42,7 +42,7 @@ from motor.errors import MotorError
 from motor.montagem import CredenciaisBitbucket
 from motor.plugins import Origem, carregar_plugin
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -233,7 +233,7 @@ def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
     assert "faltantes" not in saida
 
 
-def _referencia_tickio() -> Referencia:
+def _referencia_ch() -> Referencia:
     return REFERENCIA_CH
 
 
@@ -256,7 +256,7 @@ def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
                 commits_sumidos=["deadbeefcafe"],
             ),
         ),
-        _referencia_tickio,
+        _referencia_ch,
     )
 
     saida = capsys.readouterr().out
@@ -271,14 +271,12 @@ def test_imprimir_atualizacao_avisa_reaproveitamento(capsys):
     verificado_em = datetime.datetime(2026, 1, 2, 13, 45, tzinfo=datetime.UTC)
     imprimir_atualizacao(
         AtualizarResult(status=AtualizarStatus.DONE, reaproveitada_de=verificado_em),
-        _referencia_tickio,
+        _referencia_ch,
     )
     hora = verificado_em.astimezone().strftime("%H:%M")
     assert f"reaproveitando a verificacao das {hora}" in capsys.readouterr().out
 
-    imprimir_atualizacao(
-        AtualizarResult(status=AtualizarStatus.DONE), _referencia_tickio
-    )
+    imprimir_atualizacao(AtualizarResult(status=AtualizarStatus.DONE), _referencia_ch)
     assert "reaproveitando" not in capsys.readouterr().out
 
 
@@ -291,7 +289,7 @@ def _referencia_proibida() -> Referencia:
     [
         (
             ["257056"],
-            _referencia_tickio,
+            _referencia_ch,
             "BLOQUEADO em f5d02b45, arquivos: ['integracoes/tests.py'], "
             "depende de ch257056, fora desta versao",
         ),
@@ -322,7 +320,7 @@ def test_imprimir_atualizacao_bloqueada_nomeia_os_culpados(
 # -- main() ponta a ponta -----------------------------------------------------
 
 
-def _repo_dir(tmp_path, nome: str = "vendabemweb") -> str:
+def _repo_dir(tmp_path, nome: str = "webapp") -> str:
     caminho = tmp_path / nome
     caminho.mkdir()
     return str(caminho)
@@ -358,7 +356,7 @@ def _fonte_central(fonte: str | None, chamados: list[str] | None = None) -> None
     global_ = os.path.join(
         os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml"
     )
-    conteudo = '[versao]\nesquema = "vendabem"\natribuicao = "composta"\n'
+    conteudo = '[versao]\nesquema = "tests.versionamento:Escalonado"\natribuicao = "composta"\n'
     if fonte is not None:
         conteudo += f'[tarefas]\nfonte = "{fonte}"\n'
         if chamados is not None:
@@ -379,19 +377,19 @@ def bordas(monkeypatch, tmp_path_factory):
     """
     tmp_path = tmp_path_factory.mktemp("cfg")
     git = _git()
-    estado = FakeEstado(repos={"vendabemweb": RepoInfo(nome="vendabemweb")})
+    estado = FakeEstado(repos={"webapp": RepoInfo(nome="webapp")})
     monkeypatch.setenv("FONTE_FALSA_TOKEN", "certo")
     monkeypatch.setattr(FonteFixa, "recebidos", [])
     monkeypatch.setattr(FonteFixa, "buscadas", [])
     # config global isolada: o teste nao le o ~/.config de quem roda a suite.
-    # O repo de teste segue o esquema da VendaBem (`master`, base da 009,
+    # O repo de teste segue o esquema escalonado (`master`, base em degraus,
     # regra composta da 005): sem isso o padrao `semver`/`main` mudaria o que
     # estes testes verificam.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     global_ = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
     global_.parent.mkdir(parents=True)
     global_.write_text(
-        '[versao]\nesquema = "vendabem"\natribuicao = "composta"\n'
+        '[versao]\nesquema = "tests.versionamento:Escalonado"\natribuicao = "composta"\n'
         f'[tarefas]\nfonte = "{_COM_CREDENCIAL}"\n'
     )
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
@@ -430,7 +428,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
     git, estado = bordas
     git.tags["13.34.0"] = True
     estado.registrar_versao(
-        "vendabemweb",
+        "webapp",
         VersaoInfo(
             numero="13.34.0",
             tipo="ajustada",
@@ -438,7 +436,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
             base_commit="m0",
         ),
     )
-    estado.marcar_liberadas("vendabemweb", {"13.34.0": D})
+    estado.marcar_liberadas("webapp", {"13.34.0": D})
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
@@ -459,13 +457,13 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
     saida = capsys.readouterr().out
     assert "auditoria da tag 13.34.0" in saida
     assert "faltantes" in saida and "a0" in saida
-    assert estado.atribuicoes("vendabemweb", "13.34.0") == []
+    assert estado.atribuicoes("webapp", "13.34.0") == []
     assert git.removed_worktrees == []
 
 
 def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
     _git, estado = bordas
-    estado.aliases["vbweb"] = "vendabemweb"
+    estado.aliases["vbweb"] = "webapp"
     lista = tmp_path / "lista.txt"
     lista.write_text("", encoding="utf-8")
 
@@ -483,7 +481,7 @@ def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
     )
 
     # gravou sob o nome canonico, nao sob o basename do diretorio
-    assert ("vendabemweb", "13.34.0") in estado.versoes
+    assert ("webapp", "13.34.0") in estado.versoes
 
 
 def test_fonte_da_config_recebe_o_sistema_do_repo(bordas, tmp_path):
@@ -608,11 +606,11 @@ def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, cap
         "c0ffee123456", "a0", "Título " + "longo " * 30 + "\ncorpo oculto", D
     )
     estado.registrar_versao(
-        "vendabemweb",
+        "webapp",
         VersaoInfo(numero="13.34.0", tipo="ajustada"),
     )
     estado.substituir_atribuicoes(
-        "vendabemweb",
+        "webapp",
         "13.34.0",
         [
             Atribuicao(
@@ -770,7 +768,7 @@ def test_erro_com_nota_mostra_contexto_e_causa_na_linha(
     """
 
     def sem_banco():
-        erro = MotorError("Tickio respondeu 503")
+        erro = MotorError("rastreador respondeu 503")
         erro.add_note("buscando tasks da versao 13.34.0")
         raise erro
 
@@ -781,7 +779,7 @@ def test_erro_com_nota_mostra_contexto_e_causa_na_linha(
 
     assert saida.value.code == 1
     assert "buscando tasks da versao 13.34.0" in caplog.text
-    assert "Tickio respondeu 503" in caplog.text
+    assert "rastreador respondeu 503" in caplog.text
 
 
 def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
@@ -803,7 +801,7 @@ def test_main_nao_repovoa_variavel_que_o_teste_apagou(
     """Pina a guarda estrutural do "sem rede" (fixture _sem_dotenv_dentro_do_main
     no conftest): sem ela, o load_dotenv() de dentro do main() traz de volta toda
     variavel que o teste apagou — foi assim que um teste de credencial ausente
-    saiu para o host real do Tickio na Task 12.
+    saiu para o host real do rastreador na Task 12.
 
     """
     # Pin estrutural, nao comportamental: `load_dotenv()` procura o .env a partir
@@ -909,7 +907,7 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     # atravessa o ChainCommitSource ate ela: um dump de deps sob --debug
     # imprimiria tudo em claro se o adapter nao tivesse repr=False.
     deps = Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=_git(),
         tasks=FakeTaskSource(),
         estado=FakeEstado(),
@@ -936,22 +934,22 @@ def test_resolver_repo_caminho_literal(tmp_path):
 
 def test_resolver_repo_via_projects_dir(tmp_path, monkeypatch):
     projetos = tmp_path / "projetos"
-    (projetos / "vendabemweb").mkdir(parents=True)
+    (projetos / "webapp").mkdir(parents=True)
     monkeypatch.setenv("PROJECTS_DIR", str(projetos))
 
-    resolvido = _resolver_repo("vendabemweb")
+    resolvido = _resolver_repo("webapp")
 
-    assert resolvido == os.path.join(str(projetos), "vendabemweb")
+    assert resolvido == os.path.join(str(projetos), "webapp")
 
 
 def test_resolver_repo_tira_a_barra_final(tmp_path, monkeypatch):
-    # tab-completion do shell manda "vendabemweb/", e o basename disso e "" —
+    # tab-completion do shell manda "webapp/", e o basename disso e "" —
     # o nome do repo e a chave do estado inteiro.
     projetos = tmp_path / "projetos"
-    (projetos / "vendabemweb").mkdir(parents=True)
+    (projetos / "webapp").mkdir(parents=True)
     monkeypatch.setenv("PROJECTS_DIR", str(projetos))
 
-    assert os.path.basename(_resolver_repo("vendabemweb/")) == "vendabemweb"
+    assert os.path.basename(_resolver_repo("webapp/")) == "webapp"
 
 
 def test_resolver_repo_nao_encontrado(tmp_path, monkeypatch):

@@ -58,7 +58,7 @@ def test_reagrupa_por_chamado_guardando_o_hash_de_origem():
     # o hash de ORIGEM, nao o do pick: o pick e local desta branch
     assert atribuicoes[0].commits == ["aaa", "zzz"]
     assert atribuicoes[0].estado == "aplicado"
-    # a varredura nao sabe para que versao o Tickio marcou a tarefa
+    # a varredura nao sabe para que versao o rastreador marcou a tarefa
     assert atribuicoes[0].marcada == ""
 
 

@@ -20,7 +20,7 @@ from motor.errors import RecusaDeInvariante
 from motor.esquemas.semver import Semver
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
-from tests.versionamento import VENDABEM_COMPOSTA
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
@@ -67,7 +67,7 @@ def _estado() -> FakeEstado:
 
 def _deps(git, estado) -> Deps:
     return Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514"]}),
         estado=estado,

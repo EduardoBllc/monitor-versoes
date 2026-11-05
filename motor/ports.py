@@ -68,7 +68,7 @@ class MergePrediction:
 
 
 class TaskSource(Protocol):
-    """Fonte de tarefas (Tickio, lista manual)."""
+    """Fonte de tarefas (plugin da config, lista manual)."""
 
     def fetch(self, versao: str, /) -> list[str]:
         """Numeros de chamado marcados para a versao."""

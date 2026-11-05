@@ -55,8 +55,7 @@ def test_tipo_gravado_antes_do_tipo_livre_sobrevive_ao_upgrade(url: str) -> None
     with engine.begin() as con:
         con.execute(
             text(
-                "insert into repo (id, nome, tickio_sistema_id) "
-                "values (1, 'vendabemweb', 1)"
+                "insert into repo (id, nome, tickio_sistema_id) values (1, 'webapp', 1)"
             )
         )
         con.execute(

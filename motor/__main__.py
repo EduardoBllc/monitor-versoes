@@ -346,7 +346,7 @@ def _imprimir_alertas(s: VersionStatus) -> None:
     """
     if s.tasks_ambiguas:
         print(f"tasks marcadas em mais de uma versao: {s.tasks_ambiguas}")
-        print("  (dado inconsistente no Tickio - corrija a marcacao)")
+        print("  (dado inconsistente no rastreador - corrija a marcacao)")
     if s.tasks_sem_commits:
         print(f"tasks sem commits: {s.tasks_sem_commits}")
         print("  (nenhum commit/PR achado - registre em sem_entrega se for proposital)")
@@ -359,7 +359,7 @@ def _imprimir_alertas(s: VersionStatus) -> None:
 def _referencias_dos_culpados(
     causado_por: dict[str, list[str]], referencia: FonteReferencia
 ) -> dict[str, list[str]]:
-    """Culpados pela referencia da tarefa (`ch123` no Tickio).
+    """Culpados pela referencia da tarefa (como `ch123`).
 
     Resolvida so se ha culpado: snapshot e status sem conflito atribuido nao
     passam a exigir padrao de referencia.

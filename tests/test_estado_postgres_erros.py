@@ -66,7 +66,7 @@ def test_conexao_morta_no_meio_do_comando_vira_motorerror():
     )
 
     with pytest.raises(MotorError) as e:
-        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("webapp")
 
     assert "connection already closed" in str(e.value)
     assert sessao.rollbacks == 1
@@ -81,7 +81,7 @@ def test_banco_fora_do_ar_continua_com_a_dica_do_compose():
     )
 
     with pytest.raises(MotorError) as e:
-        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("webapp")
 
     assert "docker compose up -d" in str(e.value)
 
@@ -95,7 +95,7 @@ def test_conexao_morta_ganha_a_dica_do_compose():
     )
 
     with pytest.raises(BackendIndisponivel, match="docker compose up -d"):
-        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("webapp")
 
 
 def test_deadlock_nao_e_reportado_como_banco_inacessivel():
@@ -111,7 +111,7 @@ def test_deadlock_nao_e_reportado_como_banco_inacessivel():
     )
 
     with pytest.raises(MotorError) as e:
-        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("webapp")
 
     assert "deadlock detected" in str(e.value)
     assert "docker compose" not in str(e.value), (
@@ -136,7 +136,7 @@ def test_congelamento_identificado_pelo_errcode_nao_pelo_texto():
     with pytest.raises(
         RecusaDeInvariante, match="remarque a tarefa para a proxima versao"
     ):
-        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
+        PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("webapp")
 
 
 # -- verificar_conexao (motor diagnostico) -----------------------------------

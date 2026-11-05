@@ -19,7 +19,7 @@ def _sem_dotenv_dentro_do_main(monkeypatch):
 
     Sem ela, `main()` repovoa o ambiente a cada invocacao e toda variavel que um
     teste apagou com `monkeypatch.delenv` volta do `.env` de produção — foi assim
-    que um teste de credencial ausente saiu para o host real do Tickio na Task
+    que um teste de credencial ausente saiu para o host real do rastreador na Task
     12. A disciplina de autor (usar `setenv("")` em vez de `delenv`) nao e
     guarda: ela vale ate o proximo teste escrito sem lembrar dela.
 

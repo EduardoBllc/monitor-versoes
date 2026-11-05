@@ -1,6 +1,6 @@
 """Suíte de conformidade de esquema de versão, publicada com o pacote.
 
-Um pacote de esquema de fora (como o `monitor-versoes-vendabem`) a roda contra o
+Um pacote de esquema de fora a roda contra o
 seu, num arquivo de teste próprio:
 
     from motor.conformidade import ConformidadeEsquema

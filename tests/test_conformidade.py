@@ -36,10 +36,8 @@ from motor.adapters.git.fake import FakeGit
 from motor.adapters.git.subprocess import GitSubprocess
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.manuallist import ManualList
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.atribuicoes import Composta, Exata
 from motor.esquemas.semver import Semver
-from motor.esquemas.vendabem import VendaBem
 from motor.montagem import FonteDaConfig
 from motor.ports import (
     CommitSource,
@@ -50,6 +48,7 @@ from motor.ports import (
     TaskSource,
 )
 from tests.fontes_falsas import FonteFixa
+from tests.versionamento import Escalonado
 
 # O fake entra junto com o real de proposito: fake mais permissivo que o
 # adapter deixa a suite verde num caminho que quebra em producao, e este
@@ -57,7 +56,6 @@ from tests.fontes_falsas import FonteFixa
 _GIT: list[type[GitRepo]] = [GitSubprocess, FakeGit]
 _ESTADO: list[type[EstadoRepo]] = [PostgresEstado, FakeEstado]
 _TASKS: list[type[TaskSource]] = [
-    TickioRest,
     ManualList,
     FakeTaskSource,
     FonteDaConfig,
@@ -69,7 +67,7 @@ _COMMITS: list[type[CommitSource]] = [
     ChainCommitSource,
     FakeCommitSource,
 ]
-_ESQUEMAS: list[type[EsquemaVersao]] = [Semver, VendaBem]
+_ESQUEMAS: list[type[EsquemaVersao]] = [Semver, Escalonado]
 _ATRIBUICOES: list[type[PoliticaAtribuicao]] = [Exata, Composta]
 
 
@@ -84,7 +82,7 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
         len(_COMMITS),
         len(_ESQUEMAS),
         len(_ATRIBUICOES),
-    ] == [2, 2, 5, 4, 2, 2]
+    ] == [2, 2, 4, 4, 2, 2]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:
