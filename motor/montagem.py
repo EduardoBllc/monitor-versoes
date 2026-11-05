@@ -33,6 +33,7 @@ from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import (
     ConfigProjeto,
+    Escolhido,
     carregar_config,
     database_url,
     worktrees_mantidas,
@@ -42,11 +43,26 @@ from motor.domain.referencia import (
     Referencia,
     resolver_referencia,
 )
-from motor.domain.version import validar_versao as validar_versao  # reexporta
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada
-from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
+from motor.plugins import carregar_plugin
+from motor.ports import (
+    CommitSource,
+    EsquemaVersao,
+    EstadoRepo,
+    GitRepo,
+    PoliticaAtribuicao,
+    TaskSource,
+)
 from motor.progresso import RelatorProgresso, silencioso
+from motor.services.versionamento import (
+    BRANCH_VERSAO_PADRAO,
+    PRINCIPAL_PADRAO,
+    FonteVersionamento,
+    Versionamento,
+    nomes_sem_esquema,
+    versionamento_padrao,
+)
 
 
 @dataclass(frozen=True)
@@ -169,8 +185,69 @@ def _identidade_das_entradas(
             sorted(config.tarefas.items()),
             config.padrao_referencia,
             config.piso,
+            # Esquema e politica decidem as fontes do alvo; liberacao e branches,
+            # quais versoes sao abertas e liberadas.
+            [
+                None if e is None else e.valor
+                for e in (
+                    config.esquema,
+                    config.atribuicao,
+                    config.tag_liberacao,
+                    config.branch_versao,
+                    config.branch_principal,
+                )
+            ],
         )
     )
+
+
+def _plugin(grupo: str, escolhido: Escolhido | None, padrao: str) -> type:
+    """A classe escolhida na config, ou a do padrao embutido."""
+    if escolhido is None:
+        return carregar_plugin(grupo, padrao, "central")
+    return carregar_plugin(grupo, escolhido.valor, escolhido.origem)
+
+
+def resolver_versionamento(config: ConfigProjeto) -> Versionamento:
+    """Esquema, politica, piso e nomes nas camadas config > esquema > padrao.
+
+    O piso e validado aqui, pelo esquema em uso, e nao na leitura da config: um
+    piso que o esquema nao reconhece falha so em quem usa o versionamento.
+    """
+    esquema: EsquemaVersao = _plugin(
+        "monitor_versoes.esquemas", config.esquema, "semver"
+    )()
+    politica: PoliticaAtribuicao = _plugin(
+        "monitor_versoes.atribuicoes", config.atribuicao, "exata"
+    )()
+    piso = config.piso
+    if piso is not None:
+        try:
+            piso = esquema.validar(piso)
+        except ErroDeEntrada as e:
+            raise ErroDeEntrada(
+                f"{config.arquivo_piso}: [versao] piso invalido: {config.piso!r} ({e})"
+            ) from e
+    return Versionamento(
+        esquema=esquema,
+        politica=politica,
+        piso=piso,
+        branch_versao=_camada(
+            config.branch_versao, esquema.branch_versao, BRANCH_VERSAO_PADRAO
+        ),
+        principal=_camada(
+            config.branch_principal, esquema.branch_principal, PRINCIPAL_PADRAO
+        ),
+        tag_liberacao=None
+        if config.tag_liberacao is None
+        else config.tag_liberacao.valor,
+    )
+
+
+def _camada(config: Escolhido | None, do_esquema: str | None, padrao: str) -> str:
+    if config is not None:
+        return config.valor
+    return padrao if do_esquema is None else do_esquema
 
 
 # Seis parametros, cinco deles nomeados e com default salvo a referencia: e
@@ -183,8 +260,9 @@ def montar_commit_source(  # noqa: PLR0913
     estado: EstadoRepo | None = None,
     repo: str = "",
     progresso: RelatorProgresso = silencioso,
+    versionamento: FonteVersionamento = versionamento_padrao,
 ) -> CommitSource:
-    """Grep em master e o fallback sempre disponivel. Com token do Bitbucket, a
+    """Grep na branch principal e o fallback sempre disponivel. Com token do Bitbucket, a
     PR (merged) vira a fonte primaria: ordem da lista = prioridade.
 
     O `workspace/repo` do Bitbucket nao e resolvido aqui: sai do
@@ -192,7 +270,18 @@ def montar_commit_source(  # noqa: PLR0913
     agora faria todo comando pagar uma chamada de git — e `atualizar --abort`
     num clone sem `origin` passaria a falhar na montagem.
     """
-    grep = GrepCommitSource(git=git, progresso=progresso, referencia=referencia)
+
+    # Fonte, nao valor: a principal sai do esquema, e resolve-lo aqui faria um
+    # plugin inexistente derrubar a montagem, e com ela `atualizar --abort`.
+    def ref_principal() -> str:
+        return f"origin/{versionamento().principal}"
+
+    grep = GrepCommitSource(
+        git=git,
+        progresso=progresso,
+        referencia=referencia,
+        ref_principal=ref_principal,
+    )
     # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
     if not bitbucket.token or estado is None:
         return grep
@@ -206,6 +295,7 @@ def montar_commit_source(  # noqa: PLR0913
         estado=estado,
         repo_estado=repo,
         referencia=referencia,
+        ref_principal=ref_principal,
     )
     return ChainCommitSource(sources=[pr, grep])
 
@@ -241,6 +331,10 @@ def montar_deps(
         config.padrao_referencia,
         config.arquivos,
     )
+    # Cache: resolvido uma vez por invocacao, na primeira vez que alguem usa.
+    versionamento: FonteVersionamento = functools.cache(
+        functools.partial(resolver_versionamento, config)
+    )
     commit_source = montar_commit_source(
         git,
         referencia=referencia,
@@ -251,6 +345,7 @@ def montar_deps(
         estado=estado,
         repo=info.nome,
         progresso=progresso,
+        versionamento=versionamento,
     )
     return Deps(
         git=git,
@@ -260,7 +355,8 @@ def montar_deps(
         commit_source=commit_source,
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
-        piso_versao=config.piso,
+        versionamento=versionamento,
+        nomes_abort=nomes_sem_esquema(config),
         referencia=referencia,
         identidade_das_entradas=_identidade_das_entradas(
             fonte_tasks, commit_source, config

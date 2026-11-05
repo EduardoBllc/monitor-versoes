@@ -11,7 +11,6 @@ from motor.domain.types import (
     Verificacao,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.engine.deps import Deps
 from motor.engine.vigencia import (
@@ -19,6 +18,7 @@ from motor.engine.vigencia import (
     impressao_da_verificacao,
     verificacao_vigente,
 )
+from tests.versionamento import VENDABEM_COMPOSTA
 
 VERSAO = "13.7.0"
 TIP = "t1"
@@ -44,7 +44,7 @@ def _montar(
         "r",
         VersaoInfo(
             numero=VERSAO,
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit=TIP,
         ),
@@ -60,6 +60,7 @@ def _montar(
         ),
     )
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,

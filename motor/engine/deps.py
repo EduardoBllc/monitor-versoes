@@ -9,6 +9,12 @@ from dataclasses import dataclass
 from motor.domain.referencia import FonteReferencia, Referencia, resolver_referencia
 from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
 from motor.progresso import RelatorProgresso, silencioso
+from motor.services.versionamento import (
+    BRANCH_VERSAO_PADRAO,
+    PRINCIPAL_PADRAO,
+    FonteVersionamento,
+    versionamento_padrao,
+)
 
 
 def _sem_referencia() -> Referencia:
@@ -37,8 +43,13 @@ class Deps:
     # testes de engine falando de uma worktree so; o default de produto sai de
     # WORKTREES_MANTIDAS, lido em motor.montagem — o engine nao ve ambiente.
     worktrees_mantidas: int = 0
-    # Da config do projeto (`[versao] piso`); `None` = nada e cortado.
-    piso_versao: str | None = None
+    # Esquema, politica, piso e nomes de branch e de tag, resolvidos so por
+    # quem usa: plugin inexistente na config nao pode derrubar `atualizar --abort`.
+    versionamento: FonteVersionamento = versionamento_padrao
+    # Template da branch da versao e principal so das camadas config e padrao
+    # (`nomes_sem_esquema`): o `atualizar --abort` acha a worktree sem
+    # resolver o `versionamento`.
+    nomes_abort: tuple[str, str] = (BRANCH_VERSAO_PADRAO, PRINCIPAL_PADRAO)
     # Relógio injetável: a validade do carimbo da verificação depende dele.
     agora: Callable[[], datetime.datetime] = lambda: datetime.datetime.now(datetime.UTC)
     # Referencia de tarefa (padrao e alfabeto), resolvida so por quem a usa: a

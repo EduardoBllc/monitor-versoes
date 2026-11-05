@@ -213,7 +213,7 @@ def test_toml_invalido_cita_o_arquivo(camadas):
         config.carregar_config(str(repo.parent))
 
 
-@pytest.mark.parametrize("piso", ['"1.2"', "1.2", "12", '"abc"'])
+@pytest.mark.parametrize("piso", ["1.2", "12", '""'])
 def test_piso_invalido_e_erro_de_entrada(camadas, piso):
     _, repo = camadas
     repo.write_text(f"[versao]\npiso = {piso}\n")
@@ -221,7 +221,18 @@ def test_piso_invalido_e_erro_de_entrada(camadas, piso):
         config.carregar_config(str(repo.parent))
 
 
-@pytest.mark.parametrize("tabela", ["versao", "tarefas", "referencia"])
+def test_piso_fora_do_formato_e_lido_cru(camadas):
+    # Quem valida o numero e o esquema em uso, quando e resolvido: ler o piso
+    # nao pode derrubar `atualizar --abort`.
+    _, repo = camadas
+    repo.write_text('[versao]\npiso = "abc"\n')
+    config_lida = config.carregar_config(str(repo.parent))
+    assert (config_lida.piso, config_lida.arquivo_piso) == ("abc", str(repo))
+
+
+@pytest.mark.parametrize(
+    "tabela", ["versao", "tarefas", "referencia", "liberacao", "branches"]
+)
 def test_tabela_que_nao_e_tabela_e_erro(camadas, tabela):
     _, repo = camadas
     repo.write_text(f'{tabela} = "x"\n')
@@ -298,3 +309,66 @@ def test_chave_esquema_e_ignorada(camadas):
     glob, _ = camadas
     glob.write_text('esquema = "vendabem"\n')
     assert config.carregar_config(None) == config.ConfigProjeto(arquivos=(str(glob),))
+
+
+# --- esquema, atribuicao, liberacao e branches ---
+
+_CHAVES_NOVAS = [
+    # (atributo, tabela, chave, valor do global, valor do repo)
+    ("esquema", "versao", "esquema", "semver", "vendabem"),
+    ("atribuicao", "versao", "atribuicao", "exata", "composta"),
+    ("tag_liberacao", "liberacao", "tag", "{versao}", "v{versao}"),
+    ("branch_versao", "branches", "versao", "{versao}", "release/{versao}"),
+    ("branch_principal", "branches", "principal", "master", "main"),
+]
+
+
+@pytest.mark.parametrize(
+    ("atributo", "tabela", "chave", "glob_v", "repo_v"), _CHAVES_NOVAS
+)
+def test_chave_nova_do_repo_vence_o_global(
+    camadas, atributo, tabela, chave, glob_v, repo_v
+):
+    glob, repo = camadas
+    glob.write_text(f'[{tabela}]\n{chave} = "{glob_v}"\n')
+    repo.write_text(f'[{tabela}]\n{chave} = "{repo_v}"\n')
+
+    escolhido = getattr(config.carregar_config(str(repo.parent)), atributo)
+
+    assert escolhido == config.Escolhido(repo_v, str(repo), "repo")
+
+
+@pytest.mark.parametrize(
+    ("atributo", "tabela", "chave", "glob_v", "repo_v"), _CHAVES_NOVAS
+)
+def test_chave_nova_so_no_global_vem_do_central(
+    camadas, atributo, tabela, chave, glob_v, repo_v
+):
+    glob, repo = camadas
+    glob.write_text(f'[{tabela}]\n{chave} = "{glob_v}"\n')
+
+    escolhido = getattr(config.carregar_config(str(repo.parent)), atributo)
+
+    assert escolhido == config.Escolhido(glob_v, str(glob), "central")
+
+
+@pytest.mark.parametrize(
+    ("conteudo", "valor"),
+    [
+        ('[liberacao]\ntag = "v"\n', "'v'"),
+        ('[liberacao]\ntag = "{versao}-{versao}"\n', "'{versao}-{versao}'"),
+        ('[branches]\nversao = "release"\n', "'release'"),
+        ("[branches]\nprincipal = 1\n", "1"),
+        ('[branches]\nprincipal = ""\n', "''"),
+        ("[versao]\nesquema = true\n", "True"),
+        ("[versao]\natribuicao = []\n", "[]"),
+    ],
+)
+def test_valor_invalido_cita_arquivo_e_valor(camadas, conteudo, valor):
+    _, repo = camadas
+    repo.write_text(conteudo)
+    with pytest.raises(ErroDeEntrada) as e:
+        config.carregar_config(str(repo.parent))
+    # O texto é requisito: diz qual arquivo e qual valor corrigir.
+    assert str(repo) in str(e.value)
+    assert valor in str(e.value)

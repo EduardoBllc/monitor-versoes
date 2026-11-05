@@ -23,25 +23,16 @@ from motor.domain.types import (
     Verificacao,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.errors import (
     BackendIndisponivel,
     MotorError,
     NaoEncontrado,
     RecusaDeInvariante,
-    RespostaInvalida,
 )
 
 # Levantado pela trigger trava_versao_liberada; ver a migracao que a define.
 ERRCODE_VERSAO_CONGELADA = "MV001"
-
-_TIPO_PARA_TEXTO = {
-    VersionType.FECHADA: "fechada",
-    VersionType.AJUSTADA: "ajustada",
-    VersionType.CLIENTE: "cliente",
-}
-_TEXTO_PARA_TIPO = {v: k for k, v in _TIPO_PARA_TEXTO.items()}
 
 # A linha que o select devolve. Amarra o retorno de _scalar/_scalars ao modelo
 # pedido no statement, em vez de espalhar Any por todo metodo que os chama.
@@ -146,7 +137,7 @@ class PostgresEstado:
     def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:
         # Idempotente e nao-destrutivo: a base e o ponto onde a branch foi
         # cortada, gravado uma vez. Reescreve-la faria a base de uma X.0.0
-        # seguir o tip atual do master.
+        # seguir o tip atual da principal.
         repo_id = self._repo_id(repo)
         if self._versao(repo_id, info.numero) is not None:
             return
@@ -154,7 +145,7 @@ class PostgresEstado:
             models.Versao(
                 repo_id=repo_id,
                 numero=info.numero,
-                tipo=_TIPO_PARA_TEXTO[info.tipo],
+                tipo=info.tipo,
                 base_ref=info.base_ref,
                 base_commit=info.base_commit,
                 liberada_em=info.liberada_em,
@@ -179,15 +170,9 @@ class PostgresEstado:
         linha = self._versao(self._repo_id(repo), numero)
         if linha is None:
             return None
-        tipo = _TEXTO_PARA_TIPO.get(linha.tipo)
-        if tipo is None:
-            raise RespostaInvalida(
-                f"tipo de versao invalido no banco: '{linha.tipo}' "
-                f"(esperado fechada, ajustada ou cliente)"
-            )
         return VersaoInfo(
             numero=linha.numero,
-            tipo=tipo,
+            tipo=linha.tipo,
             base_ref=linha.base_ref,
             base_commit=linha.base_commit,
             liberada_em=linha.liberada_em,

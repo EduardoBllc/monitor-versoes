@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from urllib.parse import quote
 
 from motor.domain.referencia import validar_padrao
-from motor.domain.version import validar_versao
 from motor.errors import ErroDeEntrada
+from motor.plugins import Origem
 
 _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 
@@ -134,18 +134,38 @@ ARQUIVO_CONFIG_REPO = ".monitor-versoes.toml"
 
 
 @dataclass(frozen=True)
+class Escolhido:
+    """Valor de uma chave com o arquivo que o deu, para erro que cita o arquivo
+    e para o carregador de plugins saber se a escolha veio do arquivo central."""
+
+    valor: str
+    arquivo: str
+    origem: Origem
+
+
+@dataclass(frozen=True)
 class ConfigProjeto:
     """Config por projeto, mesclada das duas camadas (repo vence o global).
 
     `tarefas` e opaco ao nucleo: quem le as chaves e o adapter do tracker.
     `padrao_referencia` e o `[referencia] padrao` mesclado; `None` quando nenhuma
     camada o define (vale o proposto pelo adapter).
+
+    `piso` chega cru: quem o valida e o esquema de versao em uso, quando e
+    resolvido (motor.montagem.resolver_versionamento), nao a leitura — senao um
+    piso que o esquema nao reconhece derrubaria `atualizar --abort`.
     """
 
     piso: str | None = None
+    arquivo_piso: str | None = None
     padrao_referencia: str | None = None
     tarefas: Mapping[str, object] = field(default_factory=dict)
     arquivos: tuple[str, ...] = ()
+    esquema: Escolhido | None = None
+    atribuicao: Escolhido | None = None
+    tag_liberacao: Escolhido | None = None
+    branch_versao: Escolhido | None = None
+    branch_principal: Escolhido | None = None
 
 
 def caminho_config_global() -> str:
@@ -177,16 +197,41 @@ def _tabela(
     return valor
 
 
-def _piso(dados: Mapping[str, object], caminho: str) -> str | None:
-    bruto = _tabela(dados, "versao", caminho).get("piso")
+def _texto(
+    dados: Mapping[str, object], tabela: str, chave: str, caminho: str
+) -> str | None:
+    """`[tabela] chave` como texto nao vazio; `None` se ausente."""
+    bruto = _tabela(dados, tabela, caminho).get(chave)
     if bruto is None:
         return None
-    if not isinstance(bruto, str):
-        raise ErroDeEntrada(f"{caminho}: [versao] piso deve ser texto X.Y.Z")
-    try:
-        return validar_versao(bruto)
-    except ErroDeEntrada as e:
-        raise ErroDeEntrada(f"{caminho}: [versao] piso invalido ({e})") from e
+    if not isinstance(bruto, str) or not bruto.strip():
+        raise ErroDeEntrada(
+            f"{caminho}: [{tabela}] {chave} deve ser texto nao vazio, veio {bruto!r}"
+        )
+    return bruto
+
+
+def _template(
+    dados: Mapping[str, object], tabela: str, chave: str, caminho: str
+) -> str | None:
+    """Texto com exatamente um `{versao}`; o resto e literal."""
+    valor = _texto(dados, tabela, chave, caminho)
+    if valor is not None and valor.count("{versao}") != 1:
+        raise ErroDeEntrada(
+            f"{caminho}: [{tabela}] {chave} deve ter exatamente um {{versao}}, "
+            f"veio {valor!r}"
+        )
+    return valor
+
+
+#: (atributo do ConfigProjeto, tabela, chave, e se e template com `{versao}`)
+_ESCOLHAS = (
+    ("esquema", "versao", "esquema", False),
+    ("atribuicao", "versao", "atribuicao", False),
+    ("tag_liberacao", "liberacao", "tag", True),
+    ("branch_versao", "branches", "versao", True),
+    ("branch_principal", "branches", "principal", False),
+)
 
 
 def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
@@ -197,26 +242,38 @@ def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
 def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
     """Le o global e, havendo `raiz_repo`, o `.monitor-versoes.toml` dela.
 
-    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So
-    `[versao] piso`, `[referencia] padrao` e `[tarefas]` sao lidos; o resto e
-    ignorado.
+    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So as
+    chaves de `[versao]`, `[liberacao]`, `[branches]`, `[referencia] padrao` e
+    `[tarefas]` sao lidas; o resto e ignorado.
     """
     caminhos = [caminho_config_global()]
     if raiz_repo is not None:
         caminhos.append(os.path.join(raiz_repo, ARQUIVO_CONFIG_REPO))
-    piso: str | None = None
+    piso: Escolhido | None = None
     padrao: str | None = None
     tarefas: dict[str, object] = {}
-    for caminho in caminhos:
+    escolhas: dict[str, Escolhido] = {}
+    for indice, caminho in enumerate(caminhos):
+        origem: Origem = "central" if indice == 0 else "repo"
         dados = _ler_toml(caminho)
-        if (p := _piso(dados, caminho)) is not None:
-            piso = p
+        if (p := _texto(dados, "versao", "piso", caminho)) is not None:
+            piso = Escolhido(p, caminho, origem)
         if (r := _padrao_referencia(dados, caminho)) is not None:
             padrao = r
         tarefas.update(_tabela(dados, "tarefas", caminho))
+        for atributo, tabela, chave, template in _ESCOLHAS:
+            ler = _template if template else _texto
+            if (valor := ler(dados, tabela, chave, caminho)) is not None:
+                escolhas[atributo] = Escolhido(valor, caminho, origem)
     return ConfigProjeto(
-        piso=piso,
+        piso=None if piso is None else piso.valor,
+        arquivo_piso=None if piso is None else piso.arquivo,
         padrao_referencia=padrao,
         tarefas=tarefas,
         arquivos=tuple(caminhos),
+        esquema=escolhas.get("esquema"),
+        atribuicao=escolhas.get("atribuicao"),
+        tag_liberacao=escolhas.get("tag_liberacao"),
+        branch_versao=escolhas.get("branch_versao"),
+        branch_principal=escolhas.get("branch_principal"),
     )

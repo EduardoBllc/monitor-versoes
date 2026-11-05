@@ -10,10 +10,12 @@ from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import RepoInfo
 from motor.engine.deps import Deps
 from motor.engine.reconstruir_estado import ReconstructStatus, reconstruir_estado
+from tests.versionamento import VENDABEM_COMPOSTA
 
 
 def _deps(git, estado) -> Deps:
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,

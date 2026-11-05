@@ -23,10 +23,10 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 from motor.domain.types import VersaoInfo
-from motor.domain.version import inferir_tipo
 from motor.engine.deps import Deps
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
+from motor.services.catalogo import Catalogo
 from motor.services.reconstrutor import reconstruir_atribuicoes
 
 
@@ -45,8 +45,10 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
     # Antes do fetch: sem padrao de referencia nao ha o que reagrupar, e falhar
     # depois de buscar e registrar a versao seria I/O a toa.
     referencia = deps.referencia()
+    versionamento = deps.versionamento()
+    versionamento.esquema.validar(versao)
     # Antes de ler qualquer ref, nao depois: a base de uma versao nunca
-    # registrada sai do ref store local (list_version_branches, tag_exists em
+    # registrada sai do ref store local (o `Catalogo` do
     # BaseResolver) e o commits_in_range abaixo le o tip local da branch alvo.
     # Sem buscar primeiro, uma base recem-cortada em outra maquina nao teria
     # nem ref de rastreamento aqui (o fetch e o unico ponto que cria
@@ -60,12 +62,14 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
     info = deps.estado.versao(deps.repo, versao)
     if info is None:
         deps.progresso(Progresso("resolvendo a base da vers\u00e3o"))
-        resolvida = BaseResolver(git=deps.git).resolve(versao)
+        resolvida = BaseResolver(deps.git, Catalogo(deps.git, versionamento)).resolve(
+            versao
+        )
         deps.estado.registrar_versao(
             deps.repo,
             VersaoInfo(
                 numero=versao,
-                tipo=inferir_tipo(versao),
+                tipo=versionamento.esquema.tipo(versao),
                 base_ref=resolvida.ref,
                 base_commit=resolvida.commit,
             ),
@@ -77,7 +81,7 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
 
     deps.progresso(Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git"))
     atribuicoes, orfaos = reconstruir_atribuicoes(
-        deps.git, base_commit, versao, referencia
+        deps.git, base_commit, versionamento.branch(versao), referencia
     )
     deps.estado.substituir_atribuicoes(deps.repo, versao, atribuicoes)
 

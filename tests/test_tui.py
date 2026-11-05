@@ -21,6 +21,7 @@ from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError, NaoEncontrado
 from motor.ports import GitRepo
 from motor.progresso import Progresso, SlotProgresso
+from motor.services.versionamento import versionamento_padrao
 from motor.tui import (
     MotorTUI,
     PainelProgresso,
@@ -31,8 +32,8 @@ from motor.tui import (
     descobrir_versoes,
     renderizar_chamado,
     renderizar_status,
-    sugerir_versoes,
 )
+from tests.versionamento import VENDABEM_COMPOSTA
 
 
 def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -186,20 +187,21 @@ class GitCatalogoFake:
     def fetch(self, remote: str) -> None:
         self.fetched.append(remote)
 
-    def list_version_branches(self) -> list[str]:
-        return ["13.9.0", "14.0.0", "13.10.0", "13.9.0"]
+    def listar_branches(self) -> list[str]:
+        return ["13.10.0", "13.9.0", "14.0.0", "main"]
 
-    def list_version_tags(self) -> list[str]:
-        return ["13.9.0"]
+    def listar_tags(self) -> list[str]:
+        return ["13.8.0", "13.9.0", "v1"]
 
 
-def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_tag():
+def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_liberada():
     git = GitCatalogoFake()
 
-    assert descobrir_versoes(cast(GitRepo, git)) == [
+    assert descobrir_versoes(cast(GitRepo, git), versionamento_padrao()) == [
         VersionOption(numero="14.0.0", liberada=False),
         VersionOption(numero="13.10.0", liberada=False),
         VersionOption(numero="13.9.0", liberada=True),
+        VersionOption(numero="13.8.0", liberada=True),
     ]
     assert git.fetched == ["origin"]
 
@@ -1113,20 +1115,11 @@ def test_app_resolucao_vazia_vira_registrar_vazio_e_confirma():
     asyncio.run(executar_fluxo())
 
 
-def test_sugerir_versoes_deriva_da_mais_alta_por_semver():
-    """A mais alta e por semver, nao por texto: 13.10.0 e maior que 13.9.0."""
-    assert sugerir_versoes(["13.9.0", "13.6.0", "13.10.0"]) == [
-        "13.10.1",
-        "13.11.0",
-        "14.0.0",
-    ]
-
-
-def test_sugerir_versoes_sem_versao_nenhuma_nao_inventa():
-    assert sugerir_versoes([]) == []
-
-
-def _app_criar(criar_runner, versoes: list[VersionOption] | None = None) -> MotorTUI:
+def _app_criar(
+    criar_runner,
+    versoes: list[VersionOption] | None = None,
+    versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
+) -> MotorTUI:
     return MotorTUI(
         Runners(
             carregar_repos=lambda: [_REPO_PREVIA],
@@ -1135,6 +1128,7 @@ def _app_criar(criar_runner, versoes: list[VersionOption] | None = None) -> Moto
             ),
             executar=_nunca_executa,
             criar_repo=criar_runner,
+            versionamento_repo=versionamento_repo,
         )
     )
 
@@ -1160,6 +1154,37 @@ def test_criar_modal_previa_mostra_tipo_e_base():
             previa = _texto(app.screen.query_one("#criar-previa", Static).content)
             assert "cliente" in previa
             assert "14.0.0" in previa
+
+    asyncio.run(executar_fluxo())
+
+
+@pytest.mark.parametrize(
+    ("versionamento", "previa_esperada"),
+    [
+        (versionamento_padrao(), "base main"),
+        (VENDABEM_COMPOSTA(), "ajustada · base 2.2.0"),
+    ],
+    ids=["semver", "vendabem"],
+)
+def test_criar_modal_previa_segue_o_esquema_do_repo(versionamento, previa_esperada):
+    existente = VersionOption(numero="2.2.0", liberada=False)
+
+    async def executar_fluxo() -> None:
+        app = _app_criar(
+            lambda repo, numero: AtualizarResult(status=AtualizarStatus.DONE),
+            versoes=[existente],
+            versionamento_repo=lambda repo: versionamento,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot, existente)
+
+            await pilot.press("c")
+            await pilot.pause()
+            app.screen.query_one("#criar-numero", Input).value = "2.3.0"
+            await pilot.pause()
+
+            previa = _texto(app.screen.query_one("#criar-previa", Static).content)
+            assert previa.strip() == previa_esperada
 
     asyncio.run(executar_fluxo())
 
@@ -1264,6 +1289,7 @@ def test_app_criar_seleciona_a_versao_nova_e_consulta_ela():
                 executar=_nunca_executa,
                 consultar_versao=consultar_runner,
                 criar_repo=criar_runner,
+                versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
             )
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -1329,6 +1355,7 @@ def test_app_criar_com_lote_bloqueado_retoma_na_versao_nova():
                 ),
                 continuar_repo=continuar_runner,
                 criar_repo=criar_runner,
+                versionamento_repo=lambda repo: VENDABEM_COMPOSTA(),
             )
         )
         async with app.run_test(size=(120, 36)) as pilot:
@@ -2597,7 +2624,11 @@ def test_descobrir_versoes_relata_o_fetch():
     """
     relatos: list[Progresso] = []
 
-    descobrir_versoes(cast(GitRepo, GitCatalogoFake()), progresso=relatos.append)
+    descobrir_versoes(
+        cast(GitRepo, GitCatalogoFake()),
+        versionamento_padrao(),
+        progresso=relatos.append,
+    )
 
     assert [p.fase for p in relatos] == ["buscando refs do origin"]
 

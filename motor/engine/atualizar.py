@@ -11,6 +11,7 @@ from motor.engine.deps import Deps
 from motor.engine.verificar import (
     ContextoDoAlvo,
     culpados_do_conflito,
+    descartar_worktrees,
     preparar_worktree,
     verificar_sem_fetch,
 )
@@ -18,8 +19,10 @@ from motor.engine.vigencia import verificacao_vigente
 from motor.errors import ErroDeEntrada, MotorError, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
+from motor.services.catalogo import Catalogo
 from motor.services.presence_oracle import PresenceOracle
 from motor.services.publication_gate import PublicationGate
+from motor.services.versionamento import aplicar
 
 logger = logging.getLogger(__name__)
 
@@ -65,17 +68,24 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
     """Trava de escrita em versao liberada, na entrada de todo ponto que mexe na
     branch (`atualizar` e `atualizar_continue`, os dois expostos pelo CLI).
 
-    O fetch vem antes da leitura, nao depois: `tag_exists` le o ref store local,
-    e a tag de uma versao liberada em outra maquina so entra aqui pelo fetch. Sem
-    ele a recusa seria decidida em cima de refs velhas e o motor mexeria numa
-    versao que ja saiu.
+    O fetch vem antes da leitura, nao depois: o `Catalogo` le o ref store
+    local, e a tag de uma versao liberada em outra maquina so entra aqui pelo
+    fetch. Sem ele a recusa seria decidida em cima de refs velhas e o motor
+    mexeria numa versao que ja saiu.
+
+    `liberada_em` gravada tambem recusa: o criterio de liberacao pode mudar e
+    deixar de reconhecer a versao, mas o snapshot dela ja congelou.
     """
+    versionamento = deps.versionamento()
+    versionamento.esquema.validar(versao)
     deps.progresso(Progresso("conferindo se a vers\u00e3o j\u00e1 saiu"))
     deps.git.fetch("origin")
 
-    if PublicationGate(git=deps.git).liberada(versao):
+    gate = PublicationGate(deps.git, Catalogo(deps.git, versionamento))
+    info = deps.estado.versao(deps.repo, versao)
+    if gate.liberada(versao) or (info is not None and info.liberada_em is not None):
         raise RecusaDeInvariante(
-            f"versao {versao} ja liberada (tem tag) - remarque a tarefa "
+            f"versao {versao} ja liberada - remarque a tarefa "
             "para a proxima versao em construcao"
         )
 
@@ -123,7 +133,8 @@ def _culpados_do_bloqueio(
     if info is None:
         # `_status_do_lote` registra a versao antes de qualquer pick.
         raise AssertionError(f"versao {versao} sem registro no estado apos verificar")
-    ctx = ContextoDoAlvo(deps, PresenceOracle(git=deps.git), info.base_commit, versao)
+    ref_alvo = deps.versionamento().branch(versao)
+    ctx = ContextoDoAlvo(deps, PresenceOracle(git=deps.git), info.base_commit, ref_alvo)
     try:
         parent = deps.git.commit_meta(commit).parent
     except MotorError as e:
@@ -210,11 +221,11 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     # rebuild, docs/decisoes/010-travas-publicada-e-liberada.md) -
     # um lote BLOCKED fica so local ate resolver e rodar de novo.
     deps.progresso(Progresso("publicando na origin"))
-    deps.git.push_branch("origin", versao)
+    deps.git.push_branch("origin", deps.versionamento().branch(versao))
     # a worktree e so um checkout local descartavel - o que importa (commits) ja
     # esta na branch e no remoto. use_worktree recria sob demanda. Com
     # worktrees_mantidas > 0 este checkout fica, e o proximo run nao o paga.
-    deps.git.worktree_gc(deps.worktrees_mantidas, versao)
+    descartar_worktrees(deps, versao)
     return AtualizarResult(
         status=AtualizarStatus.DONE,
         aplicados=aplicados,
@@ -252,7 +263,7 @@ def atualizar_continue(
     _recusar_se_liberada(deps, versao)
 
     deps.progresso(Progresso("retomando o cherry-pick"))
-    deps.git.use_worktree(versao)
+    deps.git.use_worktree(deps.versionamento().branch(versao))
     pendente, ok = deps.git.pending_cherry_pick()
     if not ok:
         raise ErroDeEntrada("nenhum cherry-pick pendente pra continuar")
@@ -275,6 +286,11 @@ def atualizar_continue(
 
 
 def atualizar_abort(deps: Deps, versao: str) -> None:
-    deps.git.use_worktree(versao)
+    """Descarta o cherry-pick pendente sem resolver o `versionamento`: um
+    esquema que nao carrega, ou um piso que ele recusa, nao pode impedir o
+    operador de sair de um lote travado. A branch sai so das camadas config e
+    padrao (`Deps.nomes_abort`), e o GC considera so a worktree atual."""
+    branch = aplicar(deps.nomes_abort[0], versao)
+    deps.git.use_worktree(branch)
     deps.git.abort_cherry_pick()
-    deps.git.worktree_gc(deps.worktrees_mantidas, versao)
+    deps.git.worktree_gc(deps.worktrees_mantidas, branch, [branch])

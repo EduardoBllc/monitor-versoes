@@ -17,10 +17,11 @@ from motor.adapters.git.subprocess import (
     _quadros,
     new_git_subprocess,
 )
-from motor.domain.version import versoes_abertas
 from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
+from motor.services.catalogo import Catalogo
+from tests.versionamento import VENDABEM_COMPOSTA
 
 
 def _git_env() -> dict[str, str]:
@@ -217,13 +218,12 @@ def test_git_subprocess_search_commits_busca_texto_literal(tmp_path):
     assert [c.msg.splitlines()[0] for c in candidatos] == ["[PAY-12] x"]
 
 
-def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
-    """Quando uma versao tem tag com o mesmo nome da branch (ex.: fechada mas
+def test_git_subprocess_listar_branches_branch_e_tag_homonimos(tmp_path):
+    """Quando uma versao tem tag com o mesmo nome da branch (liberada mas
     ainda nao limpa), `%(refname:short)` fica ambigua entre refs/heads/X e
-    refs/tags/X e o git devolve "heads/X" em vez de "X" - a branch some da
-    lista por nao bater mais no padrao \\d+\\.\\d+\\.\\d+. list_version_branches
-    precisa continuar enxergando a branch (e tambem versoes so-com-tag, cuja
-    branch ja foi apagada apos o fechamento).
+    refs/tags/X e o git devolve "heads/X" em vez de "X". `listar_branches`
+    precisa continuar devolvendo o nome curto; a versao so-com-tag, cuja branch
+    ja foi apagada, aparece so em `listar_tags`.
     """
     dir_ = str(tmp_path)
     _run_git(dir_, "init", "-b", "master")
@@ -241,10 +241,10 @@ def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
     _run_git(dir_, "tag", "13.12.0")
 
     g = new_git_subprocess(dir_)
-    versoes = g.list_version_branches()
+    branches = g.listar_branches()
 
-    assert "13.13.0" in versoes, f"branch com tag homonima sumiu da lista: {versoes!r}"
-    assert "13.12.0" in versoes, f"versao so-com-tag sumiu da lista: {versoes!r}"
+    assert branches == ["13.13.0", "master"], f"branches = {branches!r}"
+    assert g.listar_tags() == ["13.12.0", "13.13.0"]
 
 
 def test_quadros_separa_por_cr_e_traduz_a_fase():
@@ -306,7 +306,7 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     """`git fetch origin` cria refs/remotes/origin/X e NENHUM head local (tag
     chega por tag-following, branch nao). Sem refs/remotes/ na varredura, uma
     versao aberta e empurrada de outra maquina fica invisivel mesmo depois do
-    fetch: `versoes_abertas` viraria uma visao local do conjunto aberto e
+    fetch: o conjunto aberto viraria uma visao local do conjunto aberto e
     `fontes_de_alvo` omitiria essa versao em silencio
     (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
     """
@@ -340,10 +340,10 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     assert "refs/heads/13.35.0" not in refs, f"o fetch criou head local: {refs!r}"
     assert "refs/remotes/origin/13.35.0" in refs, f"refs apos o fetch: {refs!r}"
 
-    assert "13.35.0" in g.list_version_branches()
-    assert versoes_abertas(g.list_version_branches(), g.list_version_tags()) == [
-        "13.35.0"
-    ]
+    assert "13.35.0" in g.listar_branches()
+    catalogo = Catalogo(g, VENDABEM_COMPOSTA())
+    assert catalogo.com_branch() == ["13.35.0"]
+    assert catalogo.liberadas() == set()
 
 
 def test_git_subprocess_commits_meta_concorda_com_commit_meta(tmp_path):
@@ -482,10 +482,9 @@ def test_git_subprocess_use_worktree_adota_branch_existente(tmp_path):
     assert g.resolve_ref("14.0.0") == g.resolve_ref("master")
 
 
-def test_git_subprocess_list_version_tags(tmp_path):
-    """list_version_tags devolve so tags (nao branches) no formato X.Y.Z.
-    Diferente de list_version_branches que inclui heads tambem.
-    Cobre todos os casos: tag-only, branch-only, both, non-version.
+def test_git_subprocess_listar_tags(tmp_path):
+    """listar_tags devolve so tags (nao branches), sem filtro de formato e
+    sem repeticao. Cobre: tag-only, branch-only, ambas, fora do formato.
     """
     dir_ = str(tmp_path)
     _run_git(dir_, "init", "-b", "master")
@@ -494,46 +493,18 @@ def test_git_subprocess_list_version_tags(tmp_path):
     _run_git(dir_, "add", "arquivo.txt")
     _run_git(dir_, "commit", "-m", "base")
 
-    # Case 1: Tag no formato X.Y.Z (tag-only)
     _run_git(dir_, "tag", "13.33.0")
-
-    # Case 2: Branch de versao sem tag (branch-only)
     _run_git(dir_, "branch", "13.34.0")
-
-    # Case 3: Branch com tag homonima (both branch and tag)
     _run_git(dir_, "branch", "13.36.0")
     _run_git(dir_, "tag", "13.36.0")
-
-    # Case 4: Outra tag no formato X.Y.Z (tag-only)
-    _run_git(dir_, "tag", "13.35.0")
-
-    # Case 5: Tags nao-version (nao devem aparecer)
     _run_git(dir_, "tag", "v1.0")
-    _run_git(dir_, "tag", "release-2024-01")
 
     g = new_git_subprocess(dir_)
-    tags = g.list_version_tags()
-    branches = g.list_version_branches()
+    tags = g.listar_tags()
+    branches = g.listar_branches()
 
-    # Apenas tags X.Y.Z aparecem em list_version_tags
-    assert tags == ["13.33.0", "13.35.0", "13.36.0"], f"tags = {tags!r}"
-
-    # Branch-only aparecem em list_version_branches mas nao em list_version_tags
-    assert "13.34.0" in branches, f"branch 13.34.0 deve estar em branches: {branches!r}"
-    assert "13.34.0" not in tags, f"branch 13.34.0 nao deve estar em tags: {tags!r}"
-
-    # Branch+tag aparecem em ambos, mas list_version_tags deve devolver exatamente uma vez
-    assert "13.36.0" in branches, f"13.36.0 deve estar em branches: {branches!r}"
-    assert tags.count("13.36.0") == 1, (
-        f"13.36.0 deve aparecer exatamente uma vez em tags: {tags!r}"
-    )
-
-    # Non-version tags nao aparecem em nenhum
-    assert "v1.0" not in tags, f"tag v1.0 nao deve estar em tags: {tags!r}"
-    assert "release-2024-01" not in tags, (
-        f"tag release-2024-01 nao deve estar em tags: {tags!r}"
-    )
-    assert "v1.0" not in branches, f"tag v1.0 nao deve estar em branches: {branches!r}"
+    assert tags == ["13.33.0", "13.36.0", "v1.0"], f"tags = {tags!r}"
+    assert branches == ["13.34.0", "13.36.0", "master"], f"branches = {branches!r}"
 
 
 def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):
@@ -680,8 +651,8 @@ def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_
     assert "refs/remotes/origin/13.35.0" in refs, f"refs: {refs!r}"
     assert "refs/remotes/upstream/13.99.0" in refs, f"refs: {refs!r}"
 
-    assert g.list_version_branches() == ["13.35.0"], (
-        f"list_version_branches() = {g.list_version_branches()!r}; 13.99.0 vive so "
+    assert g.listar_branches() == ["13.35.0", "master"], (
+        f"listar_branches() = {g.listar_branches()!r}; 13.99.0 vive so "
         "em refs/remotes/upstream/ e o BaseResolver nunca a resolveria"
     )
 
@@ -873,6 +844,11 @@ def test_culpados_por_linha_aponta_quem_criou_o_arquivo_no_modify_delete(tmp_pat
 # passarem a olhar um diretorio vazio.
 
 
+#: Branches das versoes conhecidas, da mais recente para a mais antiga pelo
+#: esquema: o que o engine passa ao GC.
+_NOSSAS = ["13.10.0", "13.9.0", "13.3.0", "13.2.0", "13.1.0"]
+
+
 def _dir_worktrees(repo_dir: str) -> str:
     return os.path.join(
         os.path.dirname(repo_dir), os.path.basename(repo_dir) + "-worktrees"
@@ -907,7 +883,7 @@ def test_worktree_gc_mantem_as_n_mais_recentes_e_apaga_o_resto(tmp_path):
     for v in ("13.1.0", "13.2.0", "13.3.0"):
         g.worktree_add(v, "master")
 
-    removidas = g.worktree_gc(2, "13.3.0")
+    removidas = g.worktree_gc(2, "13.3.0", _NOSSAS)
 
     assert removidas == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
@@ -926,7 +902,7 @@ def test_worktree_gc_le_o_mru_gravado_por_outra_instancia(tmp_path):
 
     outra = new_git_subprocess(repo)
 
-    assert outra.worktree_gc(1, "") == ["13.3.0", "13.2.0"]
+    assert outra.worktree_gc(1, "", _NOSSAS) == ["13.3.0", "13.2.0"]
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -947,7 +923,7 @@ def test_worktree_gc_nao_remove_worktree_com_cherry_pick_pendente(tmp_path):
 
     g.worktree_add("13.9.0", "master")  # candidata a evictar passa a ser 13.1.0
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -959,7 +935,7 @@ def test_worktree_gc_nao_remove_worktree_com_alteracao_rastreada(tmp_path):
     with open(os.path.join(_wt(repo, "13.1.0"), "arquivo.txt"), "w") as f:
         f.write("editado a mao\n")
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -974,7 +950,7 @@ def test_worktree_gc_remove_apesar_de_arquivo_nao_rastreado(tmp_path):
     with open(os.path.join(_wt(repo, "13.1.0"), ".env"), "w") as f:
         f.write("SEGREDO=1\n")
 
-    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
 
 
@@ -986,8 +962,29 @@ def test_worktree_gc_ignora_worktree_que_nao_e_de_versao(tmp_path):
         repo, "worktree", "add", "-b", "experimento", _wt(repo, "experimento"), "master"
     )
 
-    assert g.worktree_gc(0, "") == ["13.1.0"]
+    assert g.worktree_gc(0, "", _NOSSAS) == ["13.1.0"]
     assert os.path.isdir(_wt(repo, "experimento"))
+
+
+def test_worktree_gc_remove_worktree_aninhada_e_preserva_a_feita_a_mao(tmp_path):
+    """Branch com `/` vira diretorio aninhado em `<repo>-worktrees/`: o GC a
+    reconhece pelo caminho relativo, e so entre as `nossas`."""
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("release/1.0.0", "master")
+    _run_git(
+        repo,
+        "worktree",
+        "add",
+        "-b",
+        "release/experimento",
+        _wt(repo, "release/experimento"),
+        "master",
+    )
+
+    assert g.worktree_gc(0, "", ["release/1.0.0"]) == ["release/1.0.0"]
+    assert not os.path.exists(_wt(repo, "release/1.0.0"))
+    assert os.path.isdir(_wt(repo, "release/experimento"))
 
 
 def _worktree_detached(repo: str, versao: str) -> None:
@@ -1000,7 +997,7 @@ def test_worktree_gc_remove_worktree_em_detached_head(tmp_path):
     _worktree_detached(repo, "13.1.0")
     g.worktree_add("13.9.0", "master")
 
-    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
 
 
@@ -1012,7 +1009,7 @@ def test_worktree_gc_nao_remove_detached_com_alteracao_rastreada(tmp_path):
     with open(os.path.join(_wt(repo, "13.1.0"), "arquivo.txt"), "w") as f:
         f.write("editado a mao\n")
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -1026,7 +1023,7 @@ def test_worktree_gc_nao_remove_detached_com_commit_inalcancavel(tmp_path):
     _run_git(wt, "commit", "-am", "commit solto")
     g.worktree_add("13.9.0", "master")
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(wt)
 
 
@@ -1035,11 +1032,11 @@ def test_worktree_gc_ignora_diretorio_fora_do_padrao_em_detached(tmp_path):
     g = new_git_subprocess(repo)
     _run_git(repo, "worktree", "add", "--detach", _wt(repo, "experimento"), "master")
 
-    assert g.worktree_gc(0, "") == []
+    assert g.worktree_gc(0, "", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "experimento"))
 
 
-def test_worktree_gc_mru_ilegivel_cai_em_semver_desc(tmp_path):
+def test_worktree_gc_mru_ilegivel_cai_na_ordem_recebida(tmp_path):
     repo = _repo_para_gc(tmp_path)
     g = new_git_subprocess(repo)
     for v in ("13.10.0", "13.9.0"):
@@ -1050,8 +1047,9 @@ def test_worktree_gc_mru_ilegivel_cai_em_semver_desc(tmp_path):
 
     outra = new_git_subprocess(repo)
 
-    # Fallback e semver desc: 13.10.0 fica. Ordem textual manteria "13.9.0".
-    assert outra.worktree_gc(1, "") == ["13.9.0"]
+    # Fallback e a ordem de `nossas` (a do esquema): 13.10.0 fica. Ordem
+    # textual manteria "13.9.0".
+    assert outra.worktree_gc(1, "", _NOSSAS) == ["13.9.0"]
 
 
 def test_worktree_gc_com_manter_zero_remove_inclusive_a_atual(tmp_path):
@@ -1060,9 +1058,9 @@ def test_worktree_gc_com_manter_zero_remove_inclusive_a_atual(tmp_path):
     g = new_git_subprocess(repo)
     g.worktree_add("13.1.0", "master")
 
-    assert g.worktree_gc(0, "13.1.0") == ["13.1.0"]
+    assert g.worktree_gc(0, "13.1.0", _NOSSAS) == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
-    assert g.worktree_gc(0, "13.1.0") == []
+    assert g.worktree_gc(0, "13.1.0", _NOSSAS) == []
 
 
 def test_worktree_gc_ignora_worktree_apagada_a_mao(tmp_path):
@@ -1076,7 +1074,7 @@ def test_worktree_gc_ignora_worktree_apagada_a_mao(tmp_path):
     g.worktree_add("13.9.0", "master")
     shutil.rmtree(_wt(repo, "13.1.0"))
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.9.0"))
 
 
@@ -1092,7 +1090,7 @@ def test_worktree_gc_enxerga_as_worktrees_sob_caminho_com_symlink(tmp_path):
     g.worktree_add("13.1.0", "master")
     g.worktree_add("13.9.0", "master")
 
-    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == ["13.1.0"]
 
 
 # -- o contrato de erro vale para o que o subprocess levanta -----------------
@@ -1115,7 +1113,7 @@ def test_cwd_que_sumiu_vira_backendindisponivel_nao_oserror(tmp_path):
     g.repo_path = str(tmp_path / "sumiu")
 
     with pytest.raises(BackendIndisponivel):
-        g.list_version_tags()
+        g.listar_tags()
 
 
 def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
@@ -1142,9 +1140,9 @@ def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
     g = GitSubprocess(repo_path=str(tmp_path))
 
     # nao pode levantar UnicodeDecodeError; o byte invalido vira substituicao
-    resultado = g.list_version_tags()
+    resultado = g.listar_tags()
 
-    assert resultado == ["13.34.0"], "a linha valida tem de sobreviver"
+    assert "13.34.0" in resultado, "a linha valida tem de sobreviver"
 
 
 def _log_topo(dir_: str) -> str:

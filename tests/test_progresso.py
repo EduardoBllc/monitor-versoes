@@ -24,7 +24,6 @@ from motor.domain.types import (
     CommitRef,
     RepoInfo,
     VersaoInfo,
-    VersionType,
 )
 from motor.engine.atualizar import atualizar
 from motor.engine.consultar import consultar
@@ -34,6 +33,7 @@ from motor.engine.verificar import verificar
 from motor.progresso import Progresso, SlotProgresso, silencioso
 from motor.services.target_resolver import TargetResolver
 from motor.tui import renderizar_progresso
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -82,7 +82,7 @@ def test_grep_relata_a_varredura_sem_contagem():
     GrepCommitSource(
         git=git,
         referencia=lambda: TickioRest.referencia,
-        ref="master",
+        ref_principal=lambda: "master",
         progresso=relatos.append,
     ).resolve(["1"])
 
@@ -115,6 +115,7 @@ def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo_estado="r",
         referencia=lambda: TickioRest.referencia,
+        ref_principal=lambda: "origin/main",
     )
 
     fonte.resolve(["1", "2", "3"])
@@ -149,13 +150,14 @@ def test_verificar_relata_suas_fases_na_ordem():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
     )
     relatos: list[Progresso] = []
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.33.1": ["123123"]}),
         estado=estado,
@@ -206,6 +208,7 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
     git.set_branch("13.7.0", "m0")
     relatos: list[Progresso] = []
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514", "255515"]}),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
@@ -266,6 +269,7 @@ def test_consultar_conta_os_chamados_do_snapshot():
 
     consultar(
         Deps(
+            versionamento=VENDABEM_COMPOSTA,
             git=git,
             tasks=FakeTaskSource(),
             estado=estado,
@@ -293,6 +297,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
 
     reconstruir_estado(
         Deps(
+            versionamento=VENDABEM_COMPOSTA,
             git=git,
             tasks=FakeTaskSource(),
             estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),

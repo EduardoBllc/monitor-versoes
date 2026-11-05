@@ -14,7 +14,7 @@ from motor.adapters.estado import models
 from motor.adapters.estado.engine import criar_engine, garantir_esquema
 from motor.adapters.estado.models import Base
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.domain.types import VersaoInfo, VersionType
+from motor.domain.types import VersaoInfo
 from motor.engine import migrar_estado as modulo
 from motor.engine.migrar_estado import migrar_estado
 from motor.errors import ErroDeEntrada
@@ -133,7 +133,7 @@ def _gravar_novos(url: str) -> None:
             estado = PostgresEstado(sessao=sessao)
             estado.registrar_versao(
                 REPO,
-                VersaoInfo("13.35.0", VersionType.FECHADA, "13.34.0", "ccc"),
+                VersaoInfo("13.35.0", "fechada", "13.34.0", "ccc"),
             )
             sessao.execute(
                 insert(models.Exclusao).values(

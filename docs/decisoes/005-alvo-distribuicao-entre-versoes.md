@@ -2,8 +2,15 @@
 
 - **Status:** aceita
 - **Data:** 2026-08-21 (revista em 2026-08-24: liberada com tag posterior ao corte volta a
-  ser fonte de alvo; em 2026-10-08: piso configurável por repo)
-- **Depende de:** [004](004-estado-descartavel.md), [009](009-inferencia-de-base.md)
+  ser fonte de alvo; em 2026-10-08: piso configurável por repo; em 2026-11-05: passa a ser a
+  política `composta`)
+- **Depende de:** [004](004-estado-descartavel.md), [009](009-inferencia-de-base.md),
+  [026](026-esquema-e-atribuicao-plugaveis.md)
+
+Esta é a política de atribuição `composta` (`[versao] atribuicao = "composta"`), não regra do
+núcleo: o padrão é a `exata`, em que o alvo de `V` são só as tarefas marcadas em `V`
+([026](026-esquema-e-atribuicao-plugaveis.md)). "Com tag" abaixo é o critério de liberada em
+uso, e a ordem é a do esquema.
 
 Uma tarefa marcada para a versão `V` no Tickio vale para `V` **e para toda versão em
 construção (sem tag) cujo número seja maior**. Não é preciso remarcar a tarefa a cada versão

@@ -34,6 +34,7 @@ from typing import Protocol
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    ContextoAtribuicao,
     Exclusion,
     PrIndex,
     RepoInfo,
@@ -75,7 +76,7 @@ class TaskSource(Protocol):
 
 
 class CommitSource(Protocol):
-    """Fonte de commits de uma tarefa (grep em master, PR do host).
+    """Fonte de commits de uma tarefa (grep na principal, PR do host).
 
     Recebe o lote inteiro para permitir uma varredura unica — grep com o
     --grep de todos os chamados juntos. Pode omitir chamado sem commit; a
@@ -204,11 +205,14 @@ class GitRepo(Protocol):
         """Cria worktree."""
         ...
 
-    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, nossas: list[str], /) -> list[str]:
         """Descarta worktrees de versao alem das `manter` de uso mais recente.
 
-        `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
-        todas, inclusive a `atual`. Devolve as removidas. Nunca leva trabalho
+        `nossas` sao as branches das versoes conhecidas, da mais recente para a
+        mais antiga pelo esquema: so elas e a `atual` sao candidatas, e
+        worktree criada a mao fora delas nunca e tocada. `atual` sobrevive
+        sempre que `manter >= 1`. Com `manter == 0` remove todas, inclusive a
+        `atual`. Devolve as removidas. Nunca leva trabalho
         embora: worktree com alteracao nao commitada ou cherry-pick pendente e
         pulada.
         """
@@ -235,17 +239,17 @@ class GitRepo(Protocol):
         ...
 
     def fetch(self, remote: str, /) -> None:
-        """Atualiza as referencias remote-tracking (ex: origin/master), sem
+        """Atualiza as referencias remote-tracking (ex: origin/main), sem
         tocar em branch local nenhuma."""
         ...
 
-    def list_version_branches(self) -> list[str]:
-        """Lista branches de versão."""
+    def listar_branches(self) -> list[str]:
+        """Nomes curtos de refs/heads/ e refs/remotes/origin/, sem filtro,
+        ordenados e sem repeticao. Quem decide o que e versao e o `Catalogo`."""
         ...
 
-    def list_version_tags(self) -> list[str]:
-        """Tags no formato X.Y.Z. Versao com tag = liberada
-        (docs/decisoes/010-travas-publicada-e-liberada.md)."""
+    def listar_tags(self) -> list[str]:
+        """Nomes de refs/tags/, sem filtro, ordenados."""
         ...
 
     def read_file(self, branch: str, path: str, /) -> bytes:
@@ -256,6 +260,64 @@ class GitRepo(Protocol):
         self, branch: str, path: str, content: bytes, mensagem_commit: str, /
     ) -> None:
         """Escreve arquivo em branch."""
+        ...
+
+
+class EsquemaVersao(Protocol):
+    """Esquema de versão: o que é um número, a ordem e a base de cada versão
+    (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
+
+    O núcleo não interpreta número de versão: valida, ordena e escolhe a
+    ref-base sempre por aqui. O ponto de corte continua sendo do núcleo
+    (`merge-base` entre a ref-base e a versão).
+
+    `branch_versao` (template com `{versao}`) e `branch_principal` são a camada
+    do esquema nos nomes de branch; `None` = não declara, e vale o padrão do
+    núcleo. A config vence os dois.
+    """
+
+    branch_versao: str | None
+    branch_principal: str | None
+
+    def validar(self, numero: str, /) -> str:
+        """O número aparado, ou `ErroDeEntrada` se o esquema não o reconhece."""
+        ...
+
+    def ordenar(self, numeros: list[str], /) -> list[str]:
+        """Os números em ordem crescente."""
+        ...
+
+    def base(self, numero: str, existentes: list[str], principal: str, /) -> str:
+        """A ref-base de `numero`: um nome de `existentes` (versões com branch
+        ou liberadas) ou o próprio `principal`. `NaoEncontrado` se não há base."""
+        ...
+
+    def tipo(self, numero: str, /) -> str | None:
+        """Rótulo livre que o núcleo grava e mostra sem interpretar; `None` = sem tipo."""
+        ...
+
+    def sugerir(self, existentes: list[str], /) -> list[str]:
+        """Próximas versões sugeridas a partir das existentes (modal de criar)."""
+        ...
+
+    def liberacoes(
+        self, git: GitRepo, versoes: list[str], /
+    ) -> dict[str, datetime.datetime] | None:
+        """Critério de liberação próprio: `{versão: data}` das `versoes` que o
+        esquema dá por liberadas. `None` = não declara, e vale a tag homônima.
+
+        A data vem do repositório, nunca do relógio: a suíte de conformidade
+        (`motor.conformidade`) cobra isso.
+        """
+        ...
+
+
+class PoliticaAtribuicao(Protocol):
+    """Decide de quais versoes vem as tarefas do alvo de uma versao
+    (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md)."""
+
+    def fontes(self, alvo: str, contexto: ContextoAtribuicao, /) -> list[str]:
+        """As versoes cujas tarefas caem no alvo, em ordem crescente."""
         ...
 
 
@@ -292,7 +354,7 @@ class EstadoRepo(Protocol):
     def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         """A versao como esta no estado. A `base` daqui e a autoritativa —
         recomputar BaseResolver a cada run faria a base de uma X.0.0 seguir o
-        tip atual do master em vez do ponto onde a branch foi cortada."""
+        tip atual da principal em vez do ponto onde a branch foi cortada."""
         ...
 
     def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]: ...

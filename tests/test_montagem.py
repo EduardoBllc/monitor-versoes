@@ -17,10 +17,12 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.tickio import TickioRest
+from motor.atribuicoes import Exata
 from motor.config import ConfigProjeto
 from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
+from motor.esquemas.semver import Semver
 from motor.montagem import (
     CredenciaisBitbucket,
     FonteTasks,
@@ -29,8 +31,8 @@ from motor.montagem import (
     montar_task_source,
     validar_nome_repo,
     validar_sistema_id,
-    validar_versao,
 )
+from motor.services.versionamento import Versionamento
 
 
 class GitQueGritaSeUsado(FakeGit):
@@ -113,6 +115,30 @@ def test_montar_nao_toca_o_git(token):
         referencia=lambda: TickioRest.referencia,
         bitbucket=CredenciaisBitbucket(token, "dev@x.com"),
     )
+
+
+def test_o_grep_varre_a_principal_do_versionamento():
+    """A ref varrida e `origin/<principal>` da config, nao `master` fixo."""
+    import datetime
+
+    git = FakeGit()
+    d = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    git.add_commit("c0", "", "ch123456 alfa", d)
+    git.set_branch("origin/dev", "c0")
+    chamadas: list[str] = []
+
+    def versionamento() -> Versionamento:
+        chamadas.append("x")
+        return Versionamento(esquema=Semver(), politica=Exata(), principal="dev")
+
+    fonte = montar_commit_source(
+        git, referencia=lambda: TickioRest.referencia, versionamento=versionamento
+    )
+    assert chamadas == []
+
+    achados = fonte.resolve(["123456"])
+
+    assert [c.hash_origem for c in achados["123456"]] == ["c0"]
 
 
 # -- fonte de tasks -----------------------------------------------------------
@@ -262,17 +288,6 @@ def test_nome_repo_recusa_o_que_fragmentaria_o_estado(valor):
     # duas linhas paralelas para o mesmo repo, sem erro nenhum aparecer.
     with pytest.raises(ErroDeEntrada, match="nome simples"):
         validar_nome_repo(valor)
-
-
-@pytest.mark.parametrize("valor", ["2.3.1", " 2.3.1 "])
-def test_versao_devolve_o_valor_aparado(valor):
-    assert validar_versao(valor) == "2.3.1"
-
-
-@pytest.mark.parametrize("valor", ["abc", "  "])
-def test_versao_recusa_o_que_nao_e_versao(valor):
-    with pytest.raises(ErroDeEntrada):
-        validar_versao(valor)
 
 
 def test_sistema_id_converte_para_int():

@@ -5,14 +5,14 @@ import datetime
 import pytest
 
 from motor.adapters.estado.fake import FakeEstado
-from motor.domain.types import Atribuicao, RepoInfo, VersaoInfo, VersionType
+from motor.domain.types import Atribuicao, RepoInfo, VersaoInfo
 from motor.errors import MotorError
 
 
 def _info(numero: str, liberada=None) -> VersaoInfo:
     return VersaoInfo(
         numero=numero,
-        tipo=VersionType.AJUSTADA,
+        tipo="ajustada",
         base_ref="13.33.0",
         base_commit="aaa",
         liberada_em=liberada,
@@ -111,7 +111,7 @@ def test_registrar_versao_nao_sobrescreve_a_base_ja_gravada():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="OUTRO",
         ),

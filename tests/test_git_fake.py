@@ -102,33 +102,30 @@ def test_fake_git_merge_base_branches_divergentes():
     assert base == "r", f"merge_base(branchA, branchB) = {base!r}, quer r"
 
 
-def test_fake_list_version_tags_so_devolve_tags():
+def test_fake_listar_tags_so_devolve_tags():
     git = FakeGit(branches={"13.34.0": "aaa", "14.0.0": "bbb"}, tags={"13.34.0": True})
-    assert git.list_version_tags() == ["13.34.0"]
+    assert git.listar_tags() == ["13.34.0"]
 
 
-def test_fake_list_version_branches_filtra_por_formato():
-    # Espelha o adapter real (subprocess.py:352). Sem o filtro, 'master' entra
-    # no conjunto e versoes_abertas estoura em chave("master").
+def test_fake_listar_branches_nao_filtra_nem_inclui_tags():
+    # Espelha o adapter real: o que e versao quem decide e o `Catalogo`.
     git = FakeGit(branches={"master": "m", "13.34.0": "aaa"}, tags={"13.33.0": True})
-    assert git.list_version_branches() == ["13.33.0", "13.34.0"]
+    assert git.listar_branches() == ["13.34.0", "master"]
 
 
-def test_fake_list_version_branches_respeita_tag_false():
+def test_fake_listar_tags_respeita_tag_false():
     # tags dict tem valores bool: True = tag existe, False = nao existe.
-    # list_version_branches deve respeitar isso — versao com False nao deve aparecer.
     git = FakeGit(branches={"13.34.0": "aaa"}, tags={"13.33.0": True, "13.35.0": False})
-    assert git.list_version_branches() == ["13.33.0", "13.34.0"]
-    assert git.list_version_tags() == ["13.33.0"]
+    assert git.listar_tags() == ["13.33.0"]
 
 
-def test_fake_list_version_branches_inclui_ref_de_rastreamento():
+def test_fake_listar_branches_inclui_ref_de_rastreamento():
     """Espelha o adapter real: `git fetch origin` cria refs/remotes/origin/X e
     NENHUM head local, entao uma versao aberta e empurrada de outra maquina so
     aparece pela ref de rastreamento. Fake diferente do real esconde bug.
     """
     git = FakeGit(branches={"13.34.0": "aaa"}, remote_refs={"13.35.0": "bbb"})
-    assert git.list_version_branches() == ["13.34.0", "13.35.0"]
+    assert git.listar_branches() == ["13.34.0", "13.35.0"]
 
 
 def test_fake_nome_puro_nao_resolve_ref_de_rastreamento():
@@ -141,6 +138,15 @@ def test_fake_nome_puro_nao_resolve_ref_de_rastreamento():
     with pytest.raises(NaoEncontrado):
         git.resolve_ref("13.35.0")
     assert git.resolve_ref("refs/remotes/origin/13.35.0") == "bbb"
+
+
+def test_fake_tag_resolve_pelo_commit_da_fixture():
+    """Tag com nome diferente de toda branch (`v1.2.0`) precisa apontar para um
+    commit: e por ele que o nucleo le a data de liberacao."""
+    git = FakeGit(branches={"1.2.0": "aaa"}, tag_commits={"v1.2.0": "c1"})
+
+    assert git.resolve_ref("refs/tags/v1.2.0") == "c1"
+    assert git.resolve_ref("refs/tags/1.2.0") == "aaa"
 
 
 def test_fake_culpados_por_linha_devolve_a_fixture():
@@ -224,6 +230,10 @@ def test_branch_duplicada_e_recusa_nao_ausencia():
         git.worktree_add("13.34.0", "m0")
 
 
+#: Branches das versoes conhecidas, da mais recente para a mais antiga.
+_NOSSAS = ["13.4.0", "13.3.0", "13.2.0", "13.1.0"]
+
+
 def test_fake_worktree_gc_mantem_as_n_mais_usadas():
     g = FakeGit()
     base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
@@ -232,7 +242,7 @@ def test_fake_worktree_gc_mantem_as_n_mais_usadas():
         g.branches[v] = "tip"
         g.use_worktree(v)
 
-    removidas = g.worktree_gc(2, "13.3.0")
+    removidas = g.worktree_gc(2, "13.3.0", _NOSSAS)
 
     # 13.1.0 foi a primeira usada, logo a mais antiga no mru.
     assert removidas == ["13.1.0"]
@@ -248,7 +258,7 @@ def test_fake_worktree_gc_promove_worktree_reusada():
         g.use_worktree(v)
     g.use_worktree("13.1.0")  # volta pro topo do mru
 
-    assert g.worktree_gc(2, "13.1.0") == ["13.2.0"]
+    assert g.worktree_gc(2, "13.1.0", _NOSSAS) == ["13.2.0"]
 
 
 def test_fake_worktree_gc_com_manter_zero_remove_tudo():
@@ -258,9 +268,9 @@ def test_fake_worktree_gc_com_manter_zero_remove_tudo():
     g.branches["13.1.0"] = "tip"
     g.use_worktree("13.1.0")
 
-    assert g.worktree_gc(0, "13.1.0") == ["13.1.0"]
+    assert g.worktree_gc(0, "13.1.0", _NOSSAS) == ["13.1.0"]
     # worktree removida sai do mru: nao existe mais em disco.
-    assert g.worktree_gc(0, "13.1.0") == []
+    assert g.worktree_gc(0, "13.1.0", _NOSSAS) == []
 
 
 def test_fake_worktree_add_registra_a_worktree_criada():
@@ -271,7 +281,19 @@ def test_fake_worktree_add_registra_a_worktree_criada():
 
     g.worktree_add("13.4.0", "master")
 
-    assert g.worktree_gc(0, "") == ["13.4.0"]
+    assert g.worktree_gc(0, "", _NOSSAS) == ["13.4.0"]
+
+
+def test_fake_worktree_gc_so_considera_as_nossas():
+    g = FakeGit()
+    base = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
+    g.add_commit("tip", "", "base", base)
+    for b in ("13.1.0", "experimento"):
+        g.branches[b] = "tip"
+        g.use_worktree(b)
+
+    assert g.worktree_gc(0, "", ["13.1.0"]) == ["13.1.0"]
+    assert g.worktrees_mru == ["experimento"]
 
 
 def test_fake_worktree_gc_tem_a_assinatura_do_adapter_real():

@@ -8,7 +8,6 @@ roda sem container.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -23,7 +22,6 @@ from motor.errors import (
     BackendIndisponivel,
     MotorError,
     RecusaDeInvariante,
-    RespostaInvalida,
 )
 
 
@@ -139,32 +137,6 @@ def test_congelamento_identificado_pelo_errcode_nao_pelo_texto():
         RecusaDeInvariante, match="remarque a tarefa para a proxima versao"
     ):
         PostgresEstado(sessao=_como_sessao(sessao)).exclusoes("vendabemweb")
-
-
-class _SessaoQueDevolve:
-    """Sessao cuja sequencia de scalar() devolve as linhas dadas, na ordem.
-
-    Diferente de _SessaoQueFalha: aqui a leitura tem sucesso — o caminho de
-    RespostaInvalida nao passa por excecao do banco, passa por dado bom que
-    chegou fora do dominio esperado.
-    """
-
-    def __init__(self, *linhas: object) -> None:
-        self._linhas = list(linhas)
-
-    def scalar(self, stmt: object) -> object:
-        return self._linhas.pop(0)
-
-
-def test_tipo_de_versao_invalido_no_banco_vira_resposta_invalida():
-    """versao() traduz o texto da coluna pelo dict reverso; um valor fora do
-    trio conhecido (fechada/ajustada/cliente) e resposta fora do contrato,
-    nao excecao do banco — RespostaInvalida, nao MotorError puro.
-    """
-    sessao = _SessaoQueDevolve(SimpleNamespace(id=1), SimpleNamespace(tipo="bugado"))
-
-    with pytest.raises(RespostaInvalida, match="bugado"):
-        PostgresEstado(sessao=cast(Session, sessao)).versao("vendabemweb", "13.34.0")
 
 
 # -- verificar_conexao (motor diagnostico) -----------------------------------

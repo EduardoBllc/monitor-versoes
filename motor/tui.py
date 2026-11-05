@@ -39,7 +39,6 @@ from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
-from motor.domain.version import chave, inferir_base, inferir_tipo
 from motor.engine.atualizar import (
     AtualizarResult,
     AtualizarStatus,
@@ -56,11 +55,14 @@ from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, formatar_com_
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
+    resolver_versionamento,
     validar_nome_repo,
     validar_sistema_id,
 )
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
+from motor.services.catalogo import Catalogo
+from motor.services.versionamento import Versionamento
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
 PreviewRunner = Callable[[RepoOption, str], VersionStatus]
 AbortRunner = Callable[[RepoOption, str], None]
 CriarRunner = Callable[[RepoOption, str], AtualizarResult]
+VersionamentoLoader = Callable[[RepoOption], Versionamento]
 
 
 class ContinueRunner(Protocol):
@@ -119,6 +122,8 @@ class Runners:
     registrar_repo: RepoRegistrar | None = None
     criar_repo: CriarRunner | None = None
     previa_atualizacao: PreviewRunner | None = None
+    # Sem ele, o versionamento sai da config do repo (`_versionamento_do_repo`).
+    versionamento_repo: VersionamentoLoader | None = None
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -312,25 +317,12 @@ class ConfirmarModal(ModalScreen[bool]):
         self.dismiss(evento.button.id == "confirmar-sim")
 
 
-def sugerir_versoes(existentes: list[str]) -> list[str]:
-    """Os tres proximos numeros a partir da mais alta que existe, um por tipo.
-
-    Ordem de uso, nao de magnitude: cliente e o caso do dia a dia, fechada e o
-    corte raro. Lista vazia (repo sem nenhuma versao) nao sugere nada — a
-    primeira versao de um repo e digitada, porque nao ha de onde derivar.
-    """
-    if not existentes:
-        return []
-    x, y, z = max(chave(numero) for numero in existentes)
-    return [f"{x}.{y}.{z + 1}", f"{x}.{y + 1}.0", f"{x + 1}.0.0"]
-
-
 class CriarModal(ModalScreen["str | None"]):
     """Numero da versao nova, com o tipo e a base que ele resolveria.
 
     A prévia e o ponto: numero certo com base errada e o erro caro deste
     comando, porque a base entra em `versao.base_commit` e fica definitiva. E
-    ela nao custa git nenhum — `inferir_tipo` e `inferir_base` sao funcoes puras
+    ela nao custa git nenhum — tipo e base vem do esquema, funcoes puras,
     e a lista de versoes existentes o app ja carregou para o Select.
 
     Este modal e a confirmacao do `criar`: nao ha previa do lote de commits para
@@ -358,10 +350,11 @@ class CriarModal(ModalScreen["str | None"]):
     #criar-botoes Button { margin-left: 1; }
     """
 
-    def __init__(self, existentes: list[str]) -> None:
+    def __init__(self, existentes: list[str], versionamento: Versionamento) -> None:
         super().__init__()
         self._existentes = existentes
-        self._sugestoes = sugerir_versoes(existentes)
+        self._versionamento = versionamento
+        self._sugestoes = versionamento.esquema.sugerir(existentes)
 
     def compose(self) -> ComposeResult:
         with Vertical() as caixa:
@@ -371,8 +364,9 @@ class CriarModal(ModalScreen["str | None"]):
             yield Input(placeholder="X.Y.Z", id="criar-numero")
             with Horizontal(id="criar-sugestoes"):
                 for indice, numero in enumerate(self._sugestoes):
-                    tipo = inferir_tipo(numero).name.lower()
-                    yield Button(f"{numero} · {tipo}", id=f"criar-sugestao-{indice}")
+                    tipo = self._versionamento.esquema.tipo(numero)
+                    rotulo = numero if tipo is None else f"{numero} · {tipo}"
+                    yield Button(rotulo, id=f"criar-sugestao-{indice}")
             yield Static(id="criar-previa")
             yield Static(id="criar-erro")
             yield Static(
@@ -414,17 +408,21 @@ class CriarModal(ModalScreen["str | None"]):
         numero = numero.strip()
         if not numero:
             return "", ""
+        esquema = self._versionamento.esquema
         try:
-            tipo = inferir_tipo(numero)
+            numero = esquema.validar(numero)
+            tipo = esquema.tipo(numero)
         except MotorError as erro:
             return "", str(erro)
         if numero in self._existentes:
             return "", f"versao {numero} ja existe - use Atualizar"
         try:
-            base = inferir_base(numero, self._existentes)
+            base = esquema.base(numero, self._existentes, self._versionamento.principal)
         except MotorError as erro:
             return "", str(erro)
-        return f"{tipo.name.lower()} · base {base}", ""
+        if tipo is None:
+            return f"base {base}", ""
+        return f"{tipo} · base {base}", ""
 
     def _confirmar(self) -> None:
         numero = self.query_one("#criar-numero", Input).value.strip()
@@ -538,6 +536,9 @@ class MotorTUI(App[None]):
         self._consultar = runners.consultar_versao
         self._registrar = runners.registrar_repo
         self._criar = runners.criar_repo
+        self._versionamento_repo = runners.versionamento_repo or _versionamento_do_repo
+        # O do repo em que o ultimo `criar` foi aberto: ordena a lista depois.
+        self._versionamento: Versionamento | None = None
         self._repo: RepoOption | None = None
         self._versao: VersionOption | None = None
         self._ocupado = False
@@ -977,8 +978,15 @@ class MotorTUI(App[None]):
             return
         if not self._repo.disponivel:
             return
+        try:
+            versionamento = self._versionamento_repo(self._repo)
+        except ErroDeEntrada as erro:
+            self._falha(erro, True)
+            return
+        self._versionamento = versionamento
         self.push_screen(
-            CriarModal([opcao.numero for opcao in self._versoes]), self._criar_versao
+            CriarModal([opcao.numero for opcao in self._versoes], versionamento),
+            self._criar_versao,
         )
 
     def _criar_versao(self, numero: str | None) -> None:
@@ -1013,9 +1021,13 @@ class MotorTUI(App[None]):
         que o `_mostrar_atualizacao` esta a um passo de estabelecer.
         """
         nova = VersionOption(numero=numero, liberada=False)
-        self._versoes = sorted(
-            [nova, *self._versoes], key=lambda o: chave(o.numero), reverse=True
+        opcoes = {opcao.numero: opcao for opcao in [nova, *self._versoes]}
+        ordenar = (
+            self._versionamento.esquema.ordenar
+            if self._versionamento is not None
+            else sorted
         )
+        self._versoes = [opcoes[n] for n in reversed(ordenar(list(opcoes)))]
         select = self.query_one("#versao", Select)
         with self.prevent(Select.Changed):
             select.set_options([(opcao.numero, opcao) for opcao in self._versoes])
@@ -1262,19 +1274,25 @@ def _piso_da_config(raiz: str | None) -> str | None:
     """Piso da config em camadas; config invalida deixa `None` em vez de
     derrubar a lista (o erro aparece ao operar o repo, pela montagem)."""
     try:
-        return carregar_config(raiz).piso
+        return resolver_versionamento(carregar_config(raiz)).piso
     except ErroDeEntrada:
         return None
 
 
 def descobrir_versoes(
-    git: GitRepo, *, progresso: RelatorProgresso = silencioso
+    git: GitRepo,
+    versionamento: Versionamento,
+    *,
+    progresso: RelatorProgresso = silencioso,
 ) -> list[VersionOption]:
     progresso(Progresso("buscando refs do origin"))
     git.fetch("origin")
-    tags = set(git.list_version_tags())
-    numeros = sorted(set(git.list_version_branches()), key=chave, reverse=True)
-    return [VersionOption(numero, numero in tags) for numero in numeros]
+    catalogo = Catalogo(git, versionamento)
+    liberadas = catalogo.liberadas()
+    return [
+        VersionOption(numero, numero in liberadas)
+        for numero in reversed(catalogo.existentes())
+    ]
 
 
 def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
@@ -1291,13 +1309,22 @@ def _registrar_no_banco(nome: str, sistema_id: int) -> None:
         PostgresEstado(sessao=sessao).registrar_repo(nome, sistema_id)
 
 
+def _versionamento_do_repo(repo: RepoOption) -> Versionamento:
+    return resolver_versionamento(carregar_config(repo.caminho))
+
+
 def _versoes_do_repo(
     repo: RepoOption, *, progresso: RelatorProgresso = silencioso
 ) -> list[VersionOption]:
     if repo.caminho is None:
         return []
+    # Config invalida sobe como a falha de git ao listar versoes: o operador ve
+    # o erro ao escolher o repo.
+    versionamento = _versionamento_do_repo(repo)
     return descobrir_versoes(
-        new_git_subprocess(repo.caminho, progresso=progresso), progresso=progresso
+        new_git_subprocess(repo.caminho, progresso=progresso),
+        versionamento,
+        progresso=progresso,
     )
 
 

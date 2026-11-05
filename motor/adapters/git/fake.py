@@ -12,11 +12,10 @@ import re
 from dataclasses import dataclass, field, replace
 
 from motor.domain.types import CommitRef
-from motor.domain.version import worktrees_a_remover
+from motor.domain.worktrees import worktrees_a_remover
 from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.ports import CherryPickOutcome, MergePrediction
 
-_PADRAO_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 # refs/remotes/<remoto>/<nome> — igual ao adapter real, o remoto e arbitrario.
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 
@@ -41,6 +40,9 @@ class FakeGit:
     # refs/remotes/<remoto>/X), e um fake que resolvesse esconderia o bug.
     remote_refs: dict[str, str] = field(default_factory=dict)
     tags: dict[str, bool] = field(default_factory=dict)
+    # tag -> hash do commit apontado. Sem entrada, a tag resolve como hoje
+    # (branch homonima ou o proprio nome como hash).
+    tag_commits: dict[str, str] = field(default_factory=dict)
     remotes: dict[str, bool] = field(default_factory=dict)
     remote_urls: dict[str, str] = field(default_factory=dict)
     files: dict[str, dict[str, bytes]] = field(default_factory=dict)
@@ -224,6 +226,8 @@ class FakeGit:
             if remota is None:
                 raise NaoEncontrado(f"ref {ref} nao encontrada")
             return remota
+        if ref.startswith("refs/tags/") and ref[10:] in self.tag_commits:
+            return self.tag_commits[ref[10:]]
         nome = ref.removeprefix("refs/tags/").removeprefix("refs/heads/")
         if nome in self.branches:
             return self.branches[nome]
@@ -334,13 +338,14 @@ class FakeGit:
         self._registrar_uso(branch)
         self._current_branch = branch
 
-    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, nossas: list[str], /) -> list[str]:
         # So desanexa as worktrees (como o git de verdade) - as branches em si
         # continuam existindo, pra use_worktree poder recria-las sob demanda.
         # Sem as guardas do adapter real (cherry-pick pendente e alteracao
         # nao commitada): o fake nao tem disco onde isso exista.
+        aceitas = {*nossas, atual}
         removidas = worktrees_a_remover(
-            self.worktrees_mru,
+            [b for b in self.worktrees_mru if b in aceitas],
             mru=self.worktrees_mru,
             manter=manter,
             atual=atual,
@@ -375,20 +380,13 @@ class FakeGit:
     def fetch(self, remote: str, /) -> None:
         self.fetched.append(remote)
 
-    def list_version_branches(self) -> list[str]:
-        # Espelha o adapter real: heads UNIAO tags UNIAO refs de rastreamento,
-        # filtrado por X.Y.Z. Sem o filtro, 'master' entra no conjunto e
-        # versoes_abertas estoura em chave("master") — o fake nao pode ser mais
-        # permissivo (nem simplesmente diferente) do que o real.
-        nomes = set(self.branches.keys())
-        nomes.update(t for t, existe in self.tags.items() if existe)
-        nomes.update(self.remote_refs.keys())
-        return sorted(n for n in nomes if _PADRAO_VERSAO.match(n))
+    def listar_branches(self) -> list[str]:
+        # Espelha o adapter real: heads UNIAO refs de rastreamento, sem filtro
+        # e sem tags.
+        return sorted({*self.branches, *self.remote_refs})
 
-    def list_version_tags(self) -> list[str]:
-        return sorted(
-            t for t, existe in self.tags.items() if existe and _PADRAO_VERSAO.match(t)
-        )
+    def listar_tags(self) -> list[str]:
+        return sorted(t for t, existe in self.tags.items() if existe)
 
     def read_file(self, branch: str, path: str, /) -> bytes:
         arquivos = self.files.get(branch)

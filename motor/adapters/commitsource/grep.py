@@ -1,4 +1,4 @@
-"""GrepCommitSource: descobre commits varrendo mensagens de master.
+"""GrepCommitSource: descobre commits varrendo mensagens da branch principal.
 
 Move a lógica que vivia no TargetResolver — uma chamada só de `git log`
 com o --grep de todos os chamados juntos (git faz OR entre --grep),
@@ -9,6 +9,7 @@ mensagem. É a fonte de fallback; o Bitbucket (PR) é a primária.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from motor.domain.commits import match_exato
@@ -21,9 +22,11 @@ from motor.progresso import Progresso, RelatorProgresso, silencioso
 @dataclass
 class GrepCommitSource:
     git: GitRepo
-    ref: str = "origin/master"
     progresso: RelatorProgresso = silencioso
     referencia: FonteReferencia = field(kw_only=True)
+    # `origin/<principal>`. Fonte, nao valor: a principal sai do esquema, que
+    # so se resolve na primeira busca — montar nao e usar.
+    ref_principal: Callable[[], str] = field(kw_only=True)
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         if not chamados:
@@ -34,7 +37,7 @@ class GrepCommitSource:
         # Resolvida so aqui, com chamado a buscar: lote vazio nao exige padrao.
         ref = self.referencia()
         candidatos = self.git.search_commits(
-            [formatar_referencia(ref, c) for c in chamados], self.ref
+            [formatar_referencia(ref, c) for c in chamados], self.ref_principal()
         )
 
         resultado: dict[str, list[CommitRef]] = {}

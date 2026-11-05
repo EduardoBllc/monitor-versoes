@@ -10,18 +10,23 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.tickio import TickioRest
-from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
+from motor.atribuicoes import Composta, Exata
+from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
+from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
+from motor.services.versionamento import Versionamento
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
 
 def _deps(git, tasks, commits, estado) -> Deps:
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=tasks,
         estado=estado,
@@ -107,7 +112,7 @@ def test_verificar_une_tarefas_das_versoes_abertas_menores():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -130,7 +135,7 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -170,7 +175,7 @@ def test_verificar_nao_grava_em_versao_liberada():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -193,7 +198,7 @@ def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -222,6 +227,21 @@ def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
     assert git.removed_worktrees == []
 
 
+def test_gc_alcanca_worktree_de_liberada_sem_branch():
+    """A worktree de uma liberada cuja branch foi apagada nasce em detached
+    HEAD da tag. Ela continua sendo nossa nos runs seguintes, em que outra
+    versao e a atual: fora da lista do GC, ficaria no disco para sempre."""
+    git = _git(tags={"13.30.0": True})
+    git.tag_commits["13.30.0"] = "m0"
+    git.worktrees_mru.append("13.30.0")
+    tasks = FakeTaskSource(chamados={"13.33.1": [], "14.0.0": []})
+    estado = _estado_com_repo()
+
+    verificar(_deps(git, tasks, FakeCommitSource(), estado), "14.0.0")
+
+    assert sorted(git.removed_worktrees) == ["13.30.0", "14.0.0"]
+
+
 def test_auditar_recusa_versao_ainda_aberta():
     git = _git()
     estado = _estado_com_repo()
@@ -229,7 +249,7 @@ def test_auditar_recusa_versao_ainda_aberta():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -290,7 +310,7 @@ def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -346,7 +366,7 @@ def test_verificar_prediz_conflitos_na_ordem_do_cherry_pick():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -374,7 +394,7 @@ def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -403,7 +423,7 @@ def test_verificar_busca_antes_de_ler_as_refs_e_congela_tag_nova_no_mesmo_run():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -464,7 +484,7 @@ def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
     # CORTE, m0, nao o tip do master (a0). Gravar a0 diria que a0 e herdado, e
     # o commit que a versao esta devendo sairia verde.
     assert (gravada.base_ref, gravada.base_commit) == ("master", "m0")
-    assert gravada.tipo == VersionType.FECHADA
+    assert gravada.tipo == "fechada"
     # escreveu as atribuicoes, ou seja o registro veio antes
     assert [a.chamado for a in estado.atribuicoes("r", "14.0.0")] == ["123123"]
     assert git.fetched == ["origin"]
@@ -504,7 +524,7 @@ def test_verificar_reporta_suspeita_de_cherry_pick_manual_sem_x():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -522,7 +542,7 @@ def _versao_registrada(estado: FakeEstado, numero: str = "14.0.0") -> None:
         "r",
         VersaoInfo(
             numero=numero,
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -732,7 +752,13 @@ def test_verificar_cobra_a_fonte_de_commits_nao_montada():
     git.set_branch("14.0.0", "m0")
     estado = _estado_com_repo()
     _versao_registrada(estado)
-    deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r")
+    deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
+        git=git,
+        tasks=FakeTaskSource(),
+        estado=estado,
+        repo="r",
+    )
 
     with pytest.raises(AssertionError, match="commit_source"):
         verificar(deps, "14.0.0")
@@ -747,7 +773,7 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -800,9 +826,9 @@ def _git_com_liberada_fora_da_base() -> FakeGit:
 def _estado_com_liberadas() -> FakeEstado:
     estado = _estado_com_repo()
     for numero, tipo, base in (
-        ("13.34.0", VersionType.AJUSTADA, "t0"),
-        ("14.6.0", VersionType.AJUSTADA, "m0"),
-        ("15.0.0", VersionType.FECHADA, "m0"),
+        ("13.34.0", "ajustada", "t0"),
+        ("14.6.0", "ajustada", "m0"),
+        ("15.0.0", "fechada", "m0"),
     ):
         estado.registrar_versao(
             "r",
@@ -892,7 +918,7 @@ def test_verificar_nao_recobra_liberada_que_e_a_propria_base_da_ajustada():
         "r",
         VersaoInfo(
             numero="14.7.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="14.6.0",
             base_commit="p1",
         ),
@@ -962,7 +988,7 @@ def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="p0",
         ),
@@ -1085,3 +1111,104 @@ def test_carimbo_leva_a_hora_do_inicio_da_varredura():
     carimbo = deps.estado.verificacao("r", "14.0.0")
     assert carimbo is not None
     assert carimbo.verificado_em == AGORA
+
+
+def _semver_com_tag_v() -> Versionamento:
+    return Versionamento(
+        esquema=Semver(), politica=Composta(), tag_liberacao="v{versao}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("tag", "liberada"), [("v1.2.0", True), ("1.2.0", False)], ids=["v", "homonima"]
+)
+def test_tag_do_template_da_config_libera_e_a_homonima_nao(tag, liberada):
+    """Com `[liberacao] tag = "v{versao}"`, so a `v1.2.0` libera a 1.2.0: ela
+    congela no banco e sai das abertas cujas tarefas caem na 1.3.0."""
+    git = FakeGit(tags={tag: True}, tag_commits={tag: "m0"})
+    git.add_commit("m0", "", "raiz", D)
+    git.add_commit("a0", "m0", "ch123123 alfa", D)
+    git.branches.update({"main": "a0", "1.2.0": "m0", "1.3.0": "m0"})
+    estado = _estado_com_repo()
+    for numero in ("1.2.0", "1.3.0"):
+        estado.registrar_versao(
+            "r",
+            VersaoInfo(
+                numero=numero,
+                tipo="fechada",
+                base_ref="main",
+                base_commit="m0",
+            ),
+        )
+    tasks = FakeTaskSource(chamados={"1.2.0": ["123123"], "1.3.0": []})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123")]
+        }
+    )
+    deps = replace(_deps(git, tasks, commits, estado), versionamento=_semver_com_tag_v)
+
+    status = verificar(deps, "1.3.0")
+
+    gravada = estado.versao("r", "1.2.0")
+    assert gravada is not None
+    assert (gravada.liberada_em is not None) is liberada
+    assert [c.hash_origem for c in status.faltantes] == ([] if liberada else ["a0"])
+
+
+# -- politica `exata` (critério 5 da #115) ------------------------------------
+
+
+def _vendabem_exata() -> Versionamento:
+    return replace(VENDABEM_COMPOSTA(), politica=Exata())
+
+
+def _deps_exata(git, tasks, commits, estado) -> Deps:
+    return replace(_deps(git, tasks, commits, estado), versionamento=_vendabem_exata)
+
+
+def _commit_m1() -> FakeCommitSource:
+    return FakeCommitSource(
+        por_chamado={
+            "257270": [
+                CommitRef(
+                    hash_origem="m1",
+                    parent="m0",
+                    chamado="257270",
+                    commit_date=ABR,
+                    msg="ch257270 alfa",
+                )
+            ]
+        }
+    )
+
+
+def test_exata_so_traz_as_tarefas_marcadas_no_alvo():
+    """Nem a aberta menor nem a liberada depois do corte entram no alvo."""
+    git = _git_com_liberada_fora_da_base()
+    git.set_branch("14.9.0", "m0")  # aberta menor que o alvo, com tarefa
+    tasks = FakeTaskSource(
+        chamados={"14.6.0": ["257270"], "14.9.0": ["111111"], "15.0.0": ["999999"]}
+    )
+
+    status = verificar(
+        _deps_exata(git, tasks, _commit_m1(), _estado_com_liberadas()), "15.0.0"
+    )
+
+    # So a tarefa da 15.0.0, sem commit; as da 14.6.0 e da 14.9.0 nao entram.
+    assert status.tasks_sem_commits == ["999999"]
+    assert status.tasks_novas == []
+    assert status.faltantes == []
+
+
+def test_exata_nao_acusa_ambiguidade_com_aberta_menor():
+    git = _git_com_liberada_fora_da_base()
+    git.set_branch("14.9.0", "m0")
+    tasks = FakeTaskSource(chamados={"14.9.0": ["257270"], "15.0.0": ["257270"]})
+
+    status = verificar(
+        _deps_exata(git, tasks, _commit_m1(), _estado_com_liberadas()), "15.0.0"
+    )
+
+    assert status.tasks_ambiguas == []
+    assert [c.hash_origem for c in status.faltantes] == ["m1"]

@@ -15,11 +15,11 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 2. [002](002-oraculo-tres-fontes.md) — presença cruza Tickio, estado e git; verde só quando os três concordam.
 3. [003](003-definicao-de-presente.md) — "presente" em três níveis: ancestral, trailer `-x`, patch-id legado.
 4. [004](004-estado-descartavel.md) — o estado é projeção recuperável mais julgamento humano que só existe no banco.
-5. [005](005-alvo-distribuicao-entre-versoes.md) — tarefa marcada em `V` vale para as abertas maiores e para liberadas após o corte.
+5. [005](005-alvo-distribuicao-entre-versoes.md) — política `composta`: tarefa marcada em `V` vale para as abertas maiores e para liberadas após o corte.
 6. [006](006-match-exato-no-dominio.md) — a busca traz candidatos; o match por word-boundary é do domínio.
 7. [007](007-tarefa-em-duas-abertas.md) — tarefa em duas abertas pinta vermelho mas não aborta.
 8. [008](008-autenticacao-tickio.md) — Tickio por credencial, cobrada na primeira busca; o erro chega tarde.
-9. [009](009-inferencia-de-base.md) — base inferida pelo número; o commit gravado é o ponto de corte.
+9. [009](009-inferencia-de-base.md) — esquema `vendabem`: base inferida pelo número; o commit gravado é o ponto de corte.
 10. [010](010-travas-publicada-e-liberada.md) — `publicada` trava o rebuild; `liberada` congela.
 11. [011](011-congelamento-no-banco.md) — o congelamento é trigger de banco mais recusa no adapter.
 12. [012](012-divergencia-entre-fontes.md) — o que fazer em cada divergência entre as três fontes.
@@ -36,3 +36,4 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 23. [023](023-onde-nao-se-abstrai.md) — sem clock, sem cache de tag, sem trigger em `versao` (o "sem config por projeto" foi revogado pela [024](024-config-por-projeto.md) e o "sem clock" pela [025](025-reaproveitamento-da-verificacao.md)).
 24. [024](024-config-por-projeto.md) — config por projeto em duas camadas (global e repo), piso sem padrão, import path só no central.
 25. [025](025-reaproveitamento-da-verificacao.md) — `atualizar` reaproveita a verificação de até 5 minutos se tip e impressão não mudaram; o carimbo é cache.
+26. [026](026-esquema-e-atribuicao-plugaveis.md) — esquema de versão e política de atribuição plugáveis; liberada e nomes de branch em camadas (config > esquema > padrão), com `semver`, `exata`, `main` e tag `{versao}` como padrão.

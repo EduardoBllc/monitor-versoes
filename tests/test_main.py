@@ -37,12 +37,12 @@ from motor.domain.types import (
     RepoInfo,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.montagem import CredenciaisBitbucket
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -377,8 +377,14 @@ def bordas(monkeypatch, tmp_path_factory):
         ("TICKIO_PASSWORD", "p"),
     ):
         monkeypatch.setenv(var, valor)
-    # config global isolada: o teste nao le o ~/.config de quem roda a suite
+    # config global isolada: o teste nao le o ~/.config de quem roda a suite.
+    # O repo de teste segue o esquema da VendaBem (`master`, base da 009,
+    # regra composta da 005): sem isso o padrao `semver`/`main` mudaria o que
+    # estes testes verificam.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    global_ = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
+    global_.parent.mkdir(parents=True)
+    global_.write_text('[versao]\nesquema = "vendabem"\natribuicao = "composta"\n')
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
@@ -418,7 +424,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
         "vendabemweb",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -527,7 +533,7 @@ def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, cap
     )
     estado.registrar_versao(
         "vendabemweb",
-        VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA),
+        VersaoInfo(numero="13.34.0", tipo="ajustada"),
     )
     estado.substituir_atribuicoes(
         "vendabemweb",
@@ -588,6 +594,38 @@ def test_atualizar_abort_ponta_a_ponta(bordas, tmp_path, capsys, monkeypatch):
     # Default de WORKTREES_MANTIDAS (3): o checkout sobrevive ao abort, pra o
     # `atualizar` seguinte na mesma versao nao pagar `worktree add` de novo.
     assert git.removed_worktrees == []
+
+
+@pytest.mark.parametrize(
+    "config",
+    ['[versao]\nesquema = "naoexiste"\n', '[versao]\npiso = "abc"\n'],
+    ids=["esquema-desconhecido", "piso-invalido"],
+)
+def test_abort_nao_resolve_o_versionamento(bordas, tmp_path, capsys, config):
+    """Sair de um lote travado nao pode depender de o esquema carregar nem de
+    o piso valer (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md)."""
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write(config)
+
+    main(["atualizar", "13.34.0", "--repo", repo, "--abort"])
+
+    assert capsys.readouterr().out == "abortado\n"
+
+
+def test_abort_usa_a_branch_da_versao_da_config(bordas, tmp_path, capsys):
+    git, _ = bordas
+    git.set_branch("release/13.34.0", "m0")
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write(
+            '[versao]\nesquema = "naoexiste"\n[branches]\nversao = "release/{versao}"\n'
+        )
+
+    main(["atualizar", "13.34.0", "--repo", repo, "--abort"])
+
+    assert capsys.readouterr().out == "abortado\n"
+    assert git.worktrees_mru[0] == "release/13.34.0"
 
 
 def test_worktrees_mantidas_zero_descarta_o_checkout_no_fim(
@@ -818,6 +856,7 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     # atravessa o ChainCommitSource ate ela: um dump de deps sob --debug
     # imprimiria tudo em claro se o adapter nao tivesse repr=False.
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=_git(),
         tasks=FakeTaskSource(),
         estado=FakeEstado(),

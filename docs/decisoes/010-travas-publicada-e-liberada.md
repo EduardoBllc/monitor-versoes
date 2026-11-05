@@ -10,6 +10,10 @@ liberada(X.Y.Z):   a tag X.Y.Z existe?                                 # SÓ a t
 publicada(X.Y.Z):  liberada(X.Y.Z) OU existe branch remota X.Y.Z?
 ```
 
+> Nota (2026-11-05): "a tag X.Y.Z" é o critério padrão de liberada, e "branch X.Y.Z" a branch
+> padrão da versão; os dois se trocam em camadas, com gravada nunca deixando de ser liberada
+> ([026](026-esquema-e-atribuicao-plugaveis.md)).
+
 - **`publicada`** trava o **rebuild**: `criar` recusa se a versão já tem tag ou já existe como
   branch remota — impede recriar do zero uma branch que outra máquina já tem. Enquanto a
   branch é nova e não publicada, recriar do zero a cada tentativa é permitido e útil (o

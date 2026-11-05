@@ -9,7 +9,6 @@ import datetime
 
 from sqlalchemy import (
     BigInteger,
-    CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -69,7 +68,7 @@ class Repo(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(unique=True)  # basename do --repo
     tickio_sistema_id: Mapped[int]  # ID do sistema NO TICKIO, vai em ?sistema=
-    # Menor versao que conta como fonte de alvo (domain.version.fontes_de_alvo).
+    # Menor versao que conta como fonte de alvo (motor.atribuicoes).
     piso_versao: Mapped[str] = mapped_column(server_default="13.0.0")
 
 
@@ -93,15 +92,13 @@ class Versao(Base):
         # nome explicito: a convencao gera uq_versao_repo_id, que le como se
         # repo_id sozinho fosse unico — e um repo tem muitas versoes.
         UniqueConstraint("repo_id", "numero", name="uq_versao_repo_id_numero"),
-        CheckConstraint(
-            "tipo in ('fechada', 'ajustada', 'cliente')", name="ck_versao_tipo"
-        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"))
     numero: Mapped[str]  # '13.34.0'
-    tipo: Mapped[str]  # ck_versao_tipo
+    # rotulo livre do esquema de versao; null quando o esquema nao classifica.
+    tipo: Mapped[str | None]
     base_ref: Mapped[str]
     base_commit: Mapped[str]
     # null = em construcao. Preenchida com a data do commit apontado pela tag.
@@ -184,8 +181,8 @@ class PrCommitCache(Base):
     evitar.
 
     Fica de fora de proposito: `chamado`, que vem da busca e nao da PR, e
-    `is_ancestor(hash, master)`, que e volatil — uma PR mergeada numa branch que
-    ainda nao chegou na master viraria commit escondido para sempre.
+    `is_ancestor(hash, principal)`, que e volatil — uma PR mergeada numa branch que
+    ainda nao chegou na principal viraria commit escondido para sempre.
     """
 
     __tablename__ = "pr_commit_cache"
