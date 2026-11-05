@@ -357,6 +357,32 @@ def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
     assert capturado == {"repo": "alpha", "versao": "14.0.0"}
 
 
+def test_renderizar_status_mostra_o_culpado_abaixo_dos_faltantes():
+    com_culpado = CommitRef(
+        hash_origem="f5d02b45aaaa", chamado="255105", msg="Altera os testes"
+    )
+    sem_culpado = CommitRef(
+        hash_origem="c0ffee123456", chamado="255106", msg="Outro conflito"
+    )
+    status = VersionStatus(
+        verde=False,
+        estado_integro=True,
+        faltantes=[com_culpado, sem_culpado],
+        conflitantes=[com_culpado, sem_culpado],
+        conflito_causado_por={"f5d02b45aaaa": ["257056"]},
+    )
+
+    linhas = _texto(renderizar_status(status)).splitlines()
+
+    tabela = [i for i, linha in enumerate(linhas) if "CONFLITANTE" in linha]
+    culpado = [i for i, linha in enumerate(linhas) if "Conflito em" in linha]
+    assert [linhas[i].strip() for i in culpado] == [
+        "Conflito em f5d02b45 depende de: #257056"
+    ]
+    assert tabela and culpado[0] > max(tabela)
+    assert not any("257056" in linhas[i] for i in tabela)
+
+
 def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
     commit = CommitRef(
         hash_origem="deadbeefcafe",
@@ -473,6 +499,22 @@ def test_renderizar_atualizacao_bloqueada_orienta_continuacao():
     assert "deadbeef" in texto
     assert "motor/tui.py" in texto and "tests/test_tui.py" in texto
     assert "Continuar" in texto and "Abortar" in texto
+    assert "Depende de" not in texto
+
+
+def test_renderizar_atualizacao_bloqueada_mostra_o_culpado():
+    texto = _texto(
+        tui.renderizar_atualizacao(
+            AtualizarResult(
+                status=AtualizarStatus.BLOCKED,
+                blocked_commit="f5d02b45aaaa",
+                arquivos_conflito=["integracoes/tests.py"],
+                culpados=["257056"],
+            )
+        )
+    )
+
+    assert "Depende de: #257056" in texto
 
 
 def test_renderizar_atualizacao_mostra_ja_presentes_e_alertas_da_versao():

@@ -9,15 +9,18 @@ from enum import IntEnum
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
 from motor.engine.verificar import (
+    ContextoDoAlvo,
+    culpados_do_conflito,
     descartar_worktrees,
     preparar_worktree,
     verificar_sem_fetch,
 )
 from motor.engine.vigencia import verificacao_vigente
-from motor.errors import ErroDeEntrada, RecusaDeInvariante
+from motor.errors import ErroDeEntrada, MotorError, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
 from motor.services.catalogo import Catalogo
+from motor.services.presence_oracle import PresenceOracle
 from motor.services.publication_gate import PublicationGate
 from motor.services.versionamento import aplicar
 
@@ -37,6 +40,10 @@ class AtualizarResult:
     status: AtualizarStatus
     blocked_commit: str = ""
     arquivos_conflito: list[str] = field(default_factory=list)
+    # chamados de que o commit travado depende e que estao fora desta versao,
+    # apurados no bloqueio: a simulacao do verificar so atribui o primeiro
+    # conflito previsto, e o lote pode travar em outro commit
+    culpados: list[str] = field(default_factory=list)
     # commits cherry-picked nesta invocacao (vazio = nada a fazer)
     aplicados: list[CommitRef] = field(default_factory=list)
     # commits que ja estavam no historico (ancestrais, sem cherry-pick a fazer)
@@ -118,6 +125,27 @@ def _pick(deps: Deps, hash_origem: str) -> CherryPickOutcome:
     return outcome
 
 
+def _culpados_do_bloqueio(
+    deps: Deps, versao: str, commit: str, arquivos: list[str]
+) -> list[str]:
+    """Atribui o commit em que o lote travou, com a regra do `verificar`."""
+    info = deps.estado.versao(deps.repo, versao)
+    if info is None:
+        # `_status_do_lote` registra a versao antes de qualquer pick.
+        raise AssertionError(f"versao {versao} sem registro no estado apos verificar")
+    ref_alvo = deps.versionamento().branch(versao)
+    ctx = ContextoDoAlvo(deps, PresenceOracle(git=deps.git), info.base_commit, ref_alvo)
+    try:
+        parent = deps.git.commit_meta(commit).parent
+    except MotorError as e:
+        # Atribuicao e diagnostico: perde-la nao pode custar o bloqueio.
+        logger.debug("atribuicao do bloqueio em %s falhou: %s", commit, e)
+        return []
+    # Sem conjunto de ja aplicados: o pick feito antes do bloqueio (inclusive o
+    # de um run anterior ao --continue) leva o trailer -x, e o oraculo ja o tira.
+    return culpados_do_conflito(ctx, commit, parent, arquivos, set())
+
+
 def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     """Aplica os commits faltantes na ordem do grafo
     (docs/decisoes/014-ordem-de-aplicacao-pelo-grafo.md).
@@ -169,6 +197,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
                 status=AtualizarStatus.BLOCKED,
                 blocked_commit=c.hash_origem,
                 arquivos_conflito=paths,
+                culpados=_culpados_do_bloqueio(deps, versao, c.hash_origem, paths),
                 aplicados=aplicados,
                 vazios=vazios,
                 ja_presentes=ja_presentes,
