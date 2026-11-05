@@ -10,18 +10,23 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.tickio import TickioRest
+from motor.atribuicoes import Composta
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
+from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
+from motor.services.versionamento import Versionamento
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
 
 def _deps(git, tasks, commits, estado) -> Deps:
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=tasks,
         estado=estado,
@@ -732,7 +737,13 @@ def test_verificar_cobra_a_fonte_de_commits_nao_montada():
     git.set_branch("14.0.0", "m0")
     estado = _estado_com_repo()
     _versao_registrada(estado)
-    deps = Deps(git=git, tasks=FakeTaskSource(), estado=estado, repo="r")
+    deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
+        git=git,
+        tasks=FakeTaskSource(),
+        estado=estado,
+        repo="r",
+    )
 
     with pytest.raises(AssertionError, match="commit_source"):
         verificar(deps, "14.0.0")
@@ -1085,3 +1096,46 @@ def test_carimbo_leva_a_hora_do_inicio_da_varredura():
     carimbo = deps.estado.verificacao("r", "14.0.0")
     assert carimbo is not None
     assert carimbo.verificado_em == AGORA
+
+
+def _semver_com_tag_v() -> Versionamento:
+    return Versionamento(
+        esquema=Semver(), politica=Composta(), tag_liberacao="v{versao}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("tag", "liberada"), [("v1.2.0", True), ("1.2.0", False)], ids=["v", "homonima"]
+)
+def test_tag_do_template_da_config_libera_e_a_homonima_nao(tag, liberada):
+    """Com `[liberacao] tag = "v{versao}"`, so a `v1.2.0` libera a 1.2.0: ela
+    congela no banco e sai das abertas cujas tarefas caem na 1.3.0."""
+    git = FakeGit(tags={tag: True}, tag_commits={tag: "m0"})
+    git.add_commit("m0", "", "raiz", D)
+    git.add_commit("a0", "m0", "ch123123 alfa", D)
+    git.branches.update({"main": "a0", "1.2.0": "m0", "1.3.0": "m0"})
+    estado = _estado_com_repo()
+    for numero in ("1.2.0", "1.3.0"):
+        estado.registrar_versao(
+            "r",
+            VersaoInfo(
+                numero=numero,
+                tipo=VersionType.FECHADA,
+                base_ref="main",
+                base_commit="m0",
+            ),
+        )
+    tasks = FakeTaskSource(chamados={"1.2.0": ["123123"], "1.3.0": []})
+    commits = FakeCommitSource(
+        por_chamado={
+            "123123": [CommitRef(hash_origem="a0", parent="m0", chamado="123123")]
+        }
+    )
+    deps = replace(_deps(git, tasks, commits, estado), versionamento=_semver_com_tag_v)
+
+    status = verificar(deps, "1.3.0")
+
+    gravada = estado.versao("r", "1.2.0")
+    assert gravada is not None
+    assert (gravada.liberada_em is not None) is liberada
+    assert [c.hash_origem for c in status.faltantes] == ([] if liberada else ["a0"])

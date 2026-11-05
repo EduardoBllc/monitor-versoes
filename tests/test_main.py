@@ -43,6 +43,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.montagem import CredenciaisBitbucket
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -332,8 +333,14 @@ def bordas(monkeypatch, tmp_path_factory):
         ("TICKIO_PASSWORD", "p"),
     ):
         monkeypatch.setenv(var, valor)
-    # config global isolada: o teste nao le o ~/.config de quem roda a suite
+    # config global isolada: o teste nao le o ~/.config de quem roda a suite.
+    # O repo de teste segue o esquema da VendaBem (`master`, base da 009,
+    # regra composta da 005): sem isso o padrao `semver`/`main` mudaria o que
+    # estes testes verificam.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    global_ = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
+    global_.parent.mkdir(parents=True)
+    global_.write_text('[versao]\nesquema = "vendabem"\natribuicao = "composta"\n')
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
@@ -773,6 +780,7 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     # atravessa o ChainCommitSource ate ela: um dump de deps sob --debug
     # imprimiria tudo em claro se o adapter nao tivesse repr=False.
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=_git(),
         tasks=FakeTaskSource(),
         estado=FakeEstado(),

@@ -6,7 +6,14 @@ import pytest
 
 from motor.adapters.git.fake import FakeGit
 from motor.errors import NaoEncontrado
+from motor.ports import GitRepo
 from motor.services.base_resolver import BaseResolver
+from motor.services.catalogo import Catalogo
+from tests.versionamento import VENDABEM_COMPOSTA
+
+
+def _resolver(git: GitRepo) -> BaseResolver:
+    return BaseResolver(git, Catalogo(git, VENDABEM_COMPOSTA()))
 
 
 def test_base_resolver_resolve():
@@ -14,7 +21,7 @@ def test_base_resolver_resolve():
     g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.UTC))
     g.set_branch("13.6.0", "hash136")
 
-    resolver = BaseResolver(git=g)
+    resolver = _resolver(g)
     base = resolver.resolve("13.7.0")
 
     assert base.ref == "13.6.0" and base.commit == "hash136", (
@@ -25,14 +32,14 @@ def test_base_resolver_resolve():
 def test_base_resolver_usa_a_ref_de_rastreamento_quando_nao_ha_head_local():
     """Base cortada em outra maquina: chega no fetch como
     refs/remotes/origin/13.6.0, sem head local e sem tag.
-    `list_version_branches` ja a enxerga (por isso `inferir_base` a escolhe),
+    o `Catalogo` ja a enxerga (por isso o esquema a escolhe),
     mas `git rev-parse 13.6.0` nunca consulta refs/remotes/<remoto>/X — sem a
     segunda tentativa a base correta viraria erro.
     """
     g = FakeGit(remote_refs={"13.6.0": "hash136"})
     g.add_commit("hash136", "", "base 13.6.0", datetime.datetime.now(datetime.UTC))
 
-    base = BaseResolver(git=g).resolve("13.7.0")
+    base = _resolver(g).resolve("13.7.0")
 
     assert (base.ref, base.commit) == ("13.6.0", "hash136")
 
@@ -53,7 +60,7 @@ def test_base_resolver_prefere_o_head_local_a_ref_de_rastreamento():
     for h in ("local136", "remoto136"):
         g.add_commit(h, "", f"base 13.6.0 em {h}", datetime.datetime.now(datetime.UTC))
 
-    base = BaseResolver(git=g).resolve("13.7.0")
+    base = _resolver(g).resolve("13.7.0")
 
     assert base.commit == "local136", (
         f"base.commit = {base.commit!r}; o head local tem de vencer a ref de "
@@ -65,20 +72,20 @@ def test_ref_que_nao_resolve_em_nenhum_candidato_e_nao_encontrado():
     """Nao esta propagando erro de porta: as duas tentativas (nome puro e ref de
     rastreamento) falharam, e isso e um fato novo — "nao achei a base".
 
-    list_version_branches sobrescrita simula uma listagem defasada (a ref
+    listar_branches sobrescrita simula uma listagem defasada (a ref
     apareceu na varredura mas nao existe mais nem como head local nem como
     ref de rastreamento) - com FakeGit padrao as duas fontes sao sempre
     consistentes, e o cenario nunca ocorreria.
     """
 
     class _GitComListagemDesatualizada(FakeGit):
-        def list_version_branches(self) -> list[str]:
+        def listar_branches(self) -> list[str]:
             return ["13.6.0"]
 
     git = _GitComListagemDesatualizada()
 
     with pytest.raises(NaoEncontrado, match="resolvendo ref"):
-        BaseResolver(git=git).resolve("13.7.0")
+        _resolver(git).resolve("13.7.0")
 
 
 def test_bug_do_adapter_propaga_e_nao_vira_base_nao_encontrada():
@@ -102,7 +109,7 @@ def test_bug_do_adapter_propaga_e_nao_vira_base_nao_encontrada():
     g.set_branch("13.6.0", "hash136")
 
     with pytest.raises(RuntimeError, match="bug no adapter"):
-        BaseResolver(git=g).resolve("13.7.0")
+        _resolver(g).resolve("13.7.0")
 
     # curto-circuita no primeiro: insistir no segundo candidato depois de um bug
     # so troca a excecao util por "resolvendo ref 13.6.0: ...".
@@ -129,7 +136,7 @@ def test_base_de_versao_existente_e_o_ponto_de_corte_nao_o_tip_da_base():
     g.set_branch("master", "master_depois")
     g.set_branch("15.0.0", "trabalho_15")
 
-    base = BaseResolver(git=g).resolve("15.0.0")
+    base = _resolver(g).resolve("15.0.0")
 
     assert (base.ref, base.commit) == ("master", "corte"), (
         f"base = {base!r}; quer o ponto de corte 'corte', nao o tip 'master_depois'"
@@ -147,7 +154,7 @@ def test_base_de_versao_que_ainda_nao_existe_e_o_tip_da_ref_base():
     g.add_commit("master_depois", "corte", "master andou depois do corte", agora)
     g.set_branch("master", "master_depois")
 
-    base = BaseResolver(git=g).resolve("15.0.0")
+    base = _resolver(g).resolve("15.0.0")
 
     assert base.commit == "master_depois", (
         f"base.commit = {base.commit!r}; versao inexistente corta do tip"
@@ -167,7 +174,7 @@ def test_base_de_ajustada_e_o_corte_mesmo_com_commit_novo_na_anterior():
     g.set_branch("14.9.0", "hotfix_149")
     g.set_branch("14.10.0", "trabalho_1410")
 
-    base = BaseResolver(git=g).resolve("14.10.0")
+    base = _resolver(g).resolve("14.10.0")
 
     assert (base.ref, base.commit) == ("14.9.0", "corte"), (
         f"base = {base!r}; quer o corte 'corte', nao o hotfix 'hotfix_149'"

@@ -34,6 +34,7 @@ from motor.engine.verificar import verificar
 from motor.progresso import Progresso, SlotProgresso, silencioso
 from motor.services.target_resolver import TargetResolver
 from motor.tui import renderizar_progresso
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -156,6 +157,7 @@ def test_verificar_relata_suas_fases_na_ordem():
     )
     relatos: list[Progresso] = []
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.33.1": ["123123"]}),
         estado=estado,
@@ -206,6 +208,7 @@ def test_atualizar_conta_o_lote_de_cherry_pick_e_a_publicacao():
     git.set_branch("13.7.0", "m0")
     relatos: list[Progresso] = []
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514", "255515"]}),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
@@ -266,6 +269,7 @@ def test_consultar_conta_os_chamados_do_snapshot():
 
     consultar(
         Deps(
+            versionamento=VENDABEM_COMPOSTA,
             git=git,
             tasks=FakeTaskSource(),
             estado=estado,
@@ -293,6 +297,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
 
     reconstruir_estado(
         Deps(
+            versionamento=VENDABEM_COMPOSTA,
             git=git,
             tasks=FakeTaskSource(),
             estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),

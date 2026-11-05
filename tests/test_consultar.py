@@ -9,10 +9,12 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import Atribuicao, RepoInfo, VersaoInfo
 from motor.engine.consultar import consultar
 from motor.engine.deps import Deps
+from tests.versionamento import VENDABEM_COMPOSTA
 
 
 def _deps(git: FakeGit, estado: FakeEstado) -> Deps:
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,

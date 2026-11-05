@@ -13,6 +13,7 @@ from motor.engine.vigencia import verificacao_vigente
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
+from motor.services.catalogo import Catalogo
 from motor.services.publication_gate import PublicationGate
 
 logger = logging.getLogger(__name__)
@@ -55,17 +56,24 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
     """Trava de escrita em versao liberada, na entrada de todo ponto que mexe na
     branch (`atualizar` e `atualizar_continue`, os dois expostos pelo CLI).
 
-    O fetch vem antes da leitura, nao depois: `tag_exists` le o ref store local,
-    e a tag de uma versao liberada em outra maquina so entra aqui pelo fetch. Sem
-    ele a recusa seria decidida em cima de refs velhas e o motor mexeria numa
-    versao que ja saiu.
+    O fetch vem antes da leitura, nao depois: o `Catalogo` le o ref store
+    local, e a tag de uma versao liberada em outra maquina so entra aqui pelo
+    fetch. Sem ele a recusa seria decidida em cima de refs velhas e o motor
+    mexeria numa versao que ja saiu.
+
+    `liberada_em` gravada tambem recusa: o criterio de liberacao pode mudar e
+    deixar de reconhecer a versao, mas o snapshot dela ja congelou.
     """
+    versionamento = deps.versionamento()
+    versionamento.esquema.validar(versao)
     deps.progresso(Progresso("conferindo se a vers\u00e3o j\u00e1 saiu"))
     deps.git.fetch("origin")
 
-    if PublicationGate(git=deps.git).liberada(versao):
+    gate = PublicationGate(deps.git, Catalogo(deps.git, versionamento))
+    info = deps.estado.versao(deps.repo, versao)
+    if gate.liberada(versao) or (info is not None and info.liberada_em is not None):
         raise RecusaDeInvariante(
-            f"versao {versao} ja liberada (tem tag) - remarque a tarefa "
+            f"versao {versao} ja liberada - remarque a tarefa "
             "para a proxima versao em construcao"
         )
 

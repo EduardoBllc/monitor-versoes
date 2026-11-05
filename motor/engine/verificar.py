@@ -24,17 +24,13 @@ from motor.domain.types import (
     VersaoInfo,
     VersionStatus,
 )
-from motor.domain.version import (
-    chave,
-    inferir_tipo,
-    liberadas_no_alvo,
-    versoes_abertas,
-)
+from motor.domain.version import inferir_tipo, liberadas_no_alvo
 from motor.engine.deps import Deps
 from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
+from motor.services.catalogo import Catalogo
 from motor.services.presence_oracle import PresenceOracle
 from motor.services.target_resolver import TargetResolver
 
@@ -107,45 +103,71 @@ def ordem_de_aplicacao(deps: Deps, commits: list[CommitRef]) -> list[CommitRef]:
     )
 
 
-def _datas_das_tags(
-    deps: Deps, tags: list[str], versao: str, *, congelar: bool
-) -> dict[str, datetime.datetime]:
-    """Data de liberacao de cada tag que interessa, congelando de passagem o que
-    ganhou tag desde o ultimo run.
+@dataclass(frozen=True)
+class Situacao:
+    """O que o run sabe das versoes do repo depois de conferir as liberadas."""
 
-    A data e a do commit apontado pela tag, nao a de agora: senao registraria
-    quando o comando rodou, nao quando a versao saiu. Ela serve a dois donos — o
-    congelamento (docs/decisoes/011-congelamento-no-banco.md) e a distribuicao
-    (docs/decisoes/005-alvo-distribuicao-entre-versoes.md), que precisa saber se a
-    liberada saiu depois do corte do alvo.
+    #: data de liberacao de cada liberada que o motor ja operou
+    datas: dict[str, datetime.datetime]
+    #: liberadas pelo criterio em uso ou com `liberada_em` gravada
+    liberadas: frozenset[str]
+    #: com branch e nao liberadas, em ordem crescente
+    abertas: list[str]
 
-    Versao ja congelada tem a data no estado e nao paga leitura no git, entao o
-    conjunto de chamadas ao git aqui e o mesmo de antes desta funcao existir: so
-    a tag nova.
 
-    Versao que o motor nunca operou fica fora das duas contas — nao tem snapshot
-    a proteger e nao tem base gravada, logo nao e fonte de alvo. A guarda tambem
-    e o que impede uma tag que nao resolve (branch apagada, tag anotada solta) de
+def situacao_das_versoes(deps: Deps, catalogo: Catalogo, *, congelar: bool) -> Situacao:
+    """Data de liberacao de cada versao que interessa, congelando de passagem o
+    que o criterio passou a dar por liberado desde o ultimo run.
+
+    A data vem do repositorio (`Catalogo.data_liberacao`), nao de agora: senao
+    registraria quando o comando rodou, nao quando a versao saiu. Ela serve a
+    dois donos — o congelamento (docs/decisoes/011-congelamento-no-banco.md) e a
+    politica de atribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md),
+    que precisa saber se a liberada saiu depois do corte do alvo.
+
+    `liberada_em` gravada vence o criterio: versao com data no estado e liberada
+    mesmo que o criterio atual nao a reconheca mais, e a data nunca e
+    reescrita (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md). Ja
+    congelada, nao paga leitura no git.
+
+    Versao que o motor nunca operou fica fora das datas — nao tem snapshot a
+    proteger e nao tem base gravada, logo nao e fonte de alvo. A guarda tambem e
+    o que impede uma tag que nao resolve (branch apagada, tag anotada solta) de
     matar um run que nem tem essa versao como alvo.
     """
+    pelo_criterio = catalogo.liberadas()
+    ordenar = catalogo.versionamento.esquema.ordenar
     datas: dict[str, datetime.datetime] = {}
-    liberadas: dict[str, datetime.datetime] = {}
-    for indice, numero in enumerate(tags, start=1):
-        deps.progresso(Progresso("conferindo tags liberadas", indice, len(tags)))
+    novas: dict[str, datetime.datetime] = {}
+    candidatas = ordenar(list(pelo_criterio))
+    for indice, numero in enumerate(candidatas, start=1):
+        deps.progresso(
+            Progresso("conferindo versões liberadas", indice, len(candidatas))
+        )
         conhecida = deps.estado.versao(deps.repo, numero)
         if conhecida is None:
             continue
         if conhecida.liberada_em is not None:
             datas[numero] = conhecida.liberada_em
             continue
-        data = deps.git.commit_meta(
-            deps.git.resolve_ref(f"refs/tags/{numero}")
-        ).commit_date
+        data = catalogo.data_liberacao(numero)
         datas[numero] = data
-        liberadas[numero] = data
-    if congelar and liberadas:
-        deps.estado.marcar_liberadas(deps.repo, liberadas)
-    return datas
+        novas[numero] = data
+    # O criterio pode ter mudado e deixado de reconhecer uma versao que ja
+    # congelou: ela continua liberada, com a data gravada.
+    gravadas: set[str] = set()
+    for numero in catalogo.com_branch():
+        if numero in pelo_criterio:
+            continue
+        conhecida = deps.estado.versao(deps.repo, numero)
+        if conhecida is not None and conhecida.liberada_em is not None:
+            datas[numero] = conhecida.liberada_em
+            gravadas.add(numero)
+    if congelar and novas:
+        deps.estado.marcar_liberadas(deps.repo, novas)
+    liberadas = frozenset(pelo_criterio | gravadas)
+    abertas = [v for v in catalogo.com_branch() if v not in liberadas]
+    return Situacao(datas=datas, liberadas=liberadas, abertas=abertas)
 
 
 def verificar(
@@ -190,16 +212,16 @@ def verificar_sem_fetch(
     inicio = time.monotonic()
     # Hora de antes das leituras externas: a validade conta da idade dos dados.
     verificado_em = deps.agora()
-    todas = deps.git.list_version_branches()
-    tags = deps.git.list_version_tags()
-    abertas = versoes_abertas(todas, tags)
+    versionamento = deps.versionamento()
+    versao = versionamento.esquema.validar(versao)
+    catalogo = Catalogo(deps.git, versionamento)
 
     info: VersaoInfo | None
     if auditar:
-        info, datas_das_tags = _preparar_auditoria(deps, versao, tags)
-        ref_alvo = deps.git.resolve_ref(f"refs/tags/{versao}")
+        info, situacao = _preparar_auditoria(deps, catalogo, versao)
+        ref_alvo = deps.git.resolve_ref(catalogo.ref_liberada(versao))
     else:
-        datas_das_tags = _datas_das_tags(deps, tags, versao, congelar=True)
+        situacao = situacao_das_versoes(deps, catalogo, congelar=True)
 
         info = deps.estado.versao(deps.repo, versao)
         if info is not None and info.liberada_em is not None:
@@ -209,18 +231,23 @@ def verificar_sem_fetch(
             preparar_worktree(deps, versao)
         ref_alvo = versao
 
-    base_commit = _base_commit(deps, versao, info)
+    base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
     # A liberada saiu de `abertas`, mas volta como fonte quando o corte do alvo
     # nao herdou o que ela entregou (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
     # `corte` e a data do commit-base
     # gravado — o mesmo que nao se recomputa acima, pelo mesmo motivo.
     corte = deps.git.commit_meta(base_commit).commit_date
-    candidatas = sorted(
-        {*abertas, *liberadas_no_alvo(versao, datas_das_tags, corte), versao},
-        key=chave,
+    candidatas = versionamento.esquema.ordenar(
+        list(
+            {
+                *situacao.abertas,
+                *liberadas_no_alvo(versao, situacao.datas, corte),
+                versao,
+            }
+        )
     )
-    resultado = resolver.resolve(versao, candidatas, liberadas=frozenset(tags))
+    resultado = resolver.resolve(versao, candidatas, liberadas=situacao.liberadas)
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
     exclusoes = deps.estado.exclusoes(deps.repo)
@@ -301,15 +328,16 @@ def _snapshot_congelado(
 
 
 def _preparar_auditoria(
-    deps: Deps, versao: str, tags: list[str]
-) -> tuple[VersaoInfo, dict[str, datetime.datetime]]:
+    deps: Deps, catalogo: Catalogo, versao: str
+) -> tuple[VersaoInfo, Situacao]:
     info = deps.estado.versao(deps.repo, versao)
-    if versao not in tags:
+    # `congelar=False`: auditoria nao escreve no estado nem na worktree.
+    situacao = situacao_das_versoes(deps, catalogo, congelar=False)
+    if versao not in situacao.liberadas:
         raise ErroDeEntrada("--auditar exige uma versao liberada")
     if info is None:
         raise ErroDeEntrada("--auditar exige uma versao registrada no estado")
-    # `congelar=False`: auditoria nao escreve no estado nem na worktree.
-    return info, _datas_das_tags(deps, tags, versao, congelar=False)
+    return info, situacao
 
 
 def preparar_worktree(deps: Deps, versao: str) -> None:
@@ -319,7 +347,9 @@ def preparar_worktree(deps: Deps, versao: str) -> None:
         deps.git.pull_branch("origin", versao)
 
 
-def _base_commit(deps: Deps, versao: str, info: VersaoInfo | None) -> str:
+def _base_commit(
+    deps: Deps, catalogo: Catalogo, versao: str, info: VersaoInfo | None
+) -> str:
     if info is not None:
         # A base gravada e a autoritativa. Recomputar faria a base de uma
         # X.0.0 seguir o tip atual do master em vez do ponto de corte, e o
@@ -327,7 +357,7 @@ def _base_commit(deps: Deps, versao: str, info: VersaoInfo | None) -> str:
         return info.base_commit
     # Primeira vez que o motor ve esta versao: resolve e grava a base.
     deps.progresso(Progresso("resolvendo a base da versão"))
-    resolvida = BaseResolver(git=deps.git).resolve(versao)
+    resolvida = BaseResolver(git=deps.git, catalogo=catalogo).resolve(versao)
     deps.estado.registrar_versao(
         deps.repo,
         VersaoInfo(

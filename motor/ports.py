@@ -240,13 +240,13 @@ class GitRepo(Protocol):
         tocar em branch local nenhuma."""
         ...
 
-    def list_version_branches(self) -> list[str]:
-        """Lista branches de versão."""
+    def listar_branches(self) -> list[str]:
+        """Nomes curtos de refs/heads/ e refs/remotes/origin/, sem filtro,
+        ordenados e sem repeticao. Quem decide o que e versao e o `Catalogo`."""
         ...
 
-    def list_version_tags(self) -> list[str]:
-        """Tags no formato X.Y.Z. Versao com tag = liberada
-        (docs/decisoes/010-travas-publicada-e-liberada.md)."""
+    def listar_tags(self) -> list[str]:
+        """Nomes de refs/tags/, sem filtro, ordenados."""
         ...
 
     def read_file(self, branch: str, path: str, /) -> bytes:

@@ -11,6 +11,7 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.atribuicoes import Exata
 from motor.domain.types import (
     CommitRef,
     Exclusion,
@@ -31,6 +32,9 @@ from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_da_verificacao
 from motor.errors import RecusaDeInvariante
+from motor.esquemas.semver import Semver
+from motor.services.versionamento import Versionamento
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 OUTRAS_ENTRADAS = "lista|grep"
@@ -65,7 +69,7 @@ class _GitQueTagueiaNoFetch(FakeGit):
     tag antes de buscar e erro de programacao, nao resultado False.
 
     Espelha o git de verdade: `fetch` e o unico ponto em que a tag criada em
-    outra maquina entra no ref store local. O `tag_exists` explode em vez de
+    outra maquina entra no ref store local. O `listar_tags` explode em vez de
     responder para a ordem ser assertada diretamente — inferir a ordem pela
     mensagem do erro que sobra depois deixaria o pin refem do texto de outro
     modulo.
@@ -75,10 +79,10 @@ class _GitQueTagueiaNoFetch(FakeGit):
         super().fetch(remote)
         self.tags["13.7.0"] = True
 
-    def tag_exists(self, tag: str) -> bool:
+    def listar_tags(self) -> list[str]:
         if not self.fetched:
-            raise AssertionError(f"tag_exists({tag!r}) antes de qualquer fetch")
-        return super().tag_exists(tag)
+            raise AssertionError("listar_tags antes de qualquer fetch")
+        return super().listar_tags()
 
 
 def _git(classe: type[FakeGit] = FakeGit) -> FakeGit:
@@ -106,6 +110,7 @@ def _deps(
     git, estado, chamados: list[str], commits: dict[str, list[CommitRef]]
 ) -> Deps:
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": chamados}),
         estado=estado,
@@ -315,6 +320,7 @@ def test_atualizar_recusa_versao_com_tag():
     git = FakeGit(branches={"13.34.0": "b1"}, tags={"13.34.0": True})
     estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     deps = Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,
@@ -551,6 +557,7 @@ class _Cenario:
     @property
     def deps(self) -> Deps:
         return Deps(
+            versionamento=VENDABEM_COMPOSTA,
             git=self.git,
             tasks=self.tarefas,
             estado=self.estado,
@@ -727,3 +734,49 @@ def test_previa_e_atualizar_fazem_uma_varredura():
     assert c.buscas() == varredura, "o atualizar varreu de novo"
     assert [x.hash_origem for x in previa.faltantes] == ["a0"]
     assert [x.hash_origem for x in resultado.aplicados] == ["a0"]
+
+
+def _git_semver(tags: dict[str, bool]) -> FakeGit:
+    g = FakeGit(tags=tags, tag_commits={t: "m0" for t in tags})
+    g.add_commit("m0", "", "raiz", D)
+    g.branches.update({"main": "m0", "1.2.0": "m0"})
+    return g
+
+
+def _deps_semver(git: FakeGit, estado: FakeEstado, tag_liberacao: str | None) -> Deps:
+    v = Versionamento(esquema=Semver(), politica=Exata(), tag_liberacao=tag_liberacao)
+    return replace(_deps(git, estado, [], {}), versionamento=lambda: v)
+
+
+@pytest.mark.parametrize(
+    ("tag", "recusa"), [("v1.2.0", True), ("1.2.0", False)], ids=["v", "homonima"]
+)
+def test_atualizar_recusa_pela_tag_do_template_da_config(tag, recusa):
+    deps = _deps_semver(_git_semver({tag: True}), _estado(), "v{versao}")
+
+    if recusa:
+        with pytest.raises(RecusaDeInvariante):
+            atualizar(deps, "1.2.0")
+    else:
+        assert atualizar(deps, "1.2.0").status == AtualizarStatus.DONE
+
+
+def test_liberada_em_gravada_vence_o_criterio_que_mudou():
+    """O criterio mudou e a 1.2.0 nao tem mais tag que a reconheca: a data
+    gravada fica, o snapshot continua congelado e a branch nao recebe escrita."""
+    data = datetime.datetime(2025, 6, 1, tzinfo=datetime.UTC)
+    estado = _estado()
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="1.2.0", tipo=VersionType.FECHADA, base_ref="main", base_commit="m0"
+        ),
+    )
+    estado.marcar_liberadas("r", {"1.2.0": data})
+    deps = _deps_semver(_git_semver({}), estado, None)
+
+    assert verificar(deps, "1.2.0").liberada_em == data
+    with pytest.raises(RecusaDeInvariante):
+        atualizar(deps, "1.2.0")
+    gravada = estado.versao("r", "1.2.0")
+    assert gravada is not None and gravada.liberada_em == data

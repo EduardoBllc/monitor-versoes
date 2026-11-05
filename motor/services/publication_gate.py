@@ -5,23 +5,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from motor.ports import GitRepo
+from motor.services.catalogo import Catalogo
 
 
 @dataclass
 class PublicationGate:
     git: GitRepo
+    catalogo: Catalogo
 
     def liberada(self, versao: str) -> bool:
-        """Tag existe = versao liberada = congelada.
+        """Liberada pelo criterio em uso = congelada
+        (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
 
-        So a tag conta. Branch remota e trabalho compartilhado, nao liberacao —
-        confundir os dois travaria uma versao ainda em construcao.
+        Branch remota nao conta. Branch remota e trabalho compartilhado, nao
+        liberacao — confundir os dois travaria uma versao ainda em construcao.
         """
-        return self.git.tag_exists(versao)
+        return versao in self.catalogo.liberadas()
 
     def publicada(self, versao: str) -> bool:
-        """Tag OU branch remota: proibe rebuild, que reescreveria historia que
-        outra maquina ja tem."""
-        if self.git.tag_exists(versao):
+        """Liberada OU branch remota: proibe rebuild, que reescreveria historia
+        que outra maquina ja tem."""
+        if self.liberada(versao):
             return True
-        return self.git.remote_branch_exists("origin", versao)
+        return self.git.remote_branch_exists(
+            "origin", self.catalogo.versionamento.branch(versao)
+        )

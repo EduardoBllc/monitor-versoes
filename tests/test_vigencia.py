@@ -19,6 +19,7 @@ from motor.engine.vigencia import (
     impressao_da_verificacao,
     verificacao_vigente,
 )
+from tests.versionamento import VENDABEM_COMPOSTA
 
 VERSAO = "13.7.0"
 TIP = "t1"
@@ -60,6 +61,7 @@ def _montar(
         ),
     )
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(),
         estado=estado,

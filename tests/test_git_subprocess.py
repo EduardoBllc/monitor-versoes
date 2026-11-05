@@ -17,10 +17,11 @@ from motor.adapters.git.subprocess import (
     _quadros,
     new_git_subprocess,
 )
-from motor.domain.version import versoes_abertas
 from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
+from motor.services.catalogo import Catalogo
+from tests.versionamento import VENDABEM_COMPOSTA
 
 
 def _git_env() -> dict[str, str]:
@@ -217,13 +218,12 @@ def test_git_subprocess_search_commits_busca_texto_literal(tmp_path):
     assert [c.msg.splitlines()[0] for c in candidatos] == ["[PAY-12] x"]
 
 
-def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
-    """Quando uma versao tem tag com o mesmo nome da branch (ex.: fechada mas
+def test_git_subprocess_listar_branches_branch_e_tag_homonimos(tmp_path):
+    """Quando uma versao tem tag com o mesmo nome da branch (liberada mas
     ainda nao limpa), `%(refname:short)` fica ambigua entre refs/heads/X e
-    refs/tags/X e o git devolve "heads/X" em vez de "X" - a branch some da
-    lista por nao bater mais no padrao \\d+\\.\\d+\\.\\d+. list_version_branches
-    precisa continuar enxergando a branch (e tambem versoes so-com-tag, cuja
-    branch ja foi apagada apos o fechamento).
+    refs/tags/X e o git devolve "heads/X" em vez de "X". `listar_branches`
+    precisa continuar devolvendo o nome curto; a versao so-com-tag, cuja branch
+    ja foi apagada, aparece so em `listar_tags`.
     """
     dir_ = str(tmp_path)
     _run_git(dir_, "init", "-b", "master")
@@ -241,10 +241,10 @@ def test_git_subprocess_list_version_branches_branch_e_tag_homonimos(tmp_path):
     _run_git(dir_, "tag", "13.12.0")
 
     g = new_git_subprocess(dir_)
-    versoes = g.list_version_branches()
+    branches = g.listar_branches()
 
-    assert "13.13.0" in versoes, f"branch com tag homonima sumiu da lista: {versoes!r}"
-    assert "13.12.0" in versoes, f"versao so-com-tag sumiu da lista: {versoes!r}"
+    assert branches == ["13.13.0", "master"], f"branches = {branches!r}"
+    assert g.listar_tags() == ["13.12.0", "13.13.0"]
 
 
 def test_quadros_separa_por_cr_e_traduz_a_fase():
@@ -306,7 +306,7 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     """`git fetch origin` cria refs/remotes/origin/X e NENHUM head local (tag
     chega por tag-following, branch nao). Sem refs/remotes/ na varredura, uma
     versao aberta e empurrada de outra maquina fica invisivel mesmo depois do
-    fetch: `versoes_abertas` viraria uma visao local do conjunto aberto e
+    fetch: o conjunto aberto viraria uma visao local do conjunto aberto e
     `fontes_de_alvo` omitiria essa versao em silencio
     (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
     """
@@ -340,10 +340,10 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     assert "refs/heads/13.35.0" not in refs, f"o fetch criou head local: {refs!r}"
     assert "refs/remotes/origin/13.35.0" in refs, f"refs apos o fetch: {refs!r}"
 
-    assert "13.35.0" in g.list_version_branches()
-    assert versoes_abertas(g.list_version_branches(), g.list_version_tags()) == [
-        "13.35.0"
-    ]
+    assert "13.35.0" in g.listar_branches()
+    catalogo = Catalogo(g, VENDABEM_COMPOSTA())
+    assert catalogo.com_branch() == ["13.35.0"]
+    assert catalogo.liberadas() == set()
 
 
 def test_git_subprocess_commits_meta_concorda_com_commit_meta(tmp_path):
@@ -482,10 +482,9 @@ def test_git_subprocess_use_worktree_adota_branch_existente(tmp_path):
     assert g.resolve_ref("14.0.0") == g.resolve_ref("master")
 
 
-def test_git_subprocess_list_version_tags(tmp_path):
-    """list_version_tags devolve so tags (nao branches) no formato X.Y.Z.
-    Diferente de list_version_branches que inclui heads tambem.
-    Cobre todos os casos: tag-only, branch-only, both, non-version.
+def test_git_subprocess_listar_tags(tmp_path):
+    """listar_tags devolve so tags (nao branches), sem filtro de formato e
+    sem repeticao. Cobre: tag-only, branch-only, ambas, fora do formato.
     """
     dir_ = str(tmp_path)
     _run_git(dir_, "init", "-b", "master")
@@ -494,46 +493,18 @@ def test_git_subprocess_list_version_tags(tmp_path):
     _run_git(dir_, "add", "arquivo.txt")
     _run_git(dir_, "commit", "-m", "base")
 
-    # Case 1: Tag no formato X.Y.Z (tag-only)
     _run_git(dir_, "tag", "13.33.0")
-
-    # Case 2: Branch de versao sem tag (branch-only)
     _run_git(dir_, "branch", "13.34.0")
-
-    # Case 3: Branch com tag homonima (both branch and tag)
     _run_git(dir_, "branch", "13.36.0")
     _run_git(dir_, "tag", "13.36.0")
-
-    # Case 4: Outra tag no formato X.Y.Z (tag-only)
-    _run_git(dir_, "tag", "13.35.0")
-
-    # Case 5: Tags nao-version (nao devem aparecer)
     _run_git(dir_, "tag", "v1.0")
-    _run_git(dir_, "tag", "release-2024-01")
 
     g = new_git_subprocess(dir_)
-    tags = g.list_version_tags()
-    branches = g.list_version_branches()
+    tags = g.listar_tags()
+    branches = g.listar_branches()
 
-    # Apenas tags X.Y.Z aparecem em list_version_tags
-    assert tags == ["13.33.0", "13.35.0", "13.36.0"], f"tags = {tags!r}"
-
-    # Branch-only aparecem em list_version_branches mas nao em list_version_tags
-    assert "13.34.0" in branches, f"branch 13.34.0 deve estar em branches: {branches!r}"
-    assert "13.34.0" not in tags, f"branch 13.34.0 nao deve estar em tags: {tags!r}"
-
-    # Branch+tag aparecem em ambos, mas list_version_tags deve devolver exatamente uma vez
-    assert "13.36.0" in branches, f"13.36.0 deve estar em branches: {branches!r}"
-    assert tags.count("13.36.0") == 1, (
-        f"13.36.0 deve aparecer exatamente uma vez em tags: {tags!r}"
-    )
-
-    # Non-version tags nao aparecem em nenhum
-    assert "v1.0" not in tags, f"tag v1.0 nao deve estar em tags: {tags!r}"
-    assert "release-2024-01" not in tags, (
-        f"tag release-2024-01 nao deve estar em tags: {tags!r}"
-    )
-    assert "v1.0" not in branches, f"tag v1.0 nao deve estar em branches: {branches!r}"
+    assert tags == ["13.33.0", "13.36.0", "v1.0"], f"tags = {tags!r}"
+    assert branches == ["13.34.0", "13.36.0", "master"], f"branches = {branches!r}"
 
 
 def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):
@@ -680,8 +651,8 @@ def test_git_subprocess_versao_de_outro_remoto_nao_entra_no_conjunto_aberto(tmp_
     assert "refs/remotes/origin/13.35.0" in refs, f"refs: {refs!r}"
     assert "refs/remotes/upstream/13.99.0" in refs, f"refs: {refs!r}"
 
-    assert g.list_version_branches() == ["13.35.0"], (
-        f"list_version_branches() = {g.list_version_branches()!r}; 13.99.0 vive so "
+    assert g.listar_branches() == ["13.35.0", "master"], (
+        f"listar_branches() = {g.listar_branches()!r}; 13.99.0 vive so "
         "em refs/remotes/upstream/ e o BaseResolver nunca a resolveria"
     )
 
@@ -1065,7 +1036,7 @@ def test_cwd_que_sumiu_vira_backendindisponivel_nao_oserror(tmp_path):
     g.repo_path = str(tmp_path / "sumiu")
 
     with pytest.raises(BackendIndisponivel):
-        g.list_version_tags()
+        g.listar_tags()
 
 
 def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
@@ -1092,9 +1063,9 @@ def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
     g = GitSubprocess(repo_path=str(tmp_path))
 
     # nao pode levantar UnicodeDecodeError; o byte invalido vira substituicao
-    resultado = g.list_version_tags()
+    resultado = g.listar_tags()
 
-    assert resultado == ["13.34.0"], "a linha valida tem de sobreviver"
+    assert "13.34.0" in resultado, "a linha valida tem de sobreviver"
 
 
 def _log_topo(dir_: str) -> str:

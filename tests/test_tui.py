@@ -21,6 +21,7 @@ from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError, NaoEncontrado
 from motor.ports import GitRepo
 from motor.progresso import Progresso, SlotProgresso
+from motor.services.versionamento import versionamento_padrao
 from motor.tui import (
     MotorTUI,
     PainelProgresso,
@@ -186,20 +187,21 @@ class GitCatalogoFake:
     def fetch(self, remote: str) -> None:
         self.fetched.append(remote)
 
-    def list_version_branches(self) -> list[str]:
-        return ["13.9.0", "14.0.0", "13.10.0", "13.9.0"]
+    def listar_branches(self) -> list[str]:
+        return ["13.10.0", "13.9.0", "14.0.0", "main"]
 
-    def list_version_tags(self) -> list[str]:
-        return ["13.9.0"]
+    def listar_tags(self) -> list[str]:
+        return ["13.8.0", "13.9.0", "v1"]
 
 
-def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_tag():
+def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_liberada():
     git = GitCatalogoFake()
 
-    assert descobrir_versoes(cast(GitRepo, git)) == [
+    assert descobrir_versoes(cast(GitRepo, git), versionamento_padrao()) == [
         VersionOption(numero="14.0.0", liberada=False),
         VersionOption(numero="13.10.0", liberada=False),
         VersionOption(numero="13.9.0", liberada=True),
+        VersionOption(numero="13.8.0", liberada=True),
     ]
     assert git.fetched == ["origin"]
 
@@ -2555,7 +2557,11 @@ def test_descobrir_versoes_relata_o_fetch():
     """
     relatos: list[Progresso] = []
 
-    descobrir_versoes(cast(GitRepo, GitCatalogoFake()), progresso=relatos.append)
+    descobrir_versoes(
+        cast(GitRepo, GitCatalogoFake()),
+        versionamento_padrao(),
+        progresso=relatos.append,
+    )
 
     assert [p.fase for p in relatos] == ["buscando refs do origin"]
 

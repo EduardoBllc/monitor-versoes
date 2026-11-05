@@ -16,7 +16,6 @@ from motor.domain.version import worktrees_a_remover
 from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.ports import CherryPickOutcome, MergePrediction
 
-_PADRAO_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 # refs/remotes/<remoto>/<nome> — igual ao adapter real, o remoto e arbitrario.
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 
@@ -380,20 +379,13 @@ class FakeGit:
     def fetch(self, remote: str, /) -> None:
         self.fetched.append(remote)
 
-    def list_version_branches(self) -> list[str]:
-        # Espelha o adapter real: heads UNIAO tags UNIAO refs de rastreamento,
-        # filtrado por X.Y.Z. Sem o filtro, 'master' entra no conjunto e
-        # versoes_abertas estoura em chave("master") — o fake nao pode ser mais
-        # permissivo (nem simplesmente diferente) do que o real.
-        nomes = set(self.branches.keys())
-        nomes.update(t for t, existe in self.tags.items() if existe)
-        nomes.update(self.remote_refs.keys())
-        return sorted(n for n in nomes if _PADRAO_VERSAO.match(n))
+    def listar_branches(self) -> list[str]:
+        # Espelha o adapter real: heads UNIAO refs de rastreamento, sem filtro
+        # e sem tags.
+        return sorted({*self.branches, *self.remote_refs})
 
-    def list_version_tags(self) -> list[str]:
-        return sorted(
-            t for t, existe in self.tags.items() if existe and _PADRAO_VERSAO.match(t)
-        )
+    def listar_tags(self) -> list[str]:
+        return sorted(t for t, existe in self.tags.items() if existe)
 
     def read_file(self, branch: str, path: str, /) -> bytes:
         arquivos = self.files.get(branch)

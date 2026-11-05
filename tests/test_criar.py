@@ -15,6 +15,7 @@ from motor.engine.atualizar import AtualizarStatus
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.errors import RecusaDeInvariante
+from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 
@@ -61,6 +62,7 @@ def _estado() -> FakeEstado:
 
 def _deps(git, estado) -> Deps:
     return Deps(
+        versionamento=VENDABEM_COMPOSTA,
         git=git,
         tasks=FakeTaskSource(chamados={"13.7.0": ["255514"]}),
         estado=estado,

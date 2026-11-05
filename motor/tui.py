@@ -62,6 +62,8 @@ from motor.montagem import (
 )
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
+from motor.services.catalogo import Catalogo
+from motor.services.versionamento import Versionamento
 
 
 @dataclass(frozen=True)
@@ -1269,13 +1271,19 @@ def _piso_da_config(raiz: str | None) -> str | None:
 
 
 def descobrir_versoes(
-    git: GitRepo, *, progresso: RelatorProgresso = silencioso
+    git: GitRepo,
+    versionamento: Versionamento,
+    *,
+    progresso: RelatorProgresso = silencioso,
 ) -> list[VersionOption]:
     progresso(Progresso("buscando refs do origin"))
     git.fetch("origin")
-    tags = set(git.list_version_tags())
-    numeros = sorted(set(git.list_version_branches()), key=chave, reverse=True)
-    return [VersionOption(numero, numero in tags) for numero in numeros]
+    catalogo = Catalogo(git, versionamento)
+    liberadas = catalogo.liberadas()
+    return [
+        VersionOption(numero, numero in liberadas)
+        for numero in reversed(catalogo.existentes())
+    ]
 
 
 def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
@@ -1297,8 +1305,13 @@ def _versoes_do_repo(
 ) -> list[VersionOption]:
     if repo.caminho is None:
         return []
+    # Config invalida sobe como a falha de git ao listar versoes: o operador ve
+    # o erro ao escolher o repo.
+    versionamento = resolver_versionamento(carregar_config(repo.caminho))
     return descobrir_versoes(
-        new_git_subprocess(repo.caminho, progresso=progresso), progresso=progresso
+        new_git_subprocess(repo.caminho, progresso=progresso),
+        versionamento,
+        progresso=progresso,
     )
 
 

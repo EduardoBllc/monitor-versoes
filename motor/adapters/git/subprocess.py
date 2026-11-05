@@ -877,20 +877,16 @@ class GitSubprocess:
     def fetch(self, remote: str, /) -> None:
         self._run_progresso(self.repo_path, "fetch", "--progress", remote)
 
-    def list_version_branches(self) -> list[str]:
+    def listar_branches(self) -> list[str]:
         # %(refname) + strip manual do prefixo, nao %(refname:short): quando
-        # branch e tag tem o mesmo nome (versao fechada, tag criada, branch
-        # ainda nao apagada), o short-name fica ambiguo entre refs/heads/X e
-        # refs/tags/X e o git devolve "heads/X"/"tags/X" em vez de "X", o que
-        # faz a versao sumir do padrao \d+\.\d+\.\d+. Inclui refs/tags/ pra
-        # tambem enxergar versoes fechadas cuja branch ja foi apagada, e
-        # refs/remotes/origin/ pelo mesmo motivo do outro lado da ausencia: `git
-        # fetch origin` cria refs/remotes/origin/X e NENHUM head local, entao
-        # uma versao aberta e empurrada de outra maquina so aparece por ai —
-        # sem isso `versoes_abertas` seria uma visao local do conjunto aberto e
-        # `fontes_de_alvo` omitiria essa versao em silencio
-        # (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
-        # `versoes_abertas = todas - tags` continua excluindo as liberadas.
+        # branch e tag tem o mesmo nome (versao liberada cuja branch ainda nao
+        # foi apagada), o short-name fica ambiguo entre refs/heads/X e
+        # refs/tags/X e o git devolve "heads/X" em vez de "X", e a versao
+        # sumiria do template. Inclui refs/remotes/origin/ porque `git fetch
+        # origin` cria refs/remotes/origin/X e NENHUM head local: uma versao
+        # aberta e empurrada de outra maquina so aparece por ai — sem isso o
+        # conjunto aberto seria uma visao local, e a politica de atribuicao
+        # omitiria essa versao em silencio.
         # Preco aceito: refs/remotes/origin/X velho de branch apagada e nunca
         # liberada le como aberta ate alguem rodar `git fetch --prune`.
         out = self._output(
@@ -898,35 +894,26 @@ class GitSubprocess:
             "for-each-ref",
             "--format=%(refname)",
             "refs/heads/",
-            "refs/tags/",
             "refs/remotes/origin/",
         )
         if out == "":
             return []
-        # set: a mesma versao aparece como head local E ref de rastreamento.
+        # set: a mesma branch aparece como head local E ref de rastreamento.
         nomes = set()
         for linha in out.split("\n"):
-            nome = _PREFIXO_REF_REMOTA.sub("", linha)
-            nome = nome.removeprefix("refs/heads/").removeprefix("refs/tags/")
-            if _PADRAO_BRANCH_VERSAO.match(nome):
+            nome = _PREFIXO_REF_REMOTA.sub("", linha).removeprefix("refs/heads/")
+            # refs/remotes/origin/HEAD e um apontador simbolico, nao branch.
+            if nome != "HEAD":
                 nomes.add(nome)
         return sorted(nomes)
 
-    def list_version_tags(self) -> list[str]:
-        # So refs/tags/ — diferente de list_version_branches, que inclui heads
-        # e refs/remotes tambem de proposito (para inferir_base achar versao
-        # fechada cuja branch ja foi apagada, e versao aberta em outra maquina).
+    def listar_tags(self) -> list[str]:
         out = self._output(
             self.repo_path, "for-each-ref", "--format=%(refname)", "refs/tags/"
         )
         if out == "":
             return []
-        nomes = set()
-        for linha in out.split("\n"):
-            nome = linha.removeprefix("refs/tags/")
-            if _PADRAO_BRANCH_VERSAO.match(nome):
-                nomes.add(nome)
-        return sorted(nomes)
+        return sorted({linha.removeprefix("refs/tags/") for linha in out.split("\n")})
 
     def read_file(self, branch: str, path: str, /) -> bytes:
         proc = _rodar_git_bytes(["git", "show", f"{branch}:{path}"], cwd=self.repo_path)
