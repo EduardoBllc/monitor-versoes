@@ -181,8 +181,8 @@ class PrCommitCache(Base):
     evitar.
 
     Fica de fora de proposito: `chamado`, que vem da busca e nao da PR, e
-    `is_ancestor(hash, master)`, que e volatil — uma PR mergeada numa branch que
-    ainda nao chegou na master viraria commit escondido para sempre.
+    `is_ancestor(hash, principal)`, que e volatil — uma PR mergeada numa branch que
+    ainda nao chegou na principal viraria commit escondido para sempre.
     """
 
     __tablename__ = "pr_commit_cache"

@@ -76,7 +76,7 @@ class TaskSource(Protocol):
 
 
 class CommitSource(Protocol):
-    """Fonte de commits de uma tarefa (grep em master, PR do host).
+    """Fonte de commits de uma tarefa (grep na principal, PR do host).
 
     Recebe o lote inteiro para permitir uma varredura unica — grep com o
     --grep de todos os chamados juntos. Pode omitir chamado sem commit; a
@@ -238,7 +238,7 @@ class GitRepo(Protocol):
         ...
 
     def fetch(self, remote: str, /) -> None:
-        """Atualiza as referencias remote-tracking (ex: origin/master), sem
+        """Atualiza as referencias remote-tracking (ex: origin/main), sem
         tocar em branch local nenhuma."""
         ...
 
@@ -353,7 +353,7 @@ class EstadoRepo(Protocol):
     def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         """A versao como esta no estado. A `base` daqui e a autoritativa —
         recomputar BaseResolver a cada run faria a base de uma X.0.0 seguir o
-        tip atual do master em vez do ponto onde a branch foi cortada."""
+        tip atual da principal em vez do ponto onde a branch foi cortada."""
         ...
 
     def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]: ...

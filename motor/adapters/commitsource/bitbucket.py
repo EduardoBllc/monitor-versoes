@@ -4,7 +4,7 @@ Mais robusto que o grep de mensagem: associa commit->chamado pela PR (título
 que começa com a referência da tarefa, ou nome da branch de origem que a
 contém — caixa ignorada nos dois), não pela formatação do trailer que o dev
 pode errar.
-Considera só PRs MERGED e só commits que já estão em `origin/master`
+Considera só PRs MERGED e só commits que já estão em `origin/<principal>`
 (is_ancestor) — commit fora dela não entra.
 
 O `workspace/repo` sai da URL do remote `origin` na primeira busca — construir

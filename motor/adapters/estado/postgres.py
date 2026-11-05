@@ -137,7 +137,7 @@ class PostgresEstado:
     def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:
         # Idempotente e nao-destrutivo: a base e o ponto onde a branch foi
         # cortada, gravado uma vez. Reescreve-la faria a base de uma X.0.0
-        # seguir o tip atual do master.
+        # seguir o tip atual da principal.
         repo_id = self._repo_id(repo)
         if self._versao(repo_id, info.numero) is not None:
             return

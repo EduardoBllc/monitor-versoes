@@ -366,7 +366,7 @@ def _base_commit(
 ) -> str:
     if info is not None:
         # A base gravada e a autoritativa. Recomputar faria a base de uma
-        # X.0.0 seguir o tip atual do master em vez do ponto de corte, e o
+        # X.0.0 seguir o tip atual da principal em vez do ponto de corte, e o
         # oraculo passaria a considerar presente tudo que entrou depois.
         return info.base_commit
     # Primeira vez que o motor ve esta versao: resolve e grava a base.
