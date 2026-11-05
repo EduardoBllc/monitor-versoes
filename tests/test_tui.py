@@ -2840,12 +2840,12 @@ def test_inscricoes_remove(tmp_path):
     assert carregar(arquivo) == []
 
 
-def test_inscricoes_sem_versao_avisa(tmp_path):
+def test_inscricoes_sem_versao_avisa(tmp_path, monkeypatch):
     arquivo = tmp_path / _ARQUIVO_INSCRICOES
 
     async def executar_fluxo() -> None:
         app = _app_inscricoes(arquivo)
-        avisos = _gravar_avisos(app)
+        avisos = _gravar_avisos(monkeypatch, app)
         async with app.run_test(size=(120, 36)) as pilot:
             await _abrir_inscricoes(app, pilot, selecionar=False)
             await pilot.press(_ADICIONA_INSCRICAO)
@@ -2856,9 +2856,9 @@ def test_inscricoes_sem_versao_avisa(tmp_path):
     assert not arquivo.exists()
 
 
-def _gravar_avisos(app: MotorTUI) -> list[str]:
+def _gravar_avisos(monkeypatch, app: MotorTUI) -> list[str]:
     avisos: list[str] = []
-    app.notify = lambda mensagem, **_: avisos.append(mensagem)  # type: ignore[method-assign]
+    monkeypatch.setattr(app, "notify", lambda mensagem, **_: avisos.append(mensagem))
     return avisos
 
 
@@ -2888,13 +2888,13 @@ def test_inscricoes_guarda_clone_absoluto(tmp_path, monkeypatch):
     assert gravada.clone == str(tmp_path / "projetos/alpha")
 
 
-def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path):
+def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path, monkeypatch):
     arquivo = tmp_path / _ARQUIVO_INSCRICOES
     arquivo.write_text("{ isto nao e json", encoding="utf-8")
 
     async def executar_fluxo() -> None:
         app = _app_inscricoes(arquivo)
-        avisos = _gravar_avisos(app)
+        avisos = _gravar_avisos(monkeypatch, app)
         async with app.run_test(size=(120, 36)) as pilot:
             await _abrir_inscricoes(app, pilot, selecionar=False)
             assert len(avisos) == 1
