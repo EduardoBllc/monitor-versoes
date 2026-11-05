@@ -46,6 +46,7 @@ from motor.engine.atualizar import (
     atualizar,
     atualizar_abort,
     atualizar_continue,
+    previa_atualizacao,
 )
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
@@ -84,6 +85,7 @@ RepoLoader = Callable[[], list[RepoOption]]
 VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
 UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
+PreviewRunner = Callable[[RepoOption, str], VersionStatus]
 AbortRunner = Callable[[RepoOption, str], None]
 CriarRunner = Callable[[RepoOption, str], AtualizarResult]
 
@@ -116,6 +118,7 @@ class Runners:
     consultar_versao: ConsultaRunner | None = None
     registrar_repo: RepoRegistrar | None = None
     criar_repo: CriarRunner | None = None
+    previa_atualizacao: PreviewRunner | None = None
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -256,10 +259,9 @@ class ConfirmarModal(ModalScreen[bool]):
     """O lote na tela antes do primeiro cherry-pick.
 
     E o que substitui a exigencia de rodar um Verificar antes do Atualizar. A
-    exigencia nao protegia nada: o `atualizar` do motor chama o `verificar` ele
-    mesmo e recalcula o lote do git na hora, entao o status da tela anterior
-    nunca era o que embarcava. Aqui o status mostrado e o da mesma varredura que
-    vai alimentar os picks, e a decisao acontece antes de qualquer escrita.
+    exigencia nao protegia nada: o lock da tag roda primeiro e o lote sai do
+    carimbo valido ou de uma verificacao nova. Aqui o carimbo da previa e o que
+    embarca enquanto valer, e a decisao acontece antes de qualquer escrita.
 
     Mesma tabela do Verificar, de proposito: as secoes vermelhas (ambiguas, sem
     commits, commits sumidos, suspeitos) tem de estar na frente do operador no
@@ -530,6 +532,7 @@ class MotorTUI(App[None]):
         self._carregar_versoes = runners.carregar_versoes
         self._executar = runners.executar
         self._atualizar = runners.atualizar_repo
+        self._previa = runners.previa_atualizacao
         self._continuar = runners.continuar_repo
         self._abortar = runners.abortar_repo
         self._consultar = runners.consultar_versao
@@ -657,9 +660,9 @@ class MotorTUI(App[None]):
         """Atualizar depende da selecao, nao de ter rodado um Verificar antes.
 
         Derivado em vez de gravado num flag porque a pre-condicao que o flag
-        guardava (ter um status fresco na tela) nao era pre-condicao de nada: o
-        `atualizar` do motor abre chamando o `verificar`, e o lote sai dessa
-        varredura, nao da anterior. O que existe no lugar e o `ConfirmarModal`,
+        guardava (ter um status fresco na tela) nao era pre-condicao de nada: o lock
+        da tag roda primeiro e o lote sai do carimbo valido ou de uma verificacao
+        nova, nao do status da tela. O que existe no lugar e o `ConfirmarModal`,
         que mostra o lote de verdade antes do primeiro pick.
 
         Lote bloqueado sem runner de continuacao e o unico caso que trava o
@@ -1055,11 +1058,8 @@ class MotorTUI(App[None]):
     def _iniciar_atualizacao(self) -> None:
         """Verifica primeiro, mostra o lote, aplica so depois do sim.
 
-        A verificacao aqui nao e a que o motor usa — o `atualizar` roda a sua
-        propria — e nao ha promessa de que as duas vejam a mesma coisa: sao duas
-        varreduras separadas, e nada impede um push na origem no meio. E uma
-        previa para decidir, nao um contrato. O que garante que nada ilegitimo
-        embarca continua sendo o `verificar` de dentro do motor.
+        A previa usa o carimbo vigente, entao o lote confirmado e o aplicado, a
+        menos que o carimbo morra no meio.
         """
         if self._ocupado or not self._pode_atualizar():
             return
@@ -1155,7 +1155,10 @@ class MotorTUI(App[None]):
         `_falha` e nao pergunta nada — sem lote na tela nao ha o que confirmar.
         """
         try:
-            status = self._executar(repo, versao.numero, auditar)
+            if confirmar and self._previa is not None:
+                status = self._previa(repo, versao.numero)
+            else:
+                status = self._executar(repo, versao.numero, auditar)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1327,6 +1330,13 @@ def _atualizar_repo(
         return atualizar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def _previa_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> VersionStatus:
+    with abrir_sessao() as sessao:
+        return previa_atualizacao(_deps_do_repo(repo, sessao, progresso), versao)
+
+
 def _continuar_repo(
     repo: RepoOption,
     versao: str,
@@ -1378,6 +1388,7 @@ def run_tui() -> None:
             partial(_consultar_repo, progresso=slot.relatar),
             _registrar_no_banco,
             partial(_criar_repo, progresso=slot.relatar),
+            previa_atualizacao=partial(_previa_repo, progresso=slot.relatar),
         ),
         slot=slot,
     ).run()

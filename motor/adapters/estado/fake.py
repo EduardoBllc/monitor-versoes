@@ -11,6 +11,7 @@ from motor.domain.types import (
     Exclusion,
     PrIndex,
     RepoInfo,
+    Verificacao,
     VersaoInfo,
 )
 from motor.errors import NaoEncontrado, RecusaDeInvariante
@@ -33,6 +34,7 @@ class FakeEstado:
     # merge: reentregar a mesma PR sobrescreve em vez de somar.
     _prs: dict[str, dict[int, PrIndex]] = field(default_factory=dict)
     _marca: dict[str, datetime.datetime] = field(default_factory=dict)
+    _verificacoes: dict[tuple[str, str], Verificacao] = field(default_factory=dict)
 
     def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
         if nome in self.repos or nome in self.aliases:
@@ -177,6 +179,15 @@ class FakeEstado:
         for pr in prs:
             alvo[pr.pr_id] = pr
         self._marca[repo] = ate
+
+    def gravar_verificacao(self, repo: str, versao: str, v: Verificacao, /) -> None:
+        if self.versao(repo, versao) is None:
+            raise NaoEncontrado(f"versao {versao} nao registrada no estado")
+        self._verificacoes[(repo, versao)] = v
+
+    def verificacao(self, repo: str, versao: str, /) -> Verificacao | None:
+        self._exigir_repo(repo)
+        return self._verificacoes.get((repo, versao))
 
     # -- internos --------------------------------------------------------
 

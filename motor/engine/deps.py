@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from motor.domain.referencia import FonteReferencia, Referencia, resolver_referencia
@@ -37,7 +39,12 @@ class Deps:
     worktrees_mantidas: int = 0
     # Da config do projeto (`[versao] piso`); `None` = nada e cortado.
     piso_versao: str | None = None
+    # Relógio injetável: a validade do carimbo da verificação depende dele.
+    agora: Callable[[], datetime.datetime] = lambda: datetime.datetime.now(datetime.UTC)
     # Referencia de tarefa (padrao e alfabeto), resolvida so por quem a usa: a
     # falta de padrao nao pode derrubar `atualizar --abort`. Quem usa o default
     # cobra a falta do padrao.
     referencia: FonteReferencia = _sem_referencia
+    # Fontes, referencia e piso desta invocacao, montados no front-end: o
+    # carimbo da verificacao so vale para as mesmas entradas.
+    identidade_das_entradas: str = ""

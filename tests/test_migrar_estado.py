@@ -159,6 +159,31 @@ def _verificar(origem: str, destino: str) -> None:
     _gravar_novos(destino)  # ids novos nao colidem (sequences reposicionadas)
 
 
+def test_migrar_nao_copia_o_carimbo_da_verificacao(tmp_path: Path) -> None:
+    origem = f"sqlite:///{tmp_path / 'a.db'}"
+    destino = f"sqlite:///{tmp_path / 'b.db'}"
+    _povoar(origem)
+    engine = criar_engine(origem)
+    try:
+        with engine.begin() as con:
+            con.execute(
+                insert(T["verificacao"]),
+                {
+                    "versao_id": 12,
+                    "tip": "t",
+                    "impressao": "i",
+                    "verificado_em": LIBERADA,
+                    "status": "{}",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    migrar_estado(origem, destino)
+
+    assert _dump(destino)["verificacao"] == []
+
+
 def test_sqlite_para_sqlite(tmp_path: Path) -> None:
     origem = f"sqlite:///{tmp_path / 'a.db'}"
     _povoar(origem)

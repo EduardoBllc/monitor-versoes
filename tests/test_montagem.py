@@ -188,6 +188,67 @@ def test_lista_manual_com_padrao_usa_o_alfabeto_default(repo_montavel):
     assert deps.referencia() == Referencia("ch{id}", ALFABETO_PADRAO)
 
 
+@pytest.fixture
+def sem_bitbucket_no_ambiente(monkeypatch):
+    monkeypatch.setenv("BITBUCKET_TOKEN", "")
+    monkeypatch.setenv("BITBUCKET_EMAIL", "")
+
+
+def _entradas(raiz, **kwargs) -> str:
+    return montar_deps(str(raiz), None, **kwargs).identidade_das_entradas  # type: ignore[arg-type]
+
+
+def test_entradas_mudam_com_a_fonte_de_tasks(repo_montavel, sem_bitbucket_no_ambiente):
+    assert _entradas(repo_montavel) != _entradas(
+        repo_montavel, tasks=_lista(repo_montavel)
+    )
+
+
+def test_entradas_mudam_com_o_conteudo_da_lista(
+    repo_montavel, sem_bitbucket_no_ambiente
+):
+    fonte = _lista(repo_montavel)
+    antes = _entradas(repo_montavel, tasks=fonte)
+    with open(fonte.lista_manual, "a", encoding="utf-8") as f:
+        f.write("654321\n")
+
+    assert _entradas(repo_montavel, tasks=fonte) != antes
+
+
+def test_entradas_mudam_com_a_fonte_de_commits(
+    repo_montavel, sem_bitbucket_no_ambiente
+):
+    com_pr = CredenciaisBitbucket(token="t", email="e")
+    assert _entradas(repo_montavel) != _entradas(repo_montavel, bitbucket=com_pr)
+
+
+def test_entradas_mudam_com_a_config_de_referencia_e_piso(
+    repo_montavel, sem_bitbucket_no_ambiente
+):
+    antes = _entradas(repo_montavel)
+    (repo_montavel / ".monitor-versoes.toml").write_text(
+        '[referencia]\npadrao = "ch{id}"\n'
+    )
+
+    assert _entradas(repo_montavel) != antes
+
+
+def test_entradas_mudam_com_o_sistema_de_tarefas(
+    repo_montavel, sem_bitbucket_no_ambiente
+):
+    (repo_montavel / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
+    antes = _entradas(repo_montavel)
+    (repo_montavel / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 8\n")
+
+    assert _entradas(repo_montavel) != antes
+
+
+def test_entradas_iguais_para_a_mesma_invocacao(
+    repo_montavel, sem_bitbucket_no_ambiente
+):
+    assert _entradas(repo_montavel) == _entradas(repo_montavel)
+
+
 # -- validadores --------------------------------------------------------------
 
 

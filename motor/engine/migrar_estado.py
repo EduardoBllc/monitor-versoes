@@ -81,8 +81,13 @@ def _mesmo_banco(a: str, b: str) -> bool:
     return make_url(a) == make_url(b)
 
 
+# `verificacao` e cache recriavel: copia-la levaria o carimbo de um tip que o
+# destino pode nao ter.
+_FORA_DA_COPIA = frozenset({"alembic_version", "verificacao"})
+
+
 def _tabelas() -> list[Table]:
-    return [t for t in Base.metadata.sorted_tables if t.name != "alembic_version"]
+    return [t for t in Base.metadata.sorted_tables if t.name not in _FORA_DA_COPIA]
 
 
 def _tem_linhas(conexao: Connection) -> list[str]:

@@ -33,5 +33,6 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 20. [020](020-contrato-de-erro-por-tipo.md) — adapter só levanta `MotorError`; o contrato é por tipo.
 21. [021](021-motor-nao-interativo.md) — o motor nunca pergunta: retorna um valor.
 22. [022](022-fetch-origin-em-todo-entry-point.md) — todo entry point faz `git fetch origin` antes de ler refs.
-23. [023](023-onde-nao-se-abstrai.md) — sem clock, sem cache de tag, sem trigger em `versao` (o "sem config por projeto" foi revogado pela [024](024-config-por-projeto.md)).
+23. [023](023-onde-nao-se-abstrai.md) — sem clock, sem cache de tag, sem trigger em `versao` (o "sem config por projeto" foi revogado pela [024](024-config-por-projeto.md) e o "sem clock" pela [025](025-reaproveitamento-da-verificacao.md)).
 24. [024](024-config-por-projeto.md) — config por projeto em duas camadas (global e repo), piso sem padrão, import path só no central.
+25. [025](025-reaproveitamento-da-verificacao.md) — `atualizar` reaproveita a verificação de até 5 minutos se tip e impressão não mudaram; o carimbo é cache.

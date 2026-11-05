@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -11,17 +11,29 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import CommitRef, RepoInfo, VersaoInfo, VersionType
+from motor.domain.types import (
+    CommitRef,
+    Exclusion,
+    RepoInfo,
+    Verificacao,
+    VersaoInfo,
+    VersionStatus,
+    VersionType,
+)
 from motor.engine.atualizar import (
     AtualizarStatus,
     atualizar,
     atualizar_abort,
     atualizar_continue,
+    previa_atualizacao,
 )
 from motor.engine.deps import Deps
+from motor.engine.verificar import verificar
+from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_da_verificacao
 from motor.errors import RecusaDeInvariante
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+OUTRAS_ENTRADAS = "lista|grep"
 D1 = D + datetime.timedelta(minutes=1)
 
 UM = {
@@ -478,3 +490,240 @@ def test_atualizar_aplica_na_ordem_do_grafo_nao_da_data_do_autor():
 
     assert resultado.status == AtualizarStatus.DONE
     assert [c.hash_origem for c in resultado.aplicados] == ["p1272", "r1", "r2"]
+
+
+UM_MINUTO = datetime.timedelta(minutes=1)
+UM_SEGUNDO = datetime.timedelta(seconds=1)
+NENHUMA_VEZ = 0
+UMA_VEZ = 1
+
+
+@dataclass
+class _GitContado(FakeGit):
+    ordenacoes: int = 0
+    predicoes: int = 0
+    ancestrais: int = 0
+
+    def predict_merge(self, *args):
+        self.predicoes += 1
+        return super().predict_merge(*args)
+
+    def is_ancestor(self, *args):
+        self.ancestrais += 1
+        return super().is_ancestor(*args)
+
+    def ordem_topologica(self, hashes: list[str], /) -> list[str]:
+        self.ordenacoes += 1
+        return super().ordem_topologica(hashes)
+
+
+@dataclass
+class _TarefasContadas(FakeTaskSource):
+    buscas: int = 0
+
+    def fetch(self, versao: str, /) -> list[str]:
+        self.buscas += 1
+        return super().fetch(versao)
+
+
+@dataclass
+class _CommitsContados(FakeCommitSource):
+    buscas: int = 0
+
+    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
+        self.buscas += 1
+        return super().resolve(chamados)
+
+
+@dataclass
+class _Cenario:
+    git: FakeGit
+    estado: FakeEstado
+    tarefas: _TarefasContadas
+    commits: _CommitsContados
+    hora: datetime.datetime = D
+    entradas: str = ""
+
+    def buscas(self) -> tuple[int, int]:
+        """Consultas ao Tickio e à fonte de commits: crescem a cada varredura."""
+        return self.tarefas.buscas, self.commits.buscas
+
+    @property
+    def deps(self) -> Deps:
+        return Deps(
+            git=self.git,
+            tasks=self.tarefas,
+            estado=self.estado,
+            repo="r",
+            commit_source=self.commits,
+            agora=lambda: self.hora,
+            identidade_das_entradas=self.entradas,
+        )
+
+
+def _cenario(
+    git: FakeGit | None = None, commits: dict[str, list[CommitRef]] = UM
+) -> _Cenario:
+    return _Cenario(
+        git=git or _git(_GitContado),
+        estado=_estado(),
+        tarefas=_TarefasContadas(chamados={"13.7.0": sorted(commits)}),
+        commits=_CommitsContados(por_chamado=commits),
+    )
+
+
+def test_atualizar_reaproveita_verificacao_recente():
+    c = _cenario()
+    assert isinstance(c.git, _GitContado)
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    oraculo = (c.git.predicoes, c.git.ancestrais)
+    c.hora = D + UM_MINUTO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() == varredura, "o atualizar varreu de novo"
+    assert (c.git.predicoes, c.git.ancestrais) == oraculo, "rodou o oraculo"
+    assert resultado.reaproveitada_de == D
+    assert resultado.status == AtualizarStatus.DONE
+    assert [x.hash_origem for x in resultado.aplicados] == ["a0"]
+
+
+def test_atualizar_verifica_de_novo_apos_cinco_minutos():
+    c = _cenario()
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.hora = D + VALIDADE_VERIFICACAO + UM_SEGUNDO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() > varredura, "tinha de varrer de novo"
+    assert resultado.reaproveitada_de is None
+
+
+def test_atualizar_verifica_de_novo_se_a_branch_mudou():
+    c = _cenario()
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.git.add_commit("b0", "m0", "ch300000 outro", D)
+    c.git.set_branch("13.7.0", "b0")
+    c.hora = D + UM_MINUTO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() > varredura, "tinha de varrer de novo"
+    assert resultado.reaproveitada_de is None
+
+
+def test_atualizar_verifica_de_novo_se_a_exclusao_mudou():
+    c = _cenario()
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.estado._exclusoes["r"] = [
+        Exclusion(hash_origem="a0", versao_numero="13.7.0", motivo="revertido")
+    ]
+    c.hora = D + UM_MINUTO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() > varredura, "tinha de varrer de novo"
+    assert resultado.reaproveitada_de is None
+    assert resultado.aplicados == [], "o commit excluido nao pode ser aplicado"
+
+
+def test_atualizar_verifica_de_novo_se_as_entradas_mudaram():
+    """Outra fonte, referencia ou piso e outro pedido do operador, nao o mesmo lote."""
+    c = _cenario()
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.entradas = OUTRAS_ENTRADAS
+    c.hora = D + UM_MINUTO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() > varredura, "tinha de varrer de novo"
+    assert resultado.reaproveitada_de is None
+
+
+def test_atualizar_recusa_tag_nova_mesmo_com_carimbo_vigente():
+    """A trava de tag nao usa cache: o carimbo vigente nao dispensa o fetch."""
+    c = _cenario(git=_git(classe=_GitQueTagueiaNoFetch))
+    c.estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.7.0",
+            tipo=VersionType.AJUSTADA,
+            base_ref="13.6.0",
+            base_commit="m0",
+        ),
+    )
+    c.estado.gravar_verificacao(
+        "r",
+        "13.7.0",
+        Verificacao(
+            tip="m0",
+            impressao=impressao_da_verificacao([], {}, c.deps.identidade_das_entradas),
+            verificado_em=D,
+            status=VersionStatus(faltantes=UM["255514"]),
+        ),
+    )
+    c.hora = D + UM_MINUTO
+
+    with pytest.raises(RecusaDeInvariante):
+        atualizar(c.deps, "13.7.0")
+
+    assert "13.7.0" not in c.git.remotes
+
+
+def test_segundo_atualizar_seguido_verifica_de_novo():
+    c = _cenario()
+    atualizar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.hora = D + UM_MINUTO
+
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() > varredura, "o tip mudou com os picks; tinha de varrer de novo"
+    assert resultado.aplicados == [], "o lote velho nao pode ser reaplicado"
+
+
+@pytest.mark.parametrize(
+    ("com_carimbo", "ordenacoes"),
+    [(False, UMA_VEZ), (True, NENHUMA_VEZ)],
+    ids=["sem_carimbo", "com_carimbo"],
+)
+def test_atualizar_faz_um_fetch_um_pull_e_no_maximo_uma_ordenacao(
+    com_carimbo, ordenacoes
+):
+    """Com carimbo a ordem vem dele: o caminho reaproveitado nao reordena."""
+    git = _git(_GitContado)
+    assert isinstance(git, _GitContado)
+    git.remotes["13.7.0"] = True
+    c = _cenario(git=git)
+    if com_carimbo:
+        verificar(c.deps, "13.7.0")
+        c.hora = D + UM_MINUTO
+    antes = (len(git.fetched), len(git.pulled), git.ordenacoes)
+
+    atualizar(c.deps, "13.7.0")
+
+    assert (
+        len(git.fetched) - antes[0],
+        len(git.pulled) - antes[1],
+        git.ordenacoes - antes[2],
+    ) == (UMA_VEZ, UMA_VEZ, ordenacoes)
+
+
+def test_previa_e_atualizar_fazem_uma_varredura():
+    c = _cenario()
+    verificar(c.deps, "13.7.0")
+    varredura = c.buscas()
+    c.hora = D + UM_MINUTO
+
+    previa = previa_atualizacao(c.deps, "13.7.0")
+    assert c.buscas() == varredura, "a previa varreu de novo"
+    resultado = atualizar(c.deps, "13.7.0")
+
+    assert c.buscas() == varredura, "o atualizar varreu de novo"
+    assert [x.hash_origem for x in previa.faltantes] == ["a0"]
+    assert [x.hash_origem for x in resultado.aplicados] == ["a0"]

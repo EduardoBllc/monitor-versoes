@@ -20,6 +20,7 @@ from motor.domain.types import (
     CommitRef,
     Presence,
     TargetSet,
+    Verificacao,
     VersaoInfo,
     VersionStatus,
 )
@@ -30,6 +31,7 @@ from motor.domain.version import (
     versoes_abertas,
 )
 from motor.engine.deps import Deps
+from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
@@ -158,8 +160,6 @@ def verificar(
     Por padrao, versao com tag devolve o snapshot congelado. Com ``auditar``,
     recalcula contra a tag sem alterar o snapshot nem criar worktree.
     """
-    inicio = time.monotonic()
-
     deps.progresso(Progresso("buscando refs do origin"))
 
     # Antes de ler as refs, nao depois: `fetch` e o unico ponto em que tag
@@ -169,7 +169,27 @@ def verificar(
     # substituir_atribuicoes do fim reescreveria o registro de uma versao que
     # ja saiu, que e exatamente a perda que o congelamento existe para evitar.
     deps.git.fetch("origin")
+    return verificar_sem_fetch(
+        deps,
+        versao,
+        manter_worktree=manter_worktree,
+        auditar=auditar,
+        com_worktree=True,
+    )
 
+
+def verificar_sem_fetch(
+    deps: Deps,
+    versao: str,
+    *,
+    manter_worktree: bool,
+    auditar: bool,
+    com_worktree: bool,
+) -> VersionStatus:
+    """O `verificar` sem o fetch inicial, para quem já buscou as refs."""
+    inicio = time.monotonic()
+    # Hora de antes das leituras externas: a validade conta da idade dos dados.
+    verificado_em = deps.agora()
     todas = deps.git.list_version_branches()
     tags = deps.git.list_version_tags()
     abertas = versoes_abertas(todas, tags)
@@ -185,7 +205,8 @@ def verificar(
         if info is not None and info.liberada_em is not None:
             return _snapshot_congelado(deps, versao, info.liberada_em)
 
-        _preparar_worktree(deps, versao)
+        if com_worktree:
+            preparar_worktree(deps, versao)
         ref_alvo = versao
 
     base_commit = _base_commit(deps, versao, info)
@@ -202,7 +223,9 @@ def verificar(
     resultado = resolver.resolve(versao, candidatas, liberadas=frozenset(tags))
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
-    alvo = filtrar_excluidos(resultado.tasks, deps.estado.exclusoes(deps.repo), versao)
+    exclusoes = deps.estado.exclusoes(deps.repo)
+    sem_entrega = deps.estado.sem_entrega(deps.repo)
+    alvo = filtrar_excluidos(resultado.tasks, exclusoes, versao)
 
     # ANTES de sobrescrever: e o que detecta tarefa desmarcada no Tickio.
     anteriores = deps.estado.atribuicoes(deps.repo, versao)
@@ -212,7 +235,7 @@ def verificar(
     ctx = _Contexto(deps, PresenceOracle(git=deps.git), base_commit, ref_alvo)
     t = time.monotonic()
     presentes, suspeitos_conteudo = _presenca(ctx, todos_os_hashes, candidatos_conflito)
-    conflitantes, conflito_causado_por = _simular_conflitos(
+    tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
         ctx,
         [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
         presentes,
@@ -226,14 +249,28 @@ def verificar(
     status = reconciliar(
         replace(resultado, tasks=alvo),
         anteriores,
-        deps.estado.sem_entrega(deps.repo),
+        sem_entrega,
         FatosDoGit(presentes, conflitantes, suspeitos_conteudo, conflito_causado_por),
     )
+    posicao = {c.hash_origem: i for i, c in enumerate(ordem)}
+    status.faltantes.sort(key=lambda c: posicao.get(c.hash_origem, len(posicao)))
 
     if not auditar:
         deps.progresso(Progresso("gravando estado"))
         deps.estado.substituir_atribuicoes(
             deps.repo, versao, atribuicoes_de(alvo, presentes)
+        )
+        deps.estado.gravar_verificacao(
+            deps.repo,
+            versao,
+            Verificacao(
+                tip=tip,
+                impressao=impressao_da_verificacao(
+                    exclusoes, sem_entrega, deps.identidade_das_entradas
+                ),
+                verificado_em=verificado_em,
+                status=status,
+            ),
         )
 
     if not manter_worktree and not auditar:
@@ -275,7 +312,7 @@ def _preparar_auditoria(
     return info, _datas_das_tags(deps, tags, versao, congelar=False)
 
 
-def _preparar_worktree(deps: Deps, versao: str) -> None:
+def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.progresso(Progresso("preparando worktree"))
     deps.git.use_worktree(versao)
     if deps.git.remote_branch_exists("origin", versao):
@@ -379,12 +416,12 @@ def _presenca(
 
 def _simular_conflitos(
     ctx: _Contexto, candidatos: list[CommitRef], presentes: dict[str, Presence]
-) -> tuple[list[CommitRef], dict[str, list[str]]]:
+) -> tuple[str, list[CommitRef], list[CommitRef], dict[str, list[str]]]:
     git = ctx.deps.git
     # Simula o mesmo lote ordenado que `atualizar` executa. Usar sempre o tip
     # original faz um commit dependente parecer modify/delete quando o pai
     # tambem esta faltando, embora o pai seja aplicado antes dele.
-    tip = git.resolve_ref(ctx.ref_alvo)
+    tip_inicial = tip = git.resolve_ref(ctx.ref_alvo)
     candidatos = ordem_de_aplicacao(ctx.deps, candidatos)
     conflitantes: list[CommitRef] = []
     conflito_causado_por: dict[str, list[str]] = {}
@@ -405,4 +442,4 @@ def _simular_conflitos(
             break
         ja_simulados.add(c.hash_origem)
         tip = pred.arvore_resultante
-    return conflitantes, conflito_causado_por
+    return tip_inicial, candidatos, conflitantes, conflito_causado_por

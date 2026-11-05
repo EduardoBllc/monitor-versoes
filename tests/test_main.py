@@ -271,6 +271,18 @@ def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
     assert "concluido" in saida
 
 
+def test_imprimir_atualizacao_avisa_reaproveitamento(capsys):
+    verificado_em = datetime.datetime(2026, 1, 2, 13, 45, tzinfo=datetime.UTC)
+    imprimir_atualizacao(
+        AtualizarResult(status=AtualizarStatus.DONE, reaproveitada_de=verificado_em)
+    )
+    hora = verificado_em.astimezone().strftime("%H:%M")
+    assert f"reaproveitando a verificacao das {hora}" in capsys.readouterr().out
+
+    imprimir_atualizacao(AtualizarResult(status=AtualizarStatus.DONE))
+    assert "reaproveitando" not in capsys.readouterr().out
+
+
 # -- main() ponta a ponta -----------------------------------------------------
 
 

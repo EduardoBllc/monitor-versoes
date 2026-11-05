@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     MetaData,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -215,6 +216,20 @@ class PrMergeada(Base):
     titulo: Mapped[str]
     branch: Mapped[str]
     updated_on: Mapped[datetime.datetime] = mapped_column(DataComFuso())
+
+
+class VerificacaoVersao(Base):
+    """Cache do último `verificar` da versão; descartável, nunca migrado."""
+
+    __tablename__ = "verificacao"
+
+    versao_id: Mapped[int] = mapped_column(
+        ForeignKey("versao.id", ondelete="CASCADE"), primary_key=True
+    )
+    tip: Mapped[str]
+    impressao: Mapped[str]
+    verificado_em: Mapped[datetime.datetime] = mapped_column(DataComFuso())
+    status: Mapped[str] = mapped_column(Text)
 
 
 class VarreduraPr(Base):
