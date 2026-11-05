@@ -259,6 +259,55 @@ class GitRepo(Protocol):
         ...
 
 
+class EsquemaVersao(Protocol):
+    """Esquema de versão: o que é um número, a ordem e a base de cada versão
+    (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
+
+    O núcleo não interpreta número de versão: valida, ordena e escolhe a
+    ref-base sempre por aqui. O ponto de corte continua sendo do núcleo
+    (`merge-base` entre a ref-base e a versão).
+
+    `branch_versao` (template com `{versao}`) e `branch_principal` são a camada
+    do esquema nos nomes de branch; `None` = não declara, e vale o padrão do
+    núcleo. A config vence os dois.
+    """
+
+    branch_versao: str | None
+    branch_principal: str | None
+
+    def validar(self, numero: str, /) -> str:
+        """O número aparado, ou `ErroDeEntrada` se o esquema não o reconhece."""
+        ...
+
+    def ordenar(self, numeros: list[str], /) -> list[str]:
+        """Os números em ordem crescente."""
+        ...
+
+    def base(self, numero: str, existentes: list[str], principal: str, /) -> str:
+        """A ref-base de `numero`: um nome de `existentes` (versões com branch
+        ou liberadas) ou o próprio `principal`. `NaoEncontrado` se não há base."""
+        ...
+
+    def tipo(self, numero: str, /) -> str | None:
+        """Rótulo livre que o núcleo grava e mostra sem interpretar; `None` = sem tipo."""
+        ...
+
+    def sugerir(self, existentes: list[str], /) -> list[str]:
+        """Próximas versões sugeridas a partir das existentes (modal de criar)."""
+        ...
+
+    def liberacoes(
+        self, git: GitRepo, versoes: list[str], /
+    ) -> dict[str, datetime.datetime] | None:
+        """Critério de liberação próprio: `{versão: data}` das `versoes` que o
+        esquema dá por liberadas. `None` = não declara, e vale a tag homônima.
+
+        A data vem do repositório, nunca do relógio: a suíte de conformidade
+        (`motor.conformidade`) cobra isso.
+        """
+        ...
+
+
 class EstadoRepo(Protocol):
     """Estado persistente. Projecao materializada para versao em construcao;
     registro unico e imutavel para versao liberada.

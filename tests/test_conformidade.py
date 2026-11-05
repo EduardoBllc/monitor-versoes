@@ -37,7 +37,9 @@ from motor.adapters.git.subprocess import GitSubprocess
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
-from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
+from motor.esquemas.semver import Semver
+from motor.esquemas.vendabem import VendaBem
+from motor.ports import CommitSource, EsquemaVersao, EstadoRepo, GitRepo, TaskSource
 
 # O fake entra junto com o real de proposito: fake mais permissivo que o
 # adapter deixa a suite verde num caminho que quebra em producao, e este
@@ -51,13 +53,20 @@ _COMMITS: list[type[CommitSource]] = [
     ChainCommitSource,
     FakeCommitSource,
 ]
+_ESQUEMAS: list[type[EsquemaVersao]] = [Semver, VendaBem]
 
 
 def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
     """A checagem de verdade e estatica; isto so impede o arquivo de virar
     codigo morto que ninguem executa nem importa.
     """
-    assert [len(_GIT), len(_ESTADO), len(_TASKS), len(_COMMITS)] == [2, 2, 3, 4]
+    assert [len(_GIT), len(_ESTADO), len(_TASKS), len(_COMMITS), len(_ESQUEMAS)] == [
+        2,
+        2,
+        3,
+        4,
+        2,
+    ]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:

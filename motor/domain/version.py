@@ -1,71 +1,30 @@
-"""Porte de internal/domain/version.go."""
+"""Compatibilidade: delega aos esquemas ate os consumidores migrarem."""
 
 from __future__ import annotations
 
 import datetime
 
 from motor.domain.types import VersionType
-from motor.errors import ErroDeEntrada, NaoEncontrado
-
-
-def _parse_versao(numero: str) -> tuple[int, int, int]:
-    partes = numero.split(".")
-    if len(partes) != 3:  # noqa: PLR2004 - X.Y.Z
-        raise ErroDeEntrada(f'versao "{numero}": esperado formato X.Y.Z')
-    nums = []
-    for p in partes:
-        try:
-            n = int(p)
-        except ValueError as e:
-            raise ErroDeEntrada(f'versao "{numero}": componente "{p}" invalido') from e
-        if n < 0:
-            raise ErroDeEntrada(f'versao "{numero}": componente "{p}" invalido')
-        nums.append(n)
-    return nums[0], nums[1], nums[2]
+from motor.esquemas import _xyz
+from motor.esquemas.vendabem import VendaBem
 
 
 def inferir_tipo(numero: str) -> VersionType:
-    _, y, z = _parse_versao(numero)
-    if y == 0 and z == 0:
-        return VersionType.FECHADA
-    if z == 0:
-        return VersionType.AJUSTADA
-    return VersionType.CLIENTE
+    return VersionType[(VendaBem().tipo(numero) or "").upper()]
 
 
 def inferir_base(numero: str, versoes_existentes: list[str]) -> str:
-    """Resolve a base de uma versao (docs/decisoes/009-inferencia-de-base.md).
-    versoes_existentes e a lista de
-    branches de versao ja existentes (ex.: vindas de GitRepo.list_version_branches).
-    """
-    x, y, z = _parse_versao(numero)
-    if y == 0 and z == 0:
-        return "master"
-    if z == 0:
-        for cand in range(y - 1, -1, -1):
-            candidato = f"{x}.{cand}.0"
-            if candidato in versoes_existentes:
-                return candidato
-        raise NaoEncontrado(f"nenhuma base X.Y.0 encontrada abaixo de {numero}")
-    candidato = f"{x}.{y}.{z - 1}"
-    if candidato in versoes_existentes:
-        return candidato
-    return f"{x}.{y}.0"
+    """Base de uma versao (docs/decisoes/009-inferencia-de-base.md)."""
+    return VendaBem().base(numero, versoes_existentes, "master")
 
 
 def chave(numero: str) -> tuple[int, int, int]:
-    """Ordem semver. Existe porque ordenacao textual erra em '13.9.0' vs
-    '13.10.0' — o unico bug de ordenacao que nao aparece nos testes de
-    fixture pequeno e aparece em producao no mes seguinte.
-    """
-    return _parse_versao(numero)
+    return _xyz.parse(numero)
 
 
 def validar_versao(valor: str) -> str:
     """Numero X.Y.Z, como o motor ordena versoes."""
-    aparado = valor.strip()
-    chave(aparado)
-    return aparado
+    return _xyz.validar(valor)
 
 
 def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:

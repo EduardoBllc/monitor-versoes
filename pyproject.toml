@@ -23,6 +23,10 @@ dev = [
 [project.scripts]
 motor = "motor.__main__:main"
 
+[project.entry-points."monitor_versoes.esquemas"]
+semver = "motor.esquemas.semver:Semver"
+vendabem = "motor.esquemas.vendabem:VendaBem"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

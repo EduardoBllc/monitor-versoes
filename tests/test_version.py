@@ -4,63 +4,13 @@ import datetime
 
 import pytest
 
-from motor.domain.types import VersionType
 from motor.domain.version import (
     chave,
     fontes_de_alvo,
-    inferir_base,
-    inferir_tipo,
     liberadas_no_alvo,
     versoes_abertas,
     worktrees_a_remover,
 )
-from motor.errors import ErroDeEntrada
-
-
-def test_inferir_tipo():
-    casos = [
-        ("14.0.0", VersionType.FECHADA),
-        ("13.7.0", VersionType.AJUSTADA),
-        ("13.7.2", VersionType.CLIENTE),
-    ]
-    for numero, quer in casos:
-        got = inferir_tipo(numero)
-        assert got == quer, f"inferir_tipo({numero!r}) = {got}, quer {quer}"
-
-
-def test_inferir_tipo_invalido():
-    with pytest.raises(ErroDeEntrada):
-        inferir_tipo("13.7")
-
-
-def test_inferir_base_fechada():
-    base = inferir_base("14.0.0", [])
-    assert base == "master"
-
-
-def test_inferir_base_ajustada():
-    existentes = ["13.5.0", "13.6.0", "13.6.1"]
-    base = inferir_base("13.7.0", existentes)
-    assert base == "13.6.0"
-
-
-def test_inferir_base_cliente():
-    existentes = ["13.6.0", "13.6.1"]
-
-    base = inferir_base("13.6.2", existentes)
-    assert base == "13.6.1"
-
-    base2 = inferir_base("13.6.5", existentes)  # 13.6.4 nao existe
-    assert base2 == "13.6.0"
-
-
-def test_chave_ordena_semver():
-    assert chave("13.33.1") < chave("13.34.0")
-    assert chave("13.34.0") < chave("14.0.0")
-    assert chave("14.0.0") < chave("14.0.1")
-    assert chave("14.0.1") < chave("14.1.0")
-    # ordem lexicografica erraria aqui: "13.9.0" > "13.10.0" como texto
-    assert chave("13.9.0") < chave("13.10.0")
 
 
 def test_versoes_abertas_e_branch_sem_tag():

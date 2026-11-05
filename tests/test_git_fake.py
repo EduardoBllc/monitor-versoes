@@ -143,6 +143,15 @@ def test_fake_nome_puro_nao_resolve_ref_de_rastreamento():
     assert git.resolve_ref("refs/remotes/origin/13.35.0") == "bbb"
 
 
+def test_fake_tag_resolve_pelo_commit_da_fixture():
+    """Tag com nome diferente de toda branch (`v1.2.0`) precisa apontar para um
+    commit: e por ele que o nucleo le a data de liberacao."""
+    git = FakeGit(branches={"1.2.0": "aaa"}, tag_commits={"v1.2.0": "c1"})
+
+    assert git.resolve_ref("refs/tags/v1.2.0") == "c1"
+    assert git.resolve_ref("refs/tags/1.2.0") == "aaa"
+
+
 def test_fake_culpados_por_linha_devolve_a_fixture():
     """O fake nao faz matematica de hunk: a atribuicao vem configurada, como
     conflict_on e merge_predictions.

@@ -41,6 +41,9 @@ class FakeGit:
     # refs/remotes/<remoto>/X), e um fake que resolvesse esconderia o bug.
     remote_refs: dict[str, str] = field(default_factory=dict)
     tags: dict[str, bool] = field(default_factory=dict)
+    # tag -> hash do commit apontado. Sem entrada, a tag resolve como hoje
+    # (branch homonima ou o proprio nome como hash).
+    tag_commits: dict[str, str] = field(default_factory=dict)
     remotes: dict[str, bool] = field(default_factory=dict)
     remote_urls: dict[str, str] = field(default_factory=dict)
     files: dict[str, dict[str, bytes]] = field(default_factory=dict)
@@ -224,6 +227,8 @@ class FakeGit:
             if remota is None:
                 raise NaoEncontrado(f"ref {ref} nao encontrada")
             return remota
+        if ref.startswith("refs/tags/") and ref[10:] in self.tag_commits:
+            return self.tag_commits[ref[10:]]
         nome = ref.removeprefix("refs/tags/").removeprefix("refs/heads/")
         if nome in self.branches:
             return self.branches[nome]
