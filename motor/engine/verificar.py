@@ -183,7 +183,7 @@ def verificar(
     manter_worktree: bool = False,
     auditar: bool = False,
 ) -> VersionStatus:
-    """Cruza Tickio x estado x git e devolve o VersionStatus.
+    """Cruza fonte de tarefas x estado x git e devolve o VersionStatus.
 
     Por padrao, versao com tag devolve o snapshot congelado. Com ``auditar``,
     recalcula contra a tag sem alterar o snapshot nem criar worktree.
@@ -263,7 +263,7 @@ def verificar_sem_fetch(
     sem_entrega = deps.estado.sem_entrega(deps.repo)
     alvo = filtrar_excluidos(resultado.tasks, exclusoes, versao)
 
-    # ANTES de sobrescrever: e o que detecta tarefa desmarcada no Tickio.
+    # ANTES de sobrescrever: e o que detecta tarefa desmarcada no rastreador.
     anteriores = deps.estado.atribuicoes(deps.repo, versao)
 
     todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
@@ -302,7 +302,7 @@ def verificar_sem_fetch(
             Verificacao(
                 tip=tip,
                 impressao=impressao_da_verificacao(
-                    exclusoes, sem_entrega, deps.identidade_das_entradas
+                    exclusoes, sem_entrega, deps.identidade_das_entradas()
                 ),
                 verificado_em=verificado_em,
                 status=status,

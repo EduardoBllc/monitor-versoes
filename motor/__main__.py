@@ -29,7 +29,7 @@ from motor.agendador import (
     rodar_comando_do_sistema,
     sistema_atual,
 )
-from motor.config import AMBIENTE_PADRAO
+from motor.config import AMBIENTE_PADRAO, carregar_config
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
@@ -72,7 +72,6 @@ from motor.montagem import (
     montar_deps,
     montar_notificador,
     validar_nome_repo,
-    validar_sistema_id,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -135,6 +134,7 @@ def _diagnostico(args: argparse.Namespace) -> None:
         abrir_sessao=abrir_sessao,
         head=head(),
         ambiente=args.env,
+        config_central=lambda: carregar_config(None),
     )
     for resultado in resultados:
         print(formatar(resultado))
@@ -250,7 +250,7 @@ def _inscricao(args: argparse.Namespace) -> None:
 
 
 # Comandos que não passam pela montagem de dependências do `main()` (repos,
-# Tickio, fontes): cada um cuida do próprio banco, ou não usa.
+# fonte de tarefas, fontes de commit): cada um cuida do próprio banco, ou não usa.
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "init": _init,
     "migrar": _migrar,
@@ -296,9 +296,9 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument(
         "--task-source",
         dest="fonte_flag",
-        default="tickio",
-        choices=["tickio", "manual"],
-        help="fonte das tasks (default: tickio)",
+        default="config",
+        choices=["config", "manual"],
+        help="fonte das tasks (default: config, a [tarefas] fonte)",
     )
     comum.add_argument(
         "--lista",
@@ -402,12 +402,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p_adicionar.add_argument(
         "nome", type=_tipo_cli(validar_nome_repo), help="nome canonico do repo"
     )
-    p_adicionar.add_argument(
-        "--tickio-sistema-id",
-        required=True,
-        type=_tipo_cli(validar_sistema_id),
-        help="ignorado até a #117: o sistema vem de [tarefas] sistema na config",
-    )
 
     p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
     acoes_insc = p_insc.add_subparsers(
@@ -507,7 +501,7 @@ def _imprimir_alertas(s: VersionStatus) -> None:
     """
     if s.tasks_ambiguas:
         print(f"tasks marcadas em mais de uma versao: {s.tasks_ambiguas}")
-        print("  (dado inconsistente no Tickio - corrija a marcacao)")
+        print("  (dado inconsistente no rastreador - corrija a marcacao)")
     if s.tasks_sem_commits:
         print(f"tasks sem commits: {s.tasks_sem_commits}")
         print("  (nenhum commit/PR achado - registre em sem_entrega se for proposital)")
@@ -520,7 +514,7 @@ def _imprimir_alertas(s: VersionStatus) -> None:
 def _referencias_dos_culpados(
     causado_por: dict[str, list[str]], referencia: FonteReferencia
 ) -> dict[str, list[str]]:
-    """Culpados pela referencia da tarefa (`ch123` no Tickio).
+    """Culpados pela referencia da tarefa (como `ch123`).
 
     Resolvida so se ha culpado: snapshot e status sem conflito atribuido nao
     passam a exigir padrao de referencia.
@@ -713,7 +707,7 @@ def _migrar_estado(args: argparse.Namespace) -> None:
 def _comando_repo(args: argparse.Namespace) -> None:
     with abrir_sessao() as sessao:
         estado = PostgresEstado(sessao=sessao)
-        estado.registrar_repo(args.nome, args.tickio_sistema_id)
+        estado.registrar_repo(args.nome)
     print(f"repo '{args.nome}' adicionado")
 
 

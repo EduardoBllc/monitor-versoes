@@ -38,10 +38,9 @@ from motor.adapters.notificador.desktop import NotificadorDesktop
 from motor.adapters.notificador.fake import FakeNotificador
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.manuallist import ManualList
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.atribuicoes import Composta, Exata
 from motor.esquemas.semver import Semver
-from motor.esquemas.vendabem import VendaBem
+from motor.montagem import FonteDaConfig
 from motor.ports import (
     CommitSource,
     EsquemaVersao,
@@ -51,20 +50,27 @@ from motor.ports import (
     PoliticaAtribuicao,
     TaskSource,
 )
+from tests.fontes_falsas import FonteFixa
+from tests.versionamento import Escalonado
 
 # O fake entra junto com o real de proposito: fake mais permissivo que o
 # adapter deixa a suite verde num caminho que quebra em producao, e este
 # projeto ja pagou por isso tres vezes.
 _GIT: list[type[GitRepo]] = [GitSubprocess, FakeGit]
 _ESTADO: list[type[EstadoRepo]] = [PostgresEstado, FakeEstado]
-_TASKS: list[type[TaskSource]] = [TickioRest, ManualList, FakeTaskSource]
+_TASKS: list[type[TaskSource]] = [
+    ManualList,
+    FakeTaskSource,
+    FonteDaConfig,
+    FonteFixa,
+]
 _COMMITS: list[type[CommitSource]] = [
     BitbucketPRCommitSource,
     GrepCommitSource,
     ChainCommitSource,
     FakeCommitSource,
 ]
-_ESQUEMAS: list[type[EsquemaVersao]] = [Semver, VendaBem]
+_ESQUEMAS: list[type[EsquemaVersao]] = [Semver, Escalonado]
 _ATRIBUICOES: list[type[PoliticaAtribuicao]] = [Exata, Composta]
 
 _NOTIFICADORES: list[type[Notificador]] = [NotificadorDesktop, FakeNotificador]
@@ -82,7 +88,7 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
         len(_ESQUEMAS),
         len(_ATRIBUICOES),
         len(_NOTIFICADORES),
-    ] == [2, 2, 3, 4, 2, 2, 2]
+    ] == [2, 2, 4, 4, 2, 2, 2]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:

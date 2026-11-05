@@ -8,7 +8,7 @@ comparar hashes não responde nada. O `motor` cruza três fontes:
 
 | Fonte | Representa |
 | --- | --- |
-| **rastreador de tasks** (Tickio, ou lista manual) | o que _deveria_ estar na versão |
+| **rastreador de tasks** (plugin da config, ou lista manual) | o que _deveria_ estar na versão |
 | **estado** (SQLite ou Postgres) | o que a ferramenta _declarou_ ter colocado |
 | **git** (trailer do `cherry-pick -x`) | o que está _de fato_ aplicado |
 
@@ -27,7 +27,7 @@ sem adaptação:
   `X.Y.(Z-1)` se existir, senão da `X.Y.0`); outro esquema se escolhe pela config.
 - **Atribuição:** o padrão é a `exata` (o alvo de `V` são as tarefas marcadas em `V`); a
   `composta` puxa também as abertas menores e as liberadas após o corte.
-- **Commits citam a task** na mensagem pelo padrão de referência (`ch<num>` no Tickio).
+- **Commits citam a task** na mensagem pelo padrão de referência (por exemplo `ch<num>`).
 - **Build está fora:** a ferramenta monta e verifica, não constrói.
 
 ## Pré-requisitos
@@ -101,11 +101,6 @@ DATABASE_NAME=monitor_versoes
 DATABASE_USER=motor
 DATABASE_PASSWORD=motor
 
-# Tickio
-TICKIO_BASE_URL=
-TICKIO_USER=
-TICKIO_PASSWORD=
-
 # Bitbucket (opcional — ativa descoberta de commits por PR)
 BITBUCKET_TOKEN=
 BITBUCKET_EMAIL=
@@ -125,8 +120,8 @@ Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md
 
 Preencha no `.env`:
 
-- `TICKIO_BASE_URL`, `TICKIO_USER`, `TICKIO_PASSWORD` — de onde vêm as tasks de cada versão.
-  Dispensáveis se você só usar `--task-source manual`.
+- As credenciais da fonte de tarefas, com os nomes que o plugin dela documenta. Dispensáveis
+  se você só usar `--task-source manual`.
 - `PROJECTS_DIR` — raiz onde `--repo <nome>` é procurado (com `PROJECTS_DIR=/home/voce/Projetos`,
   `--repo meu-repo` é `/home/voce/Projetos/meu-repo`; use path absoluto, `~` não é expandido). Sem ela, passe o path em `--repo`.
 - `BITBUCKET_TOKEN`, `BITBUCKET_EMAIL` — opcionais; veja "Fontes de tasks e de commits".
@@ -158,15 +153,14 @@ Depois, troque `DATABASE_BACKEND` no `.env`: o comando não altera a configuraç
 
 ### Cadastrar os repositórios
 
-Cada repositório é cadastrado uma vez, antes do primeiro comando nele, com o id do sistema
-correspondente no Tickio:
+Cada repositório é cadastrado uma vez, antes do primeiro comando nele:
 
 ```bash
-motor repo adicionar meu-repo --tickio-sistema-id 7
+motor repo adicionar meu-repo
 ```
 
-O nome é o do diretório do repositório (o basename do path de `--repo`). O id é ignorado
-por enquanto: o sistema do Tickio vem da config abaixo.
+O nome é o do diretório do repositório (o basename do path de `--repo`). O resto do que é
+específico do repo vem da config abaixo.
 
 ### Configurar por projeto
 
@@ -182,7 +176,8 @@ piso = "13.0.0"   # menor versão cujas tarefas são buscadas; sem ele nada é c
 # atribuicao = "exata"   # política de atribuição: exata ou composta
 
 [tarefas]
-sistema = 7       # id do sistema no Tickio; obrigatório para a busca no Tickio
+fonte = "minha-fonte"   # fonte de tarefas (entry point instalado); sem ela, só a lista manual
+# sistema = 7           # demais chaves: do plugin da fonte, que as documenta
 
 # Nomes: cada chave é opcional; sem ela vale o que o esquema declara, senão o padrão.
 # [liberacao]
@@ -199,29 +194,25 @@ Os templates têm exatamente um `{versao}`. Esquema e política são lidos só q
 os usa, e o `piso` é validado pelo esquema: config inválida não impede `atualizar --abort`.
 O porquê: [026](docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
 
-A VendaBem configura o seu fluxo assim (o esquema `vendabem` traz a principal `master` e a
-liberação por tag homônima):
-
-```toml
-[versao]
-esquema = "vendabem"
-atribuicao = "composta"
-piso = "13.0.0"
-```
-
-Sem `sistema`, a primeira busca no Tickio falha apontando os dois arquivos; `atualizar
---abort` e `reconstruir-estado` seguem funcionando.
+A fonte de tarefas é um plugin, como o esquema e a atribuição: o nome de um entry point do
+grupo `monitor_versoes.tarefas` ou, só no `config.toml` central, um `modulo:Classe`. O núcleo
+não traz fonte própria: sem `fonte`, a primeira busca de tarefas falha pedindo a chave (ou
+`--task-source manual --lista <arquivo>`). Fora `fonte`, as chaves de `[tarefas]` são do
+plugin, que as recebe como estão e as cobra na primeira busca. O plugin só é carregado
+quando um comando busca tarefas ou precisa da referência: fonte inválida não impede
+`atualizar --abort`, e `reconstruir-estado` roda sem fonte se houver `[referencia] padrao`.
+O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
 
 O `padrao` é um template com exatamente um `{id}`; o resto é literal e a caixa é ignorada.
 O alfabeto do id (que caracteres ele pode ter) vem do adapter do tracker e a config não o
-muda: o Tickio propõe só dígitos; sem proposta, valem letras, dígitos, `_` e `-`, com o id
+muda: a fonte pode propor um (por exemplo, só dígitos); sem proposta, valem letras, dígitos, `_` e `-`, com o id
 começando por letra ou dígito.
 
 - `padrao = "{id}"` puro pede id com formato distintivo (como `PAY-123`): sem prefixo, a
   primeira palavra de qualquer mensagem vira id (`Merge branch` extrairia `Merge`).
 - A lista manual não propõe padrão: sem `padrao` na config, os comandos que precisam dele
   falham pedindo a chave. Com `padrao = "ch{id}"` ela usa o alfabeto padrão, e
-  `ch254473-fix` extrai `254473-fix` (no Tickio, `254473`).
+  `ch254473-fix` extrai `254473-fix` (com uma fonte que propõe só dígitos, `254473`).
 
 ## Verificar que funcionou
 
@@ -240,9 +231,9 @@ começando por letra ou dígito.
    $ motor diagnostico
    OK  Variáveis: todas preenchidas
    OK  SQLite: conexão funciona
-   OK  Migração: revisão d4e7a9b2c1f0
+   OK  Migração: revisão a7c3e9d1f2b4
    não configurado  PROJECTS_DIR: --repo aceita caminho absoluto
-   OK  Tickio: autenticação aceita
+   OK  Tarefas: credenciais aceitas
    não configurado  Bitbucket: sem BITBUCKET_TOKEN
    ```
 
@@ -252,7 +243,7 @@ começando por letra ou dígito.
 3. O repositório está cadastrado:
 
    ```console
-   $ motor repo adicionar meu-repo --tickio-sistema-id 7
+   $ motor repo adicionar meu-repo
    repo 'meu-repo' adicionado
    ```
 
@@ -279,7 +270,7 @@ o resto.
 
 ### Fontes de tasks e de commits
 
-- **Tasks:** Tickio por padrão. Sem ele, `--task-source manual --lista arquivo.txt` lê um
+- **Tasks:** a `[tarefas] fonte` da config por padrão. Sem ela, `--task-source manual --lista arquivo.txt` lê um
   id de task por linha (`#` comenta).
 - **Commits:** com `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` (ou `--bitbucket-token` /
   `--bitbucket-email`), os commits de cada task vêm dos PRs do Bitbucket; o grep pela
@@ -298,7 +289,7 @@ commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pul
 
 Uma inscrição pede ao motor que rode `atualizar` numa versão de tempos em tempos (aplica os
 faltantes e faz push). Ficam num arquivo local, `~/.local/share/monitor-versoes/inscricoes.json`;
-o porquê: [027](docs/decisoes/027-inscricoes-fora-do-estado.md).
+o porquê: [028](docs/decisoes/028-inscricoes-fora-do-estado.md).
 
 ```bash
 motor inscricao adicionar 13.35.0 --repo meu-repo --intervalo 1h  # Nm ou Nh, padrão 30m
@@ -348,8 +339,8 @@ desfecho):
 | --- | --- |
 | `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | Só com `DATABASE_BACKEND=postgres`: o Postgres não está no ar. `docker compose up -d --wait`. No SQLite, confira `DATABASE_SQLITE_PATH` e as permissões do arquivo. |
 | `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração (Postgres). `motor migrar`; no SQLite o primeiro uso migra sozinho. |
-| `ERROR: repo 'meu-repo' desconhecido. Cadastre com: motor repo adicionar 'meu-repo' --tickio-sistema-id <id>` | O repositório não foi cadastrado. Rode o comando sugerido com o id do sistema no Tickio. |
-| `ERROR: faltando no .env: TICKIO_BASE_URL, TICKIO_USER, TICKIO_PASSWORD` | Credenciais do Tickio vazias no `.env`. Preencha, ou use `--task-source manual --lista arquivo.txt`. |
+| `ERROR: repo 'meu-repo' desconhecido. Cadastre com: motor repo adicionar 'meu-repo'` | O repositório não foi cadastrado. Rode o comando sugerido. |
+| `ERROR: faltando [tarefas] fonte em ...; ou use --task-source manual --lista <arquivo>` | Nenhuma fonte de tarefas na config. Defina `[tarefas] fonte` no `config.toml` central, ou use a lista manual. |
 | `--repo nao encontrado: tentou 'meu-repo' e '(PROJECTS_DIR nao setada)'` | `--repo` não é um path existente e `PROJECTS_DIR` está vazia. Preencha `PROJECTS_DIR` no `.env` ou passe o path do repositório. |
 | `--repo nao encontrado: tentou 'meu-repo' e '/home/voce/Projetos/meu-repo'` | O diretório não existe dentro de `PROJECTS_DIR`. Confira o nome e o valor da variável. |
 

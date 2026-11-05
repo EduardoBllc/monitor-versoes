@@ -13,7 +13,6 @@ import dataclasses
 import datetime
 import os
 import subprocess
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -34,7 +33,6 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -48,7 +46,9 @@ from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.inscricoes import Inscricao
 from motor.montagem import CredenciaisBitbucket
-from tests.versionamento import VENDABEM_COMPOSTA
+from motor.plugins import Origem, carregar_plugin
+from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
+from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
 
@@ -56,9 +56,9 @@ D = datetime.datetime(2026, 1, 1)
 # -- parser -------------------------------------------------------------------
 
 
-def test_task_source_default_e_tickio():
+def test_task_source_default_e_config():
     args = _build_parser().parse_args(["criar", "1.0.0", "--repo", "."])
-    assert args.fonte_flag == "tickio"
+    assert args.fonte_flag == "config"
 
 
 @pytest.mark.parametrize(
@@ -159,24 +159,17 @@ def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
 
-    main(["repo", "adicionar", "backend", "--tickio-sistema-id", "42"])
+    main(["repo", "adicionar", "backend"])
 
     assert estado.resolver_repo("backend") == RepoInfo(nome="backend")
     assert capsys.readouterr().out == "repo 'backend' adicionado\n"
 
 
-def test_ajuda_de_repo_adicionar_avisa_que_o_id_e_ignorado(capsys):
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(["repo", "adicionar", "--help"])
-
-    assert "ignorado até a #117" in " ".join(capsys.readouterr().out.split())
-
-
 @pytest.mark.parametrize(
     ("argumentos", "mensagem"),
     [
-        (["pasta/backend", "--tickio-sistema-id", "42"], "nome simples"),
-        (["backend", "--tickio-sistema-id", "0"], "inteiro positivo"),
+        (["pasta/backend"], "nome simples"),
+        ([" backend"], "nome simples"),
     ],
 )
 def test_repo_adicionar_recusa_argumentos_invalidos(argumentos, mensagem, capsys):
@@ -187,15 +180,6 @@ def test_repo_adicionar_recusa_argumentos_invalidos(argumentos, mensagem, capsys
     assert mensagem in capsys.readouterr().err
 
 
-def test_nao_existe_flag_de_token_do_tickio():
-    # autenticacao e por TICKIO_USER/TICKIO_PASSWORD do ambiente: token colado
-    # no .env teria de ser refeito a cada expiracao do JWT.
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(
-            ["criar", "1.0.0", "--repo", ".", "--tickio-token", "xyz"]
-        )
-
-
 # -- impressao ----------------------------------------------------------------
 
 
@@ -204,7 +188,7 @@ def test_imprimir_status_mostra_as_ambiguas(capsys):
     # "verde: False" com todas as secoes vazias e nenhuma explicacao.
     imprimir_status(
         VersionStatus(estado_integro=True, tasks_ambiguas=["123456"]),
-        lambda: TickioRest.referencia,
+        lambda: REFERENCIA_CH,
     )
 
     saida = capsys.readouterr().out
@@ -215,7 +199,7 @@ def test_imprimir_status_mostra_as_ambiguas(capsys):
 def test_imprimir_status_aponta_sem_entrega_no_banco(capsys):
     imprimir_status(
         VersionStatus(estado_integro=True, tasks_sem_commits=["123456"]),
-        lambda: TickioRest.referencia,
+        lambda: REFERENCIA_CH,
     )
 
     saida = capsys.readouterr().out
@@ -237,7 +221,7 @@ def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
             liberada_em=datetime.datetime(2026, 8, 7, 14, 22),
             chamados=["255514", "256308"],
         ),
-        lambda: TickioRest.referencia,
+        lambda: REFERENCIA_CH,
     )
 
     saida = capsys.readouterr().out
@@ -248,8 +232,8 @@ def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
     assert "faltantes" not in saida
 
 
-def _referencia_tickio() -> Referencia:
-    return TickioRest.referencia
+def _referencia_ch() -> Referencia:
+    return REFERENCIA_CH
 
 
 def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
@@ -271,7 +255,7 @@ def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
                 commits_sumidos=["deadbeefcafe"],
             ),
         ),
-        _referencia_tickio,
+        _referencia_ch,
     )
 
     saida = capsys.readouterr().out
@@ -286,14 +270,12 @@ def test_imprimir_atualizacao_avisa_reaproveitamento(capsys):
     verificado_em = datetime.datetime(2026, 1, 2, 13, 45, tzinfo=datetime.UTC)
     imprimir_atualizacao(
         AtualizarResult(status=AtualizarStatus.DONE, reaproveitada_de=verificado_em),
-        _referencia_tickio,
+        _referencia_ch,
     )
     hora = verificado_em.astimezone().strftime("%H:%M")
     assert f"reaproveitando a verificacao das {hora}" in capsys.readouterr().out
 
-    imprimir_atualizacao(
-        AtualizarResult(status=AtualizarStatus.DONE), _referencia_tickio
-    )
+    imprimir_atualizacao(AtualizarResult(status=AtualizarStatus.DONE), _referencia_ch)
     assert "reaproveitando" not in capsys.readouterr().out
 
 
@@ -306,7 +288,7 @@ def _referencia_proibida() -> Referencia:
     [
         (
             ["257056"],
-            _referencia_tickio,
+            _referencia_ch,
             "BLOQUEADO em f5d02b45, arquivos: ['integracoes/tests.py'], "
             "depende de ch257056, fora desta versao",
         ),
@@ -337,7 +319,7 @@ def test_imprimir_atualizacao_bloqueada_nomeia_os_culpados(
 # -- main() ponta a ponta -----------------------------------------------------
 
 
-def _repo_dir(tmp_path, nome: str = "vendabemweb") -> str:
+def _repo_dir(tmp_path, nome: str = "webapp") -> str:
     caminho = tmp_path / nome
     caminho.mkdir()
     return str(caminho)
@@ -364,6 +346,24 @@ def _git() -> FakeGit:
     return git
 
 
+_COM_CREDENCIAL = "tests.fontes_falsas:FonteComCredencial"
+_FIXA = "tests.fontes_falsas:FonteFixa"
+
+
+def _fonte_central(fonte: str | None, chamados: list[str] | None = None) -> None:
+    """Reescreve o `config.toml` central da fixture `bordas` com outra fonte."""
+    global_ = os.path.join(
+        os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml"
+    )
+    conteudo = '[versao]\nesquema = "tests.versionamento:Escalonado"\natribuicao = "composta"\n'
+    if fonte is not None:
+        conteudo += f'[tarefas]\nfonte = "{fonte}"\n'
+        if chamados is not None:
+            conteudo += "chamados = [" + ", ".join(f'"{c}"' for c in chamados) + "]\n"
+    with open(global_, "w", encoding="utf-8") as f:
+        f.write(conteudo)
+
+
 @pytest.fixture
 def bordas(monkeypatch, tmp_path_factory):
     """Troca as tres bordas de IO da montagem e devolve os doubles.
@@ -376,21 +376,21 @@ def bordas(monkeypatch, tmp_path_factory):
     """
     tmp_path = tmp_path_factory.mktemp("cfg")
     git = _git()
-    estado = FakeEstado(repos={"vendabemweb": RepoInfo(nome="vendabemweb")})
-    for var, valor in (
-        ("TICKIO_BASE_URL", "http://tickio.exemplo"),
-        ("TICKIO_USER", "u"),
-        ("TICKIO_PASSWORD", "p"),
-    ):
-        monkeypatch.setenv(var, valor)
+    estado = FakeEstado(repos={"webapp": RepoInfo(nome="webapp")})
+    monkeypatch.setenv("FONTE_FALSA_TOKEN", "certo")
+    monkeypatch.setattr(FonteFixa, "recebidos", [])
+    monkeypatch.setattr(FonteFixa, "buscadas", [])
     # config global isolada: o teste nao le o ~/.config de quem roda a suite.
-    # O repo de teste segue o esquema da VendaBem (`master`, base da 009,
+    # O repo de teste segue o esquema escalonado (`master`, base em degraus,
     # regra composta da 005): sem isso o padrao `semver`/`main` mudaria o que
     # estes testes verificam.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     global_ = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
     global_.parent.mkdir(parents=True)
-    global_.write_text('[versao]\nesquema = "vendabem"\natribuicao = "composta"\n')
+    global_.write_text(
+        '[versao]\nesquema = "tests.versionamento:Escalonado"\natribuicao = "composta"\n'
+        f'[tarefas]\nfonte = "{_COM_CREDENCIAL}"\n'
+    )
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda repo, **_: git)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
@@ -427,7 +427,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
     git, estado = bordas
     git.tags["13.34.0"] = True
     estado.registrar_versao(
-        "vendabemweb",
+        "webapp",
         VersaoInfo(
             numero="13.34.0",
             tipo="ajustada",
@@ -435,7 +435,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
             base_commit="m0",
         ),
     )
-    estado.marcar_liberadas("vendabemweb", {"13.34.0": D})
+    estado.marcar_liberadas("webapp", {"13.34.0": D})
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
@@ -456,13 +456,13 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
     saida = capsys.readouterr().out
     assert "auditoria da tag 13.34.0" in saida
     assert "faltantes" in saida and "a0" in saida
-    assert estado.atribuicoes("vendabemweb", "13.34.0") == []
+    assert estado.atribuicoes("webapp", "13.34.0") == []
     assert git.removed_worktrees == []
 
 
 def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
     _git, estado = bordas
-    estado.aliases["vbweb"] = "vendabemweb"
+    estado.aliases["vbweb"] = "webapp"
     lista = tmp_path / "lista.txt"
     lista.write_text("", encoding="utf-8")
 
@@ -480,43 +480,117 @@ def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
     )
 
     # gravou sob o nome canonico, nao sob o basename do diretorio
-    assert ("vendabemweb", "13.34.0") in estado.versoes
+    assert ("webapp", "13.34.0") in estado.versoes
 
 
-def test_tickio_recebe_o_sistema_da_config_do_repo(bordas, tmp_path, monkeypatch):
-    monkeypatch.setenv("TICKIO_BASE_URL", "http://tickio.exemplo")
-    monkeypatch.setenv("TICKIO_USER", "u")
-    monkeypatch.setenv("TICKIO_PASSWORD", "p")
+def test_fonte_da_config_recebe_o_sistema_do_repo(bordas, tmp_path):
+    _fonte_central(_FIXA)
 
-    @dataclass
-    class TickioSpy:
-        base_url: str
-        usuario: str
-        senha: str
-        sistema: object
-        arquivos: tuple[str, ...]
-
-        def __post_init__(self) -> None:
-            construidos.append(self)
-
-        def fetch(self, versao: str) -> list[str]:
-            return []
-
-    construidos: list[TickioSpy] = []
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
-
-    # sem --task-source: prova que o default do CLI e tickio
+    # sem --task-source: prova que o default do CLI e a fonte da config
     repo = _repo_dir(tmp_path)
     with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
         f.write("[tarefas]\nsistema = 7\n")
     main(["verificar", "13.34.0", "--repo", repo])
 
-    assert len(construidos) == 1
+    assert len(FonteFixa.recebidos) == 1
+    recebido = FonteFixa.recebidos[0]
+    tarefas = recebido["tarefas"]
+    assert isinstance(tarefas, dict)
     # 7 vem do .monitor-versoes.toml do repo, nao do banco
-    assert construidos[0].sistema == 7
-    assert construidos[0].arquivos[-1] == f"{repo}/.monitor-versoes.toml"
-    assert construidos[0].base_url == "http://tickio.exemplo"
-    assert (construidos[0].usuario, construidos[0].senha) == ("u", "p")
+    assert tarefas["sistema"] == 7
+    assert tarefas["fonte"] == _FIXA
+    arquivos = recebido["arquivos"]
+    assert isinstance(arquivos, tuple)
+    assert arquivos[-1] == f"{repo}/.monitor-versoes.toml"
+
+
+def test_verificar_busca_tarefas_pela_fonte_da_config(bordas, tmp_path, capsys):
+    _fonte_central(_FIXA, chamados=["123456"])
+
+    main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    saida = capsys.readouterr().out
+    # a0 cita ch123456 e so existe no master: a task chegou pela fonte
+    assert "a0" in saida and "123456" in saida
+
+
+def test_fonte_por_import_no_repo_e_recusada(bordas, tmp_path, caplog):
+    _fonte_central(None)
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write(f'[tarefas]\nfonte = "{_FIXA}"\n')
+
+    with pytest.raises(SystemExit) as saida:
+        main(["verificar", "13.34.0", "--repo", repo])
+
+    assert saida.value.code == 1
+    assert "import direto so vale no config.toml central" in caplog.text
+
+
+def test_fonte_nao_instalada_lista_os_instalados(bordas, tmp_path, caplog):
+    _fonte_central("inexistente")
+
+    with pytest.raises(SystemExit) as saida:
+        main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    assert saida.value.code == 1
+    assert "instalados: nenhum" in caplog.text
+
+
+def test_sem_fonte_a_busca_pede_a_chave(bordas, tmp_path, caplog):
+    _fonte_central(None)
+    repo = _repo_com_padrao(tmp_path)
+    central = os.path.join(
+        os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml"
+    )
+
+    with pytest.raises(SystemExit) as saida:
+        main(["verificar", "13.34.0", "--repo", repo])
+
+    assert saida.value.code == 1
+    # as duas configs lidas aparecem, unidas por "e"
+    assert (
+        f"faltando [tarefas] fonte em {central} e {repo}/.monitor-versoes.toml; "
+        "ou use --task-source manual --lista <arquivo>"
+    ) in caplog.text
+
+
+def test_atualizar_abort_com_fonte_inexistente(bordas, tmp_path, capsys):
+    _fonte_central("inexistente")
+
+    main(["atualizar", "13.34.0", "--repo", _repo_dir(tmp_path), "--abort"])
+
+    assert capsys.readouterr().out == "abortado\n"
+
+
+def test_reconstruir_sem_fonte_usa_o_padrao_da_config(
+    bordas, tmp_path, capsys, monkeypatch
+):
+    _fonte_central(None)
+
+    def so_sem_tarefas(grupo: str, nome: str, origem: Origem) -> type:
+        if grupo == montagem.GRUPO_TAREFAS:
+            raise AssertionError("o plugin da fonte de tarefas foi carregado")
+        return carregar_plugin(grupo, nome, origem)
+
+    monkeypatch.setattr(montagem, "carregar_plugin", so_sem_tarefas)
+
+    main(["reconstruir-estado", "13.34.0", "--repo", _repo_com_padrao(tmp_path)])
+
+    assert "status: DONE" in capsys.readouterr().out
+
+
+def test_reconstruir_sem_fonte_e_sem_padrao_pede_a_chave(bordas, tmp_path, caplog):
+    _fonte_central(None)
+    git, _ = bordas
+    git.add_commit("p1", "m0", "ch1 ajuste", D)
+    git.set_branch("13.34.0", "p1")
+
+    with pytest.raises(SystemExit) as saida:
+        main(["reconstruir-estado", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    assert saida.value.code == 1
+    assert "[referencia] padrao" in caplog.text
 
 
 def test_reconstruir_estado_ponta_a_ponta(bordas, tmp_path, capsys):
@@ -538,11 +612,11 @@ def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, cap
         "c0ffee123456", "a0", "Título " + "longo " * 30 + "\ncorpo oculto", D
     )
     estado.registrar_versao(
-        "vendabemweb",
+        "webapp",
         VersaoInfo(numero="13.34.0", tipo="ajustada"),
     )
     estado.substituir_atribuicoes(
-        "vendabemweb",
+        "webapp",
         "13.34.0",
         [
             Atribuicao(
@@ -700,7 +774,7 @@ def test_erro_com_nota_mostra_contexto_e_causa_na_linha(
     """
 
     def sem_banco():
-        erro = MotorError("Tickio respondeu 503")
+        erro = MotorError("rastreador respondeu 503")
         erro.add_note("buscando tasks da versao 13.34.0")
         raise erro
 
@@ -711,7 +785,7 @@ def test_erro_com_nota_mostra_contexto_e_causa_na_linha(
 
     assert saida.value.code == 1
     assert "buscando tasks da versao 13.34.0" in caplog.text
-    assert "Tickio respondeu 503" in caplog.text
+    assert "rastreador respondeu 503" in caplog.text
 
 
 def test_bug_sai_1_com_traceback(bordas, tmp_path, monkeypatch, caplog):
@@ -733,7 +807,7 @@ def test_main_nao_repovoa_variavel_que_o_teste_apagou(
     """Pina a guarda estrutural do "sem rede" (fixture _sem_dotenv_dentro_do_main
     no conftest): sem ela, o load_dotenv() de dentro do main() traz de volta toda
     variavel que o teste apagou — foi assim que um teste de credencial ausente
-    saiu para o host real do Tickio na Task 12.
+    saiu para o host real do rastreador na Task 12.
 
     """
     # Pin estrutural, nao comportamental: `load_dotenv()` procura o .env a partir
@@ -749,32 +823,14 @@ def test_main_nao_repovoa_variavel_que_o_teste_apagou(
         "sai para a rede"
     )
 
-    monkeypatch.delenv("TICKIO_USER", raising=False)
+    monkeypatch.delenv("FONTE_FALSA_TOKEN", raising=False)
 
     with pytest.raises(SystemExit) as saida:
         main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
     assert saida.value.code == 1
-    assert "faltando no .env: TICKIO_USER" in caplog.text
-    assert "TICKIO_USER" not in os.environ, "load_dotenv() rodou dentro do main()"
-
-
-def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(
-    bordas, tmp_path, monkeypatch, caplog
-):
-    # vazio e nao delenv: a variavel ausente e o outro teste; aqui o que importa
-    # e a mensagem nomear a variavel.
-    monkeypatch.setenv("TICKIO_BASE_URL", "")
-
-    with pytest.raises(SystemExit) as saida:
-        main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
-
-    assert saida.value.code == 1
-    # o contexto ("buscando tasks da versao ...") chega na linha via nota
-    # (formatar_com_notas), nao mais embutido na mensagem do erro; o que
-    # importa aqui e a variavel nomeada, em vez da reclamacao de protocolo do
-    # httpx.
-    assert "faltando no .env: TICKIO_BASE_URL" in caplog.text
+    assert "faltando no .env: FONTE_FALSA_TOKEN" in caplog.text
+    assert "FONTE_FALSA_TOKEN" not in os.environ, "load_dotenv() rodou dentro do main()"
 
 
 @pytest.mark.parametrize(
@@ -784,18 +840,17 @@ def test_tickio_sem_variavel_no_env_nomeia_a_que_falta(
         (["reconstruir-estado", "13.34.0"], "status: DONE"),
     ],
 )
-def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
+def test_comando_que_nao_busca_tarefa_roda_sem_credencial_da_fonte(
     bordas, tmp_path, monkeypatch, capsys, comando, esperado
 ):
     """`atualizar --abort` e `reconstruir-estado` montam a fonte de tarefas mas
-    nunca chamam fetch. Sao os comandos de recuperacao: exigir TICKIO_USER/
-    TICKIO_PASSWORD (vazios no env.example) travaria justamente o comando que
-    se usa quando algo ja esta quebrado.
+    nunca chamam fetch. Sao os comandos de recuperacao: exigir a credencial da
+    fonte (vazia no env.example) travaria justamente o comando que se usa
+    quando algo ja esta quebrado.
     """
     # "" e nao delenv: o que se testa aqui e credencial vazia, o caso do
     # env.example — nao a variavel ausente.
-    for var in ("TICKIO_USER", "TICKIO_PASSWORD"):
-        monkeypatch.setenv(var, "")
+    monkeypatch.setenv("FONTE_FALSA_TOKEN", "")
 
     main([*comando, "--repo", _repo_dir(tmp_path)])
 
@@ -803,13 +858,9 @@ def test_comando_que_nao_busca_tarefa_roda_sem_credencial_do_tickio(
     assert esperado in capsys.readouterr().out
 
 
-def test_lista_manual_nao_exige_variavel_do_tickio(
-    bordas, tmp_path, monkeypatch, capsys
-):
-    # TICKIO_USER/TICKIO_PASSWORD sao vazios no env.example: quem usa --lista
-    # nao pode ser obrigado a preencher.
-    for var in ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD"):
-        monkeypatch.setenv(var, "")
+def test_lista_manual_funciona_sem_fonte_na_config(bordas, tmp_path, capsys):
+    # quem usa --lista nao precisa de fonte de tarefas configurada.
+    _fonte_central(None)
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
@@ -862,14 +913,14 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     # atravessa o ChainCommitSource ate ela: um dump de deps sob --debug
     # imprimiria tudo em claro se o adapter nao tivesse repr=False.
     deps = Deps(
-        versionamento=VENDABEM_COMPOSTA,
+        versionamento=ESCALONADO_COMPOSTA,
         git=_git(),
         tasks=FakeTaskSource(),
         estado=FakeEstado(),
         repo="r",
         commit_source=montagem.montar_commit_source(
             _git(),
-            referencia=lambda: TickioRest.referencia,
+            referencia=lambda: REFERENCIA_CH,
             bitbucket=CredenciaisBitbucket("tok123", "dev@x.com"),
         ),
     )
@@ -889,22 +940,22 @@ def test_resolver_repo_caminho_literal(tmp_path):
 
 def test_resolver_repo_via_projects_dir(tmp_path, monkeypatch):
     projetos = tmp_path / "projetos"
-    (projetos / "vendabemweb").mkdir(parents=True)
+    (projetos / "webapp").mkdir(parents=True)
     monkeypatch.setenv("PROJECTS_DIR", str(projetos))
 
-    resolvido = _resolver_repo("vendabemweb")
+    resolvido = _resolver_repo("webapp")
 
-    assert resolvido == os.path.join(str(projetos), "vendabemweb")
+    assert resolvido == os.path.join(str(projetos), "webapp")
 
 
 def test_resolver_repo_tira_a_barra_final(tmp_path, monkeypatch):
-    # tab-completion do shell manda "vendabemweb/", e o basename disso e "" —
+    # tab-completion do shell manda "webapp/", e o basename disso e "" —
     # o nome do repo e a chave do estado inteiro.
     projetos = tmp_path / "projetos"
-    (projetos / "vendabemweb").mkdir(parents=True)
+    (projetos / "webapp").mkdir(parents=True)
     monkeypatch.setenv("PROJECTS_DIR", str(projetos))
 
-    assert os.path.basename(_resolver_repo("vendabemweb/")) == "vendabemweb"
+    assert os.path.basename(_resolver_repo("webapp/")) == "webapp"
 
 
 def test_resolver_repo_nao_encontrado(tmp_path, monkeypatch):
@@ -928,7 +979,7 @@ def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):
             conflitantes=[faltante],
             conflito_causado_por={"a0a0a0a0a0": ["255101", "254800"]},
         ),
-        lambda: TickioRest.referencia,
+        lambda: REFERENCIA_CH,
     )
 
     saida = capsys.readouterr().out
@@ -987,7 +1038,7 @@ def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
             faltantes=[faltante],
             conflitantes=[faltante],
         ),
-        lambda: TickioRest.referencia,
+        lambda: REFERENCIA_CH,
     )
 
     saida = capsys.readouterr().out
@@ -995,54 +1046,24 @@ def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
     assert "depende" not in saida
 
 
-def test_verificar_nao_busca_no_tickio_versao_abaixo_do_piso_do_repo(
-    bordas, tmp_path, monkeypatch
-):
+def test_verificar_nao_busca_versao_abaixo_do_piso_do_repo(bordas, tmp_path):
+    _fonte_central(_FIXA)
     repo = _repo_dir(tmp_path)
     with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
         f.write('[versao]\npiso = "13.34.0"\n')
-    buscadas: list[str] = []
-
-    @dataclass
-    class TickioSpy:
-        base_url: str
-        usuario: str
-        senha: str
-        sistema: object
-        arquivos: tuple[str, ...]
-
-        def fetch(self, versao: str) -> list[str]:
-            buscadas.append(versao)
-            return []
-
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
 
     main(["verificar", "13.34.0", "--repo", repo])
 
     # 13.33.0 esta aberta e seria fonte sem o piso
-    assert buscadas == ["13.34.0"]
+    assert FonteFixa.buscadas == ["13.34.0"]
 
 
-def test_sem_piso_nenhuma_versao_e_cortada(bordas, tmp_path, monkeypatch):
-    buscadas: list[str] = []
-
-    @dataclass
-    class TickioSpy:
-        base_url: str
-        usuario: str
-        senha: str
-        sistema: object
-        arquivos: tuple[str, ...]
-
-        def fetch(self, versao: str) -> list[str]:
-            buscadas.append(versao)
-            return []
-
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
+def test_sem_piso_nenhuma_versao_e_cortada(bordas, tmp_path):
+    _fonte_central(_FIXA)
 
     main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
-    assert "13.33.0" in buscadas and "13.34.0" in buscadas
+    assert "13.33.0" in FonteFixa.buscadas and "13.34.0" in FonteFixa.buscadas
 
 
 # -- diagnostico --------------------------------------------------------------
@@ -1081,6 +1102,28 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     assert estado.value in capsys.readouterr().out
 
 
+def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text('[tarefas]\nfonte = "tests.fontes_falsas:FonteFixa"\n')
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    monkeypatch.setattr(cli, "head", lambda: "rev")
+    recebido = {}
+
+    def falso(*a, **k):
+        recebido["config"] = k["config_central"]()
+        return []
+
+    monkeypatch.setattr(cli, "diagnosticar", falso)
+
+    main(["diagnostico"])
+
+    fonte = recebido["config"].fonte_tarefas
+    assert fonte is not None and fonte.valor == "tests.fontes_falsas:FonteFixa"
+    assert fonte.origem == "central"
+
+
 # -- migrar-estado ------------------------------------------------------------
 
 
@@ -1101,7 +1144,7 @@ def test_migrar_estado_copia_e_nao_avisa_do_backend_padrao(
     garantir_esquema(origem)
     engine = criar_engine(origem)
     with engine.begin() as con:
-        con.execute(insert(Repo).values(nome="r", tickio_sistema_id=1))
+        con.execute(insert(Repo).values(nome="r"))
     engine.dispose()
     monkeypatch.setattr(cli, "load_dotenv", None)
     monkeypatch.setattr(

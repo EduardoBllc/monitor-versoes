@@ -9,7 +9,7 @@ from motor.domain.types import CommitRef
 def match_exato(
     candidatos: list[CommitRef], chamado: str, ref: Referencia
 ) -> list[CommitRef]:
-    """Filtra candidatos de grep pela fronteira da referencia: no Tickio,
+    """Filtra candidatos de grep pela fronteira da referencia: com `ch{id}`,
     `ch5514` nao pode casar dentro de `ch255514`. search_commits do GitRepo so
     traz candidatos brutos.
 

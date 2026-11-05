@@ -36,7 +36,7 @@ class FakeEstado:
     _marca: dict[str, datetime.datetime] = field(default_factory=dict)
     _verificacoes: dict[tuple[str, str], Verificacao] = field(default_factory=dict)
 
-    def registrar_repo(self, nome: str, tickio_sistema_id: int, /) -> None:
+    def registrar_repo(self, nome: str, /) -> None:
         if nome in self.repos or nome in self.aliases:
             raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
         self.repos[nome] = RepoInfo(nome=nome)
@@ -47,8 +47,7 @@ class FakeEstado:
         if info is None:
             raise NaoEncontrado(
                 f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  motor repo adicionar '{basename}' "
-                f"--tickio-sistema-id <id>"
+                f"  motor repo adicionar '{basename}'"
             )
         return info
 

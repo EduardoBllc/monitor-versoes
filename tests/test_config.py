@@ -307,7 +307,7 @@ def test_sem_raiz_ignora_a_camada_do_repo(camadas):
 
 def test_chave_esquema_e_ignorada(camadas):
     glob, _ = camadas
-    glob.write_text('esquema = "vendabem"\n')
+    glob.write_text('esquema = "escalonado"\n')
     assert config.carregar_config(None) == config.ConfigProjeto(arquivos=(str(glob),))
 
 
@@ -315,12 +315,24 @@ def test_chave_esquema_e_ignorada(camadas):
 
 _CHAVES_NOVAS = [
     # (atributo, tabela, chave, valor do global, valor do repo)
-    ("esquema", "versao", "esquema", "semver", "vendabem"),
+    ("esquema", "versao", "esquema", "semver", "escalonado"),
     ("atribuicao", "versao", "atribuicao", "exata", "composta"),
     ("tag_liberacao", "liberacao", "tag", "{versao}", "v{versao}"),
     ("branch_versao", "branches", "versao", "{versao}", "release/{versao}"),
     ("branch_principal", "branches", "principal", "master", "main"),
+    ("fonte_tarefas", "tarefas", "fonte", "rastreador", "outro"),
 ]
+
+
+def test_fonte_de_tarefas_continua_em_tarefas(camadas):
+    glob, repo = camadas
+    glob.write_text('[tarefas]\nfonte = "rastreador"\n')
+    repo.write_text("[tarefas]\nsistema = 7\n")
+
+    lido = config.carregar_config(str(repo.parent))
+
+    # o plugin recebe a tabela inteira, `fonte` inclusa.
+    assert lido.tarefas == {"fonte": "rastreador", "sistema": 7}
 
 
 @pytest.mark.parametrize(

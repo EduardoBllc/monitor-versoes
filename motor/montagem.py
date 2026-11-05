@@ -7,6 +7,8 @@ ver so `motor.ports`.
 **Montar nao e usar.** Nada aqui faz I/O de rede, nem valida credencial, nem
 consulta o git: `atualizar --abort` e `reconstruir-estado` recebem as mesmas
 fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
+O plugin da fonte de tarefas nem e carregado aqui: a `FonteDaConfig` o carrega
+na primeira busca ou na primeira resolucao da referencia.
 Unica excecao deliberada: `resolver_repo`, porque o nome canonico decide
 *como* montar o resto. O I/O do `motor diagnostico`
 vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
@@ -31,7 +33,6 @@ from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.adapters.notificador.desktop import NotificadorDesktop
 from motor.adapters.tasksource.manuallist import ManualList
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import (
     ConfigProjeto,
     Escolhido,
@@ -45,7 +46,7 @@ from motor.domain.referencia import (
     resolver_referencia,
 )
 from motor.engine.deps import Deps
-from motor.errors import ErroDeEntrada
+from motor.errors import ErroDeEntrada, MotorError
 from motor.plugins import carregar_plugin
 from motor.ports import (
     CommitSource,
@@ -80,13 +81,16 @@ class CredenciaisBitbucket:
 class FonteTasks:
     """Escolha do operador para a fonte de tasks (`--task-source`/`--lista`)."""
 
-    fonte: str = "tickio"
+    fonte: str = "config"
     lista_manual: str = ""
 
 
 # defaults dos parametros: os dataclasses sao congelados, entao compartilhar e seguro.
 _SEM_BITBUCKET = CredenciaisBitbucket()
-_TICKIO = FonteTasks()
+_DA_CONFIG = FonteTasks()
+
+#: Grupo de entry points das fontes de tarefas. O nucleo nao registra nenhuma.
+GRUPO_TAREFAS = "monitor_versoes.tarefas"
 
 
 def validar_nome_repo(valor: str) -> str:
@@ -98,17 +102,6 @@ def validar_nome_repo(valor: str) -> str:
     if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
         raise ErroDeEntrada("use um nome simples, sem caminho")
     return valor
-
-
-def validar_sistema_id(valor: str) -> int:
-    """ID do sistema no Tickio. Vai cru na query `?sistema=`."""
-    try:
-        numero = int(valor)
-    except ValueError:
-        raise ErroDeEntrada("deve ser um inteiro positivo") from None
-    if numero <= 0:
-        raise ErroDeEntrada("deve ser um inteiro positivo")
-    return numero
 
 
 @contextmanager
@@ -136,34 +129,88 @@ def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
         engine.dispose()
 
 
-def montar_task_source(
-    config: ConfigProjeto, *, fonte: str = "tickio", lista_manual: str = ""
-) -> TaskSource:
-    """A fonte de tasks depende do projeto: o `sistema` sai de `[tarefas]` da
-    config em camadas.
+def instanciar_fonte_tarefas(config: ConfigProjeto) -> TaskSource:
+    """Carrega o plugin de `[tarefas] fonte` e o instancia.
 
-    Sem validar as variaveis nem o `sistema` aqui — quem cobra e o `TickioRest`,
-    na primeira busca.
+    O construtor recebe so argumentos nomeados: o `[tarefas]` mesclado e os
+    arquivos de config lidos, para que o erro de config cite o arquivo. Erro que
+    nao e `MotorError` vira `ErroDeEntrada`: e config apontando para um plugin
+    quebrado, nao bug do motor.
     """
-    if fonte == "tickio":
-        return TickioRest(
-            base_url=os.environ.get("TICKIO_BASE_URL", ""),
-            usuario=os.environ.get("TICKIO_USER", ""),
-            senha=os.environ.get("TICKIO_PASSWORD", ""),
-            sistema=config.tarefas.get("sistema"),
-            arquivos=config.arquivos,
+    escolhido = config.fonte_tarefas
+    if escolhido is None:
+        onde = " e ".join(config.arquivos) or "a config"
+        raise ErroDeEntrada(
+            f"faltando [tarefas] fonte em {onde}; "
+            "ou use --task-source manual --lista <arquivo>"
         )
-    return ManualList(caminho=lista_manual)
+    classe = carregar_plugin(GRUPO_TAREFAS, escolhido.valor, escolhido.origem)
+    try:
+        fonte: TaskSource = classe(tarefas=config.tarefas, arquivos=config.arquivos)
+    except MotorError:
+        raise
+    except Exception as e:
+        raise ErroDeEntrada(
+            f"fonte de tarefas {escolhido.valor!r}: construtor falhou ({e})"
+        ) from e
+    return fonte
+
+
+@dataclass
+class FonteDaConfig:
+    """Fonte de tarefas da config, carregada so por quem a usa.
+
+    Montar nao e usar: um plugin inexistente nao pode derrubar `atualizar
+    --abort`. A instancia fica em cache depois da primeira carga que deu certo;
+    a que falha nao fica, e a proxima chamada tenta de novo.
+    """
+
+    config: ConfigProjeto
+    _carregada: TaskSource | None = field(default=None, init=False, repr=False)
+
+    def carregar(self) -> TaskSource:
+        if self._carregada is None:
+            self._carregada = instanciar_fonte_tarefas(self.config)
+        return self._carregada
+
+    def fetch(self, versao: str, /) -> list[str]:
+        return self.carregar().fetch(versao)
+
+    def proposta(self) -> Referencia | None:
+        """A referencia que o plugin propoe; sem `fonte`, nenhuma."""
+        if self.config.fonte_tarefas is None:
+            return None
+        return _proposta(self.carregar())
+
+
+def montar_task_source(
+    config: ConfigProjeto, *, fonte: str = "config", lista_manual: str = ""
+) -> TaskSource:
+    """`manual` le a lista do operador; o resto e a fonte de `[tarefas] fonte`.
+
+    Sem carregar o plugin aqui: quem o carrega e a `FonteDaConfig`, na
+    primeira busca.
+    """
+    if fonte == "manual":
+        return ManualList(caminho=lista_manual)
+    return FonteDaConfig(config)
 
 
 def _proposta(tasks: TaskSource) -> Referencia | None:
-    """A referencia que o adapter do tracker propoe, se propoe alguma.
+    """A referencia que a fonte de tarefas propoe, se propoe alguma.
 
-    Atributo proprio do adapter, fora da porta: o nucleo nao sabe de Tickio, e a
-    lista manual, que nao propoe nada, nao precisa declarar ausencia.
+    Atributo proprio do plugin, fora da porta: o nucleo nao sabe qual rastreador
+    e, e a lista manual, que nao propoe nada, nao precisa declarar ausencia.
     """
     proposta = getattr(tasks, "referencia", None)
     return proposta if isinstance(proposta, Referencia) else None
+
+
+def _proposta_de(tasks: TaskSource) -> Referencia | None:
+    """A proposta, carregando o plugin so se a fonte e a da config."""
+    if isinstance(tasks, FonteDaConfig):
+        return tasks.proposta()
+    return _proposta(tasks)
 
 
 def _identidade_das_entradas(
@@ -172,7 +219,10 @@ def _identidade_das_entradas(
     """O que alimenta a resolucao do alvo: trocar qualquer parte invalida o
     carimbo da verificacao."""
     fonte_tasks = type(tasks).__name__
-    if isinstance(tasks, ManualList):
+    if isinstance(tasks, FonteDaConfig):
+        escolhido = config.fonte_tarefas
+        fonte_tasks = "config:" + ("" if escolhido is None else escolhido.valor)
+    elif isinstance(tasks, ManualList):
         try:
             with open(tasks.caminho, "rb") as f:
                 fonte_tasks += ":" + hashlib.sha256(f.read()).hexdigest()
@@ -182,8 +232,8 @@ def _identidade_das_entradas(
         (
             fonte_tasks,
             type(commits).__name__,
-            _proposta(tasks),
-            # `[tarefas]` alimenta o adapter do tracker (ex.: `sistema` filtra o Tickio).
+            _proposta_de(tasks),
+            # `[tarefas]` alimenta o plugin da fonte de tarefas.
             sorted(config.tarefas.items()),
             config.padrao_referencia,
             config.piso,
@@ -310,7 +360,7 @@ def montar_deps(
     caminho_repo: str,
     sessao: Session,
     *,
-    tasks: FonteTasks = _TICKIO,
+    tasks: FonteTasks = _DA_CONFIG,
     bitbucket: CredenciaisBitbucket = _SEM_BITBUCKET,
     progresso: RelatorProgresso = silencioso,
 ) -> Deps:
@@ -329,14 +379,15 @@ def montar_deps(
     fonte_tasks = montar_task_source(
         config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
     )
-    # Partial, nao valor: resolver aqui faria a falta de padrao derrubar a
-    # montagem, e com ela `atualizar --abort`.
-    referencia: FonteReferencia = functools.partial(
-        resolver_referencia,
-        _proposta(fonte_tasks),
-        config.padrao_referencia,
-        config.arquivos,
-    )
+
+    # Fonte, nao valor: resolver aqui faria a falta de padrao, ou um plugin
+    # inexistente, derrubar a montagem, e com ela `atualizar --abort`.
+    @functools.cache
+    def referencia() -> Referencia:
+        return resolver_referencia(
+            _proposta_de(fonte_tasks), config.padrao_referencia, config.arquivos
+        )
+
     # Cache: resolvido uma vez por invocacao, na primeira vez que alguem usa.
     versionamento: FonteVersionamento = functools.cache(
         functools.partial(resolver_versionamento, config)
@@ -364,7 +415,10 @@ def montar_deps(
         versionamento=versionamento,
         nomes_abort=nomes_sem_esquema(config),
         referencia=referencia,
-        identidade_das_entradas=_identidade_das_entradas(
-            fonte_tasks, commit_source, config
+        # Fonte: calcula-la exige a proposta do plugin, que montar nao carrega.
+        identidade_das_entradas=functools.cache(
+            functools.partial(
+                _identidade_das_entradas, fonte_tasks, commit_source, config
+            )
         ),
     )

@@ -5,6 +5,8 @@
 - **Depende de:** [005](005-alvo-distribuicao-entre-versoes.md),
   [019](019-montagem-no-front-end.md)
 
+O código que implementa esta decisão mora no pacote monitor-versoes-vendabem.
+
 A autenticação no Tickio é por **credencial, não token**: o adapter troca usuário e senha por
 um `access` a cada execução. Não existe flag de token. O CLI vive segundos, e reautenticar a
 cada run sai mais barato do que reeditar o `.env` toda vez que o JWT expira.

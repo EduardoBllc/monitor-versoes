@@ -6,8 +6,8 @@ import pytest
 
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.git.fake import FakeGit
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.referencia import Referencia
+from tests.fontes_falsas import REFERENCIA_CH
 
 
 def _git_com_commits(*mensagens: str) -> FakeGit:
@@ -30,7 +30,7 @@ def test_grep_agrupa_por_chamado_e_carimba():
 
     achados = GrepCommitSource(
         git=git,
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         ref_principal=lambda: "origin/master",
     ).resolve(["123456", "999111"])
 
@@ -45,7 +45,7 @@ def test_grep_nao_casa_chamado_como_substring():
     assert (
         GrepCommitSource(
             git=git,
-            referencia=lambda: TickioRest.referencia,
+            referencia=lambda: REFERENCIA_CH,
             ref_principal=lambda: "origin/master",
         ).resolve(["5514"])
         == {}
@@ -58,7 +58,7 @@ def test_grep_nao_casa_chamado_como_substring():
     assert (
         GrepCommitSource(
             git=git_prefixo,
-            referencia=lambda: TickioRest.referencia,
+            referencia=lambda: REFERENCIA_CH,
             ref_principal=lambda: "origin/master",
         ).resolve(["123"])
         == {}
@@ -71,7 +71,7 @@ def test_grep_omite_chamado_sem_commit():
     assert (
         GrepCommitSource(
             git=git,
-            referencia=lambda: TickioRest.referencia,
+            referencia=lambda: REFERENCIA_CH,
             ref_principal=lambda: "origin/master",
         ).resolve(["123456"])
         == {}

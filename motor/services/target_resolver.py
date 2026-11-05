@@ -39,7 +39,7 @@ class TargetResolver:
 
         for indice, v in enumerate(fontes, start=1):
             self.progresso(
-                Progresso("chamados marcados no Tickio", indice, len(fontes))
+                Progresso("chamados marcados no rastreador", indice, len(fontes))
             )
             try:
                 chamados = self.tasks.fetch(v)

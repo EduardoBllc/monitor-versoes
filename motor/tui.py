@@ -67,7 +67,6 @@ from motor.montagem import (
     montar_deps,
     resolver_versionamento,
     validar_nome_repo,
-    validar_sistema_id,
 )
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
@@ -114,7 +113,7 @@ class ContinueRunner(Protocol):
 
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
-RepoRegistrar = Callable[[str, int], None]
+RepoRegistrar = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -261,10 +260,10 @@ def _linha_inscricao(i: Inscricao) -> str:
     )
 
 
-class CadastroModal(ModalScreen["tuple[str, int] | None"]):
+class CadastroModal(ModalScreen[str | None]):
     """Formulario de cadastro de repo.
 
-    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o par
+    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o nome
     pronto. Erro de banco (nome duplicado) nao e do formulario: sai pelo
     caminho de erro normal do app, com o modal ja fechado.
     """
@@ -291,11 +290,6 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
             caixa.border_subtitle = "esc para cancelar"
             yield Static("nome", classes="rotulo")
             yield Input(placeholder="nome canônico, sem caminho", id="cadastro-nome")
-            yield Static(
-                "tickio_sistema_id (ignorado até a #117; vale [tarefas] sistema da config)",
-                classes="rotulo",
-            )
-            yield Input(placeholder="inteiro positivo", id="cadastro-sistema")
             yield Static(id="cadastro-erro")
             with Horizontal(id="cadastro-botoes"):
                 yield Button("Cancelar", id="cadastro-cancelar")
@@ -316,13 +310,10 @@ class CadastroModal(ModalScreen["tuple[str, int] | None"]):
     def _salvar(self) -> None:
         try:
             nome = validar_nome_repo(self.query_one("#cadastro-nome", Input).value)
-            sistema_id = validar_sistema_id(
-                self.query_one("#cadastro-sistema", Input).value
-            )
         except MotorError as erro:
             self.query_one("#cadastro-erro", Static).update(str(erro))
             return
-        self.dismiss((nome, sistema_id))
+        self.dismiss(nome)
 
 
 class AbortarModal(ModalScreen[bool]):
@@ -1073,17 +1064,17 @@ class MotorTUI(App[None]):
             return
         self.push_screen(CadastroModal(), self._cadastrar)
 
-    def _cadastrar(self, dados: tuple[str, int] | None) -> None:
-        if dados is None:
+    def _cadastrar(self, nome: str | None) -> None:
+        if nome is None:
             return
         self._bloquear(True)
-        self.cadastrar_worker(*dados)
+        self.cadastrar_worker(nome)
 
     @work(thread=True, exclusive=True, group="cadastro")
-    def cadastrar_worker(self, nome: str, sistema_id: int) -> None:
+    def cadastrar_worker(self, nome: str) -> None:
         try:
             if self._registrar is not None:
-                self._registrar(nome, sistema_id)
+                self._registrar(nome)
         except Exception as erro:
             self.call_from_thread(self._falha, erro)
             self.call_from_thread(self._bloquear, False)
@@ -1426,9 +1417,9 @@ def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[Repo
         )
 
 
-def _registrar_no_banco(nome: str, sistema_id: int) -> None:
+def _registrar_no_banco(nome: str) -> None:
     with abrir_sessao() as sessao:
-        PostgresEstado(sessao=sessao).registrar_repo(nome, sistema_id)
+        PostgresEstado(sessao=sessao).registrar_repo(nome)
 
 
 def _versionamento_do_repo(repo: RepoOption) -> Versionamento:
@@ -1456,7 +1447,7 @@ def _deps_do_repo(
     if repo.caminho is None:
         raise NaoEncontrado("checkout local não encontrado")
     # Sem flags: token e email do Bitbucket saem do ambiente dentro do
-    # montar_deps, e a fonte de tasks e sempre o Tickio.
+    # montar_deps, e a fonte de tasks e sempre a da config.
     return montar_deps(repo.caminho, sessao, progresso=progresso)
 
 

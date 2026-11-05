@@ -214,7 +214,7 @@ def test_motorerror_do_adapter_continua_degradando_para_ausente():
 
 
 def test_presence_oracle_trailer_abaixo_da_base_conta_como_presente():
-    """Regressao (chamado 254994 na 14.11.0 do vendabemweb): commit
+    """Regressao (chamado 254994 na 14.11.0 do webapp): commit
     cherry-pickado numa versao ANTERIOR e herdado pela base aparecia como
     faltante — o nivel 2 varria so `base..branch`, e o commit com o trailer
     fica abaixo da base. docs/decisoes/003-definicao-de-presente.md nao limita o nivel 2

@@ -55,7 +55,7 @@ class PrIndex:
 @dataclass(frozen=True)
 class TaskTarget:
     chamado: str = ""  # numero do chamado — identidade unica da tarefa
-    marcada: str = ""  # versao para a qual o Tickio marcou
+    marcada: str = ""  # versao para a qual o rastreador marcou
     commits: list[CommitRef] = field(default_factory=list)
 
 
@@ -68,14 +68,14 @@ class Alvo:
     """Resultado da resolucao de alvo: as tarefas mais o que deu errado nelas."""
 
     tasks: TargetSet = field(default_factory=dict)
-    # chamado marcado em mais de uma versao — dado inconsistente no Tickio.
+    # chamado marcado em mais de uma versao — dado inconsistente no rastreador.
     ambiguas: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class Exclusion:
     """Julgamento humano: commit que nao entra. Estado irredutivel — nao e
-    re-derivavel do Tickio nem do git.
+    re-derivavel do rastreador nem do git.
 
     As exclusoes automaticas ("ja presente na base") sumiram: eram
     recomputaveis por definicao e quem responde isso e o oraculo de presenca.
@@ -89,7 +89,7 @@ class Exclusion:
 @dataclass(frozen=True)
 class Atribuicao:
     chamado: str = ""
-    marcada: str = ""  # versao para a qual o Tickio marcou
+    marcada: str = ""  # versao para a qual o rastreador marcou
     estado: str = "pendente"  # pendente | aplicado
     commits: list[str] = field(default_factory=list)  # hashes de origem
 
@@ -130,10 +130,12 @@ class RepoInfo:
 @dataclass(frozen=True)
 class VersionStatus:
     verde: bool = False
-    tasks_novas: list[str] = field(default_factory=list)  # no Tickio, fora do estado
+    tasks_novas: list[str] = field(
+        default_factory=list
+    )  # no rastreador, fora do estado
     tasks_removidas: list[str] = field(
         default_factory=list
-    )  # no estado, fora do Tickio
+    )  # no estado, fora do rastreador
     estado_integro: bool = False
     tasks_ambiguas: list[str] = field(
         default_factory=list
@@ -157,7 +159,7 @@ class VersionStatus:
     conflito_causado_por: dict[str, list[str]] = field(default_factory=dict)
     tasks_sem_commits: list[str] = field(
         default_factory=list
-    )  # tarefa no Tickio sem nenhum commit achado e nao reconhecida em sem_entrega
+    )  # tarefa no rastreador sem nenhum commit achado e nao reconhecida em sem_entrega
     # Preenchidos so no snapshot de versao liberada
     # (docs/decisoes/010-travas-publicada-e-liberada.md): sem eles a saida
     # e byte-a-byte igual a de uma versao verde em construcao — nada de data,
