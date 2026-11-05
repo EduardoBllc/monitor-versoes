@@ -16,6 +16,7 @@ from collections.abc import Callable
 from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 from typing import TextIO
 
@@ -56,6 +57,7 @@ from motor.inscricoes import (
     caminho_arquivo,
     carregar,
     disparar_subprocesso,
+    formatar_intervalo,
     inscrever,
     parse_intervalo,
     registrar_execucao,
@@ -179,8 +181,12 @@ def _inscricao_listar() -> None:
         if i.ultima is None:
             ultima = "nunca rodou"
         else:
-            ultima = f"{i.ultima.hora.astimezone():%Y-%m-%d %H:%M} {i.ultima.desfecho}"
-        print(f"{i.versao}  {i.clone}  a cada {i.intervalo}  {ultima}")
+            ultima = (
+                f"{i.ultima.hora.astimezone():%Y-%m-%d %H:%M} {i.ultima.desfecho.value}"
+            )
+        print(
+            f"{i.versao}  {i.clone}  a cada {formatar_intervalo(i.intervalo)}  {ultima}"
+        )
 
 
 def _inscricao_agendar(args: argparse.Namespace) -> None:
@@ -234,7 +240,7 @@ def _inscricao(args: argparse.Namespace) -> None:
             rodar(
                 caminho_arquivo(),
                 datetime.now(UTC),
-                disparar_subprocesso,
+                partial(disparar_subprocesso, env=args.ambiente_pai),
                 montar_notificador(),
             )
         case AcaoInscricao.EXECUTAR:
@@ -711,9 +717,11 @@ def _comando_repo(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    ambiente_pai = dict(os.environ)  # antes do .env: o filho carrega o próprio
     _carregar_ambiente(argv)
 
     args = _build_parser().parse_args(argv)
+    args.ambiente_pai = ambiente_pai
 
     logging.basicConfig(
         level=logging.DEBUG if getattr(args, "debug", False) else logging.ERROR,

@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -227,7 +227,7 @@ def registrar_execucao(
         try:
             notificador.notificar(titulo, f"{_ROTULOS[e.tipo]}: {e.detalhe}")
         except MotorError as erro:
-            log.warning("notificação falhou: %s", erro)
+            log.error("notificação falhou: %s", erro)
     if r.desfecho == Desfecho.ENCERRADA:
         novas = [i for i in atuais if i is not alvo]
     else:
@@ -261,12 +261,15 @@ def rodar(
             registrar_execucao(caminho, i, r, notificador, agora)
 
 
-def disparar_subprocesso(i: Inscricao) -> int:
+def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
+    # -P: o cwd da inscrição não pode sombrear o pacote `motor` instalado.
     cmd = [
-        sys.executable, "-m", "motor", "--env", i.ambiente,
+        sys.executable, "-P", "-m", "motor", "--env", i.ambiente,
         "inscricao", "executar", i.versao, "--repo", i.clone,
     ]  # fmt: skip
     try:
-        return subprocess.run(cmd, check=False, cwd=i.diretorio).returncode
+        return subprocess.run(
+            cmd, check=False, cwd=i.diretorio, env=dict(env)
+        ).returncode
     except OSError:
         return SEM_PROCESSO

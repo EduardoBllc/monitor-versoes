@@ -23,6 +23,20 @@ CHAVE_ROTULO = "Label"
 CHAVE_ARGUMENTOS = "ProgramArguments"
 CHAVE_INTERVALO = "StartInterval"
 EXECUTAVEL = "motor"
+SYSTEMCTL = ("systemctl", "--user")
+LAUNCHCTL = "launchctl"
+
+
+class Acao(StrEnum):
+    DAEMON_RELOAD = "daemon-reload"
+    ENABLE = "enable"
+    DISABLE = "disable"
+    LOAD = "load"
+    UNLOAD = "unload"
+
+
+FLAG_AGORA = "--now"
+FLAG_PERSISTIR = "-w"
 
 Comando = Callable[[list[str]], None]
 
@@ -74,7 +88,8 @@ def arquivos(sistema: Sistema, executavel: str, home: Path) -> dict[Path, str]:
         return {caminhos(sistema, home)[0]: plist}
     servico = (
         "[Unit]\nDescription=Inscrições do monitor-versoes\n\n"
-        f"[Service]\nType=oneshot\nExecStart={executavel} {' '.join(ARGUMENTOS_RODAR)}\n"
+        "[Service]\nType=oneshot\n"
+        f'ExecStart="{executavel}" {" ".join(ARGUMENTOS_RODAR)}\n'
     )
     timer = (
         "[Unit]\nDescription=Dispara as inscrições do monitor-versoes\n\n"
@@ -93,11 +108,11 @@ def agendar(
     if sistema is Sistema.MACOS:
         [plist] = conteudo
         with contextlib.suppress(BackendIndisponivel):  # pode não estar carregado
-            rodar_comando(["launchctl", "unload", str(plist)])
-        rodar_comando(["launchctl", "load", "-w", str(plist)])
+            rodar_comando([LAUNCHCTL, Acao.UNLOAD, str(plist)])
+        rodar_comando([LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(plist)])
         return
-    rodar_comando(["systemctl", "--user", "daemon-reload"])
-    rodar_comando(["systemctl", "--user", "enable", "--now", ARQUIVO_TIMER])
+    rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+    rodar_comando([*SYSTEMCTL, Acao.ENABLE, FLAG_AGORA, ARQUIVO_TIMER])
 
 
 def desagendar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
@@ -105,13 +120,13 @@ def desagendar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
     # Desativar o que não está ativo não pode impedir a remoção dos arquivos.
     with contextlib.suppress(BackendIndisponivel):
         if sistema is Sistema.MACOS:
-            rodar_comando(["launchctl", "unload", str(lista[0])])
+            rodar_comando([LAUNCHCTL, Acao.UNLOAD, str(lista[0])])
         else:
-            rodar_comando(["systemctl", "--user", "disable", "--now", ARQUIVO_TIMER])
+            rodar_comando([*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_TIMER])
     for caminho in lista:
         caminho.unlink(missing_ok=True)
     if sistema is Sistema.LINUX:
-        rodar_comando(["systemctl", "--user", "daemon-reload"])
+        rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
 
 
 def instalado(sistema: Sistema, home: Path) -> bool:

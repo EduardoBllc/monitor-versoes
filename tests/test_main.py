@@ -11,9 +11,12 @@ from __future__ import annotations
 import contextlib
 import datetime
 import os
+import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
+import dotenv
 import pytest
 
 import motor.__main__ as cli
@@ -42,6 +45,7 @@ from motor.domain.types import (
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
+from motor.inscricoes import Inscricao
 from motor.montagem import CredenciaisBitbucket
 from tests.versionamento import VENDABEM_COMPOSTA
 
@@ -1138,7 +1142,7 @@ def test_migrar_estado_recusa_sai_com_codigo_de_erro_e_mensagem(
 
 class _Inscr(StrEnum):
     VERSAO = "13.34.0"
-    MENSAGEM_BUG = "RuntimeError: boom"
+    BUG = "boom"
 
 
 @pytest.fixture
@@ -1188,6 +1192,50 @@ def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
     assert "nunca rodou" in saida
 
 
+def test_inscricao_listar_mostra_intervalo_formatado(inscricoes_env, tmp_path, capsys):
+    from motor.inscricoes import INTERVALO_PADRAO, formatar_intervalo, parse_intervalo
+
+    _inscrever_clone(_repo_dir(tmp_path))
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    padrao = formatar_intervalo(parse_intervalo(INTERVALO_PADRAO))
+    assert f"a cada {padrao}  " in capsys.readouterr().out
+
+
+def test_inscricao_rodar_nao_vaza_o_env_carregado_do_dotenv(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    chave = "CHAVE_SO_DO_DOTENV"
+    monkeypatch.setenv(chave, "")  # registra a limpeza do que o .env vai pôr
+    monkeypatch.delenv(chave)
+    (tmp_path / ".env").write_text(f"{chave}=x\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
+    visto: dict[str, Any] = {}
+    monkeypatch.setattr(
+        cli, "rodar", lambda c, a, disparar, n: visto.update(d=disparar)
+    )
+    monkeypatch.setattr(cli, "montar_notificador", lambda: None)
+    main(["inscricao", "rodar"])
+    assert os.environ[chave] == "x"
+    capturado: dict[str, Any] = {}
+
+    def falso(cmd, **kw):
+        capturado.update(kw)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    inscricao = Inscricao(
+        str(tmp_path),
+        _Inscr.VERSAO,
+        datetime.timedelta(minutes=1),
+        str(tmp_path),
+        "production",
+    )
+    visto["d"](inscricao)
+    assert chave not in capturado["env"]
+
+
 def _preparar_execucao(monkeypatch, tmp_path, executar):
     clone = _repo_dir(tmp_path)
     _inscrever_clone(clone)
@@ -1218,7 +1266,7 @@ def test_inscricao_executar_bug_grava_erro_e_propaga(
     from motor.inscricoes import carregar
 
     def bug(deps, versao):
-        raise RuntimeError("boom")
+        raise RuntimeError(_Inscr.BUG)
 
     arquivo, _ = inscricoes_env
     clone = _preparar_execucao(monkeypatch, tmp_path, bug)
@@ -1227,7 +1275,7 @@ def test_inscricao_executar_bug_grava_erro_e_propaga(
     ultima = carregar(arquivo)[0].ultima
     assert ultima is not None
     assert ultima.desfecho == Desfecho.ERRO
-    assert ultima.mensagem == _Inscr.MENSAGEM_BUG
+    assert ultima.mensagem == f"RuntimeError: {_Inscr.BUG}"
 
 
 def test_inscricao_nao_abre_banco_exceto_executar(

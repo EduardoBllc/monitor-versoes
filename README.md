@@ -318,16 +318,19 @@ outras. O desfecho da última execução aparece no `listar`:
 
 | Desfecho | Significa |
 | --- | --- |
-| `APLICOU` | commits aplicados e push feito |
-| `NADA` | nada a aplicar |
-| `BLOQUEADA` | conflito: checkpoint aberto, sem push |
-| `PULADA` | cherry-pick pendente na versão; nada roda até `atualizar --continue` ou `--abort` |
-| `ENCERRADA` | versão liberada; a inscrição é removida |
-| `ERRO` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
+| `aplicou` | commits aplicados e push feito |
+| `nada` | nada a aplicar |
+| `bloqueada` | conflito: checkpoint aberto, sem push |
+| `pulada` | cherry-pick pendente na versão; nada roda até `atualizar --continue` ou `--abort` |
+| `encerrada` | versão liberada; a inscrição é removida |
+| `erro` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
 
 `agendar` usa o `motor` do `PATH` no momento do comando (caminho absoluto) e instala, no Linux,
 o timer de usuário do systemd (`monitor-versoes-inscricoes.timer`) e, no macOS, um LaunchAgent
-(`monitor-versoes.inscricoes.plist`). Outro sistema falha com erro de entrada.
+(`monitor-versoes.inscricoes.plist`). Outro sistema falha com erro de entrada. O agendador roda
+sem o agente SSH nem o `PATH` da sua sessão (push por SSH via agente pode falhar e virar `erro`);
+no Linux, o timer de usuário só roda fora de uma sessão com `loginctl enable-linger`; no macOS,
+a notificação desktop pode falhar num Python fora de um app empacotado (a falha vai para o log).
 
 Notificações desktop (via `desktop-notifier`; falha ao notificar vai para o log e não muda o
 desfecho):

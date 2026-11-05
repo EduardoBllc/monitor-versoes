@@ -19,6 +19,7 @@ from motor.agendador import (
     CHAVE_ROTULO,
     INTERVALO_LAUNCHD_S,
     ROTULO_LAUNCHD,
+    Acao,
     Sistema,
     agendar,
     arquivos,
@@ -48,7 +49,9 @@ def test_arquivos_linux_e_macos(tmp_path: Path) -> None:
     linux = arquivos(Sistema.LINUX, EXE, tmp_path)
     por_nome = {p.name: t for p, t in linux.items()}
     assert set(por_nome) == {ARQUIVO_SERVICE, ARQUIVO_TIMER}
-    assert f"ExecStart={EXE} {' '.join(ARGUMENTOS_RODAR)}" in por_nome[ARQUIVO_SERVICE]
+    assert (
+        f'ExecStart="{EXE}" {" ".join(ARGUMENTOS_RODAR)}' in por_nome[ARQUIVO_SERVICE]
+    )
     assert "OnCalendar=minutely" in por_nome[ARQUIVO_TIMER]
     mac = arquivos(Sistema.MACOS, EXE, tmp_path)
     [(caminho, texto)] = mac.items()
@@ -63,12 +66,12 @@ def test_agendar_escreve_e_ativa(tmp_path: Path) -> None:
     r = Registro()
     agendar(Sistema.LINUX, tmp_path, EXE, r)
     assert instalado(Sistema.LINUX, tmp_path)
-    assert [c[2] for c in r.comandos] == ["daemon-reload", "enable"]
+    assert [c[2] for c in r.comandos] == [Acao.DAEMON_RELOAD, Acao.ENABLE]
     assert r.comandos[1][-1] == ARQUIVO_TIMER
-    m = Registro(falhar_em="unload")
+    m = Registro(falhar_em=Acao.UNLOAD)
     agendar(Sistema.MACOS, tmp_path, EXE, m)
-    assert m.comandos[0][1] == "unload"
-    assert m.comandos[1][1] == "load"
+    assert m.comandos[0][1] == Acao.UNLOAD
+    assert m.comandos[1][1] == Acao.LOAD
     assert instalado(Sistema.MACOS, tmp_path)
 
 
@@ -90,10 +93,10 @@ def test_desagendar_remove(tmp_path: Path, sistema: Sistema) -> None:
 
 @pytest.mark.parametrize(
     ("sistema", "palavra"),
-    [(Sistema.LINUX, "disable"), (Sistema.MACOS, "unload")],
+    [(Sistema.LINUX, Acao.DISABLE), (Sistema.MACOS, Acao.UNLOAD)],
 )
 def test_desagendar_remove_mesmo_se_desativar_falha(
-    tmp_path: Path, sistema: Sistema, palavra: str
+    tmp_path: Path, sistema: Sistema, palavra: Acao
 ) -> None:
     agendar(sistema, tmp_path, EXE, Registro())
     desagendar(sistema, tmp_path, Registro(falhar_em=palavra))

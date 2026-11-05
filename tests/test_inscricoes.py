@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import subprocess
 import sys
 from enum import StrEnum
@@ -179,6 +180,16 @@ def test_falha_do_notificador_nao_impede_gravacao(arq: Path) -> None:
     assert unica.ultima is not None
 
 
+def test_falha_do_notificador_vai_para_o_log_em_error(
+    arq: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    salvar(arq, [_insc()])
+    r = Resultado(Desfecho.APLICOU, n_aplicados=1, chamados_aplicados=(CHAMADO,))
+    with caplog.at_level(logging.ERROR):
+        registrar_execucao(arq, _insc(), r, FakeNotificador(falhar=True), HORA)
+    assert [x.levelno for x in caplog.records] == [logging.ERROR]
+
+
 def test_encerrada_sai_do_arquivo(arq: Path) -> None:
     salvar(arq, [_insc(), _insc(Repo.B)])
     fake = FakeNotificador()
@@ -231,7 +242,7 @@ def test_disparar_subprocesso_diretorio_sumido_devolve_menos_um(
     tmp_path: Path,
 ) -> None:
     assert (
-        disparar_subprocesso(_insc(diretorio=str(tmp_path / "nao-existe")))
+        disparar_subprocesso(_insc(diretorio=str(tmp_path / "nao-existe")), {})
         == SEM_PROCESSO
     )
 
@@ -254,12 +265,14 @@ def test_disparar_subprocesso_monta_o_comando(
 
     monkeypatch.setattr(subprocess, "run", falso)
     i = _insc()
-    assert disparar_subprocesso(i) == 0
+    ambiente = {"CHAVE_PAI": "v"}
+    assert disparar_subprocesso(i, ambiente) == 0
     assert visto["cmd"] == [
-        sys.executable, "-m", "motor", "--env", i.ambiente,
+        sys.executable, "-P", "-m", "motor", "--env", i.ambiente,
         "inscricao", "executar", i.versao, "--repo", i.clone,
     ]  # fmt: skip
     assert visto["cwd"] == i.diretorio
+    assert visto["env"] == ambiente
 
 
 @pytest.mark.parametrize(

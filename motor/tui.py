@@ -252,7 +252,7 @@ def _linha_inscricao(i: Inscricao) -> str:
     ultima = (
         "nunca executou"
         if i.ultima is None
-        else f"{i.ultima.hora:%d/%m %H:%M} {i.ultima.desfecho.value}"
+        else f"{i.ultima.hora.astimezone():%d/%m %H:%M} {i.ultima.desfecho.value}"
     )
     return (
         f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
