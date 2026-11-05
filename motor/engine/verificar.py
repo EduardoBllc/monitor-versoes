@@ -127,7 +127,7 @@ def situacao_das_versoes(deps: Deps, catalogo: Catalogo, *, congelar: bool) -> S
 
     `liberada_em` gravada vence o criterio: versao com data no estado e liberada
     mesmo que o criterio atual nao a reconheca mais, e a data nunca e
-    reescrita (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md). Ja
+    reescrita (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md). Ja
     congelada, nao paga leitura no git.
 
     Versao que o motor nunca operou fica fora das datas — nao tem snapshot a
@@ -219,7 +219,9 @@ def verificar_sem_fetch(
     info: VersaoInfo | None
     if auditar:
         info, situacao = _preparar_auditoria(deps, catalogo, versao)
-        ref_alvo = deps.git.resolve_ref(catalogo.ref_liberada(versao))
+        ref_alvo = BaseResolver(git=deps.git, catalogo=catalogo).commit_da_versao(
+            versao
+        )
     else:
         situacao = situacao_das_versoes(deps, catalogo, congelar=True)
 
@@ -234,7 +236,7 @@ def verificar_sem_fetch(
     base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
     # A politica decide de quais versoes vem as tarefas do alvo
-    # (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md). `corte` e a data
+    # (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md). `corte` e a data
     # do commit-base gravado — o mesmo que nao se recomputa acima, pelo mesmo
     # motivo.
     corte = deps.git.commit_meta(base_commit).commit_date
@@ -351,12 +353,14 @@ def preparar_worktree(deps: Deps, versao: str) -> None:
 
 def descartar_worktrees(deps: Deps, versao: str) -> None:
     """GC das worktrees no fim da operacao, so entre as branches das versoes
-    conhecidas, da mais recente para a mais antiga pelo esquema: worktree
-    criada a mao fica."""
+    conhecidas (com branch ou liberadas), da mais recente para a mais antiga
+    pelo esquema: worktree criada a mao fica. As liberadas entram porque a
+    worktree de uma liberada sem branch nasce em detached HEAD da tag e, fora
+    da lista, ficaria no disco para sempre."""
     versionamento = deps.versionamento()
     nossas = [
         versionamento.branch(v)
-        for v in reversed(Catalogo(deps.git, versionamento).com_branch())
+        for v in reversed(Catalogo(deps.git, versionamento).existentes())
     ]
     deps.git.worktree_gc(deps.worktrees_mantidas, versionamento.branch(versao), nossas)
 

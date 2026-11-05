@@ -109,7 +109,7 @@ class VersaoInfo:
 class ContextoAtribuicao:
     """O que a politica de atribuicao recebe do nucleo, ja resolvido pelo
     esquema: ela nao acessa git nem tracker
-    (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
+    (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
 
     `liberadas` traz a data de liberacao de cada versao liberada; `corte` e a
     data do commit-base do alvo.

@@ -210,8 +210,9 @@ class GitRepo(Protocol):
 
         `nossas` sao as branches das versoes conhecidas, da mais recente para a
         mais antiga pelo esquema: so elas e a `atual` sao candidatas, e
-        worktree criada a mao fora delas nunca e tocada. `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
-        todas, inclusive a `atual`. Devolve as removidas. Nunca leva trabalho
+        worktree criada a mao fora delas nunca e tocada. `atual` sobrevive
+        sempre que `manter >= 1`. Com `manter == 0` remove todas, inclusive a
+        `atual`. Devolve as removidas. Nunca leva trabalho
         embora: worktree com alteracao nao commitada ou cherry-pick pendente e
         pulada.
         """
@@ -264,7 +265,7 @@ class GitRepo(Protocol):
 
 class EsquemaVersao(Protocol):
     """Esquema de versão: o que é um número, a ordem e a base de cada versão
-    (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
+    (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
 
     O núcleo não interpreta número de versão: valida, ordena e escolhe a
     ref-base sempre por aqui. O ponto de corte continua sendo do núcleo
@@ -313,7 +314,7 @@ class EsquemaVersao(Protocol):
 
 class PoliticaAtribuicao(Protocol):
     """Decide de quais versoes vem as tarefas do alvo de uma versao
-    (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md)."""
+    (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md)."""
 
     def fontes(self, alvo: str, contexto: ContextoAtribuicao, /) -> list[str]:
         """As versoes cujas tarefas caem no alvo, em ordem crescente."""

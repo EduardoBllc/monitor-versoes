@@ -10,6 +10,7 @@ from motor.adapters.git.fake import FakeGit
 from motor.atribuicoes import Exata
 from motor.esquemas.semver import Semver
 from motor.ports import GitRepo
+from motor.services.base_resolver import BaseResolver
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
 
@@ -61,3 +62,18 @@ def test_vale_so_a_camada_mais_alta_do_criterio_de_liberacao(
 
     assert catalogo.liberadas() == set(esperado)
     assert {n: catalogo.data_liberacao(n) for n in esperado} == esperado
+
+
+def test_liberada_pelo_esquema_resolve_pela_ref_de_rastreamento():
+    """Na camada do esquema a liberada nao tem tag: a ref e a branch, que
+    depois do merge costuma existir so como refs/remotes/origin/X. Sem a
+    segunda tentativa, base e `--auditar` dariam `NaoEncontrado` para uma
+    versao que o proprio `Catalogo` da por liberada."""
+    git = _git()
+    del git.branches["1.1.0"]
+    git.remote_refs["1.1.0"] = "merge"
+    v = Versionamento(esquema=EsquemaQueLiberaPeloMerge(), politica=Exata())
+    catalogo = Catalogo(git, v)
+
+    assert catalogo.liberadas() == {"1.1.0"}
+    assert BaseResolver(git, catalogo).commit_da_versao("1.1.0") == "merge"

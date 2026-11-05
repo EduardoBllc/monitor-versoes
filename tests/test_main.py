@@ -558,7 +558,7 @@ def test_atualizar_abort_ponta_a_ponta(bordas, tmp_path, capsys, monkeypatch):
 )
 def test_abort_nao_resolve_o_versionamento(bordas, tmp_path, capsys, config):
     """Sair de um lote travado nao pode depender de o esquema carregar nem de
-    o piso valer (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md)."""
+    o piso valer (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md)."""
     repo = _repo_dir(tmp_path)
     with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
         f.write(config)

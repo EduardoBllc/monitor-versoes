@@ -15,7 +15,7 @@ class PublicationGate:
 
     def liberada(self, versao: str) -> bool:
         """Liberada pelo criterio em uso = congelada
-        (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
+        (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
 
         Branch remota nao conta. Branch remota e trabalho compartilhado, nao
         liberacao — confundir os dois travaria uma versao ainda em construcao.

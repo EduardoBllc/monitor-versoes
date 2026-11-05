@@ -1,7 +1,7 @@
 """Políticas de atribuição embutidas (porta `motor.ports.PoliticaAtribuicao`).
 
 Carregadas pelo nome, no grupo de entry points `monitor_versoes.atribuicoes`
-(docs/decisoes/025-esquema-e-atribuicao-plugaveis.md). As duas só comparam
+(docs/decisoes/026-esquema-e-atribuicao-plugaveis.md). As duas só comparam
 versões pela ordem que o esquema dá: nenhuma conhece o formato do número.
 """
 

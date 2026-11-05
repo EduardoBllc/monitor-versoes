@@ -1,6 +1,6 @@
 """Unico lugar que traduz refs do git em versoes: as que tem branch, as
 liberadas e a data de cada liberacao
-(docs/decisoes/025-esquema-e-atribuicao-plugaveis.md).
+(docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
 
 O adapter de git lista nomes sem filtro; quem sabe o que e versao e o esquema,
 pelos templates ja resolvidos no `Versionamento`.
@@ -92,11 +92,15 @@ class Catalogo:
             self.git.resolve_ref(f"refs/tags/{tags[versao]}")
         ).commit_date
 
-    def ref_liberada(self, versao: str) -> str:
-        """A ref que representa a versao liberada: a tag nas camadas de tag, a
-        branch da versao na camada do esquema (que nao tem tag)."""
+    def refs_liberada(self, versao: str) -> list[str]:
+        """As refs que representam a versao liberada, na ordem de tentativa: a
+        tag nas camadas de tag; na camada do esquema (que nao tem tag), a branch
+        da versao, local e depois a de rastreamento, porque `git rev-parse X`
+        nunca consulta refs/remotes/origin/X e a branch de uma versao ja
+        mergeada costuma existir so por la."""
         camada, _, _ = self._criterio
         if camada == "esquema":
-            return self.versionamento.branch(versao)
+            branch = self.versionamento.branch(versao)
+            return [branch, f"refs/remotes/origin/{branch}"]
         template = self.versionamento.tag_liberacao or TAG_PADRAO
-        return f"refs/tags/{self.versionamento.tag(versao, template)}"
+        return [f"refs/tags/{self.versionamento.tag(versao, template)}"]

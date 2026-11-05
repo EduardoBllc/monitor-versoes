@@ -1,6 +1,6 @@
 """Esquema, politica e nomes de branch e de tag ja resolvidos nas camadas
 config > esquema > padrao do nucleo
-(docs/decisoes/025-esquema-e-atribuicao-plugaveis.md)."""
+(docs/decisoes/026-esquema-e-atribuicao-plugaveis.md)."""
 
 from __future__ import annotations
 

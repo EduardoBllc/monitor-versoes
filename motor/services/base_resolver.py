@@ -22,7 +22,7 @@ class BaseResolver:
         if ref == v.principal:
             commit = self._resolver_branch(v.principal)
         else:
-            commit = self._resolver(ref)
+            commit = self.commit_da_versao(ref)
 
         # A base e o PONTO DE CORTE, nao o tip da ref-base. Para versao que ja
         # existe, o corte e o merge-base entre as duas: a principal anda todo dia,
@@ -35,7 +35,7 @@ class BaseResolver:
         # Versao que ainda nao resolve e o caso do `criar`: nao ha com o que
         # cruzar, e o tip E o corte, porque a branch nasce dele agora.
         try:
-            desta_versao = self._resolver(numero)
+            desta_versao = self.commit_da_versao(numero)
         except NaoEncontrado:
             return BaseRef(ref=ref, commit=commit)
         # merge-base que falha NAO cai para o tip: historico sem ancestral comum
@@ -43,7 +43,7 @@ class BaseResolver:
         # silencio pela vida inteira da versao. Erro na cara e o barato aqui.
         return BaseRef(ref=ref, commit=self.git.merge_base(commit, desta_versao))
 
-    def _resolver(self, numero: str) -> str:
+    def commit_da_versao(self, numero: str) -> str:
         """Commit de uma versao pelo numero, tentando os lugares onde ela pode
         estar. `NaoEncontrado` quando nao esta em nenhum.
         """
@@ -51,7 +51,7 @@ class BaseResolver:
         # nao apagada). A liberada e o estado publicado e definitivo, entao
         # desempata pra ela quando presente.
         if numero in self.catalogo.liberadas():
-            return self._tentar(numero, [self.catalogo.ref_liberada(numero)])
+            return self._tentar(numero, self.catalogo.refs_liberada(numero))
         return self._resolver_branch(self.catalogo.versionamento.branch(numero))
 
     def _resolver_branch(self, branch: str) -> str:

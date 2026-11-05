@@ -227,6 +227,21 @@ def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
     assert git.removed_worktrees == []
 
 
+def test_gc_alcanca_worktree_de_liberada_sem_branch():
+    """A worktree de uma liberada cuja branch foi apagada nasce em detached
+    HEAD da tag. Ela continua sendo nossa nos runs seguintes, em que outra
+    versao e a atual: fora da lista do GC, ficaria no disco para sempre."""
+    git = _git(tags={"13.30.0": True})
+    git.tag_commits["13.30.0"] = "m0"
+    git.worktrees_mru.append("13.30.0")
+    tasks = FakeTaskSource(chamados={"13.33.1": [], "14.0.0": []})
+    estado = _estado_com_repo()
+
+    verificar(_deps(git, tasks, FakeCommitSource(), estado), "14.0.0")
+
+    assert sorted(git.removed_worktrees) == ["13.30.0", "14.0.0"]
+
+
 def test_auditar_recusa_versao_ainda_aberta():
     git = _git()
     estado = _estado_com_repo()

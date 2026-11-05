@@ -1,5 +1,5 @@
 """Resolucao do alvo: busca as tarefas das fontes que a politica de
-atribuicao decidiu (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md) e
+atribuicao decidiu (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md) e
 casa cada uma com seus commits."""
 
 from __future__ import annotations
