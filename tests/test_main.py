@@ -57,13 +57,13 @@ def test_task_source_default_e_tickio():
 
 
 @pytest.mark.parametrize(
-    ("argv", "arquivo"),
+    ("argv", "arquivo", "ambiente"),
     [
-        (["tui"], ".env"),
-        (["--env", "development", "tui"], ".env.development"),
+        (["tui"], ".env", "production"),
+        (["--env", "development", "tui"], ".env.development", "development"),
     ],
 )
-def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
+def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo, ambiente):
     chamadas: list[str] = []
     ambientes: list[str] = []
     monkeypatch.setattr(
@@ -71,7 +71,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
         "load_dotenv",
         lambda caminho, **opcoes: ambientes.append(os.path.basename(caminho)),
     )
-    monkeypatch.setattr(cli, "_iniciar_tui", lambda: chamadas.append("tui"))
+    monkeypatch.setattr(cli, "_iniciar_tui", chamadas.append)
     monkeypatch.setattr(
         cli,
         "abrir_sessao",
@@ -80,7 +80,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
 
     main(argv)
 
-    assert chamadas == ["tui"]
+    assert chamadas == [ambiente]
     assert ambientes == [arquivo]
 
 

@@ -22,6 +22,7 @@ from motor.inscricoes import (
     Inscricao,
     carregar,
     disparar_subprocesso,
+    formatar_intervalo,
     inscrever,
     parse_intervalo,
     registrar_execucao,
@@ -259,3 +260,15 @@ def test_disparar_subprocesso_monta_o_comando(
         "inscricao", "executar", i.versao, "--repo", i.clone,
     ]  # fmt: skip
     assert visto["cwd"] == i.diretorio
+
+
+@pytest.mark.parametrize(
+    ("intervalo", "esperado"),
+    [
+        (datetime.timedelta(minutes=30), "30m"),
+        (datetime.timedelta(minutes=90), "90m"),
+        (datetime.timedelta(hours=2), "2h"),
+    ],
+)
+def test_formatar_intervalo(intervalo: datetime.timedelta, esperado: str) -> None:
+    assert formatar_intervalo(intervalo) == esperado

@@ -33,6 +33,8 @@ log = logging.getLogger(__name__)
 INTERVALO_PADRAO = "30m"
 ARQUIVO_INSCRICOES = "inscricoes.json"
 SEM_PROCESSO = -1
+SEGUNDOS_POR_MINUTO = 60
+MINUTOS_POR_HORA = 60
 PREFIXO_TITULO = "monitor-versoes"
 MENSAGEM_SEM_RESULTADO = "execução terminou com código {codigo} sem gravar resultado"
 _PADRAO_INTERVALO = re.compile(r"([1-9]\d*)([mh])")
@@ -88,6 +90,13 @@ def parse_intervalo(texto: str) -> timedelta:
     if m.group(2) == UnidadeIntervalo.MINUTOS:
         return timedelta(minutes=n)
     return timedelta(hours=n)
+
+
+def formatar_intervalo(intervalo: timedelta) -> str:
+    minutos = int(intervalo.total_seconds()) // SEGUNDOS_POR_MINUTO
+    if minutos % MINUTOS_POR_HORA == 0:
+        return f"{minutos // MINUTOS_POR_HORA}{UnidadeIntervalo.HORAS}"
+    return f"{minutos}{UnidadeIntervalo.MINUTOS}"
 
 
 def caminho_arquivo() -> Path:

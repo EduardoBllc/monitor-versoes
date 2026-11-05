@@ -19,6 +19,13 @@ from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
 from motor.errors import MotorError, NaoEncontrado
+from motor.inscricoes import (
+    INTERVALO_PADRAO,
+    Inscricao,
+    carregar,
+    inscrever,
+    parse_intervalo,
+)
 from motor.ports import GitRepo
 from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import versionamento_padrao
@@ -34,6 +41,8 @@ from motor.tui import (
     renderizar_status,
 )
 from tests.versionamento import VENDABEM_COMPOSTA
+
+_AMBIENTE_INSCRICAO = "development"
 
 
 def _nunca_executa(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -558,9 +567,10 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
 
     monkeypatch.setattr(MotorTUI, "run", capturar)
 
-    tui.run_tui()
+    tui.run_tui(_AMBIENTE_INSCRICAO)
 
     [app] = apps
+    assert app._ambiente == _AMBIENTE_INSCRICAO
     assert app._registrar is tui._registrar_no_banco
     ligados = {
         tui._repos_do_ambiente: app._carregar_repos,
@@ -2742,3 +2752,104 @@ def test_cadastro_avisa_que_o_id_e_ignorado():
             assert "ignorado até a #117" in textos
 
     asyncio.run(executar_fluxo())
+
+
+_ARQUIVO_INSCRICOES = "inscricoes.json"
+_ABRE_INSCRICOES = "i"
+_ADICIONA_INSCRICAO = "a"
+_REMOVE_INSCRICAO = "d"
+_LISTA_INSCRICOES = "#inscricoes-lista"
+
+
+def _inscricao(versao: str, clone: str = "/projetos/alpha") -> Inscricao:
+    return Inscricao(
+        clone,
+        versao,
+        parse_intervalo(INTERVALO_PADRAO),
+        "/diretorio",
+        _AMBIENTE_INSCRICAO,
+    )
+
+
+async def _abrir_inscricoes(app, pilot, selecionar: bool = True) -> None:
+    await app.workers.wait_for_complete()
+    if selecionar:
+        await _selecionar_previa(app, pilot)
+    await pilot.press(_ABRE_INSCRICOES)
+    await pilot.pause()
+
+
+def _app_inscricoes(arquivo: Path) -> MotorTUI:
+    return MotorTUI(
+        Runners(lambda: [_REPO_PREVIA], lambda opcao: [_VERSAO_PREVIA], _nunca_executa),
+        inscricoes_em=arquivo,
+        ambiente=_AMBIENTE_INSCRICAO,
+    )
+
+
+def test_inscricoes_lista(tmp_path):
+    arquivo = tmp_path / _ARQUIVO_INSCRICOES
+    inscrever(arquivo, _inscricao("14.0.0"))
+
+    async def executar_fluxo() -> None:
+        app = _app_inscricoes(arquivo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_inscricoes(app, pilot, selecionar=False)
+            lista = app.screen.query_one(_LISTA_INSCRICOES, OptionList)
+            assert lista.option_count == 1
+            texto = _texto(lista.get_option_at_index(0).prompt)
+            assert "14.0.0" in texto
+            assert "30m" in texto
+
+    asyncio.run(executar_fluxo())
+
+
+def test_inscricoes_adiciona_selecionada(tmp_path):
+    arquivo = tmp_path / _ARQUIVO_INSCRICOES
+
+    async def executar_fluxo() -> None:
+        app = _app_inscricoes(arquivo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_inscricoes(app, pilot)
+            await pilot.press(_ADICIONA_INSCRICAO)
+            await pilot.pause()
+
+    asyncio.run(executar_fluxo())
+    [gravada] = carregar(arquivo)
+    assert (gravada.clone, gravada.versao, gravada.ambiente) == (
+        cast(str, _REPO_PREVIA.caminho),
+        _VERSAO_PREVIA.numero,
+        _AMBIENTE_INSCRICAO,
+    )
+    assert gravada.intervalo == parse_intervalo(INTERVALO_PADRAO)
+    assert gravada.diretorio == str(Path.cwd())
+
+
+def test_inscricoes_remove(tmp_path):
+    arquivo = tmp_path / _ARQUIVO_INSCRICOES
+    inscrever(arquivo, _inscricao("14.0.0"))
+
+    async def executar_fluxo() -> None:
+        app = _app_inscricoes(arquivo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_inscricoes(app, pilot, selecionar=False)
+            await pilot.press("down", _REMOVE_INSCRICAO)
+            await pilot.pause()
+
+    asyncio.run(executar_fluxo())
+    assert carregar(arquivo) == []
+
+
+def test_inscricoes_sem_versao_avisa(tmp_path):
+    arquivo = tmp_path / _ARQUIVO_INSCRICOES
+
+    async def executar_fluxo() -> None:
+        app = _app_inscricoes(arquivo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_inscricoes(app, pilot, selecionar=False)
+            await pilot.press(_ADICIONA_INSCRICAO)
+            await pilot.pause()
+            assert len(app._notifications) == 1
+
+    asyncio.run(executar_fluxo())
+    assert not arquivo.exists()

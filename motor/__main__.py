@@ -430,10 +430,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_tui() -> None:
+def _iniciar_tui(ambiente: str) -> None:
     from motor.tui import run_tui
 
-    run_tui()
+    run_tui(ambiente)
 
 
 def _resolver_repo(valor: str) -> str:
@@ -729,7 +729,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         if args.comando == "tui":
-            _iniciar_tui()
+            _iniciar_tui(args.env)
             return
 
         if args.comando in _SEM_BANCO:

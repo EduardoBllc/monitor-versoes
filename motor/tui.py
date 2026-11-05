@@ -52,6 +52,16 @@ from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, formatar_com_notas
+from motor.inscricoes import (
+    INTERVALO_PADRAO,
+    Inscricao,
+    caminho_arquivo,
+    carregar,
+    formatar_intervalo,
+    inscrever,
+    parse_intervalo,
+    remover,
+)
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
@@ -153,6 +163,100 @@ class ResultadoModal(ModalScreen[None]):
         with VerticalScroll() as caixa:
             caixa.border_subtitle = "esc para fechar"
             yield Static(self._conteudo, id="modal-conteudo")
+
+
+class InscricoesModal(ModalScreen[None]):
+    """Inscrições do arquivo local, com a última execução de cada uma."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        ("escape,q", "dismiss", "Fechar"),
+        ("a", "inscrever", "Inscrever selecionada"),
+        ("d", "remover", "Remover"),
+    ]
+    DEFAULT_CSS = """
+    InscricoesModal { align: center middle; }
+    InscricoesModal > Vertical {
+        width: 90%;
+        height: 80%;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+    }
+    """
+
+    def __init__(
+        self,
+        arquivo: Path,
+        repo: RepoOption | None,
+        versao: VersionOption | None,
+        ambiente: str,
+    ) -> None:
+        super().__init__()
+        self._arquivo = arquivo
+        self._repo = repo
+        self._versao = versao
+        self._ambiente = ambiente
+        self._inscricoes: list[Inscricao] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical() as caixa:
+            caixa.border_title = "Inscrições"
+            caixa.border_subtitle = "a inscreve · d remove · esc fecha"
+            yield OptionList(id="inscricoes-lista")
+
+    def on_mount(self) -> None:
+        self._recarregar()
+
+    def _recarregar(self) -> None:
+        lista = self.query_one("#inscricoes-lista", OptionList)
+        lista.clear_options()
+        try:
+            self._inscricoes = carregar(self._arquivo)
+        except MotorError as erro:
+            self._inscricoes = []
+            self.notify(formatar_com_notas(erro), severity="error")
+        lista.add_options(Option(_linha_inscricao(i)) for i in self._inscricoes)
+
+    def action_inscrever(self) -> None:
+        if self._repo is None or not self._repo.disponivel or self._versao is None:
+            self.notify(
+                "Selecione um repo disponível e uma versão.", severity="warning"
+            )
+            return
+        nova = Inscricao(
+            str(self._repo.caminho),
+            self._versao.numero,
+            parse_intervalo(INTERVALO_PADRAO),
+            str(Path.cwd()),
+            self._ambiente,
+        )
+        self._gravar(lambda: inscrever(self._arquivo, nova))
+
+    def action_remover(self) -> None:
+        alvo = self.query_one("#inscricoes-lista", OptionList).highlighted
+        if alvo is None:
+            return
+        i = self._inscricoes[alvo]
+        self._gravar(lambda: remover(self._arquivo, i.clone, i.versao))
+
+    def _gravar(self, escrita: Callable[[], None]) -> None:
+        try:
+            escrita()
+        except MotorError as erro:
+            self.notify(formatar_com_notas(erro), severity="error")
+        self._recarregar()
+
+
+def _linha_inscricao(i: Inscricao) -> str:
+    ultima = (
+        "nunca executou"
+        if i.ultima is None
+        else f"{i.ultima.hora:%d/%m %H:%M} {i.ultima.desfecho.value}"
+    )
+    return (
+        f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
+        f"  ·  {ultima}"
+    )
 
 
 class CadastroModal(ModalScreen["tuple[str, int] | None"]):
@@ -498,6 +602,7 @@ class MotorTUI(App[None]):
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
         ("n", "cadastrar", "Cadastrar repo"),
+        ("i", "inscricoes", "Inscrições"),
     ]
     CSS = """
     #barra { height: auto; padding: 1; align-vertical: middle; }
@@ -520,8 +625,16 @@ class MotorTUI(App[None]):
     #consulta-detalhe { width: 1fr; }
     """
 
-    def __init__(self, runners: Runners, slot: SlotProgresso | None = None) -> None:
+    def __init__(
+        self,
+        runners: Runners,
+        slot: SlotProgresso | None = None,
+        inscricoes_em: Path | None = None,
+        ambiente: str = "production",
+    ) -> None:
         super().__init__()
+        self._inscricoes_em = inscricoes_em or caminho_arquivo()
+        self._ambiente = ambiente
         # Compartilhado com os runners (ver run_tui): eles relatam de dentro da
         # thread do worker, esta classe so amostra na thread principal.
         self._slot = slot or SlotProgresso()
@@ -945,6 +1058,13 @@ class MotorTUI(App[None]):
             self._iniciar_atualizacao()
         elif evento.button.id == "abortar":
             self._iniciar_abort()
+
+    def action_inscricoes(self) -> None:
+        self.push_screen(
+            InscricoesModal(
+                self._inscricoes_em, self._repo, self._versao, self._ambiente
+            )
+        )
 
     def action_cadastrar(self) -> None:
         if self._ocupado or self._registrar is None:
@@ -1398,7 +1518,7 @@ def _consultar_repo(
         return consultar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
-def run_tui() -> None:
+def run_tui(ambiente: str) -> None:
     # O relator entra por `partial`, nao na assinatura dos runners que a TUI
     # chama: assim os aliases (VerifyRunner e companhia) e os doubles dos testes
     # seguem com a mesma aridade, e quem injeta runner nao precisa saber que
@@ -1418,6 +1538,7 @@ def run_tui() -> None:
             previa_atualizacao=partial(_previa_repo, progresso=slot.relatar),
         ),
         slot=slot,
+        ambiente=ambiente,
     ).run()
 
 
