@@ -10,6 +10,10 @@ O `CommitSource` (grep em `master`, ou PR do Bitbucket) só traz **candidatos** 
 A confirmação com fronteira de palavra roda no domínio: mais portável, e testável com o git
 fake.
 
+> Nota (2026-11-05): a ref varrida pelo grep e conferida no host é `origin/<principal>`, da
+> config ou do esquema ([026](026-esquema-e-atribuicao-plugaveis.md)); `master` era a da
+> VendaBem.
+
 A confirmação usa o padrão de referência recebido (um template com `{id}`, proposto pelo
 adapter do tracker e sobrescrito pela [024](024-config-por-projeto.md)) e o alfabeto do id. A
 fronteira vale por lado, com um conjunto *S*: se a ponta da referência é caractere de *S*, o

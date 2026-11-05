@@ -20,10 +20,13 @@ A versão só fica verde quando as três concordam. O porquê de cada decisão e
 A ferramenta assume um fluxo de release específico — se o seu for diferente, ela não serve
 sem adaptação:
 
-- **Uma versão é uma branch** com o número dela; ao ser liberada, o HEAD recebe uma tag
-  homônima, criada pelo processo de release (a ferramenta só lê).
-- **Esquema de versão fixo:** `X.0.0` sai de `master`, `X.Y.0` da versão ajustada anterior,
-  `X.Y.Z` de qualquer versão anterior.
+- **Uma versão é uma branch;** ao ser liberada, recebe uma tag criada pelo processo de
+  release (a ferramenta só lê). O padrão é a branch e a tag com o número puro (`1.2.0`) e a
+  principal `main`; os três nomes se trocam pela config.
+- **Esquema de versão:** o padrão é o `semver` (`X.Y.0` sai da principal, `X.Y.Z` da
+  `X.Y.(Z-1)` se existir, senão da `X.Y.0`); outro esquema se escolhe pela config.
+- **Atribuição:** o padrão é a `exata` (o alvo de `V` são as tarefas marcadas em `V`); a
+  `composta` puxa também as abertas menores e as liberadas após o corte.
 - **Commits citam a task** na mensagem pelo padrão de referência (`ch<num>` no Tickio).
 - **Build está fora:** a ferramenta monta e verifica, não constrói.
 
@@ -175,12 +178,35 @@ continuam no `.env`.
 ```toml
 [versao]
 piso = "13.0.0"   # menor versão cujas tarefas são buscadas; sem ele nada é cortado
+# esquema = "semver"     # esquema de versão (entry point instalado)
+# atribuicao = "exata"   # política de atribuição: exata ou composta
 
 [tarefas]
 sistema = 7       # id do sistema no Tickio; obrigatório para a busca no Tickio
 
+# Nomes: cada chave é opcional; sem ela vale o que o esquema declara, senão o padrão.
+# [liberacao]
+# tag = "v{versao}"         # tag que libera a versão; padrão: o critério do esquema ou `{versao}`
+# [branches]
+# versao = "release/{versao}"   # branch da versão; padrão `{versao}`
+# principal = "main"            # branch principal; padrão `main`
+
 [referencia]
 # padrao = "ch{id}"   # como a tarefa aparece no commit; o tracker propõe um, a config sobrescreve
+```
+
+Os templates têm exatamente um `{versao}`. Esquema e política são lidos só quando um comando
+os usa, e o `piso` é validado pelo esquema: config inválida não impede `atualizar --abort`.
+O porquê: [026](docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
+
+A VendaBem configura o seu fluxo assim (o esquema `vendabem` traz a principal `master` e a
+liberação por tag homônima):
+
+```toml
+[versao]
+esquema = "vendabem"
+atribuicao = "composta"
+piso = "13.0.0"
 ```
 
 Sem `sistema`, a primeira busca no Tickio falha apontando os dois arquivos; `atualizar
@@ -256,7 +282,7 @@ o resto.
   id de task por linha (`#` comenta).
 - **Commits:** com `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` (ou `--bitbucket-token` /
   `--bitbucket-email`), os commits de cada task vêm dos PRs do Bitbucket; o grep pela
-  referência em `master` fica como fallback. Sem credenciais, só o grep.
+  referência em `origin/<principal>` fica como fallback. Sem credenciais, só o grep.
 
 ### Worktrees mantidas em disco
 

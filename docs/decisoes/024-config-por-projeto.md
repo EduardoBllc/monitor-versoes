@@ -14,9 +14,18 @@ duas **nesse ponto**; nos demais elas seguem valendo.
 - **Duas camadas, mescladas chave a chave, o repo vencendo:**
   `~/.config/monitor-versoes/config.toml` (padrão do operador; respeita `XDG_CONFIG_HOME`) e
   `.monitor-versoes.toml` na raiz do repo-alvo. Credenciais continuam no `.env`.
-- **Chaves lidas:** `[versao] piso`, `[tarefas] sistema` e `[referencia] padrao`. O resto é
-  ignorado. `[tarefas]` é
-  opaco ao núcleo: quem lê as chaves é o adapter do tracker.
+- **Chaves lidas:** `[versao] piso`, `[tarefas] sistema`, `[referencia] padrao` e as do
+  versionamento ([026](026-esquema-e-atribuicao-plugaveis.md)), abaixo. O resto é
+  ignorado. `[tarefas]` é opaco ao núcleo: quem lê as chaves é o adapter do tracker.
+
+  | Chave | O que é | Sem config |
+  | --- | --- | --- |
+  | `[versao] esquema` | esquema de versão (plugin) | `semver` |
+  | `[versao] atribuicao` | política de atribuição (plugin) | `exata` |
+  | `[liberacao] tag` | template, com um `{versao}`, da tag que libera | critério do esquema, senão tag `{versao}` |
+  | `[branches] versao` | template, com um `{versao}`, da branch da versão | do esquema, senão `{versao}` |
+  | `[branches] principal` | branch principal | do esquema, senão `main` |
+- **O piso é validado pelo esquema em uso**, quando ele é resolvido, não na leitura.
 - **Piso sem padrão.** Sem `piso` em nenhuma camada, nenhuma versão é cortada.
 - **`sistema` é cobrado pelo adapter Tickio, na primeira busca**, como as credenciais
   ([008](008-autenticacao-tickio.md)). A montagem ([019](019-montagem-no-front-end.md)) só

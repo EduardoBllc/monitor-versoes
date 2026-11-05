@@ -3,7 +3,13 @@
 - **Status:** aceita
 - **Data:** 2026-08-21 (revista em 2026-08-31: o commit gravado é o ponto de corte, não o tip)
 - **Depende de:** [001](001-problema-completude-de-commits.md),
-  [004](004-estado-descartavel.md), [005](005-alvo-distribuicao-entre-versoes.md)
+  [004](004-estado-descartavel.md), [005](005-alvo-distribuicao-entre-versoes.md),
+  [026](026-esquema-e-atribuicao-plugaveis.md)
+
+A tabela abaixo é o esquema de versão `vendabem` (`[versao] esquema = "vendabem"`), não regra
+do núcleo: o padrão é o `semver`, e cada esquema escolhe a ref-base
+([026](026-esquema-e-atribuicao-plugaveis.md)). O ponto de corte, mais abaixo, vale para
+qualquer esquema.
 
 ```
 X.0.0        → master
