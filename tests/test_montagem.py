@@ -261,7 +261,7 @@ def test_montar_deps_nao_carrega_o_plugin(repo_montavel):
 
     deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
 
-    with pytest.raises(ErroDeEntrada, match="instalados: nenhum"):
+    with pytest.raises(ErroDeEntrada, match="plugin 'inexistente' nao encontrado"):
         deps.referencia()
 
 
