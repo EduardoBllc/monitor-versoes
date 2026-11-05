@@ -10,7 +10,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.tickio import TickioRest
-from motor.atribuicoes import Composta
+from motor.atribuicoes import Composta, Exata
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
@@ -1139,3 +1139,61 @@ def test_tag_do_template_da_config_libera_e_a_homonima_nao(tag, liberada):
     assert gravada is not None
     assert (gravada.liberada_em is not None) is liberada
     assert [c.hash_origem for c in status.faltantes] == ([] if liberada else ["a0"])
+
+
+# -- politica `exata` (critério 5 da #115) ------------------------------------
+
+
+def _vendabem_exata() -> Versionamento:
+    return replace(VENDABEM_COMPOSTA(), politica=Exata())
+
+
+def _deps_exata(git, tasks, commits, estado) -> Deps:
+    return replace(_deps(git, tasks, commits, estado), versionamento=_vendabem_exata)
+
+
+def _commit_m1() -> FakeCommitSource:
+    return FakeCommitSource(
+        por_chamado={
+            "257270": [
+                CommitRef(
+                    hash_origem="m1",
+                    parent="m0",
+                    chamado="257270",
+                    commit_date=ABR,
+                    msg="ch257270 alfa",
+                )
+            ]
+        }
+    )
+
+
+def test_exata_so_traz_as_tarefas_marcadas_no_alvo():
+    """Nem a aberta menor nem a liberada depois do corte entram no alvo."""
+    git = _git_com_liberada_fora_da_base()
+    git.set_branch("14.9.0", "m0")  # aberta menor que o alvo, com tarefa
+    tasks = FakeTaskSource(
+        chamados={"14.6.0": ["257270"], "14.9.0": ["111111"], "15.0.0": ["999999"]}
+    )
+
+    status = verificar(
+        _deps_exata(git, tasks, _commit_m1(), _estado_com_liberadas()), "15.0.0"
+    )
+
+    # So a tarefa da 15.0.0, sem commit; as da 14.6.0 e da 14.9.0 nao entram.
+    assert status.tasks_sem_commits == ["999999"]
+    assert status.tasks_novas == []
+    assert status.faltantes == []
+
+
+def test_exata_nao_acusa_ambiguidade_com_aberta_menor():
+    git = _git_com_liberada_fora_da_base()
+    git.set_branch("14.9.0", "m0")
+    tasks = FakeTaskSource(chamados={"14.9.0": ["257270"], "15.0.0": ["257270"]})
+
+    status = verificar(
+        _deps_exata(git, tasks, _commit_m1(), _estado_com_liberadas()), "15.0.0"
+    )
+
+    assert status.tasks_ambiguas == []
+    assert [c.hash_origem for c in status.faltantes] == ["m1"]

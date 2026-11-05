@@ -1,12 +1,12 @@
-"""Resolucao do alvo: aplica a regra de distribuicao de
-docs/decisoes/005-alvo-distribuicao-entre-versoes.md."""
+"""Resolucao do alvo: busca as tarefas das fontes que a politica de
+atribuicao decidiu (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md) e
+casa cada uma com seus commits."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from motor.domain.types import Alvo, TaskTarget
-from motor.domain.version import fontes_de_alvo
 from motor.errors import MotorError
 from motor.ports import CommitSource, TaskSource
 from motor.progresso import Progresso, RelatorProgresso, silencioso
@@ -17,21 +17,18 @@ class TargetResolver:
     tasks: TaskSource
     commits: CommitSource
     progresso: RelatorProgresso = silencioso
-    piso: str | None = None
 
     def resolve(
         self,
         alvo: str,
-        candidatas: list[str],
+        fontes: list[str],
         liberadas: frozenset[str] = frozenset(),
     ) -> Alvo:
-        """Une as tarefas de toda versao candidata <= alvo e casa cada uma
-        com seus commits.
+        """Une as tarefas das `fontes` e casa cada uma com seus commits.
 
-        `candidatas` sao as abertas mais as liberadas que o corte do alvo nao
-        herdou (docs/decisoes/005-alvo-distribuicao-entre-versoes.md); `liberadas` diz
-        quais delas sao as liberadas, e serve
-        so ao invariante de ambiguidade.
+        `fontes` sao as versoes que a politica de atribuicao decidiu para o
+        alvo, em ordem crescente; `liberadas` diz quais delas sao liberadas, e
+        serve so ao invariante de ambiguidade.
 
         Toda tarefa buscada aparece no resultado mesmo sem commit — e o que
         permite o `verificar` pintar de vermelho a tarefa sem entrega em vez
@@ -40,7 +37,6 @@ class TargetResolver:
         marcada_de: dict[str, str] = {}
         ambiguas: list[str] = []
 
-        fontes = fontes_de_alvo(alvo, candidatas, self.piso)
         for indice, v in enumerate(fontes, start=1):
             self.progresso(
                 Progresso("chamados marcados no Tickio", indice, len(fontes))

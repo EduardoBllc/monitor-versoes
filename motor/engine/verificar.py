@@ -18,13 +18,14 @@ from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    ContextoAtribuicao,
     Presence,
     TargetSet,
     Verificacao,
     VersaoInfo,
     VersionStatus,
 )
-from motor.domain.version import inferir_tipo, liberadas_no_alvo
+from motor.domain.version import inferir_tipo
 from motor.engine.deps import Deps
 from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
@@ -233,21 +234,22 @@ def verificar_sem_fetch(
 
     base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
-    # A liberada saiu de `abertas`, mas volta como fonte quando o corte do alvo
-    # nao herdou o que ela entregou (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).
-    # `corte` e a data do commit-base
-    # gravado — o mesmo que nao se recomputa acima, pelo mesmo motivo.
+    # A politica decide de quais versoes vem as tarefas do alvo
+    # (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md). `corte` e a data
+    # do commit-base gravado — o mesmo que nao se recomputa acima, pelo mesmo
+    # motivo.
     corte = deps.git.commit_meta(base_commit).commit_date
-    candidatas = versionamento.esquema.ordenar(
-        list(
-            {
-                *situacao.abertas,
-                *liberadas_no_alvo(versao, situacao.datas, corte),
-                versao,
-            }
-        )
+    fontes = versionamento.politica.fontes(
+        versao,
+        ContextoAtribuicao(
+            ordenar=versionamento.esquema.ordenar,
+            abertas=situacao.abertas,
+            liberadas=situacao.datas,
+            corte=corte,
+            piso=versionamento.piso,
+        ),
     )
-    resultado = resolver.resolve(versao, candidatas, liberadas=situacao.liberadas)
+    resultado = resolver.resolve(versao, fontes, liberadas=situacao.liberadas)
     logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
     exclusoes = deps.estado.exclusoes(deps.repo)
@@ -394,7 +396,6 @@ def _target_resolver(deps: Deps) -> TargetResolver:
         tasks=deps.tasks,
         commits=deps.commit_source,
         progresso=deps.progresso,
-        piso=deps.versionamento().piso,
     )
 
 

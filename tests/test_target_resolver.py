@@ -17,8 +17,8 @@ def _commit(hash_: str, chamado: str) -> CommitRef:
     )
 
 
-def test_resolve_une_as_versoes_abertas_menores_ou_iguais():
-    # Distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md):
+def test_resolve_une_as_tarefas_das_fontes():
+    # Fontes decididas pela politica (aqui, as da `composta`):
     # ch123123 marcada p/ 13.33.1 cai na 14.0.0.
     tasks = FakeTaskSource(
         chamados={"13.33.1": ["123123"], "13.34.0": ["123456"], "14.0.0": []}
@@ -37,16 +37,6 @@ def test_resolve_une_as_versoes_abertas_menores_ou_iguais():
     assert alvo.tasks["123123"].marcada == "13.33.1"
     assert alvo.tasks["123456"].marcada == "13.34.0"
     assert alvo.ambiguas == []
-
-
-def test_resolve_ignora_versao_aberta_maior_que_o_alvo():
-    tasks = FakeTaskSource(chamados={"13.33.1": ["123123"], "14.1.0": ["999111"]})
-    commits = FakeCommitSource(por_chamado={"123123": [_commit("aaa", "123123")]})
-    resolver = TargetResolver(tasks=tasks, commits=commits)
-
-    alvo = resolver.resolve("13.33.1", ["13.33.1", "14.1.0"])
-
-    assert set(alvo.tasks) == {"123123"}
 
 
 def test_resolve_mantem_chamado_sem_commit_no_alvo():

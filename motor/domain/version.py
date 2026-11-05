@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
-
-from motor.atribuicoes import ate_o_alvo, liberadas_apos_corte
 from motor.domain.types import VersionType
 from motor.esquemas import _xyz
 from motor.esquemas.vendabem import VendaBem
@@ -36,17 +33,3 @@ def versoes_abertas(todas: list[str], tags: list[str]) -> list[str]:
     list_version_tags(). A diferenca e o conjunto aberto.
     """
     return sorted(set(todas) - set(tags), key=chave)
-
-
-def fontes_de_alvo(
-    alvo: str, candidatas: list[str], piso: str | None = None
-) -> list[str]:
-    return ate_o_alvo(_xyz.ordenar, candidatas, alvo, piso)
-
-
-def liberadas_no_alvo(
-    alvo: str,
-    datas_das_tags: dict[str, datetime.datetime],
-    corte: datetime.datetime,
-) -> list[str]:
-    return liberadas_apos_corte(_xyz.ordenar, alvo, datas_das_tags, corte)
