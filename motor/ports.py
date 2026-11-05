@@ -425,3 +425,9 @@ class EstadoRepo(Protocol):
         """O carimbo da versão; None se não há ou se está ilegível (cache:
         ilegível equivale a ausente)."""
         ...
+
+
+class Notificador(Protocol):
+    def notificar(self, titulo: str, corpo: str, /) -> None:
+        """Mostra uma notificação ao usuário. Falha levanta MotorError."""
+        ...
