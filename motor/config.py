@@ -25,14 +25,17 @@ _BACKENDS = ("sqlite", "postgres")
 _avisos_emitidos: set[str] = set()
 
 
+def diretorio_dados() -> str:
+    """Diretorio de dados do usuario (estado.db, inscricoes.json)."""
+    return os.path.join(os.path.expanduser("~"), ".local", "share", "monitor-versoes")
+
+
 def _caminho_sqlite() -> str:
     """Arquivo do SQLite: `DATABASE_SQLITE_PATH` ou o padrao do usuario."""
     configurado = os.environ.get("DATABASE_SQLITE_PATH", "").strip()
     if configurado:
         return os.path.expanduser(configurado)
-    return os.path.join(
-        os.path.expanduser("~"), ".local", "share", "monitor-versoes", "estado.db"
-    )
+    return os.path.join(diretorio_dados(), "estado.db")
 
 
 def _url_sqlite() -> str:
