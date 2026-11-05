@@ -270,6 +270,7 @@ motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
 motor atualizar 13.35.0 --repo meu-repo --abort
 motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
 motor tui                                           # interface interativa
+motor inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
 ```
 
 Todos os comandos de versão aceitam `--repo` (path, ou nome dentro de `PROJECTS_DIR`),
@@ -292,6 +293,51 @@ checkout; `0` descarta a cada run.
 
 A eviction é por uso mais recente e nunca leva trabalho embora: worktree com alteração não
 commitada ou cherry-pick pendente (um `atualizar` esperando `--continue`) é pulada.
+
+### Inscrições
+
+Uma inscrição pede ao motor que rode `atualizar` numa versão de tempos em tempos (aplica os
+faltantes e faz push). Ficam num arquivo local, `~/.local/share/monitor-versoes/inscricoes.json`;
+o porquê: [027](docs/decisoes/027-inscricoes-fora-do-estado.md).
+
+```bash
+motor inscricao adicionar 13.35.0 --repo meu-repo --intervalo 1h  # Nm ou Nh, padrão 30m
+motor inscricao listar                                            # clone, intervalo, última execução
+motor inscricao remover 13.35.0 --repo meu-repo
+motor inscricao agendar                                           # instala o disparo a cada minuto
+motor inscricao agendar --desfazer
+motor inscricao rodar                                             # o que o agendador chama
+```
+
+A identidade é o caminho absoluto do clone mais a versão; reinscrever só troca o intervalo.
+A inscrição guarda o diretório atual e o `--env`, que decidem qual `.env` a execução carrega.
+Também dá para gerenciar na TUI (tecla `i`).
+
+`rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
+outras. O desfecho da última execução aparece no `listar`:
+
+| Desfecho | Significa |
+| --- | --- |
+| `APLICOU` | commits aplicados e push feito |
+| `NADA` | nada a aplicar |
+| `BLOQUEADA` | conflito: checkpoint aberto, sem push |
+| `PULADA` | cherry-pick pendente na versão; nada roda até `atualizar --continue` ou `--abort` |
+| `ENCERRADA` | versão liberada; a inscrição é removida |
+| `ERRO` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
+
+`agendar` usa o `motor` do `PATH` no momento do comando (caminho absoluto) e instala, no Linux,
+o timer de usuário do systemd (`monitor-versoes-inscricoes.timer`) e, no macOS, um LaunchAgent
+(`monitor-versoes.inscricoes.plist`). Outro sistema falha com erro de entrada.
+
+Notificações desktop (via `desktop-notifier`; falha ao notificar vai para o log e não muda o
+desfecho):
+
+- **aplicou commits:** quantos e de quais chamados;
+- **bloqueou:** commit, arquivos em conflito e chamados culpados;
+- **item vermelho novo:** tarefa ambígua, tarefa sem commits, commit sumido ou conflitante que
+  não estava na execução anterior (na primeira, todos);
+- **erro:** só o primeiro de uma sequência; `PULADA` no meio não o repete;
+- **encerrada:** versão liberada, inscrição removida.
 
 ## Problemas comuns
 
