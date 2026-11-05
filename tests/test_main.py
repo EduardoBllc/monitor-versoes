@@ -533,13 +533,20 @@ def test_fonte_nao_instalada_lista_os_instalados(bordas, tmp_path, caplog):
 
 def test_sem_fonte_a_busca_pede_a_chave(bordas, tmp_path, caplog):
     _fonte_central(None)
+    repo = _repo_com_padrao(tmp_path)
+    central = os.path.join(
+        os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml"
+    )
 
     with pytest.raises(SystemExit) as saida:
-        main(["verificar", "13.34.0", "--repo", _repo_com_padrao(tmp_path)])
+        main(["verificar", "13.34.0", "--repo", repo])
 
     assert saida.value.code == 1
-    assert "[tarefas] fonte" in caplog.text
-    assert "--task-source manual" in caplog.text
+    # as duas configs lidas aparecem, unidas por "e"
+    assert (
+        f"faltando [tarefas] fonte em {central} e {repo}/.monitor-versoes.toml; "
+        "ou use --task-source manual --lista <arquivo>"
+    ) in caplog.text
 
 
 def test_atualizar_abort_com_fonte_inexistente(bordas, tmp_path, capsys):

@@ -157,7 +157,7 @@ class ResultadoModal(ModalScreen[None]):
 class CadastroModal(ModalScreen[str | None]):
     """Formulario de cadastro de repo.
 
-    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o par
+    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o nome
     pronto. Erro de banco (nome duplicado) nao e do formulario: sai pelo
     caminho de erro normal do app, com o modal ja fechado.
     """

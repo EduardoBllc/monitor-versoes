@@ -320,6 +320,22 @@ def test_sqlite_inexistente_nao_e_criado(tmp_path, capsys):
     assert "não encontrado" in capsys.readouterr().err
 
 
+def test_postgres_sem_driver_usa_psycopg():
+    engine = script._engine_so_leitura("postgresql://u:s@127.0.0.1:1/db")
+
+    assert engine.url.drivername == "postgresql+psycopg"
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "banco", ["x", "postgresql://u:s@127.0.0.1:1/db", "postgresql+psycopg2://u@h/db"]
+)
+def test_banco_ruim_sai_com_erro_legivel(banco, tmp_path, capsys):
+    assert _rodar(banco, tmp_path) == 1
+
+    assert capsys.readouterr().err.startswith("erro: ")
+
+
 def test_help_traz_a_ordem(capsys):
     with pytest.raises(SystemExit) as saida:
         script.main(["--help"])

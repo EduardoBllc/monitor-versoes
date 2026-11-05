@@ -35,7 +35,7 @@ from urllib.parse import quote
 import tomlkit
 from dotenv import dotenv_values
 from sqlalchemy import Engine, create_engine, inspect, make_url, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from tomlkit.exceptions import TOMLKitError
 
 ARQUIVO_CONFIG = ".monitor-versoes.toml"
@@ -56,6 +56,12 @@ ordem na máquina que ainda tem as colunas no banco:
   6. conferir com motor diagnostico que ele aponta para o banco certo;
   7. rodar motor migrar, sem nenhum outro comando entre o git pull e ele.
 """
+
+
+_FORMATO_URL = (
+    "use sqlite:///<caminho> ou "
+    "postgresql+psycopg://<usuario>:<senha>@<host>:<porta>/<banco>"
+)
 
 
 class ErroDoScript(Exception):
@@ -106,18 +112,31 @@ def url_do_env(env: Mapping[str, str | None]) -> tuple[str, bool]:
 
 
 def _engine_so_leitura(url: str) -> Engine:
-    """Engine que não escreve nem cria o arquivo do SQLite."""
-    if url.startswith("sqlite"):
-        caminho = make_url(url).database or ""
+    """Engine que não escreve nem cria o arquivo do SQLite.
+
+    `postgresql://` sem driver vira `postgresql+psycopg://`: o padrão do
+    SQLAlchemy é o `psycopg2`, que o script não declara.
+    """
+    try:
+        alvo = make_url(url)
+    except ArgumentError as e:
+        raise ErroDoScript(f"URL do banco inválida ({e}); {_FORMATO_URL}") from e
+    if alvo.drivername == "postgresql":
+        alvo = alvo.set(drivername="postgresql+psycopg")
+    if alvo.get_backend_name() == "sqlite":
+        caminho = alvo.database or ""
         if not os.path.isfile(caminho):
             raise ErroDoScript(f"banco SQLite não encontrado: {caminho}")
         return create_engine(
             "sqlite://",
             creator=lambda: sqlite3.connect(f"file:{caminho}?mode=ro", uri=True),
         )
-    return create_engine(
-        url, connect_args={"options": "-c default_transaction_read_only=on"}
-    )
+    try:
+        return create_engine(
+            alvo, connect_args={"options": "-c default_transaction_read_only=on"}
+        )
+    except (SQLAlchemyError, ImportError) as e:
+        raise ErroDoScript(f"não consegui abrir o banco ({e}); {_FORMATO_URL}") from e
 
 
 def ler_repos(url: str) -> list[RepoAntigo]:

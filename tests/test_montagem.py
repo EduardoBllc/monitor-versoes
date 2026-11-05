@@ -221,17 +221,6 @@ def test_construtor_com_bug_vira_erro_de_entrada():
         fonte.fetch("1.0.0")
 
 
-def test_sem_fonte_a_busca_pede_a_chave():
-    fonte = montar_task_source(ConfigProjeto(arquivos=("/a.toml", "/b.toml")))
-
-    with pytest.raises(ErroDeEntrada) as e:
-        fonte.fetch("1.0.0")
-    assert str(e.value) == (
-        "faltando [tarefas] fonte em /a.toml e /b.toml; "
-        "ou use --task-source manual --lista <arquivo>"
-    )
-
-
 # -- referencia de tarefa ----------------------------------------------------
 
 
