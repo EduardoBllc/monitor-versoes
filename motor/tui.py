@@ -1510,6 +1510,20 @@ def _faltantes(status: VersionStatus) -> Group | None:
     return _commits_agrupados(status.faltantes, estados)
 
 
+def _chamados(culpados: list[str]) -> str:
+    return ", ".join(f"#{chamado}" for chamado in culpados)
+
+
+def _culpados_dos_conflitos(status: VersionStatus) -> Group | None:
+    """Fora da tabela de faltantes: a coluna Estado e estreita e `no_wrap`."""
+    linhas = [
+        Text(f"Conflito em {c.hash_origem[:8]} depende de: {_chamados(culpados)}")
+        for c in status.faltantes
+        if (culpados := status.conflito_causado_por.get(c.hash_origem))
+    ]
+    return Group(*linhas) if linhas else None
+
+
 def _cabecalho_atualizacao(status: AtualizarStatus) -> Text:
     if status == AtualizarStatus.BLOCKED:
         return Text("● Atualização bloqueada", style="bold red")
@@ -1525,6 +1539,11 @@ def _pick_pendente(resultado: AtualizarResult) -> list[RenderableType]:
             Text(f"Commit: {resultado.blocked_commit[:8]}"),
             Text("Arquivos em conflito:"),
             *(Text(f"  {caminho}") for caminho in resultado.arquivos_conflito),
+            *(
+                [Text(f"Depende de: {_chamados(resultado.culpados)}")]
+                if resultado.culpados
+                else []
+            ),
             Text(
                 "Resolva os arquivos e retome em Continuar (u), "
                 "ou descarte em Abortar (a).",
@@ -1603,4 +1622,7 @@ def renderizar_status(status: VersionStatus, auditado: bool = False) -> Group:
         partes.append(alertas)
     if faltantes is not None:
         partes.append(faltantes)
+    culpados = _culpados_dos_conflitos(status)
+    if culpados is not None:
+        partes.append(culpados)
     return Group(*partes)
