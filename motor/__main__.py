@@ -403,7 +403,7 @@ def imprimir_status(s: VersionStatus, referencia: FonteReferencia) -> None:
     )
 
 
-def imprimir_atualizacao(r: AtualizarResult) -> None:
+def imprimir_atualizacao(r: AtualizarResult, referencia: FonteReferencia) -> None:
     if r.reaproveitada_de is not None:
         hora = r.reaproveitada_de.astimezone().strftime("%H:%M")
         print(f"reaproveitando a verificacao das {hora}")
@@ -426,7 +426,13 @@ def imprimir_atualizacao(r: AtualizarResult) -> None:
         _imprimir_alertas(r.status_versao)
 
     if r.status == AtualizarStatus.BLOCKED:
-        print(f"BLOQUEADO em {r.blocked_commit[:8]}, arquivos: {r.arquivos_conflito}")
+        linha = f"BLOQUEADO em {r.blocked_commit[:8]}, arquivos: {r.arquivos_conflito}"
+        if r.culpados:
+            refs = _referencias_dos_culpados(
+                {r.blocked_commit: r.culpados}, referencia
+            )[r.blocked_commit]
+            linha += f", depende de {', '.join(refs)}, fora desta versao"
+        print(linha)
         print("resolva e rode: motor atualizar <versao> --repo <path> --continue")
         return
     if r.status == AtualizarStatus.VAZIO:
@@ -509,17 +515,18 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
             print(f"auditoria da tag {args.versao} (snapshot nao alterado)")
         imprimir_status(status, deps.referencia)
     elif args.comando == "criar":
-        imprimir_atualizacao(criar(deps, args.versao))
+        imprimir_atualizacao(criar(deps, args.versao), deps.referencia)
     elif args.comando == "atualizar":
         if args.abortar:
             atualizar_abort(deps, args.versao)
             print("abortado")
         elif args.continuar:
             imprimir_atualizacao(
-                atualizar_continue(deps, args.versao, allow_empty=args.allow_empty)
+                atualizar_continue(deps, args.versao, allow_empty=args.allow_empty),
+                deps.referencia,
             )
         else:
-            imprimir_atualizacao(atualizar(deps, args.versao))
+            imprimir_atualizacao(atualizar(deps, args.versao), deps.referencia)
     elif args.comando == "consulta":
         imprimir_consulta(consultar(deps, args.versao))
     else:  # reconstruir-estado (unico comando restante; argparse ja validou)

@@ -242,6 +242,10 @@ def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
     assert "faltantes" not in saida
 
 
+def _referencia_tickio() -> Referencia:
+    return TickioRest.referencia
+
+
 def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
     """O lote e empurrado mesmo sem verde (todo commit sai de status.faltantes
     depois de filtrar_excluidos, e travar em tasks_sem_commits emperraria o
@@ -260,7 +264,8 @@ def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
                 tasks_sem_commits=["999111"],
                 commits_sumidos=["deadbeefcafe"],
             ),
-        )
+        ),
+        _referencia_tickio,
     )
 
     saida = capsys.readouterr().out
@@ -274,13 +279,53 @@ def test_imprimir_atualizacao_mostra_as_secoes_vermelhas_do_verificar(capsys):
 def test_imprimir_atualizacao_avisa_reaproveitamento(capsys):
     verificado_em = datetime.datetime(2026, 1, 2, 13, 45, tzinfo=datetime.UTC)
     imprimir_atualizacao(
-        AtualizarResult(status=AtualizarStatus.DONE, reaproveitada_de=verificado_em)
+        AtualizarResult(status=AtualizarStatus.DONE, reaproveitada_de=verificado_em),
+        _referencia_tickio,
     )
     hora = verificado_em.astimezone().strftime("%H:%M")
     assert f"reaproveitando a verificacao das {hora}" in capsys.readouterr().out
 
-    imprimir_atualizacao(AtualizarResult(status=AtualizarStatus.DONE))
+    imprimir_atualizacao(
+        AtualizarResult(status=AtualizarStatus.DONE), _referencia_tickio
+    )
     assert "reaproveitando" not in capsys.readouterr().out
+
+
+def _referencia_proibida() -> Referencia:
+    raise AssertionError("bloqueio sem culpado nao pode exigir padrao de referencia")
+
+
+@pytest.mark.parametrize(
+    ("culpados", "referencia", "linha"),
+    [
+        (
+            ["257056"],
+            _referencia_tickio,
+            "BLOQUEADO em f5d02b45, arquivos: ['integracoes/tests.py'], "
+            "depende de ch257056, fora desta versao",
+        ),
+        (
+            [],
+            _referencia_proibida,
+            "BLOQUEADO em f5d02b45, arquivos: ['integracoes/tests.py']",
+        ),
+    ],
+    ids=["com_culpado", "sem_culpado"],
+)
+def test_imprimir_atualizacao_bloqueada_nomeia_os_culpados(
+    capsys, culpados, referencia, linha
+):
+    imprimir_atualizacao(
+        AtualizarResult(
+            status=AtualizarStatus.BLOCKED,
+            blocked_commit="f5d02b45aaaa",
+            arquivos_conflito=["integracoes/tests.py"],
+            culpados=culpados,
+        ),
+        referencia,
+    )
+
+    assert linha in capsys.readouterr().out.splitlines()
 
 
 # -- main() ponta a ponta -----------------------------------------------------
