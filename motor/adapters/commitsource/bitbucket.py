@@ -22,7 +22,7 @@ import base64
 import contextlib
 import datetime
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -131,11 +131,6 @@ class BitbucketPRCommitSource:
     repo: str = ""
     remote: str = "origin"
     base_url: str = ""
-    # origin/master, nao o head local: `git fetch` avanca a ref de rastreamento
-    # e NUNCA o head local, entao filtrar por `master` esconderia toda PR
-    # mergeada depois do ultimo checkout+pull da maquina (chamado 257270, PR
-    # 1174). E a mesma ref que o GrepCommitSource le.
-    master_ref: str = "origin/master"
     client: httpx.Client | None = None
     progresso: RelatorProgresso = silencioso
     # Obrigatorios: o indice local de PRs vive no estado, e sem ele esta fonte
@@ -145,6 +140,20 @@ class BitbucketPRCommitSource:
     estado: EstadoRepo = field(kw_only=True)
     repo_estado: str = field(kw_only=True)
     referencia: FonteReferencia = field(kw_only=True)
+    # `origin/<principal>`, nao o head local: `git fetch` avanca a ref de
+    # rastreamento e NUNCA o head local, entao filtrar pela principal local
+    # esconderia toda PR mergeada depois do ultimo checkout+pull da maquina
+    # (chamado 257270, PR 1174). E a mesma ref que o GrepCommitSource le.
+    # Fonte, nao valor: a principal sai do esquema, que so se resolve na
+    # primeira busca — montar nao e usar.
+    ref_principal: Callable[[], str] = field(kw_only=True)
+    _principal: str = field(default="", init=False, repr=False)
+
+    def _ref_principal(self) -> str:
+        """Avaliada uma vez por instancia, na primeira busca."""
+        if not self._principal:
+            self._principal = self.ref_principal()
+        return self._principal
 
     def _workspace_repo(self) -> tuple[str, str]:
         """Resolve (workspace, repo) do remote uma vez por instancia."""
@@ -264,9 +273,9 @@ class BitbucketPRCommitSource:
                 if c.hash_origem in vistos:
                     continue
                 # is_ancestor fica FORA do cache: e volatil. PR mergeada numa
-                # branch que ainda nao chegou na master viraria commit escondido
+                # branch que ainda nao chegou na principal viraria commit escondido
                 # para sempre se o filtro fosse gravado junto.
-                if not self.git.is_ancestor(c.hash_origem, self.master_ref):
+                if not self.git.is_ancestor(c.hash_origem, self._ref_principal()):
                     continue
                 vistos.add(c.hash_origem)
                 # o chamado vem do casamento, nao da PR: duas tarefas podem

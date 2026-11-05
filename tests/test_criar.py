@@ -10,11 +10,16 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.atribuicoes import Exata
 from motor.domain.types import CommitRef, RepoInfo, VersionType
 from motor.engine.atualizar import AtualizarStatus
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
+from motor.engine.verificar import situacao_das_versoes
 from motor.errors import RecusaDeInvariante
+from motor.esquemas.semver import Semver
+from motor.services.catalogo import Catalogo
+from motor.services.versionamento import Versionamento
 from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
@@ -141,3 +146,69 @@ def test_criar_busca_antes_de_ler_a_publicacao():
     assert g.fetched == ["origin"]
     assert "13.7.0" not in g.branches
     assert estado.versao("r", "13.7.0") is None
+
+
+# -- branch da versao por template (critério 8 da #115) -----------------------
+
+_RELEASE = Versionamento(
+    esquema=Semver(),
+    politica=Exata(),
+    branch_versao="release/{versao}",
+)
+
+
+def _git_release() -> FakeGit:
+    g = FakeGit()
+    g.add_commit("m0", "", "raiz", D)
+    g.add_commit("a0", "m0", "ch255514 corrige logs", D)
+    g.set_branch("main", "a0")
+    g.set_branch("origin/main", "a0")
+    g.set_branch("release/1.2.0", "m0")
+    return g
+
+
+def _deps_release(git, estado) -> Deps:
+    return Deps(
+        versionamento=lambda: _RELEASE,
+        git=git,
+        tasks=FakeTaskSource(chamados={"1.3.0": ["255514"]}),
+        estado=estado,
+        repo="r",
+        commit_source=FakeCommitSource(por_chamado=UM),
+    )
+
+
+def test_branch_com_template_e_a_versao_aberta():
+    g = _git_release()
+
+    situacao = situacao_das_versoes(
+        _deps_release(g, _estado()), Catalogo(g, _RELEASE), congelar=False
+    )
+
+    assert situacao.abertas == ["1.2.0"]
+
+
+def test_criar_cria_a_branch_pelo_template():
+    g = _git_release()
+    estado = _estado()
+
+    resultado = criar(_deps_release(g, estado), "1.3.0")
+
+    assert resultado.status == AtualizarStatus.DONE
+    assert "release/1.3.0" in g.branches and "1.3.0" not in g.branches
+    assert g.remotes.get("release/1.3.0") is True
+    assert g.read_file("release/1.3.0", "VERSAO") == b"1.3.0\n"
+    gravada = estado.versao("r", "1.3.0")
+    assert gravada is not None and gravada.base_ref == "main"
+
+
+def test_trava_de_publicacao_olha_a_branch_do_template():
+    g = _git_release()
+    g.remotes["1.3.0"] = True  # nome puro nao e a branch da versao
+
+    criar(_deps_release(g, _estado()), "1.3.0")
+
+    g = _git_release()
+    g.remotes["release/1.3.0"] = True
+    with pytest.raises(RecusaDeInvariante):
+        criar(_deps_release(g, _estado()), "1.3.0")

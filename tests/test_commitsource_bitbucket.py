@@ -82,6 +82,7 @@ def _fonte(
         estado=estado,
         repo_estado=REPO_ESTADO,
         referencia=lambda: referencia,
+        ref_principal=lambda: "origin/master",
     )
 
 
@@ -360,6 +361,7 @@ def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
         estado=_estado_vazio(),
         repo_estado=REPO_ESTADO,
         referencia=lambda: TickioRest.referencia,
+        ref_principal=lambda: "origin/master",
     )
 
     with pytest.raises(ErroDeEntrada):
@@ -398,6 +400,7 @@ def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
         estado=_estado_vazio(),
         repo_estado=REPO_ESTADO,
         referencia=lambda: TickioRest.referencia,
+        ref_principal=lambda: "origin/master",
     )
     assert urls_pedidas == [], "construir nao pode tocar o git"
 

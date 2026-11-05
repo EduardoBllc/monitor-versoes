@@ -205,10 +205,12 @@ class GitRepo(Protocol):
         """Cria worktree."""
         ...
 
-    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, nossas: list[str], /) -> list[str]:
         """Descarta worktrees de versao alem das `manter` de uso mais recente.
 
-        `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
+        `nossas` sao as branches das versoes conhecidas, da mais recente para a
+        mais antiga pelo esquema: so elas e a `atual` sao candidatas, e
+        worktree criada a mao fora delas nunca e tocada. `atual` sobrevive sempre que `manter >= 1`. Com `manter == 0` remove
         todas, inclusive a `atual`. Devolve as removidas. Nunca leva trabalho
         embora: worktree com alteracao nao commitada ou cherry-pick pendente e
         pulada.

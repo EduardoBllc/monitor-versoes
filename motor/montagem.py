@@ -58,7 +58,10 @@ from motor.progresso import RelatorProgresso, silencioso
 from motor.services.versionamento import (
     BRANCH_VERSAO_PADRAO,
     PRINCIPAL_PADRAO,
+    FonteVersionamento,
     Versionamento,
+    nomes_sem_esquema,
+    versionamento_padrao,
 )
 
 
@@ -257,8 +260,9 @@ def montar_commit_source(  # noqa: PLR0913
     estado: EstadoRepo | None = None,
     repo: str = "",
     progresso: RelatorProgresso = silencioso,
+    versionamento: FonteVersionamento = versionamento_padrao,
 ) -> CommitSource:
-    """Grep em master e o fallback sempre disponivel. Com token do Bitbucket, a
+    """Grep na branch principal e o fallback sempre disponivel. Com token do Bitbucket, a
     PR (merged) vira a fonte primaria: ordem da lista = prioridade.
 
     O `workspace/repo` do Bitbucket nao e resolvido aqui: sai do
@@ -266,7 +270,18 @@ def montar_commit_source(  # noqa: PLR0913
     agora faria todo comando pagar uma chamada de git — e `atualizar --abort`
     num clone sem `origin` passaria a falhar na montagem.
     """
-    grep = GrepCommitSource(git=git, progresso=progresso, referencia=referencia)
+
+    # Fonte, nao valor: a principal sai do esquema, e resolve-lo aqui faria um
+    # plugin inexistente derrubar a montagem, e com ela `atualizar --abort`.
+    def ref_principal() -> str:
+        return f"origin/{versionamento().principal}"
+
+    grep = GrepCommitSource(
+        git=git,
+        progresso=progresso,
+        referencia=referencia,
+        ref_principal=ref_principal,
+    )
     # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
     if not bitbucket.token or estado is None:
         return grep
@@ -280,6 +295,7 @@ def montar_commit_source(  # noqa: PLR0913
         estado=estado,
         repo_estado=repo,
         referencia=referencia,
+        ref_principal=ref_principal,
     )
     return ChainCommitSource(sources=[pr, grep])
 
@@ -315,6 +331,10 @@ def montar_deps(
         config.padrao_referencia,
         config.arquivos,
     )
+    # Cache: resolvido uma vez por invocacao, na primeira vez que alguem usa.
+    versionamento: FonteVersionamento = functools.cache(
+        functools.partial(resolver_versionamento, config)
+    )
     commit_source = montar_commit_source(
         git,
         referencia=referencia,
@@ -325,6 +345,7 @@ def montar_deps(
         estado=estado,
         repo=info.nome,
         progresso=progresso,
+        versionamento=versionamento,
     )
     return Deps(
         git=git,
@@ -334,10 +355,8 @@ def montar_deps(
         commit_source=commit_source,
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
-        # Cache: resolvido uma vez por invocacao, na primeira vez que alguem usa.
-        versionamento=functools.cache(
-            functools.partial(resolver_versionamento, config)
-        ),
+        versionamento=versionamento,
+        nomes_abort=nomes_sem_esquema(config),
         referencia=referencia,
         identidade_das_entradas=_identidade_das_entradas(
             fonte_tasks, commit_source, config

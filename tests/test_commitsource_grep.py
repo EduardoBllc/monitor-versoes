@@ -29,7 +29,9 @@ def test_grep_agrupa_por_chamado_e_carimba():
     git = _git_com_commits("ch123456 alfa", "ch999111 beta")
 
     achados = GrepCommitSource(
-        git=git, referencia=lambda: TickioRest.referencia
+        git=git,
+        referencia=lambda: TickioRest.referencia,
+        ref_principal=lambda: "origin/master",
     ).resolve(["123456", "999111"])
 
     assert set(achados) == {"123456", "999111"}
@@ -41,9 +43,11 @@ def test_grep_nao_casa_chamado_como_substring():
     git = _git_com_commits("ch255514 alfa")
 
     assert (
-        GrepCommitSource(git=git, referencia=lambda: TickioRest.referencia).resolve(
-            ["5514"]
-        )
+        GrepCommitSource(
+            git=git,
+            referencia=lambda: TickioRest.referencia,
+            ref_principal=lambda: "origin/master",
+        ).resolve(["5514"])
         == {}
     )
 
@@ -53,7 +57,9 @@ def test_grep_nao_casa_chamado_como_substring():
 
     assert (
         GrepCommitSource(
-            git=git_prefixo, referencia=lambda: TickioRest.referencia
+            git=git_prefixo,
+            referencia=lambda: TickioRest.referencia,
+            ref_principal=lambda: "origin/master",
         ).resolve(["123"])
         == {}
     )
@@ -63,9 +69,11 @@ def test_grep_omite_chamado_sem_commit():
     git = _git_com_commits("ajuste sem identificador")
 
     assert (
-        GrepCommitSource(git=git, referencia=lambda: TickioRest.referencia).resolve(
-            ["123456"]
-        )
+        GrepCommitSource(
+            git=git,
+            referencia=lambda: TickioRest.referencia,
+            ref_principal=lambda: "origin/master",
+        ).resolve(["123456"])
         == {}
     )
 
@@ -77,8 +85,10 @@ def test_grep_omite_chamado_sem_commit():
 def test_grep_acha_referencia_do_padrao_configurado(padrao, chamado, mensagem):
     git = _git_com_commits(mensagem, "ajuste sem referencia")
 
-    achados = GrepCommitSource(git=git, referencia=lambda: Referencia(padrao)).resolve(
-        [chamado]
-    )
+    achados = GrepCommitSource(
+        git=git,
+        referencia=lambda: Referencia(padrao),
+        ref_principal=lambda: "origin/master",
+    ).resolve([chamado])
 
     assert [c.hash_origem for c in achados[chamado]] == ["c0"]

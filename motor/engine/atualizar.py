@@ -8,13 +8,18 @@ from enum import IntEnum
 
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
-from motor.engine.verificar import preparar_worktree, verificar_sem_fetch
+from motor.engine.verificar import (
+    descartar_worktrees,
+    preparar_worktree,
+    verificar_sem_fetch,
+)
 from motor.engine.vigencia import verificacao_vigente
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
 from motor.services.catalogo import Catalogo
 from motor.services.publication_gate import PublicationGate
+from motor.services.versionamento import aplicar
 
 logger = logging.getLogger(__name__)
 
@@ -187,11 +192,11 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     # rebuild, docs/decisoes/010-travas-publicada-e-liberada.md) -
     # um lote BLOCKED fica so local ate resolver e rodar de novo.
     deps.progresso(Progresso("publicando na origin"))
-    deps.git.push_branch("origin", versao)
+    deps.git.push_branch("origin", deps.versionamento().branch(versao))
     # a worktree e so um checkout local descartavel - o que importa (commits) ja
     # esta na branch e no remoto. use_worktree recria sob demanda. Com
     # worktrees_mantidas > 0 este checkout fica, e o proximo run nao o paga.
-    deps.git.worktree_gc(deps.worktrees_mantidas, versao)
+    descartar_worktrees(deps, versao)
     return AtualizarResult(
         status=AtualizarStatus.DONE,
         aplicados=aplicados,
@@ -229,7 +234,7 @@ def atualizar_continue(
     _recusar_se_liberada(deps, versao)
 
     deps.progresso(Progresso("retomando o cherry-pick"))
-    deps.git.use_worktree(versao)
+    deps.git.use_worktree(deps.versionamento().branch(versao))
     pendente, ok = deps.git.pending_cherry_pick()
     if not ok:
         raise ErroDeEntrada("nenhum cherry-pick pendente pra continuar")
@@ -252,6 +257,11 @@ def atualizar_continue(
 
 
 def atualizar_abort(deps: Deps, versao: str) -> None:
-    deps.git.use_worktree(versao)
+    """Descarta o cherry-pick pendente sem resolver o `versionamento`: um
+    esquema que nao carrega, ou um piso que ele recusa, nao pode impedir o
+    operador de sair de um lote travado. A branch sai so das camadas config e
+    padrao (`Deps.nomes_abort`), e o GC considera so a worktree atual."""
+    branch = aplicar(deps.nomes_abort[0], versao)
+    deps.git.use_worktree(branch)
     deps.git.abort_cherry_pick()
-    deps.git.worktree_gc(deps.worktrees_mantidas, versao)
+    deps.git.worktree_gc(deps.worktrees_mantidas, branch, [branch])

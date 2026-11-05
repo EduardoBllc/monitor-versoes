@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field, replace
 
 from motor.domain.types import CommitRef
-from motor.domain.version import worktrees_a_remover
+from motor.domain.worktrees import worktrees_a_remover
 from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.ports import CherryPickOutcome, MergePrediction
 
@@ -338,13 +338,14 @@ class FakeGit:
         self._registrar_uso(branch)
         self._current_branch = branch
 
-    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, nossas: list[str], /) -> list[str]:
         # So desanexa as worktrees (como o git de verdade) - as branches em si
         # continuam existindo, pra use_worktree poder recria-las sob demanda.
         # Sem as guardas do adapter real (cherry-pick pendente e alteracao
         # nao commitada): o fake nao tem disco onde isso exista.
+        aceitas = {*nossas, atual}
         removidas = worktrees_a_remover(
-            self.worktrees_mru,
+            [b for b in self.worktrees_mru if b in aceitas],
             mru=self.worktrees_mru,
             manter=manter,
             atual=atual,

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from motor.domain.types import CommitRef
-from motor.domain.version import worktrees_a_remover
+from motor.domain.worktrees import worktrees_a_remover
 from motor.errors import (
     BackendIndisponivel,
     MotorError,
@@ -52,7 +52,6 @@ _LOTE_META = 500
 
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
 _PADRAO_HUNK_ORIGEM = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
-_PADRAO_BRANCH_VERSAO = re.compile(r"^\d+\.\d+\.\d+$")
 # So refs/remotes/origin/: e o unico remoto que o motor usa (todo entry point
 # faz fetch("origin"), e push/pull/remote_branch_exists passam o literal).
 # Aceitar qualquer remoto aqui punha no conjunto aberto uma versao que o
@@ -282,7 +281,7 @@ class GitSubprocess:
     def _ler_mru(self) -> list[str]:
         """Uso recente, mais recente primeiro. Arquivo ausente ou ilegivel vira
         lista vazia: e cache local, nao estado. Quem cai no fallback so perde a
-        ordem por uso, e `worktrees_a_remover` degrada para semver desc.
+        ordem por uso, e `worktrees_a_remover` degrada para a ordem do esquema.
         """
         try:
             with open(self._caminho_mru(), encoding="utf-8") as f:
@@ -740,14 +739,14 @@ class GitSubprocess:
         self._registrar_uso(branch)
         self._current_branch = branch
 
-    def worktree_gc(self, manter: int, atual: str, /) -> list[str]:
+    def worktree_gc(self, manter: int, atual: str, nossas: list[str], /) -> list[str]:
         """Descarta worktrees de versao alem das `manter` de uso mais recente.
 
         A politica (quem morre) e do dominio; aqui ficam as duas coisas que so
         o disco sabe: quais worktrees existem, e quais podem sair sem levar
         trabalho embora.
         """
-        existentes = self._worktrees_de_versao()
+        existentes = self._worktrees_de_versao([*nossas, atual])
         candidatas = worktrees_a_remover(
             existentes, mru=self._ler_mru(), manter=manter, atual=atual
         )
@@ -760,33 +759,36 @@ class GitSubprocess:
             self._gravar_mru([v for v in self._ler_mru() if v in vivas])
         return removidas
 
-    def _worktrees_de_versao(self) -> list[str]:
-        """Versoes X.Y.Z com worktree dentro de `<repo>-worktrees/`, pelo
-        registro do proprio git.
+    def _worktrees_de_versao(self, nossas: list[str]) -> list[str]:
+        """Branches de `nossas` com worktree dentro de `<repo>-worktrees/`,
+        pelo registro do proprio git, na ordem de `nossas`.
 
-        Identifica pelo **nome do diretorio**, nao pela linha `branch`:
-        `use_worktree` em versao ja lancada resolve o nome pela tag e cria a
-        worktree em detached HEAD, sem branch. Filtra por caminho **e** por
-        formato: worktree que o operador criou na mao, fora do padrao X.Y.Z,
-        nao e nossa para apagar. O proprio repo principal cai fora pelo filtro
-        de caminho.
+        Identifica pelo **caminho relativo** a `<repo>-worktrees/`, nao pela
+        linha `branch` nem pelo basename: `use_worktree` em versao ja lancada
+        pode criar a worktree em detached HEAD, sem branch, e uma branch com
+        `/` (`release/1.2.0`) vira diretorio aninhado. So aceita os nomes de
+        `nossas`: worktree que o operador criou na mao nao e nossa para
+        apagar. O proprio repo principal cai fora pelo filtro de caminho.
         """
         # realpath nos dois lados: com um symlink no caminho (o classico
         # /tmp -> /private/tmp do macOS) o git reporta o caminho resolvido e a
         # comparacao textual nao casa — o GC viraria no-op silencioso, que e
         # pior que falhar, porque ninguem descobre.
         raiz = os.path.realpath(self._dir_worktrees())
-        encontradas: list[str] = []
+        aceitas = {b for b in nossas if b}
+        em_disco: set[str] = set()
         for linha in self._output(
             self.repo_path, "worktree", "list", "--porcelain"
         ).split("\n"):
             if not linha.startswith("worktree "):
                 continue
             caminho = os.path.realpath(linha.removeprefix("worktree "))
-            nome = os.path.basename(caminho)
-            if os.path.dirname(caminho) == raiz and _PADRAO_BRANCH_VERSAO.match(nome):
-                encontradas.append(nome)
-        return encontradas
+            if os.path.commonpath([caminho, raiz]) != raiz or caminho == raiz:
+                continue
+            nome = os.path.relpath(caminho, raiz).replace(os.sep, "/")
+            if nome in aceitas:
+                em_disco.add(nome)
+        return [b for b in dict.fromkeys(nossas) if b in em_disco]
 
     def _descartavel(self, branch: str) -> bool:
         """Worktree que pode ser apagada sem perder trabalho.

@@ -27,7 +27,7 @@ def verificacao_vigente(deps: Deps, versao: str) -> Verificacao | None:
     # Carimbo do futuro (relógio diferente entre máquinas) não vale.
     if not ZERO <= deps.agora() - v.verificado_em <= VALIDADE_VERIFICACAO:
         return None
-    if v.tip != deps.git.resolve_ref(versao):
+    if v.tip != deps.git.resolve_ref(deps.versionamento().branch(versao)):
         return None
     atual = impressao_da_verificacao(
         deps.estado.exclusoes(deps.repo),

@@ -6,11 +6,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from motor.atribuicoes import Exata
 from motor.errors import ErroDeEntrada
 from motor.esquemas.semver import Semver
 from motor.ports import EsquemaVersao, PoliticaAtribuicao
+
+if TYPE_CHECKING:
+    from motor.config import ConfigProjeto
 
 #: Padroes do nucleo, a camada de baixo.
 BRANCH_VERSAO_PADRAO = "{versao}"
@@ -74,3 +78,20 @@ FonteVersionamento = Callable[[], Versionamento]
 def versionamento_padrao() -> Versionamento:
     """Sem config nenhuma: `semver`, `exata`, `{versao}`, `main` e tag homonima."""
     return Versionamento(esquema=Semver(), politica=Exata())
+
+
+def nomes_sem_esquema(config: ConfigProjeto) -> tuple[str, str]:
+    """Template da branch da versao e principal so das camadas config e
+    padrao, sem carregar o esquema: e o que o `atualizar --abort` usa para
+    funcionar com um plugin que nao carrega ou um piso que nao vale."""
+    branch_versao = (
+        BRANCH_VERSAO_PADRAO
+        if config.branch_versao is None
+        else config.branch_versao.valor
+    )
+    principal = (
+        PRINCIPAL_PADRAO
+        if config.branch_principal is None
+        else config.branch_principal.valor
+    )
+    return branch_versao, principal

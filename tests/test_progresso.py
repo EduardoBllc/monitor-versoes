@@ -83,7 +83,7 @@ def test_grep_relata_a_varredura_sem_contagem():
     GrepCommitSource(
         git=git,
         referencia=lambda: TickioRest.referencia,
-        ref="master",
+        ref_principal=lambda: "master",
         progresso=relatos.append,
     ).resolve(["1"])
 
@@ -116,6 +116,7 @@ def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo_estado="r",
         referencia=lambda: TickioRest.referencia,
+        ref_principal=lambda: "origin/main",
     )
 
     fonte.resolve(["1", "2", "3"])

@@ -229,7 +229,7 @@ def verificar_sem_fetch(
 
         if com_worktree:
             preparar_worktree(deps, versao)
-        ref_alvo = versao
+        ref_alvo = versionamento.branch(versao)
 
     base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
@@ -301,7 +301,7 @@ def verificar_sem_fetch(
         )
 
     if not manter_worktree and not auditar:
-        deps.git.worktree_gc(deps.worktrees_mantidas, versao)
+        descartar_worktrees(deps, versao)
     logger.debug("verificar total: %.3fs", time.monotonic() - inicio)
     return status
 
@@ -342,9 +342,22 @@ def _preparar_auditoria(
 
 def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.progresso(Progresso("preparando worktree"))
-    deps.git.use_worktree(versao)
-    if deps.git.remote_branch_exists("origin", versao):
-        deps.git.pull_branch("origin", versao)
+    branch = deps.versionamento().branch(versao)
+    deps.git.use_worktree(branch)
+    if deps.git.remote_branch_exists("origin", branch):
+        deps.git.pull_branch("origin", branch)
+
+
+def descartar_worktrees(deps: Deps, versao: str) -> None:
+    """GC das worktrees no fim da operacao, so entre as branches das versoes
+    conhecidas, da mais recente para a mais antiga pelo esquema: worktree
+    criada a mao fica."""
+    versionamento = deps.versionamento()
+    nossas = [
+        versionamento.branch(v)
+        for v in reversed(Catalogo(deps.git, versionamento).com_branch())
+    ]
+    deps.git.worktree_gc(deps.worktrees_mantidas, versionamento.branch(versao), nossas)
 
 
 def _base_commit(

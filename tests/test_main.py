@@ -552,6 +552,38 @@ def test_atualizar_abort_ponta_a_ponta(bordas, tmp_path, capsys, monkeypatch):
     assert git.removed_worktrees == []
 
 
+@pytest.mark.parametrize(
+    "config",
+    ['[versao]\nesquema = "naoexiste"\n', '[versao]\npiso = "abc"\n'],
+    ids=["esquema-desconhecido", "piso-invalido"],
+)
+def test_abort_nao_resolve_o_versionamento(bordas, tmp_path, capsys, config):
+    """Sair de um lote travado nao pode depender de o esquema carregar nem de
+    o piso valer (docs/decisoes/025-esquema-e-atribuicao-plugaveis.md)."""
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write(config)
+
+    main(["atualizar", "13.34.0", "--repo", repo, "--abort"])
+
+    assert capsys.readouterr().out == "abortado\n"
+
+
+def test_abort_usa_a_branch_da_versao_da_config(bordas, tmp_path, capsys):
+    git, _ = bordas
+    git.set_branch("release/13.34.0", "m0")
+    repo = _repo_dir(tmp_path)
+    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
+        f.write(
+            '[versao]\nesquema = "naoexiste"\n[branches]\nversao = "release/{versao}"\n'
+        )
+
+    main(["atualizar", "13.34.0", "--repo", repo, "--abort"])
+
+    assert capsys.readouterr().out == "abortado\n"
+    assert git.worktrees_mru[0] == "release/13.34.0"
+
+
 def test_worktrees_mantidas_zero_descarta_o_checkout_no_fim(
     bordas, tmp_path, capsys, monkeypatch
 ):

@@ -82,7 +82,7 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
 
     deps.progresso(Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git"))
     atribuicoes, orfaos = reconstruir_atribuicoes(
-        deps.git, base_commit, versao, referencia
+        deps.git, base_commit, versionamento.branch(versao), referencia
     )
     deps.estado.substituir_atribuicoes(deps.repo, versao, atribuicoes)
 

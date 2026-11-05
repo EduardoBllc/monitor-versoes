@@ -34,9 +34,10 @@ def criar(deps: Deps, versao: str) -> AtualizarResult:
 
     base = BaseResolver(deps.git, catalogo).resolve(versao)
 
-    deps.git.worktree_add(versao, base.commit)
+    branch = versionamento.branch(versao)
+    deps.git.worktree_add(branch, base.commit)
     deps.git.write_file(
-        versao, "VERSAO", f"{versao}\n".encode(), f"Atualiza VERSAO para {versao}"
+        branch, "VERSAO", f"{versao}\n".encode(), f"Atualiza VERSAO para {versao}"
     )
 
     # A versao entra no estado aqui; o verificar dentro do atualizar preenche

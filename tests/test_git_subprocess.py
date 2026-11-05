@@ -794,6 +794,11 @@ def test_culpados_por_linha_cai_para_o_arquivo_quando_ele_nao_existe_no_parent(
 # passarem a olhar um diretorio vazio.
 
 
+#: Branches das versoes conhecidas, da mais recente para a mais antiga pelo
+#: esquema: o que o engine passa ao GC.
+_NOSSAS = ["13.10.0", "13.9.0", "13.3.0", "13.2.0", "13.1.0"]
+
+
 def _dir_worktrees(repo_dir: str) -> str:
     return os.path.join(
         os.path.dirname(repo_dir), os.path.basename(repo_dir) + "-worktrees"
@@ -828,7 +833,7 @@ def test_worktree_gc_mantem_as_n_mais_recentes_e_apaga_o_resto(tmp_path):
     for v in ("13.1.0", "13.2.0", "13.3.0"):
         g.worktree_add(v, "master")
 
-    removidas = g.worktree_gc(2, "13.3.0")
+    removidas = g.worktree_gc(2, "13.3.0", _NOSSAS)
 
     assert removidas == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
@@ -847,7 +852,7 @@ def test_worktree_gc_le_o_mru_gravado_por_outra_instancia(tmp_path):
 
     outra = new_git_subprocess(repo)
 
-    assert outra.worktree_gc(1, "") == ["13.3.0", "13.2.0"]
+    assert outra.worktree_gc(1, "", _NOSSAS) == ["13.3.0", "13.2.0"]
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -868,7 +873,7 @@ def test_worktree_gc_nao_remove_worktree_com_cherry_pick_pendente(tmp_path):
 
     g.worktree_add("13.9.0", "master")  # candidata a evictar passa a ser 13.1.0
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -880,7 +885,7 @@ def test_worktree_gc_nao_remove_worktree_com_alteracao_rastreada(tmp_path):
     with open(os.path.join(_wt(repo, "13.1.0"), "arquivo.txt"), "w") as f:
         f.write("editado a mao\n")
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -895,7 +900,7 @@ def test_worktree_gc_remove_apesar_de_arquivo_nao_rastreado(tmp_path):
     with open(os.path.join(_wt(repo, "13.1.0"), ".env"), "w") as f:
         f.write("SEGREDO=1\n")
 
-    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
 
 
@@ -907,8 +912,29 @@ def test_worktree_gc_ignora_worktree_que_nao_e_de_versao(tmp_path):
         repo, "worktree", "add", "-b", "experimento", _wt(repo, "experimento"), "master"
     )
 
-    assert g.worktree_gc(0, "") == ["13.1.0"]
+    assert g.worktree_gc(0, "", _NOSSAS) == ["13.1.0"]
     assert os.path.isdir(_wt(repo, "experimento"))
+
+
+def test_worktree_gc_remove_worktree_aninhada_e_preserva_a_feita_a_mao(tmp_path):
+    """Branch com `/` vira diretorio aninhado em `<repo>-worktrees/`: o GC a
+    reconhece pelo caminho relativo, e so entre as `nossas`."""
+    repo = _repo_para_gc(tmp_path)
+    g = new_git_subprocess(repo)
+    g.worktree_add("release/1.0.0", "master")
+    _run_git(
+        repo,
+        "worktree",
+        "add",
+        "-b",
+        "release/experimento",
+        _wt(repo, "release/experimento"),
+        "master",
+    )
+
+    assert g.worktree_gc(0, "", ["release/1.0.0"]) == ["release/1.0.0"]
+    assert not os.path.exists(_wt(repo, "release/1.0.0"))
+    assert os.path.isdir(_wt(repo, "release/experimento"))
 
 
 def _worktree_detached(repo: str, versao: str) -> None:
@@ -921,7 +947,7 @@ def test_worktree_gc_remove_worktree_em_detached_head(tmp_path):
     _worktree_detached(repo, "13.1.0")
     g.worktree_add("13.9.0", "master")
 
-    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
 
 
@@ -933,7 +959,7 @@ def test_worktree_gc_nao_remove_detached_com_alteracao_rastreada(tmp_path):
     with open(os.path.join(_wt(repo, "13.1.0"), "arquivo.txt"), "w") as f:
         f.write("editado a mao\n")
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.1.0"))
 
 
@@ -947,7 +973,7 @@ def test_worktree_gc_nao_remove_detached_com_commit_inalcancavel(tmp_path):
     _run_git(wt, "commit", "-am", "commit solto")
     g.worktree_add("13.9.0", "master")
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(wt)
 
 
@@ -956,11 +982,11 @@ def test_worktree_gc_ignora_diretorio_fora_do_padrao_em_detached(tmp_path):
     g = new_git_subprocess(repo)
     _run_git(repo, "worktree", "add", "--detach", _wt(repo, "experimento"), "master")
 
-    assert g.worktree_gc(0, "") == []
+    assert g.worktree_gc(0, "", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "experimento"))
 
 
-def test_worktree_gc_mru_ilegivel_cai_em_semver_desc(tmp_path):
+def test_worktree_gc_mru_ilegivel_cai_na_ordem_recebida(tmp_path):
     repo = _repo_para_gc(tmp_path)
     g = new_git_subprocess(repo)
     for v in ("13.10.0", "13.9.0"):
@@ -971,8 +997,9 @@ def test_worktree_gc_mru_ilegivel_cai_em_semver_desc(tmp_path):
 
     outra = new_git_subprocess(repo)
 
-    # Fallback e semver desc: 13.10.0 fica. Ordem textual manteria "13.9.0".
-    assert outra.worktree_gc(1, "") == ["13.9.0"]
+    # Fallback e a ordem de `nossas` (a do esquema): 13.10.0 fica. Ordem
+    # textual manteria "13.9.0".
+    assert outra.worktree_gc(1, "", _NOSSAS) == ["13.9.0"]
 
 
 def test_worktree_gc_com_manter_zero_remove_inclusive_a_atual(tmp_path):
@@ -981,9 +1008,9 @@ def test_worktree_gc_com_manter_zero_remove_inclusive_a_atual(tmp_path):
     g = new_git_subprocess(repo)
     g.worktree_add("13.1.0", "master")
 
-    assert g.worktree_gc(0, "13.1.0") == ["13.1.0"]
+    assert g.worktree_gc(0, "13.1.0", _NOSSAS) == ["13.1.0"]
     assert not os.path.exists(_wt(repo, "13.1.0"))
-    assert g.worktree_gc(0, "13.1.0") == []
+    assert g.worktree_gc(0, "13.1.0", _NOSSAS) == []
 
 
 def test_worktree_gc_ignora_worktree_apagada_a_mao(tmp_path):
@@ -997,7 +1024,7 @@ def test_worktree_gc_ignora_worktree_apagada_a_mao(tmp_path):
     g.worktree_add("13.9.0", "master")
     shutil.rmtree(_wt(repo, "13.1.0"))
 
-    assert g.worktree_gc(1, "13.9.0") == []
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == []
     assert os.path.isdir(_wt(repo, "13.9.0"))
 
 
@@ -1013,7 +1040,7 @@ def test_worktree_gc_enxerga_as_worktrees_sob_caminho_com_symlink(tmp_path):
     g.worktree_add("13.1.0", "master")
     g.worktree_add("13.9.0", "master")
 
-    assert g.worktree_gc(1, "13.9.0") == ["13.1.0"]
+    assert g.worktree_gc(1, "13.9.0", _NOSSAS) == ["13.1.0"]
 
 
 # -- o contrato de erro vale para o que o subprocess levanta -----------------
