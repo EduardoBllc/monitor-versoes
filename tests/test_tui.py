@@ -2845,11 +2845,59 @@ def test_inscricoes_sem_versao_avisa(tmp_path):
 
     async def executar_fluxo() -> None:
         app = _app_inscricoes(arquivo)
+        avisos = _gravar_avisos(app)
         async with app.run_test(size=(120, 36)) as pilot:
             await _abrir_inscricoes(app, pilot, selecionar=False)
             await pilot.press(_ADICIONA_INSCRICAO)
             await pilot.pause()
-            assert len(app._notifications) == 1
+            assert len(avisos) == 1
 
     asyncio.run(executar_fluxo())
     assert not arquivo.exists()
+
+
+def _gravar_avisos(app: MotorTUI) -> list[str]:
+    avisos: list[str] = []
+    app.notify = lambda mensagem, **_: avisos.append(mensagem)  # type: ignore[method-assign]
+    return avisos
+
+
+def test_inscricoes_guarda_clone_absoluto(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    arquivo = tmp_path / _ARQUIVO_INSCRICOES
+    relativo = RepoOption(nome="alpha", caminho="projetos/alpha")
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            Runners(lambda: [relativo], lambda opcao: [_VERSAO_PREVIA], _nunca_executa),
+            inscricoes_em=arquivo,
+            ambiente=_AMBIENTE_INSCRICAO,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            app.query_one("#repo", Select).value = relativo
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            app.query_one("#versao", Select).value = _VERSAO_PREVIA
+            await pilot.pause()
+            await pilot.press(_ABRE_INSCRICOES, _ADICIONA_INSCRICAO)
+            await pilot.pause()
+
+    asyncio.run(executar_fluxo())
+    [gravada] = carregar(arquivo)
+    assert gravada.clone == str(tmp_path / "projetos/alpha")
+
+
+def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path):
+    arquivo = tmp_path / _ARQUIVO_INSCRICOES
+    arquivo.write_text("{ isto nao e json", encoding="utf-8")
+
+    async def executar_fluxo() -> None:
+        app = _app_inscricoes(arquivo)
+        avisos = _gravar_avisos(app)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _abrir_inscricoes(app, pilot, selecionar=False)
+            assert len(avisos) == 1
+            assert str(arquivo) in avisos[0]
+
+    asyncio.run(executar_fluxo())

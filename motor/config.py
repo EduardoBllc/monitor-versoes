@@ -133,6 +133,7 @@ def worktrees_mantidas() -> int:
 
 
 #: Nome do arquivo de config na raiz do repo-alvo.
+AMBIENTE_PADRAO = "production"
 ARQUIVO_CONFIG_REPO = ".monitor-versoes.toml"
 
 

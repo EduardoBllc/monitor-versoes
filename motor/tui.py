@@ -36,7 +36,7 @@ from textual.widgets.option_list import Option
 
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
-from motor.config import carregar_config
+from motor.config import AMBIENTE_PADRAO, carregar_config
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -218,13 +218,14 @@ class InscricoesModal(ModalScreen[None]):
         lista.add_options(Option(_linha_inscricao(i)) for i in self._inscricoes)
 
     def action_inscrever(self) -> None:
-        if self._repo is None or not self._repo.disponivel or self._versao is None:
+        caminho = self._repo.caminho if self._repo else None
+        if caminho is None or self._versao is None:
             self.notify(
                 "Selecione um repo disponível e uma versão.", severity="warning"
             )
             return
         nova = Inscricao(
-            str(self._repo.caminho),
+            os.path.abspath(caminho),
             self._versao.numero,
             parse_intervalo(INTERVALO_PADRAO),
             str(Path.cwd()),
@@ -630,7 +631,7 @@ class MotorTUI(App[None]):
         runners: Runners,
         slot: SlotProgresso | None = None,
         inscricoes_em: Path | None = None,
-        ambiente: str = "production",
+        ambiente: str = AMBIENTE_PADRAO,
     ) -> None:
         super().__init__()
         self._inscricoes_em = inscricoes_em or caminho_arquivo()

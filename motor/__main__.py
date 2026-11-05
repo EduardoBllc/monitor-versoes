@@ -28,6 +28,7 @@ from motor.agendador import (
     rodar_comando_do_sistema,
     sistema_atual,
 )
+from motor.config import AMBIENTE_PADRAO
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
@@ -110,7 +111,7 @@ def _tipo_cli[T](validador: Callable[[str], T]) -> Callable[[str], T]:
 
 def _carregar_ambiente(argv: list[str]) -> None:
     seletor = argparse.ArgumentParser(add_help=False)
-    seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE, default="production")
+    seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE, default=AMBIENTE_PADRAO)
     ambiente = seletor.parse_known_args(argv)[0].env
     if load_dotenv:
         load_dotenv(Path.cwd() / _ARQUIVOS_AMBIENTE[ambiente], override=True)
@@ -302,8 +303,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--env",
         choices=_ARQUIVOS_AMBIENTE,
-        default="production",
-        help="ambiente (default: production)",
+        default=AMBIENTE_PADRAO,
+        help=f"ambiente (default: {AMBIENTE_PADRAO})",
     )
     sub = parser.add_subparsers(dest="comando", required=True, metavar="comando")
 
