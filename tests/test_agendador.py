@@ -75,7 +75,7 @@ def test_agendar_escreve_e_ativa(tmp_path: Path) -> None:
 def test_agendar_de_novo_reescreve(tmp_path: Path) -> None:
     agendar(Sistema.LINUX, tmp_path, EXE, Registro())
     agendar(Sistema.LINUX, tmp_path, "/outro/motor", Registro())
-    [servico] = [p for p in tmp_path.rglob(ARQUIVO_SERVICE)]
+    [servico] = list(tmp_path.rglob(ARQUIVO_SERVICE))
     assert "/outro/motor" in servico.read_text()
 
 
@@ -86,6 +86,18 @@ def test_desagendar_remove(tmp_path: Path, sistema: Sistema) -> None:
     desagendar(sistema, tmp_path, r)
     assert not instalado(sistema, tmp_path)
     assert r.comandos
+
+
+@pytest.mark.parametrize(
+    ("sistema", "palavra"),
+    [(Sistema.LINUX, "disable"), (Sistema.MACOS, "unload")],
+)
+def test_desagendar_remove_mesmo_se_desativar_falha(
+    tmp_path: Path, sistema: Sistema, palavra: str
+) -> None:
+    agendar(sistema, tmp_path, EXE, Registro())
+    desagendar(sistema, tmp_path, Registro(falhar_em=palavra))
+    assert not instalado(sistema, tmp_path)
 
 
 def test_sistema_nao_suportado(monkeypatch: pytest.MonkeyPatch) -> None:

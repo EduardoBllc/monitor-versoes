@@ -55,6 +55,13 @@ def _caminho_plist(home: Path) -> Path:
     return home / "Library" / "LaunchAgents" / ARQUIVO_PLIST
 
 
+def caminhos(sistema: Sistema, home: Path) -> list[Path]:
+    if sistema is Sistema.MACOS:
+        return [_caminho_plist(home)]
+    base = _dir_systemd(home)
+    return [base / ARQUIVO_SERVICE, base / ARQUIVO_TIMER]
+
+
 def arquivos(sistema: Sistema, executavel: str, home: Path) -> dict[Path, str]:
     if sistema is Sistema.MACOS:
         plist = plistlib.dumps(
@@ -64,8 +71,7 @@ def arquivos(sistema: Sistema, executavel: str, home: Path) -> dict[Path, str]:
                 CHAVE_INTERVALO: INTERVALO_LAUNCHD_S,
             }
         ).decode()
-        return {_caminho_plist(home): plist}
-    base = _dir_systemd(home)
+        return {caminhos(sistema, home)[0]: plist}
     servico = (
         "[Unit]\nDescription=Inscrições do monitor-versoes\n\n"
         f"[Service]\nType=oneshot\nExecStart={executavel} {' '.join(ARGUMENTOS_RODAR)}\n"
@@ -74,7 +80,7 @@ def arquivos(sistema: Sistema, executavel: str, home: Path) -> dict[Path, str]:
         "[Unit]\nDescription=Dispara as inscrições do monitor-versoes\n\n"
         "[Timer]\nOnCalendar=minutely\n\n[Install]\nWantedBy=timers.target\n"
     )
-    return {base / ARQUIVO_SERVICE: servico, base / ARQUIVO_TIMER: timer}
+    return dict(zip(caminhos(sistema, home), (servico, timer), strict=True))
 
 
 def agendar(
@@ -95,23 +101,29 @@ def agendar(
 
 
 def desagendar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
-    caminhos = list(arquivos(sistema, "", home))
-    if sistema is Sistema.MACOS:
-        rodar_comando(["launchctl", "unload", str(caminhos[0])])
-    else:
-        rodar_comando(["systemctl", "--user", "disable", "--now", ARQUIVO_TIMER])
-    for caminho in caminhos:
+    lista = caminhos(sistema, home)
+    # Desativar o que não está ativo não pode impedir a remoção dos arquivos.
+    with contextlib.suppress(BackendIndisponivel):
+        if sistema is Sistema.MACOS:
+            rodar_comando(["launchctl", "unload", str(lista[0])])
+        else:
+            rodar_comando(["systemctl", "--user", "disable", "--now", ARQUIVO_TIMER])
+    for caminho in lista:
         caminho.unlink(missing_ok=True)
     if sistema is Sistema.LINUX:
         rodar_comando(["systemctl", "--user", "daemon-reload"])
 
 
 def instalado(sistema: Sistema, home: Path) -> bool:
-    return all(c.exists() for c in arquivos(sistema, "", home))
+    return all(c.exists() for c in caminhos(sistema, home))
 
 
 def rodar_comando_do_sistema(cmd: list[str]) -> None:
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
-    except (OSError, subprocess.CalledProcessError) as e:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise BackendIndisponivel(
+            f"{' '.join(cmd)}: {e} {(e.stderr or '').strip()}".strip()
+        ) from e
+    except OSError as e:
         raise BackendIndisponivel(f"{' '.join(cmd)}: {e}") from e
