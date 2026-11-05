@@ -14,12 +14,23 @@ import textwrap
 import time
 from collections.abc import Callable
 from collections.abc import Set as AbstractSet
+from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
 from motor.adapters.estado.postgres import PostgresEstado
+from motor.agendador import (
+    agendar,
+    desagendar,
+    executavel_motor,
+    instalado,
+    rodar_comando_do_sistema,
+    sistema_atual,
+)
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
+from motor.domain.inscricao import Desfecho, Resultado
 from motor.domain.referencia import FonteReferencia, formatar_referencia
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -32,17 +43,31 @@ from motor.engine.atualizar import (
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
+from motor.engine.inscricao import executar_inscricao
 from motor.engine.migrar_estado import migrar_estado
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from motor.errors import MotorError, formatar_com_notas
+from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
 from motor.init import iniciar
+from motor.inscricoes import (
+    INTERVALO_PADRAO,
+    Inscricao,
+    caminho_arquivo,
+    carregar,
+    disparar_subprocesso,
+    inscrever,
+    parse_intervalo,
+    registrar_execucao,
+    remover,
+    rodar,
+)
 from motor.migracoes import head, migrar
 from motor.montagem import (
     CredenciaisBitbucket,
     FonteTasks,
     abrir_sessao,
     montar_deps,
+    montar_notificador,
     validar_nome_repo,
     validar_sistema_id,
 )
@@ -114,12 +139,114 @@ def _diagnostico(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+class AcaoInscricao(StrEnum):
+    ADICIONAR = "adicionar"
+    LISTAR = "listar"
+    REMOVER = "remover"
+    AGENDAR = "agendar"
+    RODAR = "rodar"
+    EXECUTAR = "executar"
+
+
+def _agendador_instalado() -> bool:
+    try:
+        return instalado(sistema_atual(), Path.home())
+    except ErroDeEntrada:  # SO sem agendador: o adicionar só avisa
+        return False
+
+
+def _inscricao_adicionar(args: argparse.Namespace) -> None:
+    inscrever(
+        caminho_arquivo(),
+        Inscricao(
+            clone=os.path.abspath(_resolver_repo(args.repo)),
+            versao=args.versao,
+            intervalo=parse_intervalo(args.intervalo),
+            diretorio=str(Path.cwd()),
+            ambiente=args.env,
+        ),
+    )
+    print(f"inscrição de {args.versao} registrada")
+    if not _agendador_instalado():
+        print(
+            "agendador não instalado: rode `motor inscricao agendar`", file=sys.stderr
+        )
+
+
+def _inscricao_listar() -> None:
+    for i in carregar(caminho_arquivo()):
+        if i.ultima is None:
+            ultima = "nunca rodou"
+        else:
+            ultima = f"{i.ultima.hora.astimezone():%Y-%m-%d %H:%M} {i.ultima.desfecho}"
+        print(f"{i.versao}  {i.clone}  a cada {i.intervalo}  {ultima}")
+
+
+def _inscricao_agendar(args: argparse.Namespace) -> None:
+    sistema = sistema_atual()
+    if args.desfazer:
+        desagendar(sistema, Path.home(), rodar_comando_do_sistema)
+        print("agendador removido")
+    else:
+        agendar(sistema, Path.home(), executavel_motor(), rodar_comando_do_sistema)
+        print("agendador instalado")
+
+
+def _inscricao_executar(args: argparse.Namespace) -> None:
+    caminho = caminho_arquivo()
+    clone = os.path.abspath(_resolver_repo(args.repo))
+    inscricao = next(
+        (i for i in carregar(caminho) if (i.clone, i.versao) == (clone, args.versao)),
+        None,
+    )
+    if inscricao is None:
+        raise ErroDeEntrada(f"inscrição não encontrada: {clone} {args.versao}")
+    notificador = montar_notificador()
+    try:
+        with abrir_sessao() as sessao:
+            resultado = executar_inscricao(montar_deps(clone, sessao), args.versao)
+    except MotorError as e:
+        resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
+    except Exception as e:
+        # Grava antes de propagar: o traceback segue para o log do agendador.
+        erro = Resultado(Desfecho.ERRO, mensagem=f"{type(e).__name__}: {e}")
+        registrar_execucao(caminho, inscricao, erro, notificador, datetime.now(UTC))
+        raise
+    registrar_execucao(caminho, inscricao, resultado, notificador, datetime.now(UTC))
+
+
+def _inscricao(args: argparse.Namespace) -> None:
+    match AcaoInscricao(args.acao_inscricao):
+        case AcaoInscricao.ADICIONAR:
+            _inscricao_adicionar(args)
+        case AcaoInscricao.LISTAR:
+            _inscricao_listar()
+        case AcaoInscricao.REMOVER:
+            remover(
+                caminho_arquivo(),
+                os.path.abspath(_resolver_repo(args.repo)),
+                args.versao,
+            )
+        case AcaoInscricao.AGENDAR:
+            _inscricao_agendar(args)
+        case AcaoInscricao.RODAR:
+            rodar(
+                caminho_arquivo(),
+                datetime.now(UTC),
+                disparar_subprocesso,
+                montar_notificador(),
+            )
+        case AcaoInscricao.EXECUTAR:
+            _inscricao_executar(args)
+
+
 # Comandos que não passam pela montagem de dependências do `main()` (repos,
 # Tickio, fontes): cada um cuida do próprio banco, ou não usa.
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "init": _init,
     "migrar": _migrar,
     "diagnostico": _diagnostico,
+    "inscricao": _inscricao,
 }
 
 
@@ -272,6 +399,33 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_tipo_cli(validar_sistema_id),
         help="ignorado até a #117: o sistema vem de [tarefas] sistema na config",
     )
+
+    p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
+    acoes_insc = p_insc.add_subparsers(
+        dest="acao_inscricao", required=True, metavar="acao"
+    )
+    repo_arg = argparse.ArgumentParser(add_help=False)
+    repo_arg.add_argument("versao", help="versao alvo no formato X.Y.Z")
+    repo_arg.add_argument(
+        "--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR"
+    )
+    p_inscrever = acoes_insc.add_parser(
+        AcaoInscricao.ADICIONAR, parents=[repo_arg], help="inscreve uma versão"
+    )
+    p_inscrever.add_argument(
+        "--intervalo", default=INTERVALO_PADRAO, help="Nm ou Nh (default: 30m)"
+    )
+    acoes_insc.add_parser(AcaoInscricao.LISTAR, help="lista as inscrições")
+    acoes_insc.add_parser(
+        AcaoInscricao.REMOVER, parents=[repo_arg], help="remove uma inscrição"
+    )
+    p_agendar = acoes_insc.add_parser(
+        AcaoInscricao.AGENDAR, help="instala o disparo por minuto"
+    )
+    p_agendar.add_argument("--desfazer", action="store_true", help="remove o disparo")
+    acoes_insc.add_parser(AcaoInscricao.RODAR, help="dispara as inscrições vencidas")
+    # Sem help=: o argparse não lista; é o comando interno do agendador.
+    acoes_insc.add_parser(AcaoInscricao.EXECUTAR, parents=[repo_arg])
 
     return parser
 

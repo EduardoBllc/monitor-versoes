@@ -29,6 +29,7 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.engine import criar_engine, garantir_esquema
 from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
+from motor.adapters.notificador.desktop import NotificadorDesktop
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.config import (
@@ -51,6 +52,7 @@ from motor.ports import (
     EsquemaVersao,
     EstadoRepo,
     GitRepo,
+    Notificador,
     PoliticaAtribuicao,
     TaskSource,
 )
@@ -298,6 +300,10 @@ def montar_commit_source(  # noqa: PLR0913
         ref_principal=ref_principal,
     )
     return ChainCommitSource(sources=[pr, grep])
+
+
+def montar_notificador() -> Notificador:
+    return NotificadorDesktop()
 
 
 def montar_deps(

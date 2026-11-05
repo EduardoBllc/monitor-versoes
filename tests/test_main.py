@@ -12,6 +12,7 @@ import contextlib
 import datetime
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 
 import pytest
 
@@ -1130,3 +1131,118 @@ def test_migrar_estado_recusa_sai_com_codigo_de_erro_e_mensagem(
 
     assert saida.value.code == 1
     assert "mesmo banco" in caplog.text
+
+
+# -- inscricao ----------------------------------------------------------------
+
+
+class _Inscr(StrEnum):
+    VERSAO = "13.34.0"
+    MENSAGEM_BUG = "RuntimeError: boom"
+
+
+@pytest.fixture
+def inscricoes_env(monkeypatch, tmp_path):
+    """Arquivo de inscrições e HOME em tmp_path; notificador fake."""
+    from motor.adapters.notificador.fake import FakeNotificador
+
+    arquivo = tmp_path / "inscricoes.json"
+    monkeypatch.setattr(cli, "caminho_arquivo", lambda: arquivo)
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    notificador = FakeNotificador()
+    monkeypatch.setattr(cli, "montar_notificador", lambda: notificador)
+    return arquivo, notificador
+
+
+def _inscrever_clone(clone: str) -> None:
+    main(["inscricao", "adicionar", _Inscr.VERSAO, "--repo", clone])
+
+
+def test_inscricao_adicionar_por_nome_e_por_caminho_dao_a_mesma(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    from motor.inscricoes import carregar
+
+    arquivo, _ = inscricoes_env
+    clone = _repo_dir(tmp_path)
+    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
+    _inscrever_clone(clone)
+    _inscrever_clone(os.path.basename(clone))
+    assert [i.clone for i in carregar(arquivo)] == [clone]
+
+
+def test_inscricao_adicionar_avisa_sem_agendador(inscricoes_env, tmp_path, capsys):
+    _inscrever_clone(_repo_dir(tmp_path))
+    assert "agendador não instalado" in capsys.readouterr().err
+
+
+def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
+    clone = _repo_dir(tmp_path)
+    _inscrever_clone(clone)
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    saida = capsys.readouterr().out
+    assert _Inscr.VERSAO in saida
+    assert clone in saida
+    assert "nunca rodou" in saida
+
+
+def _preparar_execucao(monkeypatch, tmp_path, executar):
+    clone = _repo_dir(tmp_path)
+    _inscrever_clone(clone)
+    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(cli, "montar_deps", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "executar_inscricao", executar)
+    return clone
+
+
+def test_inscricao_executar_grava_resultado(inscricoes_env, monkeypatch, tmp_path):
+    from motor.domain.inscricao import Desfecho, Resultado
+    from motor.inscricoes import carregar
+
+    arquivo, _ = inscricoes_env
+    clone = _preparar_execucao(
+        monkeypatch, tmp_path, lambda deps, versao: Resultado(Desfecho.NADA)
+    )
+    main(["inscricao", "executar", _Inscr.VERSAO, "--repo", clone])
+    ultima = carregar(arquivo)[0].ultima
+    assert ultima is not None
+    assert ultima.desfecho == Desfecho.NADA
+
+
+def test_inscricao_executar_bug_grava_erro_e_propaga(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    from motor.domain.inscricao import Desfecho
+    from motor.inscricoes import carregar
+
+    def bug(deps, versao):
+        raise RuntimeError("boom")
+
+    arquivo, _ = inscricoes_env
+    clone = _preparar_execucao(monkeypatch, tmp_path, bug)
+    with pytest.raises(SystemExit):
+        main(["inscricao", "executar", _Inscr.VERSAO, "--repo", clone])
+    ultima = carregar(arquivo)[0].ultima
+    assert ultima is not None
+    assert ultima.desfecho == Desfecho.ERRO
+    assert ultima.mensagem == _Inscr.MENSAGEM_BUG
+
+
+def test_inscricao_nao_abre_banco_exceto_executar(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        cli, "abrir_sessao", lambda: pytest.fail("só o executar abre sessão")
+    )
+    _inscrever_clone(_repo_dir(tmp_path))
+    main(["inscricao", "listar"])
+
+
+def test_executar_fora_do_help(capsys):
+    with pytest.raises(SystemExit):
+        main(["inscricao", "-h"])
+    saida = capsys.readouterr().out
+    assert "listar" in saida
+    assert "executar" not in saida
