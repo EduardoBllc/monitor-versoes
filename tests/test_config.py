@@ -320,7 +320,19 @@ _CHAVES_NOVAS = [
     ("tag_liberacao", "liberacao", "tag", "{versao}", "v{versao}"),
     ("branch_versao", "branches", "versao", "{versao}", "release/{versao}"),
     ("branch_principal", "branches", "principal", "master", "main"),
+    ("fonte_tarefas", "tarefas", "fonte", "rastreador", "outro"),
 ]
+
+
+def test_fonte_de_tarefas_continua_em_tarefas(camadas):
+    glob, repo = camadas
+    glob.write_text('[tarefas]\nfonte = "rastreador"\n')
+    repo.write_text("[tarefas]\nsistema = 7\n")
+
+    lido = config.carregar_config(str(repo.parent))
+
+    # o plugin recebe a tabela inteira, `fonte` inclusa.
+    assert lido.tarefas == {"fonte": "rastreador", "sistema": 7}
 
 
 @pytest.mark.parametrize(

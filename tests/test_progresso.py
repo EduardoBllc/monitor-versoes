@@ -18,7 +18,6 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
@@ -33,6 +32,7 @@ from motor.engine.verificar import verificar
 from motor.progresso import Progresso, SlotProgresso, silencioso
 from motor.services.target_resolver import TargetResolver
 from motor.tui import renderizar_progresso
+from tests.fontes_falsas import REFERENCIA_CH
 from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
@@ -81,7 +81,7 @@ def test_grep_relata_a_varredura_sem_contagem():
 
     GrepCommitSource(
         git=git,
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         ref_principal=lambda: "master",
         progresso=relatos.append,
     ).resolve(["1"])
@@ -114,7 +114,7 @@ def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
         progresso=relatos.append,
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo_estado="r",
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         ref_principal=lambda: "origin/main",
     )
 
@@ -303,7 +303,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
             estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
             repo="r",
             progresso=relatos.append,
-            referencia=lambda: TickioRest.referencia,
+            referencia=lambda: REFERENCIA_CH,
         ),
         "13.34.0",
     )

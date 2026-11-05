@@ -32,6 +32,6 @@ def verificacao_vigente(deps: Deps, versao: str) -> Verificacao | None:
     atual = impressao_da_verificacao(
         deps.estado.exclusoes(deps.repo),
         deps.estado.sem_entrega(deps.repo),
-        deps.identidade_das_entradas,
+        deps.identidade_das_entradas(),
     )
     return v if v.impressao == atual else None

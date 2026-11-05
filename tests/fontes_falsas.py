@@ -1,0 +1,83 @@
+"""Fontes de tarefas falsas, carregadas pela config como `modulo:Classe`.
+
+Servem aos testes da montagem, da CLI, da TUI e do diagnostico: o nucleo nao
+traz fonte de tarefas por entry point, e cada teste escolhe a sua pelo
+`[tarefas] fonte` do `config.toml` central.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Mapping
+from typing import ClassVar
+
+from motor.domain.referencia import Referencia
+from motor.errors import ErroDeEntrada
+
+#: Referencia de teste: o commit cita `ch<digitos>`.
+REFERENCIA_CH = Referencia("ch{id}", "0-9")
+
+
+def _chamados(tarefas: Mapping[str, object]) -> list[str]:
+    bruto = tarefas.get("chamados", [])
+    assert isinstance(bruto, list)
+    return [str(c) for c in bruto]
+
+
+class FonteFixa:
+    """Devolve o `[tarefas] chamados` da config; guarda os kwargs recebidos e
+    as versoes buscadas."""
+
+    referencia: ClassVar[Referencia] = REFERENCIA_CH
+    recebidos: ClassVar[list[dict[str, object]]] = []
+    buscadas: ClassVar[list[str]] = []
+
+    def __init__(self, **kwargs: object) -> None:
+        FonteFixa.recebidos.append(dict(kwargs))
+        tarefas = kwargs["tarefas"]
+        assert isinstance(tarefas, Mapping)
+        self.tarefas: Mapping[str, object] = tarefas
+
+    def fetch(self, versao: str, /) -> list[str]:
+        FonteFixa.buscadas.append(versao)
+        return _chamados(self.tarefas)
+
+
+class FonteComCredencial:
+    """Exige `FONTE_FALSA_TOKEN` na busca e oferece `verificar_credenciais`."""
+
+    referencia: ClassVar[Referencia] = REFERENCIA_CH
+
+    def __init__(
+        self, *, tarefas: Mapping[str, object], arquivos: tuple[str, ...]
+    ) -> None:
+        self.tarefas = tarefas
+
+    def fetch(self, versao: str, /) -> list[str]:
+        if not os.environ.get("FONTE_FALSA_TOKEN", ""):
+            raise ErroDeEntrada("faltando no .env: FONTE_FALSA_TOKEN")
+        return _chamados(self.tarefas)
+
+    def verificar_credenciais(self) -> None:
+        if os.environ.get("FONTE_FALSA_TOKEN", "") != "certo":
+            raise ErroDeEntrada("credencial recusada")
+
+
+class FonteConstrutorQuebra:
+    """Construtor que recusa a config com erro do operador."""
+
+    def __init__(self, **kwargs: object) -> None:
+        raise ErroDeEntrada("construtor quebrou")
+
+    def fetch(self, versao: str, /) -> list[str]:
+        raise AssertionError("nunca instanciada")
+
+
+class FonteConstrutorComBug:
+    """Construtor com bug: levanta algo que nao e `MotorError`."""
+
+    def __init__(self, **kwargs: object) -> None:
+        raise RuntimeError("bug")
+
+    def fetch(self, versao: str, /) -> list[str]:
+        raise AssertionError("nunca instanciada")

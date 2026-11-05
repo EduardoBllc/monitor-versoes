@@ -33,6 +33,7 @@ from motor.tui import (
     renderizar_chamado,
     renderizar_status,
 )
+from tests.fontes_falsas import FonteFixa
 from tests.versionamento import VENDABEM_COMPOSTA
 
 
@@ -224,6 +225,15 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
     assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
 
 
+_FIXA = "tests.fontes_falsas:FonteFixa"
+
+
+def _sistema_recebido(deps) -> object:
+    """O `[tarefas] sistema` que a fonte da config recebeu ao ser carregada."""
+    deps.tasks.carregar()
+    return FonteFixa.recebidos[-1]["tarefas"]["sistema"]  # type: ignore[index]
+
+
 def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     tmp_path, monkeypatch, xdg_isolado
 ):
@@ -231,10 +241,8 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
-
-    class TickioSpy:
-        def __init__(self, base_url, usuario, senha, sistema, arquivos):
-            self.sistema = sistema
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def verificar_spy(deps, versao, auditar=False):
         # a TUI nao tem flag de credencial: token e email chegam do ambiente,
@@ -244,7 +252,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
             repo=deps.repo,
             versao=versao,
             auditar=auditar,
-            tickio_sistema_id=deps.tasks.sistema,
+            sistema=_sistema_recebido(deps),
             bitbucket_token=pr.token,
             bitbucket_email=pr.email,
         )
@@ -255,7 +263,6 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "verificar", verificar_spy)
 
     status = tui._verificar_repo(
@@ -266,7 +273,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
         "repo": "alpha",
         "versao": "14.0.0",
         "auditar": True,
-        "tickio_sistema_id": 7,
+        "sistema": 7,
         "bitbucket_token": "tok-secreto",
         "bitbucket_email": "dev@example.com",
     }
@@ -281,23 +288,20 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_i
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
-
-    class TickioSpy:
-        def __init__(self, base_url, usuario, senha, sistema, arquivos):
-            self.sistema = sistema
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def atualizar_spy(deps, versao):
         capturado.update(
             repo=deps.repo,
             versao=versao,
-            tickio_sistema_id=deps.tasks.sistema,
+            sistema=_sistema_recebido(deps),
         )
         return esperado
 
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", TickioSpy)
     monkeypatch.setattr(tui, "atualizar", atualizar_spy)
 
     resultado = tui._atualizar_repo(
@@ -308,11 +312,11 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_i
     assert capturado == {
         "repo": "alpha",
         "versao": "14.0.0",
-        "tickio_sistema_id": 7,
+        "sistema": 7,
     }
 
 
-def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
+def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
@@ -325,7 +329,7 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", lambda *a, **k: object())
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
     monkeypatch.setattr(tui, "atualizar_continue", continue_spy)
 
     resultado = tui._continuar_repo(
@@ -338,7 +342,7 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch):
     )
 
 
-def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
+def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
@@ -349,7 +353,7 @@ def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch):
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    monkeypatch.setattr(montagem, "TickioRest", lambda *a, **k: object())
+    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
     monkeypatch.setattr(tui, "atualizar_abort", abort_spy)
 
     tui._abortar_repo(RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0")

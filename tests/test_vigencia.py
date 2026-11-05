@@ -66,7 +66,7 @@ def _montar(
         estado=estado,
         repo="r",
         agora=lambda: agora,
-        identidade_das_entradas=ENTRADAS,
+        identidade_das_entradas=lambda: ENTRADAS,
     )
 
 

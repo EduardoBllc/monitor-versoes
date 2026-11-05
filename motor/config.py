@@ -147,7 +147,9 @@ class Escolhido:
 class ConfigProjeto:
     """Config por projeto, mesclada das duas camadas (repo vence o global).
 
-    `tarefas` e opaco ao nucleo: quem le as chaves e o adapter do tracker.
+    `tarefas` e opaco ao nucleo, salvo `fonte`: quem le as outras chaves e o
+    plugin da fonte de tarefas, que recebe a tabela inteira (`fonte` inclusa).
+    `fonte_tarefas` e o `[tarefas] fonte` com o arquivo que o deu.
     `padrao_referencia` e o `[referencia] padrao` mesclado; `None` quando nenhuma
     camada o define (vale o proposto pelo adapter).
 
@@ -166,6 +168,7 @@ class ConfigProjeto:
     tag_liberacao: Escolhido | None = None
     branch_versao: Escolhido | None = None
     branch_principal: Escolhido | None = None
+    fonte_tarefas: Escolhido | None = None
 
 
 def caminho_config_global() -> str:
@@ -231,6 +234,7 @@ _ESCOLHAS = (
     ("tag_liberacao", "liberacao", "tag", True),
     ("branch_versao", "branches", "versao", True),
     ("branch_principal", "branches", "principal", False),
+    ("fonte_tarefas", "tarefas", "fonte", False),
 )
 
 
@@ -276,4 +280,5 @@ def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
         tag_liberacao=escolhas.get("tag_liberacao"),
         branch_versao=escolhas.get("branch_versao"),
         branch_principal=escolhas.get("branch_principal"),
+        fonte_tarefas=escolhas.get("fonte_tarefas"),
     )

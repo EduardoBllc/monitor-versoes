@@ -16,15 +16,15 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.atribuicoes import Exata
-from motor.config import ConfigProjeto
+from motor.config import ConfigProjeto, Escolhido
 from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.esquemas.semver import Semver
 from motor.montagem import (
     CredenciaisBitbucket,
+    FonteDaConfig,
     FonteTasks,
     montar_commit_source,
     montar_deps,
@@ -33,6 +33,7 @@ from motor.montagem import (
     validar_sistema_id,
 )
 from motor.services.versionamento import Versionamento
+from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 
 
 class GitQueGritaSeUsado(FakeGit):
@@ -50,7 +51,7 @@ class GitQueGritaSeUsado(FakeGit):
 
 def test_sem_token_a_fonte_e_so_o_grep():
     # sem cadeia: um ChainCommitSource de um elemento so seria indireção pura.
-    fonte = montar_commit_source(FakeGit(), referencia=lambda: TickioRest.referencia)
+    fonte = montar_commit_source(FakeGit(), referencia=lambda: REFERENCIA_CH)
 
     assert isinstance(fonte, GrepCommitSource)
 
@@ -60,7 +61,7 @@ def test_sem_estado_nao_monta_a_fonte_de_pr():
     # nao teria o que ler e devolveria vazio para todo chamado — pior que o grep.
     fonte = montar_commit_source(
         FakeGit(),
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
     )
 
@@ -72,7 +73,7 @@ def test_com_token_a_pr_vem_antes_do_grep():
     # grep fica de fallback para o chamado que nenhuma PR casou.
     fonte = montar_commit_source(
         FakeGit(),
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo="r",
@@ -92,7 +93,7 @@ def test_a_fonte_de_pr_recebe_o_cache_do_estado():
 
     fonte = montar_commit_source(
         FakeGit(),
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
         estado=estado,
         repo="vbweb",
@@ -112,7 +113,7 @@ def test_montar_nao_toca_o_git(token):
     """
     montar_commit_source(
         GitQueGritaSeUsado(),
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
         bitbucket=CredenciaisBitbucket(token, "dev@x.com"),
     )
 
@@ -132,7 +133,7 @@ def test_o_grep_varre_a_principal_do_versionamento():
         return Versionamento(esquema=Semver(), politica=Exata(), principal="dev")
 
     fonte = montar_commit_source(
-        git, referencia=lambda: TickioRest.referencia, versionamento=versionamento
+        git, referencia=lambda: REFERENCIA_CH, versionamento=versionamento
     )
     assert chamadas == []
 
@@ -144,7 +145,7 @@ def test_o_grep_varre_a_principal_do_versionamento():
 # -- fonte de tasks -----------------------------------------------------------
 
 
-def test_task_source_manual_ignora_as_variaveis_do_tickio(tmp_path):
+def test_task_source_manual_le_a_lista(tmp_path):
     lista = tmp_path / "lista.txt"
     lista.write_text("123456\n", encoding="utf-8")
 
@@ -153,18 +154,83 @@ def test_task_source_manual_ignora_as_variaveis_do_tickio(tmp_path):
     assert fonte.fetch("13.34.0") == ["123456"]
 
 
-def test_task_source_tickio_nao_cobra_credencial_na_montagem(monkeypatch):
-    # montar nao e usar: `reconstruir-estado` recebe esta fonte e nunca a chama.
-    for var in ("TICKIO_BASE_URL", "TICKIO_USER", "TICKIO_PASSWORD"):
-        monkeypatch.setenv(var, "")
-
-    fonte = montar_task_source(
-        ConfigProjeto(tarefas={"sistema": 7}, arquivos=("/a.toml", "/b.toml"))
+def _config_com_fonte(valor: str, **tarefas: object) -> ConfigProjeto:
+    return ConfigProjeto(
+        tarefas={"fonte": valor, **tarefas},
+        arquivos=("/a.toml", "/b.toml"),
+        fonte_tarefas=Escolhido(valor, "/a.toml", "central"),
     )
 
-    assert isinstance(fonte, TickioRest)
-    assert fonte.sistema == 7
-    assert fonte.arquivos == ("/a.toml", "/b.toml")
+
+def test_task_source_da_config_nao_carrega_o_plugin_na_montagem():
+    # montar nao e usar: `reconstruir-estado` recebe esta fonte e nunca a chama.
+    fonte = montar_task_source(_config_com_fonte("inexistente"))
+
+    assert isinstance(fonte, FonteDaConfig)
+
+
+def test_task_source_da_config_busca_pelo_plugin():
+    fonte = montar_task_source(
+        _config_com_fonte("tests.fontes_falsas:FonteFixa", chamados=["101"])
+    )
+
+    assert fonte.fetch("1.0.0") == ["101"]
+
+
+def test_plugin_recebe_tarefas_e_arquivos_nomeados():
+    fonte = montar_task_source(
+        _config_com_fonte("tests.fontes_falsas:FonteFixa", sistema=7)
+    )
+    fonte.fetch("1.0.0")
+
+    recebido = FonteFixa.recebidos[-1]
+    assert set(recebido) == {"tarefas", "arquivos"}
+    assert recebido["arquivos"] == ("/a.toml", "/b.toml")
+    tarefas = recebido["tarefas"]
+    assert isinstance(tarefas, dict)
+    assert tarefas["fonte"] == "tests.fontes_falsas:FonteFixa"
+    assert tarefas["sistema"] == 7
+
+
+def test_plugin_carregado_uma_vez_por_invocacao():
+    fonte = FonteDaConfig(_config_com_fonte("tests.fontes_falsas:FonteFixa"))
+    antes = len(FonteFixa.recebidos)
+
+    fonte.fetch("1.0.0")
+    fonte.fetch("1.0.0")
+    fonte.proposta()
+
+    assert len(FonteFixa.recebidos) == antes + 1
+
+
+def test_falha_ao_carregar_nao_fica_em_cache():
+    fonte = FonteDaConfig(
+        _config_com_fonte("tests.fontes_falsas:FonteConstrutorQuebra")
+    )
+
+    for _ in range(2):
+        with pytest.raises(ErroDeEntrada, match="construtor quebrou"):
+            fonte.fetch("1.0.0")
+
+
+def test_construtor_com_bug_vira_erro_de_entrada():
+    fonte = montar_task_source(
+        _config_com_fonte("tests.fontes_falsas:FonteConstrutorComBug")
+    )
+
+    with pytest.raises(ErroDeEntrada, match="construtor falhou"):
+        fonte.fetch("1.0.0")
+
+
+def test_sem_fonte_a_busca_pede_a_chave():
+    fonte = montar_task_source(ConfigProjeto(arquivos=("/a.toml", "/b.toml")))
+
+    with pytest.raises(ErroDeEntrada) as e:
+        fonte.fetch("1.0.0")
+    assert str(e.value) == (
+        "faltando [tarefas] fonte em /a.toml e /b.toml; "
+        "ou use --task-source manual --lista <arquivo>"
+    )
 
 
 # -- referencia de tarefa ----------------------------------------------------
@@ -188,10 +254,27 @@ def _lista(raiz):
     return FonteTasks(fonte="manual", lista_manual=str(lista))
 
 
-def test_tickio_sem_config_propoe_a_referencia_dele(repo_montavel):
+def _fonte_central(raiz, valor: str) -> None:
+    central = raiz.parent / "xdg" / "monitor-versoes"
+    central.mkdir(parents=True, exist_ok=True)
+    (central / "config.toml").write_text(f'[tarefas]\nfonte = "{valor}"\n')
+
+
+def test_fonte_da_config_sem_padrao_propoe_a_referencia_dela(repo_montavel):
+    _fonte_central(repo_montavel, "tests.fontes_falsas:FonteFixa")
+
     deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
 
-    assert deps.referencia() == Referencia("ch{id}", "0-9")
+    assert deps.referencia() == REFERENCIA_CH
+
+
+def test_montar_deps_nao_carrega_o_plugin(repo_montavel):
+    _fonte_central(repo_montavel, "inexistente")
+
+    deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
+
+    with pytest.raises(ErroDeEntrada, match="instalados: nenhum"):
+        deps.referencia()
 
 
 def test_lista_manual_sem_padrao_monta_e_so_cobra_no_uso(repo_montavel):
@@ -221,7 +304,15 @@ def sem_bitbucket_no_ambiente(monkeypatch):
 
 
 def _entradas(raiz, **kwargs) -> str:
-    return montar_deps(str(raiz), None, **kwargs).identidade_das_entradas  # type: ignore[arg-type]
+    return montar_deps(str(raiz), None, **kwargs).identidade_das_entradas()  # type: ignore[arg-type]
+
+
+def test_identidade_muda_com_a_fonte(repo_montavel, sem_bitbucket_no_ambiente):
+    _fonte_central(repo_montavel, "tests.fontes_falsas:FonteFixa")
+    antes = _entradas(repo_montavel)
+    _fonte_central(repo_montavel, "tests.fontes_falsas:FonteComCredencial")
+
+    assert _entradas(repo_montavel) != antes
 
 
 def test_entradas_mudam_com_a_fonte_de_tasks(repo_montavel, sem_bitbucket_no_ambiente):

@@ -160,9 +160,9 @@ def _build_parser() -> argparse.ArgumentParser:
     comum.add_argument(
         "--task-source",
         dest="fonte_flag",
-        default="tickio",
-        choices=["tickio", "manual"],
-        help="fonte das tasks (default: tickio)",
+        default="config",
+        choices=["config", "manual"],
+        help="fonte das tasks (default: config, a [tarefas] fonte)",
     )
     comum.add_argument(
         "--lista",

@@ -302,7 +302,7 @@ def verificar_sem_fetch(
             Verificacao(
                 tip=tip,
                 impressao=impressao_da_verificacao(
-                    exclusoes, sem_entrega, deps.identidade_das_entradas
+                    exclusoes, sem_entrega, deps.identidade_das_entradas()
                 ),
                 verificado_em=verificado_em,
                 status=status,

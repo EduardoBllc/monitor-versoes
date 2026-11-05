@@ -9,7 +9,6 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.atribuicoes import Composta, Exata
 from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo
 from motor.engine.deps import Deps
@@ -19,6 +18,7 @@ from motor.errors import ErroDeEntrada, MotorError
 from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
 from motor.services.versionamento import Versionamento
+from tests.fontes_falsas import REFERENCIA_CH
 from tests.versionamento import VENDABEM_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1)
@@ -32,7 +32,7 @@ def _deps(git, tasks, commits, estado) -> Deps:
         estado=estado,
         repo="r",
         commit_source=commits,
-        referencia=lambda: TickioRest.referencia,
+        referencia=lambda: REFERENCIA_CH,
     )
 
 
@@ -1035,7 +1035,7 @@ def test_verificar_grava_carimbo_com_tip_impressao_hora_e_status():
     assert carimbo is not None
     assert carimbo.tip == deps.git.resolve_ref("14.0.0")
     assert carimbo.impressao == impressao_da_verificacao(
-        [], {}, deps.identidade_das_entradas
+        [], {}, deps.identidade_das_entradas()
     )
     assert carimbo.verificado_em == AGORA
     assert carimbo.status == status

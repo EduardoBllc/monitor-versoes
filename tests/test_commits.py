@@ -4,12 +4,12 @@ import datetime
 
 import pytest
 
-from motor.adapters.tasksource.tickio import TickioRest
 from motor.domain.commits import extrair_chamado, match_exato, ordenar_por_grafo
 from motor.domain.referencia import Referencia
 from motor.domain.types import CommitRef
+from tests.fontes_falsas import REFERENCIA_CH
 
-TICKIO = TickioRest.referencia
+TICKIO = REFERENCIA_CH
 
 
 def test_extrair_chamado():
