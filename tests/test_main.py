@@ -521,14 +521,14 @@ def test_fonte_por_import_no_repo_e_recusada(bordas, tmp_path, caplog):
     assert "import direto so vale no config.toml central" in caplog.text
 
 
-def test_fonte_nao_instalada_lista_os_instalados(bordas, tmp_path, caplog):
+def test_fonte_nao_instalada_e_recusada(bordas, tmp_path, caplog):
     _fonte_central("inexistente")
 
     with pytest.raises(SystemExit) as saida:
         main(["verificar", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
     assert saida.value.code == 1
-    assert "instalados: nenhum" in caplog.text
+    assert "plugin 'inexistente' nao encontrado" in caplog.text
 
 
 def test_sem_fonte_a_busca_pede_a_chave(bordas, tmp_path, caplog):
