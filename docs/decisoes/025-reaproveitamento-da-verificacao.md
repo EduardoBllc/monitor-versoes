@@ -21,8 +21,9 @@ se as quatro condições** se cumprem:
   [015](015-estado-regravado-ao-final-do-lote.md)) muda o que falta aplicar;
 - **a impressão é a mesma**: exclusão ou "sem entrega" novos mudam o julgamento sem mexer
   no tip. A impressão também leva as entradas da resolução (fonte de tasks e conteúdo da
-  lista manual, fonte de commits, padrão de referência e piso): trocá-las é o operador
-  pedindo outro lote, não mudança externa, e por isso nunca reaproveita.
+  lista manual, `[tarefas]` da config, fonte de commits, padrão de referência e piso):
+  trocá-las é o operador pedindo outro lote, não mudança externa, e por isso nunca
+  reaproveita.
 
 **O carimbo é cache**, descartável como o resto do estado
 ([004](004-estado-descartavel.md)): `migrar-estado` não o copia e `reconstruir-estado` não

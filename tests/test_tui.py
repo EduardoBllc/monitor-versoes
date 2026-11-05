@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+import enum
 import io
 from functools import partial
 from pathlib import Path
@@ -768,23 +769,33 @@ async def _selecionar_previa(
     await pilot.pause()
 
 
-def test_atualizar_usa_o_runner_de_previa():
+class _RunnerChamado(enum.Enum):
+    PREVIA = enum.auto()
+    EXECUTAR = enum.auto()
+
+
+@pytest.mark.parametrize(
+    ("com_previa", "esperado"),
+    [(True, _RunnerChamado.PREVIA), (False, _RunnerChamado.EXECUTAR)],
+    ids=["com_previa", "sem_previa"],
+)
+def test_atualizar_usa_o_runner_de_previa(com_previa, esperado):
     commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
     status = VersionStatus(verde=True, estado_integro=True, faltantes=[commit])
-    chamadas: list[str] = []
+    chamadas: list[_RunnerChamado] = []
 
     def executar(repo, numero, auditar) -> VersionStatus:
-        chamadas.append("executar")
+        chamadas.append(_RunnerChamado.EXECUTAR)
         return status
 
     def previa(repo, numero) -> VersionStatus:
-        chamadas.append("previa")
+        chamadas.append(_RunnerChamado.PREVIA)
         return status
 
     def atualizar_runner(repo, numero) -> AtualizarResult:
         return AtualizarResult(status=AtualizarStatus.DONE, aplicados=[commit])
 
-    async def clicar(com_previa: bool) -> None:
+    async def clicar() -> None:
         app = MotorTUI(
             Runners(
                 carregar_repos=lambda: [_REPO_PREVIA],
@@ -800,11 +811,8 @@ def test_atualizar_usa_o_runner_de_previa():
             await app.workers.wait_for_complete()
             await pilot.pause()
 
-    asyncio.run(clicar(True))
-    assert chamadas == ["previa"]
-    chamadas.clear()
-    asyncio.run(clicar(False))
-    assert chamadas == ["executar"]
+    asyncio.run(clicar())
+    assert chamadas == [esperado]
 
 
 def test_app_atualizar_sem_verificar_antes_pede_confirmacao_e_aplica():

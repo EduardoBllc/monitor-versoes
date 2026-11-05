@@ -165,6 +165,8 @@ def _identidade_das_entradas(
             fonte_tasks,
             type(commits).__name__,
             _proposta(tasks),
+            # `[tarefas]` alimenta o adapter do tracker (ex.: `sistema` filtra o Tickio).
+            sorted(config.tarefas.items()),
             config.padrao_referencia,
             config.piso,
         )

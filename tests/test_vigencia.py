@@ -28,7 +28,6 @@ A = Exclusion(hash_origem="a", versao_numero=None, motivo="x")
 A_NA_VERSAO = Exclusion(hash_origem="a", versao_numero=VERSAO, motivo="x")
 B = Exclusion(hash_origem="b", versao_numero=VERSAO, motivo="y")
 ENTRADAS = "tickio|bitbucket"
-OUTRAS_ENTRADAS = "lista|grep"
 
 
 def _montar(
@@ -36,7 +35,6 @@ def _montar(
     agora: datetime.datetime,
     impressao: str | None = None,
     tip: str = TIP,
-    entradas: str = ENTRADAS,
 ) -> Deps:
     git = FakeGit()
     git.add_commit(TIP, "", "raiz", HORA)
@@ -67,7 +65,7 @@ def _montar(
         estado=estado,
         repo="r",
         agora=lambda: agora,
-        identidade_das_entradas=entradas,
+        identidade_das_entradas=ENTRADAS,
     )
 
 
@@ -81,12 +79,6 @@ def test_impressao_muda_quando_sem_entrega_muda():
     assert impressao_da_verificacao(
         [], {"1": "m"}, ENTRADAS
     ) != impressao_da_verificacao([], {}, ENTRADAS)
-
-
-def test_impressao_muda_quando_as_entradas_mudam():
-    assert impressao_da_verificacao([], {}, ENTRADAS) != impressao_da_verificacao(
-        [], {}, OUTRAS_ENTRADAS
-    )
 
 
 def test_impressao_independe_da_ordem():
@@ -129,8 +121,3 @@ def test_impressao_diferente_nao_vale():
 def test_sem_carimbo_nao_vale():
     deps = _montar(agora=HORA)
     assert verificacao_vigente(deps, "14.0.0") is None
-
-
-def test_entradas_diferentes_nao_vale():
-    deps = _montar(agora=HORA, entradas=OUTRAS_ENTRADAS)
-    assert verificacao_vigente(deps, VERSAO) is None

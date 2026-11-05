@@ -233,6 +233,16 @@ def test_entradas_mudam_com_a_config_de_referencia_e_piso(
     assert _entradas(repo_montavel) != antes
 
 
+def test_entradas_mudam_com_o_sistema_de_tarefas(
+    repo_montavel, sem_bitbucket_no_ambiente
+):
+    (repo_montavel / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
+    antes = _entradas(repo_montavel)
+    (repo_montavel / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 8\n")
+
+    assert _entradas(repo_montavel) != antes
+
+
 def test_entradas_iguais_para_a_mesma_invocacao(
     repo_montavel, sem_bitbucket_no_ambiente
 ):
