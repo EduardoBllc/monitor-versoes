@@ -11,7 +11,7 @@ from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.tickio import TickioRest
 from motor.atribuicoes import Composta, Exata
-from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo, VersionType
+from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import impressao_da_verificacao
@@ -112,7 +112,7 @@ def test_verificar_une_tarefas_das_versoes_abertas_menores():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -135,7 +135,7 @@ def test_verificar_congela_versao_quando_a_tag_aparece():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -175,7 +175,7 @@ def test_verificar_nao_grava_em_versao_liberada():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -198,7 +198,7 @@ def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -234,7 +234,7 @@ def test_auditar_recusa_versao_ainda_aberta():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -295,7 +295,7 @@ def test_verificar_commit_sumido_do_estado_nunca_entra_em_conflitantes():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -351,7 +351,7 @@ def test_verificar_prediz_conflitos_na_ordem_do_cherry_pick():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -379,7 +379,7 @@ def test_verificar_ignora_tag_de_versao_que_o_motor_nunca_viu():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -408,7 +408,7 @@ def test_verificar_busca_antes_de_ler_as_refs_e_congela_tag_nova_no_mesmo_run():
         "r",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -469,7 +469,7 @@ def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
     # CORTE, m0, nao o tip do master (a0). Gravar a0 diria que a0 e herdado, e
     # o commit que a versao esta devendo sairia verde.
     assert (gravada.base_ref, gravada.base_commit) == ("master", "m0")
-    assert gravada.tipo == VersionType.FECHADA
+    assert gravada.tipo == "fechada"
     # escreveu as atribuicoes, ou seja o registro veio antes
     assert [a.chamado for a in estado.atribuicoes("r", "14.0.0")] == ["123123"]
     assert git.fetched == ["origin"]
@@ -509,7 +509,7 @@ def test_verificar_reporta_suspeita_de_cherry_pick_manual_sem_x():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -527,7 +527,7 @@ def _versao_registrada(estado: FakeEstado, numero: str = "14.0.0") -> None:
         "r",
         VersaoInfo(
             numero=numero,
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -758,7 +758,7 @@ def test_verificar_preserva_worktrees_quando_configurado_para_manter():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),
@@ -811,9 +811,9 @@ def _git_com_liberada_fora_da_base() -> FakeGit:
 def _estado_com_liberadas() -> FakeEstado:
     estado = _estado_com_repo()
     for numero, tipo, base in (
-        ("13.34.0", VersionType.AJUSTADA, "t0"),
-        ("14.6.0", VersionType.AJUSTADA, "m0"),
-        ("15.0.0", VersionType.FECHADA, "m0"),
+        ("13.34.0", "ajustada", "t0"),
+        ("14.6.0", "ajustada", "m0"),
+        ("15.0.0", "fechada", "m0"),
     ):
         estado.registrar_versao(
             "r",
@@ -903,7 +903,7 @@ def test_verificar_nao_recobra_liberada_que_e_a_propria_base_da_ajustada():
         "r",
         VersaoInfo(
             numero="14.7.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="14.6.0",
             base_commit="p1",
         ),
@@ -973,7 +973,7 @@ def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="p0",
         ),
@@ -1120,7 +1120,7 @@ def test_tag_do_template_da_config_libera_e_a_homonima_nao(tag, liberada):
             "r",
             VersaoInfo(
                 numero=numero,
-                tipo=VersionType.FECHADA,
+                tipo="fechada",
                 base_ref="main",
                 base_commit="m0",
             ),

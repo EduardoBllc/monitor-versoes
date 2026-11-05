@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from motor.domain.types import VersaoInfo
-from motor.domain.version import inferir_tipo
 from motor.engine.atualizar import AtualizarResult, atualizar
 from motor.engine.deps import Deps
 from motor.errors import RecusaDeInvariante
@@ -46,7 +45,7 @@ def criar(deps: Deps, versao: str) -> AtualizarResult:
         deps.repo,
         VersaoInfo(
             numero=versao,
-            tipo=inferir_tipo(versao),
+            tipo=versionamento.esquema.tipo(versao),
             base_ref=base.ref,
             base_commit=base.commit,
         ),

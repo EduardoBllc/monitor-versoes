@@ -8,12 +8,6 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 
-class VersionType(IntEnum):
-    FECHADA = 0  # X.0.0
-    AJUSTADA = 1  # X.Y.0
-    CLIENTE = 2  # X.Y.Z
-
-
 class Presence(IntEnum):
     AUSENTE = 0
     ANCESTRAL = 1
@@ -25,13 +19,6 @@ class Presence(IntEnum):
 class BaseRef:
     ref: str = ""  # "13.6.0"
     commit: str = ""  # hash
-
-
-@dataclass(frozen=True)
-class Version:
-    numero: str = ""  # "13.7.0"
-    tipo: VersionType = VersionType.FECHADA
-    base: BaseRef = field(default_factory=BaseRef)
 
 
 # Toda data de commit que vem do git (%cI) ou do Bitbucket tem fuso. A
@@ -110,7 +97,9 @@ class Atribuicao:
 @dataclass(frozen=True)
 class VersaoInfo:
     numero: str = ""
-    tipo: VersionType = VersionType.FECHADA
+    # rotulo livre do esquema (`EsquemaVersao.tipo`); None quando o esquema
+    # nao classifica a versao.
+    tipo: str | None = None
     base_ref: str = ""
     base_commit: str = ""
     liberada_em: datetime.datetime | None = None

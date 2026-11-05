@@ -21,6 +21,7 @@ existe so num dos lados nao e contrato, e uma opiniao.
 from __future__ import annotations
 
 import datetime
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -35,7 +36,6 @@ from motor.domain.types import (
     Verificacao,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.errors import NaoEncontrado, RecusaDeInvariante
 
@@ -49,7 +49,7 @@ DEPOIS = datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC)
 def _base(numero: str = "13.34.0") -> VersaoInfo:
     return VersaoInfo(
         numero=numero,
-        tipo=VersionType.FECHADA,
+        tipo="fechada",
         base_ref="13.33.0",
         base_commit="aaa111",
     )
@@ -186,7 +186,7 @@ def test_registrar_versao_e_no_op_total_na_segunda_chamada(estado):
         REPO,
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.CLIENTE,
+            tipo="cliente",
             base_ref="OUTRA",
             base_commit="bbb222",
         ),
@@ -197,10 +197,19 @@ def test_registrar_versao_e_no_op_total_na_segunda_chamada(estado):
     # cortada. Recomputar faria a base de uma X.0.0 seguir o tip do master e o
     # oraculo de presenca passaria a considerar presente tudo que entrou depois.
     assert (info.tipo, info.base_ref, info.base_commit) == (
-        VersionType.FECHADA,
+        "fechada",
         "13.33.0",
         "aaa111",
     )
+
+
+@pytest.mark.parametrize("tipo", [None, "beta", "ajustada"])
+def test_tipo_da_versao_e_rotulo_livre(estado, tipo):
+    estado.registrar_versao(REPO, replace(_base(), tipo=tipo))
+
+    info = estado.versao(REPO, "13.34.0")
+    assert info is not None
+    assert info.tipo == tipo
 
 
 def test_marcar_liberadas_ignora_versao_que_nao_esta_no_estado(estado):

@@ -25,7 +25,6 @@ from motor.domain.types import (
     VersaoInfo,
     VersionStatus,
 )
-from motor.domain.version import inferir_tipo
 from motor.engine.deps import Deps
 from motor.engine.vigencia import impressao_da_verificacao
 from motor.errors import ErroDeEntrada, MotorError
@@ -377,7 +376,7 @@ def _base_commit(
         deps.repo,
         VersaoInfo(
             numero=versao,
-            tipo=inferir_tipo(versao),
+            tipo=catalogo.versionamento.esquema.tipo(versao),
             base_ref=resolvida.ref,
             base_commit=resolvida.commit,
         ),

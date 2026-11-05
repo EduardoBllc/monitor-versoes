@@ -19,7 +19,6 @@ from motor.domain.types import (
     Verificacao,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.engine.atualizar import (
     AtualizarStatus,
@@ -347,7 +346,7 @@ def test_atualizar_busca_antes_de_ler_a_tag():
         "r",
         VersaoInfo(
             numero="13.7.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.6.0",
             base_commit="m0",
         ),
@@ -659,7 +658,7 @@ def test_atualizar_recusa_tag_nova_mesmo_com_carimbo_vigente():
         "r",
         VersaoInfo(
             numero="13.7.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.6.0",
             base_commit="m0",
         ),
@@ -768,9 +767,7 @@ def test_liberada_em_gravada_vence_o_criterio_que_mudou():
     estado = _estado()
     estado.registrar_versao(
         "r",
-        VersaoInfo(
-            numero="1.2.0", tipo=VersionType.FECHADA, base_ref="main", base_commit="m0"
-        ),
+        VersaoInfo(numero="1.2.0", tipo="fechada", base_ref="main", base_commit="m0"),
     )
     estado.marcar_liberadas("r", {"1.2.0": data})
     deps = _deps_semver(_git_semver({}), estado, None)

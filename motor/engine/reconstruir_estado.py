@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 from motor.domain.types import VersaoInfo
-from motor.domain.version import inferir_tipo
 from motor.engine.deps import Deps
 from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
@@ -70,7 +69,7 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
             deps.repo,
             VersaoInfo(
                 numero=versao,
-                tipo=inferir_tipo(versao),
+                tipo=versionamento.esquema.tipo(versao),
                 base_ref=resolvida.ref,
                 base_commit=resolvida.commit,
             ),

@@ -11,7 +11,6 @@ from motor.domain.types import (
     Verificacao,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.engine.deps import Deps
 from motor.engine.vigencia import (
@@ -45,7 +44,7 @@ def _montar(
         "r",
         VersaoInfo(
             numero=VERSAO,
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit=TIP,
         ),

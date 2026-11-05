@@ -9,7 +9,6 @@ import datetime
 
 from sqlalchemy import (
     BigInteger,
-    CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -93,15 +92,13 @@ class Versao(Base):
         # nome explicito: a convencao gera uq_versao_repo_id, que le como se
         # repo_id sozinho fosse unico — e um repo tem muitas versoes.
         UniqueConstraint("repo_id", "numero", name="uq_versao_repo_id_numero"),
-        CheckConstraint(
-            "tipo in ('fechada', 'ajustada', 'cliente')", name="ck_versao_tipo"
-        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"))
     numero: Mapped[str]  # '13.34.0'
-    tipo: Mapped[str]  # ck_versao_tipo
+    # rotulo livre do esquema de versao; null quando o esquema nao classifica.
+    tipo: Mapped[str | None]
     base_ref: Mapped[str]
     base_commit: Mapped[str]
     # null = em construcao. Preenchida com a data do commit apontado pela tag.

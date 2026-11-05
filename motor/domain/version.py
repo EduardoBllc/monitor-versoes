@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from motor.domain.types import VersionType
 from motor.esquemas import _xyz
 from motor.esquemas.vendabem import VendaBem
-
-
-def inferir_tipo(numero: str) -> VersionType:
-    return VersionType[(VendaBem().tipo(numero) or "").upper()]
 
 
 def inferir_base(numero: str, versoes_existentes: list[str]) -> str:

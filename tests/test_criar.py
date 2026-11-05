@@ -11,7 +11,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.atribuicoes import Exata
-from motor.domain.types import CommitRef, RepoInfo, VersionType
+from motor.domain.types import CommitRef, RepoInfo
 from motor.engine.atualizar import AtualizarStatus
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
@@ -95,7 +95,7 @@ def test_criar_nova_versao():
     assert gravada is not None, "criar tem de registrar a versao no estado"
     # a base resolvida na criacao e a autoritativa dali em diante
     assert (gravada.base_ref, gravada.base_commit) == ("13.6.0", "m0")
-    assert gravada.tipo == VersionType.AJUSTADA
+    assert gravada.tipo == "ajustada"
     assert [
         (a.chamado, a.estado, a.commits) for a in estado.atribuicoes("r", "13.7.0")
     ] == [("255514", "aplicado", ["a0"])]

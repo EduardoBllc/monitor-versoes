@@ -37,7 +37,6 @@ from motor.domain.types import (
     RepoInfo,
     VersaoInfo,
     VersionStatus,
-    VersionType,
 )
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
@@ -380,7 +379,7 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
         "vendabemweb",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="m0",
         ),
@@ -489,7 +488,7 @@ def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, cap
     )
     estado.registrar_versao(
         "vendabemweb",
-        VersaoInfo(numero="13.34.0", tipo=VersionType.AJUSTADA),
+        VersaoInfo(numero="13.34.0", tipo="ajustada"),
     )
     estado.substituir_atribuicoes(
         "vendabemweb",

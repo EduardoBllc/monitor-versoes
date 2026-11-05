@@ -24,7 +24,6 @@ from motor.domain.types import (
     CommitRef,
     RepoInfo,
     VersaoInfo,
-    VersionType,
 )
 from motor.engine.atualizar import atualizar
 from motor.engine.consultar import consultar
@@ -151,7 +150,7 @@ def test_verificar_relata_suas_fases_na_ordem():
         "r",
         VersaoInfo(
             numero="14.0.0",
-            tipo=VersionType.FECHADA,
+            tipo="fechada",
             base_ref="master",
             base_commit="m0",
         ),

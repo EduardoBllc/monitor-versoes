@@ -45,8 +45,32 @@ def test_upgrade_cria_todas_as_tabelas_e_o_indice_unico(url: str) -> None:
         )
     assert indice.lower().startswith("create unique index")
     assert len(triggers) == 6
-    assert any("ck_versao_tipo" in c for c in checks)
+    assert not any("ck_versao_tipo" in c for c in checks)
     assert any("ck_repo_piso_versao" in c for c in checks)
+
+
+def test_tipo_gravado_antes_do_tipo_livre_sobrevive_ao_upgrade(url: str) -> None:
+    command.upgrade(config_alembic(url), "e5a8b1c2d3f4")
+    engine = create_engine(url)
+    with engine.begin() as con:
+        con.execute(
+            text(
+                "insert into repo (id, nome, tickio_sistema_id) "
+                "values (1, 'vendabemweb', 1)"
+            )
+        )
+        con.execute(
+            text(
+                "insert into versao (repo_id, numero, tipo, base_ref, base_commit) "
+                "values (1, '13.34.0', 'ajustada', '13.33.0', 'aaa111')"
+            )
+        )
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        tipo = con.execute(text("select tipo from versao")).scalar_one()
+    assert tipo == "ajustada"
 
 
 def test_downgrade_base_funciona(url: str) -> None:

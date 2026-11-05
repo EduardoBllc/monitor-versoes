@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError
 
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.domain.types import Atribuicao, Exclusion, VersaoInfo, VersionType
+from motor.domain.types import Atribuicao, Exclusion, VersaoInfo
 from motor.errors import MotorError
 
 pytestmark = pytest.mark.integracao
@@ -26,7 +26,7 @@ def _semear_repo(sessao) -> None:
 def _info(numero: str) -> VersaoInfo:
     return VersaoInfo(
         numero=numero,
-        tipo=VersionType.AJUSTADA,
+        tipo="ajustada",
         base_ref="13.33.0",
         base_commit="aaa111",
     )
@@ -126,7 +126,7 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
         "vendabemweb",
         VersaoInfo(
             numero="13.35.0",
-            tipo=VersionType.AJUSTADA,
+            tipo="ajustada",
             base_ref="13.33.0",
             base_commit="bbb222",
         ),
@@ -189,7 +189,7 @@ def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
         "vendabemweb",
         VersaoInfo(
             numero="13.34.0",
-            tipo=VersionType.CLIENTE,
+            tipo="cliente",
             base_ref="master",
             base_commit="OUTRO",
         ),
@@ -197,7 +197,7 @@ def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
 
     gravada = estado.versao("vendabemweb", "13.34.0")
     assert gravada is not None
-    assert gravada.tipo == VersionType.AJUSTADA
+    assert gravada.tipo == "ajustada"
     assert gravada.base_ref == "13.33.0"
     assert gravada.base_commit == "aaa111"
 

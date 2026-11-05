@@ -39,7 +39,7 @@ from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
-from motor.domain.version import chave, inferir_base, inferir_tipo
+from motor.domain.version import chave, inferir_base
 from motor.engine.atualizar import (
     AtualizarResult,
     AtualizarStatus,
@@ -53,6 +53,7 @@ from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, formatar_com_notas
+from motor.esquemas.vendabem import VendaBem
 from motor.montagem import (
     abrir_sessao,
     montar_deps,
@@ -333,7 +334,7 @@ class CriarModal(ModalScreen["str | None"]):
 
     A prévia e o ponto: numero certo com base errada e o erro caro deste
     comando, porque a base entra em `versao.base_commit` e fica definitiva. E
-    ela nao custa git nenhum — `inferir_tipo` e `inferir_base` sao funcoes puras
+    ela nao custa git nenhum — o tipo e `inferir_base` sao funcoes puras
     e a lista de versoes existentes o app ja carregou para o Select.
 
     Este modal e a confirmacao do `criar`: nao ha previa do lote de commits para
@@ -374,7 +375,7 @@ class CriarModal(ModalScreen["str | None"]):
             yield Input(placeholder="X.Y.Z", id="criar-numero")
             with Horizontal(id="criar-sugestoes"):
                 for indice, numero in enumerate(self._sugestoes):
-                    tipo = inferir_tipo(numero).name.lower()
+                    tipo = VendaBem().tipo(numero)
                     yield Button(f"{numero} · {tipo}", id=f"criar-sugestao-{indice}")
             yield Static(id="criar-previa")
             yield Static(id="criar-erro")
@@ -418,7 +419,7 @@ class CriarModal(ModalScreen["str | None"]):
         if not numero:
             return "", ""
         try:
-            tipo = inferir_tipo(numero)
+            tipo = VendaBem().tipo(numero)
         except MotorError as erro:
             return "", str(erro)
         if numero in self._existentes:
@@ -427,7 +428,7 @@ class CriarModal(ModalScreen["str | None"]):
             base = inferir_base(numero, self._existentes)
         except MotorError as erro:
             return "", str(erro)
-        return f"{tipo.name.lower()} · base {base}", ""
+        return f"{tipo} · base {base}", ""
 
     def _confirmar(self) -> None:
         numero = self.query_one("#criar-numero", Input).value.strip()
