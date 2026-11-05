@@ -6,6 +6,8 @@
   [004](004-estado-descartavel.md), [005](005-alvo-distribuicao-entre-versoes.md),
   [026](026-esquema-e-atribuicao-plugaveis.md)
 
+O código que implementa esta decisão mora no pacote monitor-versoes-vendabem.
+
 A tabela abaixo é o esquema de versão `vendabem` (`[versao] esquema = "vendabem"`), não regra
 do núcleo: o padrão é o `semver`, e cada esquema escolhe a ref-base
 ([026](026-esquema-e-atribuicao-plugaveis.md)). O ponto de corte, mais abaixo, vale para
