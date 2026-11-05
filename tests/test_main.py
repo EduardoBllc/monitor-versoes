@@ -9,9 +9,14 @@ importa helpers nao prova nada sobre a entrada: foi assim que um
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime
 import os
+import subprocess
+from enum import StrEnum
+from typing import Any
 
+import dotenv
 import pytest
 
 import motor.__main__ as cli
@@ -39,6 +44,7 @@ from motor.domain.types import (
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
+from motor.inscricoes import Inscricao
 from motor.montagem import CredenciaisBitbucket
 from motor.plugins import Origem, carregar_plugin
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
@@ -56,13 +62,13 @@ def test_task_source_default_e_config():
 
 
 @pytest.mark.parametrize(
-    ("argv", "arquivo"),
+    ("argv", "arquivo", "ambiente"),
     [
-        (["tui"], ".env"),
-        (["--env", "development", "tui"], ".env.development"),
+        (["tui"], ".env", "production"),
+        (["--env", "development", "tui"], ".env.development", "development"),
     ],
 )
-def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
+def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo, ambiente):
     chamadas: list[str] = []
     ambientes: list[str] = []
     monkeypatch.setattr(
@@ -70,7 +76,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
         "load_dotenv",
         lambda caminho, **opcoes: ambientes.append(os.path.basename(caminho)),
     )
-    monkeypatch.setattr(cli, "_iniciar_tui", lambda: chamadas.append("tui"))
+    monkeypatch.setattr(cli, "_iniciar_tui", chamadas.append)
     monkeypatch.setattr(
         cli,
         "abrir_sessao",
@@ -79,7 +85,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo):
 
     main(argv)
 
-    assert chamadas == ["tui"]
+    assert chamadas == [ambiente]
     assert ambientes == [arquivo]
 
 
@@ -1173,3 +1179,182 @@ def test_migrar_estado_recusa_sai_com_codigo_de_erro_e_mensagem(
 
     assert saida.value.code == 1
     assert "mesmo banco" in caplog.text
+
+
+# -- inscricao ----------------------------------------------------------------
+
+
+class _Inscr(StrEnum):
+    VERSAO = "13.34.0"
+    BUG = "boom"
+
+
+@pytest.fixture
+def inscricoes_env(monkeypatch, tmp_path):
+    """Arquivo de inscrições e HOME em tmp_path; notificador fake."""
+    from motor.adapters.notificador.fake import FakeNotificador
+
+    arquivo = tmp_path / "inscricoes.json"
+    monkeypatch.setattr(cli, "caminho_arquivo", lambda: arquivo)
+    monkeypatch.setattr(cli, "load_dotenv", None)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    notificador = FakeNotificador()
+    monkeypatch.setattr(cli, "montar_notificador", lambda: notificador)
+    return arquivo, notificador
+
+
+def _inscrever_clone(clone: str) -> None:
+    main(["inscricao", "adicionar", _Inscr.VERSAO, "--repo", clone])
+
+
+def test_inscricao_adicionar_por_nome_e_por_caminho_dao_a_mesma(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    from motor.inscricoes import carregar
+
+    arquivo, _ = inscricoes_env
+    clone = _repo_dir(tmp_path)
+    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
+    _inscrever_clone(clone)
+    _inscrever_clone(os.path.basename(clone))
+    assert [i.clone for i in carregar(arquivo)] == [clone]
+
+
+def test_inscricao_adicionar_avisa_sem_agendador(inscricoes_env, tmp_path, capsys):
+    _inscrever_clone(_repo_dir(tmp_path))
+    assert "agendador não instalado" in capsys.readouterr().err
+
+
+def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
+    clone = _repo_dir(tmp_path)
+    _inscrever_clone(clone)
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    saida = capsys.readouterr().out
+    assert _Inscr.VERSAO in saida
+    assert clone in saida
+    assert "nunca rodou" in saida
+
+
+def test_inscricao_listar_mostra_a_mensagem_do_erro(inscricoes_env, tmp_path, capsys):
+    from motor.domain.inscricao import Desfecho, UltimaExecucao
+    from motor.inscricoes import carregar, salvar
+
+    arquivo, _ = inscricoes_env
+    _inscrever_clone(_repo_dir(tmp_path))
+    [i] = carregar(arquivo)
+    ultima = UltimaExecucao(
+        datetime.datetime.now(datetime.UTC),
+        Desfecho.ERRO,
+        Desfecho.ERRO,
+        frozenset(),
+        _Inscr.BUG,
+    )
+    salvar(arquivo, [dataclasses.replace(i, ultima=ultima)])
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    assert f"{Desfecho.ERRO.value}: {_Inscr.BUG}" in capsys.readouterr().out
+
+
+def test_inscricao_listar_mostra_intervalo_formatado(inscricoes_env, tmp_path, capsys):
+    from motor.inscricoes import INTERVALO_PADRAO, formatar_intervalo, parse_intervalo
+
+    _inscrever_clone(_repo_dir(tmp_path))
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    padrao = formatar_intervalo(parse_intervalo(INTERVALO_PADRAO))
+    assert f"a cada {padrao}  " in capsys.readouterr().out
+
+
+def test_inscricao_rodar_nao_vaza_o_env_carregado_do_dotenv(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    chave = "CHAVE_SO_DO_DOTENV"
+    monkeypatch.setenv(chave, "")  # registra a limpeza do que o .env vai pôr
+    monkeypatch.delenv(chave)
+    (tmp_path / ".env").write_text(f"{chave}=x\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
+    visto: dict[str, Any] = {}
+    monkeypatch.setattr(
+        cli, "rodar", lambda c, a, disparar, n: visto.update(d=disparar)
+    )
+    monkeypatch.setattr(cli, "montar_notificador", lambda: None)
+    main(["inscricao", "rodar"])
+    assert os.environ[chave] == "x"
+    capturado: dict[str, Any] = {}
+
+    def falso(cmd, **kw):
+        capturado.update(kw)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    inscricao = Inscricao(
+        str(tmp_path),
+        _Inscr.VERSAO,
+        datetime.timedelta(minutes=1),
+        str(tmp_path),
+        "production",
+    )
+    visto["d"](inscricao)
+    assert chave not in capturado["env"]
+
+
+def _preparar_execucao(monkeypatch, tmp_path, executar):
+    clone = _repo_dir(tmp_path)
+    _inscrever_clone(clone)
+    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(cli, "montar_deps", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "executar_inscricao", executar)
+    return clone
+
+
+def test_inscricao_executar_grava_resultado(inscricoes_env, monkeypatch, tmp_path):
+    from motor.domain.inscricao import Desfecho, Resultado
+    from motor.inscricoes import carregar
+
+    arquivo, _ = inscricoes_env
+    clone = _preparar_execucao(
+        monkeypatch, tmp_path, lambda deps, versao: Resultado(Desfecho.NADA)
+    )
+    main(["inscricao", "executar", _Inscr.VERSAO, "--repo", clone])
+    ultima = carregar(arquivo)[0].ultima
+    assert ultima is not None
+    assert ultima.desfecho == Desfecho.NADA
+
+
+def test_inscricao_executar_bug_grava_erro_e_propaga(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    from motor.domain.inscricao import Desfecho
+    from motor.inscricoes import carregar
+
+    def bug(deps, versao):
+        raise RuntimeError(_Inscr.BUG)
+
+    arquivo, _ = inscricoes_env
+    clone = _preparar_execucao(monkeypatch, tmp_path, bug)
+    with pytest.raises(SystemExit):
+        main(["inscricao", "executar", _Inscr.VERSAO, "--repo", clone])
+    ultima = carregar(arquivo)[0].ultima
+    assert ultima is not None
+    assert ultima.desfecho == Desfecho.ERRO
+    assert ultima.mensagem == f"RuntimeError: {_Inscr.BUG}"
+
+
+def test_inscricao_nao_abre_banco_exceto_executar(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        cli, "abrir_sessao", lambda: pytest.fail("só o executar abre sessão")
+    )
+    _inscrever_clone(_repo_dir(tmp_path))
+    main(["inscricao", "listar"])
+
+
+def test_executar_fora_do_help(capsys):
+    with pytest.raises(SystemExit):
+        main(["inscricao", "-h"])
+    saida = capsys.readouterr().out
+    assert "listar" in saida
+    assert "executar" not in saida

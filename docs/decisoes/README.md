@@ -38,3 +38,4 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 25. [025](025-reaproveitamento-da-verificacao.md) — `atualizar` reaproveita a verificação de até 5 minutos se tip e impressão não mudaram; o carimbo é cache.
 26. [026](026-esquema-e-atribuicao-plugaveis.md) — esquema de versão e política de atribuição plugáveis; liberada e nomes de branch em camadas (config > esquema > padrão), com `semver`, `exata`, `main` e tag `{versao}` como padrão.
 27. [027](027-fonte-de-tarefas-plugavel.md) — fonte de tarefas plugável e sem padrão no núcleo, carregada só no uso; `sistema` e `piso` saem do banco e ficam só na config.
+28. [028](028-inscricoes-fora-do-estado.md) — inscrições num arquivo local fora do estado (clone e `.env` são da máquina); um processo por inscrição isola o ambiente.

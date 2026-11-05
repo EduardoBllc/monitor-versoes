@@ -64,16 +64,13 @@ class AtualizarResult:
     reaproveitada_de: datetime.datetime | None = None
 
 
-def _recusar_se_liberada(deps: Deps, versao: str) -> None:
-    """Trava de escrita em versao liberada, na entrada de todo ponto que mexe na
-    branch (`atualizar` e `atualizar_continue`, os dois expostos pelo CLI).
-
-    O fetch vem antes da leitura, nao depois: o `Catalogo` le o ref store
+def versao_liberada(deps: Deps, versao: str) -> bool:
+    """O fetch vem antes da leitura, nao depois: o `Catalogo` le o ref store
     local, e a tag de uma versao liberada em outra maquina so entra aqui pelo
-    fetch. Sem ele a recusa seria decidida em cima de refs velhas e o motor
-    mexeria numa versao que ja saiu.
+    fetch. Sem ele a decisao sairia de refs velhas e o motor mexeria numa
+    versao que ja saiu.
 
-    `liberada_em` gravada tambem recusa: o criterio de liberacao pode mudar e
+    `liberada_em` gravada tambem vale: o criterio de liberacao pode mudar e
     deixar de reconhecer a versao, mas o snapshot dela ja congelou.
     """
     versionamento = deps.versionamento()
@@ -83,7 +80,14 @@ def _recusar_se_liberada(deps: Deps, versao: str) -> None:
 
     gate = PublicationGate(deps.git, Catalogo(deps.git, versionamento))
     info = deps.estado.versao(deps.repo, versao)
-    if gate.liberada(versao) or (info is not None and info.liberada_em is not None):
+    return gate.liberada(versao) or (info is not None and info.liberada_em is not None)
+
+
+def _recusar_se_liberada(deps: Deps, versao: str) -> None:
+    """Trava de escrita em versao liberada, na entrada de todo ponto que mexe na
+    branch (`atualizar` e `atualizar_continue`, os dois expostos pelo CLI).
+    """
+    if versao_liberada(deps, versao):
         raise RecusaDeInvariante(
             f"versao {versao} ja liberada - remarque a tarefa "
             "para a proxima versao em construcao"
