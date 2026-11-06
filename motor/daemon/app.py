@@ -377,6 +377,9 @@ def servir(ambiente: str, porta: int) -> None:
     import socket
 
     with socket.socket() as sonda:
+        # Sem isto, o TIME_WAIT de um daemon recém-parado parece porta ocupada;
+        # um processo escutando continua recusando o bind no Linux.
+        sonda.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sonda.bind(("127.0.0.1", porta))
         except OSError as erro:
