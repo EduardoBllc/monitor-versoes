@@ -10,14 +10,17 @@ const plural = (q: number): string => `${q} commit${q === 1 ? "" : "s"}`;
 
 function agrupar(commits: CommitRef[]): Map<string, CommitRef[]> {
   const grupos = new Map<string, CommitRef[]>();
-  for (const c of commits) grupos.set(c.chamado, [...(grupos.get(c.chamado) ?? []), c]);
+  for (const c of commits)
+    grupos.set(c.chamado, [...(grupos.get(c.chamado) ?? []), c]);
   return grupos;
 }
 
 function alertas(s: VersionStatus): string[] {
   const linhas: string[] = [];
   if (n(s.tasks_ambiguas))
-    linhas.push(`Chamados em mais de uma versão: ${s.tasks_ambiguas?.join(", ")}`);
+    linhas.push(
+      `Chamados em mais de uma versão: ${s.tasks_ambiguas?.join(", ")}`,
+    );
   if (n(s.tasks_sem_commits))
     linhas.push(`Chamados sem commits: ${s.tasks_sem_commits?.join(", ")}`);
   if (!s.estado_integro)
@@ -28,8 +31,12 @@ function alertas(s: VersionStatus): string[] {
 }
 
 function Faltantes({ status }: { status: VersionStatus }) {
-  const conflitos = new Set((status.conflitantes ?? []).map((c) => c.hash_origem));
-  const suspeitos = new Set((status.suspeitos_conteudo ?? []).map((c) => c.hash_origem));
+  const conflitos = new Set(
+    (status.conflitantes ?? []).map((c) => c.hash_origem),
+  );
+  const suspeitos = new Set(
+    (status.suspeitos_conteudo ?? []).map((c) => c.hash_origem),
+  );
   return (
     <Stack gap="md">
       {[...agrupar(status.faltantes ?? [])].map(([chamado, itens]) => (
@@ -46,13 +53,18 @@ function Faltantes({ status }: { status: VersionStatus }) {
                   </Table.Td>
                   <Table.Td>{titulo(c)}</Table.Td>
                   <Table.Td w={200}>
-                    {conflitos.has(c.hash_origem) && <Badge color="red">conflitante</Badge>}{" "}
-                    {suspeitos.has(c.hash_origem) && <Badge color="yellow">suspeito</Badge>}
-                    {!conflitos.has(c.hash_origem) && !suspeitos.has(c.hash_origem) && (
-                      <Badge color="gray" variant="light">
-                        faltante
-                      </Badge>
+                    {conflitos.has(c.hash_origem) && (
+                      <Badge color="red">conflitante</Badge>
+                    )}{" "}
+                    {suspeitos.has(c.hash_origem) && (
+                      <Badge color="yellow">suspeito</Badge>
                     )}
+                    {!conflitos.has(c.hash_origem) &&
+                      !suspeitos.has(c.hash_origem) && (
+                        <Badge color="gray" variant="light">
+                          faltante
+                        </Badge>
+                      )}
                   </Table.Td>
                 </Table.Tr>
               ))}
@@ -64,13 +76,21 @@ function Faltantes({ status }: { status: VersionStatus }) {
   );
 }
 
-export function Status({ status, auditado }: { status: VersionStatus; auditado: boolean }) {
+export function Status({
+  status,
+  auditado,
+}: {
+  status: VersionStatus;
+  auditado: boolean;
+}) {
   const congelado = status.liberada_em != null && !auditado;
   const avisos = alertas(status);
   const culpados = (status.faltantes ?? []).flatMap((c) => {
     const lista = status.conflito_causado_por?.[c.hash_origem];
     return lista?.length
-      ? [`Conflito em ${hash(c)} depende de: ${lista.map((x) => `#${x}`).join(", ")}`]
+      ? [
+          `Conflito em ${hash(c)} depende de: ${lista.map((x) => `#${x}`).join(", ")}`,
+        ]
       : [];
   });
   return (
@@ -78,10 +98,14 @@ export function Status({ status, auditado }: { status: VersionStatus; auditado: 
       {congelado && (
         <Alert color="cyan" title="Snapshot congelado — não recalculado">
           Liberada em {new Date(status.liberada_em ?? "").toLocaleString()}
-          {n(status.chamados) > 0 && <Text size="sm">Chamados: {status.chamados?.join(", ")}</Text>}
+          {n(status.chamados) > 0 && (
+            <Text size="sm">Chamados: {status.chamados?.join(", ")}</Text>
+          )}
         </Alert>
       )}
-      {auditado && <Alert color="cyan" title="Auditoria da tag — snapshot não alterado" />}
+      {auditado && (
+        <Alert color="cyan" title="Auditoria da tag — snapshot não alterado" />
+      )}
       <Text fw={700} c={status.verde ? "green" : "yellow"}>
         {status.verde ? "VERDE" : "● Pendências encontradas"}
       </Text>
@@ -90,7 +114,8 @@ export function Status({ status, auditado }: { status: VersionStatus; auditado: 
           Escopo +{n(status.tasks_novas)} −{n(status.tasks_removidas)}
         </span>
         <span>
-          · Git {n(status.faltantes)} faltantes · {n(status.conflitantes)} conflitos
+          · Git {n(status.faltantes)} faltantes · {n(status.conflitantes)}{" "}
+          conflitos
         </span>
         <span>· Sem commits {n(status.tasks_sem_commits)} chamados</span>
       </Group>

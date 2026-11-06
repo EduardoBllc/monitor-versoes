@@ -1,27 +1,45 @@
 import { Alert, AppShell, Loader, MantineProvider, Text } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Metodo, api, ErroApi } from "./api/cliente";
 import { EstadoExecucao, Operacao, TipoErro } from "./api/enums";
-import { acompanhar, type Execucao, type Progresso } from "./api/eventos";
-import type { RepoOption, VersionOption, VersionStatus } from "./api/tipos";
+import { acompanhar, type Execucao } from "./api/eventos";
+import type { RepoOption, VersionOption } from "./api/tipos";
 import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
 import { ModalCadastro } from "./componentes/ModalCadastro";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
-import { ModalResultado, type Resultado } from "./componentes/ModalResultado";
+import { ModalResultado } from "./componentes/ModalResultado";
 import { notificarErro, notificarOk } from "./componentes/notificar";
 import { ProgressoExecucao } from "./componentes/ProgressoExecucao";
+import {
+  PROGRESSO_INICIAL,
+  SEM_EXECUCOES,
+  TipoEfeito,
+  concluir,
+  estaRodando,
+  iniciar,
+  progredir,
+  terminar,
+  type EstadoExecucoes,
+  type Resultado,
+} from "./execucoes";
 import { caminhoDe, lerCaminho } from "./rotas";
 
 const queryClient = new QueryClient();
 const ALTURA_BARRA = 64;
-const INICIO: Progresso = { fase: "iniciando", feito: 0, total: 0 };
 
 function useCaminho() {
-  const [caminho, setCaminho] = useState(() => lerCaminho(window.location.pathname));
+  const [caminho, setCaminho] = useState(() =>
+    lerCaminho(window.location.pathname),
+  );
   useEffect(() => {
     const ler = () => setCaminho(lerCaminho(window.location.pathname));
     window.addEventListener("popstate", ler);
@@ -39,13 +57,19 @@ function useCaminho() {
 function Tela() {
   const cliente = useQueryClient();
   const [{ repo, versao }, ir] = useCaminho();
-  const [execRepo, setExecRepo] = useState<string>();
-  const [progresso, setProgresso] = useState(INICIO);
+  const [execucoes, setExecucoes] = useState(SEM_EXECUCOES);
+  const execRef = useRef(SEM_EXECUCOES);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [criando, setCriando] = useState(false);
   const [cadastrando, setCadastrando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
-  const auditando = useRef(false);
+  const repoRef = useRef(repo);
+  repoRef.current = repo;
+  // O ref é a fonte síncrona (evita duplo acompanhamento); o state só repinta.
+  const mudar = useCallback((f: (e: EstadoExecucoes) => EstadoExecucoes) => {
+    execRef.current = f(execRef.current);
+    setExecucoes(execRef.current);
+  }, []);
 
   const repos = useQuery({
     queryKey: ["repos"],
@@ -53,9 +77,17 @@ function Tela() {
   });
   const versoes = useQuery({
     queryKey: ["versoes", repo],
-    queryFn: () => api<VersionOption[]>(Metodo.GET, `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`),
+    queryFn: () =>
+      api<VersionOption[]>(
+        Metodo.GET,
+        `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`,
+      ),
     enabled: repo !== undefined,
   });
+
+  useEffect(() => {
+    if (versoes.error) notificarErro(versoes.error);
+  }, [versoes.error]);
 
   // Sem repo na URL, abre no primeiro com checkout; sem versão, na mais nova.
   useEffect(() => {
@@ -67,50 +99,54 @@ function Tela() {
     }
   }, [repo, versao, repos.data, versoes.data, ir]);
 
-  const aoFim = useCallback(
-    (nome: string, fim: Execucao | null) => {
-      if (fim === null) return;
-      if (fim.estado === EstadoExecucao.FALHOU) {
-        notificarErro(new ErroApi(fim.erro?.tipo ?? TipoErro.INTERNO, fim.erro?.mensagem ?? "falhou", 0));
-        return;
-      }
-      if (fim.operacao === Operacao.VERIFICAR) {
-        setResultado({ status: fim.resultado as VersionStatus, auditado: auditando.current });
-      } else if (fim.operacao === Operacao.CRIAR) {
-        notificarOk(`Versão ${fim.versao} criada`);
-        void cliente.invalidateQueries({ queryKey: ["versoes", nome] });
-        ir(nome, fim.versao);
-      }
-    },
-    [cliente, ir],
-  );
-
   const seguir = useCallback(
-    async (nome: string) => {
-      setExecRepo(nome);
-      setProgresso(INICIO);
+    async (nome: string, auditar = false) => {
+      const { estado, seguir: abrir } = iniciar(execRef.current, nome, auditar);
+      if (!abrir) return;
+      mudar(() => estado);
       try {
-        aoFim(nome, await acompanhar(nome, setProgresso));
+        const fim = await acompanhar(nome, (p) =>
+          mudar((e) => progredir(e, nome, p)),
+        );
+        if (fim === null) return;
+        if (
+          fim.operacao === Operacao.CRIAR &&
+          fim.estado !== EstadoExecucao.FALHOU
+        )
+          void cliente.invalidateQueries({ queryKey: ["versoes", nome] });
+        const efeito = concluir(execRef.current, fim, repoRef.current);
+        if (efeito?.tipo === TipoEfeito.ERRO)
+          notificarErro(new ErroApi(efeito.tipoErro, efeito.mensagem, 0));
+        else if (efeito?.tipo === TipoEfeito.RESULTADO)
+          setResultado(efeito.resultado);
+        else if (efeito?.tipo === TipoEfeito.NAVEGAR) {
+          notificarOk(`Versão ${efeito.versao} criada`);
+          ir(efeito.repo, efeito.versao);
+        } else if (efeito?.tipo === TipoEfeito.AVISAR)
+          notificarOk(efeito.mensagem);
       } catch (erro) {
         notificarErro(erro);
       } finally {
-        setExecRepo((atual) => (atual === nome ? undefined : atual));
+        mudar((e) => terminar(e, nome));
       }
     },
-    [aoFim],
+    [cliente, ir, mudar],
   );
 
   // Recarregar a página (ou abrir outra aba) durante uma operação passa a acompanhá-la.
   useEffect(() => {
     if (repo === undefined) return;
-    void api<Execucao | null>(Metodo.GET, `/api/repos/${encodeURIComponent(repo)}/execucao`)
+    void api<Execucao | null>(
+      Metodo.GET,
+      `/api/repos/${encodeURIComponent(repo)}/execucao`,
+    )
       .then((e) => {
         if (e?.estado === EstadoExecucao.RODANDO) return seguir(repo);
       })
       .catch(notificarErro);
   }, [repo, seguir]);
 
-  const disparar = async (caminho: string, corpo: unknown) => {
+  const disparar = async (caminho: string, corpo: unknown, auditar = false) => {
     if (repo === undefined) return;
     try {
       await api<Execucao>(Metodo.POST, caminho, corpo);
@@ -121,14 +157,17 @@ function Tela() {
         return;
       }
     }
-    await seguir(repo);
+    await seguir(repo, auditar);
   };
 
   const base = `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`;
-  const ocupado = repo !== undefined && execRepo === repo;
+  const ocupado = repo !== undefined && estaRodando(execucoes, repo);
   const fecharResultado = () => {
+    if (resultado)
+      void cliente.invalidateQueries({
+        queryKey: ["chamados", resultado.repo, resultado.versao],
+      });
     setResultado(null);
-    void cliente.invalidateQueries({ queryKey: ["chamados", repo, versao] });
   };
 
   return (
@@ -143,8 +182,11 @@ function Tela() {
           aoEscolherRepo={(nome) => ir(nome)}
           aoEscolherVersao={(numero) => repo && ir(repo, numero)}
           aoVerificar={(auditar) => {
-            auditando.current = auditar;
-            void disparar(`${base}/${encodeURIComponent(versao ?? "")}/verificacao`, { auditar });
+            void disparar(
+              `${base}/${encodeURIComponent(versao ?? "")}/verificacao`,
+              { auditar },
+              auditar,
+            );
           }}
           aoCriar={() => setCriando(true)}
           aoCadastrar={() => setCadastrando(true)}
@@ -155,13 +197,26 @@ function Tela() {
         {repos.isLoading && <Loader />}
         {repos.error && <Alert color="red">{repos.error.message}</Alert>}
         {repos.data?.length === 0 && (
-          <Text c="dimmed">Nenhum repositório cadastrado. Use Cadastrar repo para começar.</Text>
+          <Text c="dimmed">
+            Nenhum repositório cadastrado. Use Cadastrar repo para começar.
+          </Text>
+        )}
+        {versoes.error && (
+          <Alert color="red">
+            {versoes.error.message}
+            {repos.data?.find((r) => r.nome === repo)?.caminho === null &&
+              " — o repositório está sem checkout local."}
+          </Alert>
         )}
         {ocupado ? (
-          <ProgressoExecucao progresso={progresso} />
+          <ProgressoExecucao
+            progresso={execucoes.progresso[repo] ?? PROGRESSO_INICIAL}
+          />
         ) : (
           repo !== undefined &&
-          versao !== undefined && <Consulta key={`${repo}@${versao}`} repo={repo} versao={versao} />
+          versao !== undefined && (
+            <Consulta key={`${repo}@${versao}`} repo={repo} versao={versao} />
+          )
         )}
       </AppShell.Main>
       <ModalResultado resultado={resultado} aoFechar={fecharResultado} />

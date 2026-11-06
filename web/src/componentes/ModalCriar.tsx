@@ -1,8 +1,9 @@
 import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type SyntheticEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { Metodo, api } from "../api/cliente";
+import { notificarErro } from "./notificar";
 import type { Avaliacao, Sugestao } from "../api/tipos";
 
 const DEBOUNCE_MS = 200;
@@ -26,9 +27,17 @@ export function ModalCriar({
     queryFn: () => api<Sugestao[]>(Metodo.GET, `${base}/sugestoes`),
     enabled: aberto,
   });
+  useEffect(() => {
+    if (sugestoes.error) notificarErro(sugestoes.error);
+  }, [sugestoes.error]);
+  const fechar = () => {
+    setNumero("");
+    aoFechar();
+  };
   const avaliacao = useQuery({
     queryKey: ["avaliacao", repo, atrasado],
-    queryFn: () => api<Avaliacao>(Metodo.POST, `${base}/avaliacao`, { numero: atrasado }),
+    queryFn: () =>
+      api<Avaliacao>(Metodo.POST, `${base}/avaliacao`, { numero: atrasado }),
     enabled: aberto && atrasado !== "",
   });
 
@@ -38,7 +47,10 @@ export function ModalCriar({
     avaliacao.data !== undefined &&
     avaliacao.data.erro === "" &&
     avaliacao.data.previa !== "";
-  const erro = atrasado === "" ? undefined : (avaliacao.data?.erro || avaliacao.error?.message);
+  const erro =
+    atrasado === ""
+      ? undefined
+      : avaliacao.data?.erro || avaliacao.error?.message;
 
   const confirmar = (e: SyntheticEvent) => {
     e.preventDefault();
@@ -49,7 +61,7 @@ export function ModalCriar({
   };
 
   return (
-    <Modal opened={aberto} onClose={aoFechar} title="Nova versão">
+    <Modal opened={aberto} onClose={fechar} title="Nova versão">
       <form onSubmit={confirmar}>
         <Stack>
           <TextInput
@@ -74,10 +86,11 @@ export function ModalCriar({
           </Group>
           {pronto && <Text size="sm">{avaliacao.data?.previa}</Text>}
           <Text size="sm" c="dimmed">
-            A branch sai da base, o VERSAO é commitado e o lote vai para a origin.
+            A branch sai da base, o VERSAO é commitado e o lote vai para a
+            origin.
           </Text>
           <Group justify="flex-end">
-            <Button variant="default" onClick={aoFechar}>
+            <Button variant="default" onClick={fechar}>
               Cancelar
             </Button>
             <Button type="submit" color="orange" disabled={!pronto}>

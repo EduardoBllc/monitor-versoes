@@ -37,7 +37,11 @@ export function acompanhar(
     fonte.addEventListener(EVENTO_ERRO, () => {
       fonte.close();
       rejeitar(
-        new ErroApi(TipoErro.INTERNO, "conexão com o daemon perdida", STATUS_SEM_CONEXAO),
+        new ErroApi(
+          TipoErro.INTERNO,
+          "conexão com o daemon perdida",
+          STATUS_SEM_CONEXAO,
+        ),
       );
     });
     fonte.addEventListener(EventoSse.FIM, (e) => {

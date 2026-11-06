@@ -41,7 +41,9 @@ export function ModalInscricoes({
         <Button
           disabled={repo === undefined || versao === undefined}
           onClick={() =>
-            gravar.mutate(() => api<void>(Metodo.POST, "/api/inscricoes", { repo, versao }))
+            gravar.mutate(() =>
+              api<void>(Metodo.POST, "/api/inscricoes", { repo, versao }),
+            )
           }
         >
           Inscrever selecionada
@@ -49,7 +51,9 @@ export function ModalInscricoes({
       </Group>
       {lista.error && <Text c="red">{lista.error.message}</Text>}
       {lista.data?.length === 0 && (
-        <Text c="dimmed">Nenhuma inscrição. Selecione repo e versão e inscreva.</Text>
+        <Text c="dimmed">
+          Nenhuma inscrição. Selecione repo e versão e inscreva.
+        </Text>
       )}
       <Table>
         <Table.Tbody>

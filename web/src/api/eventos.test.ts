@@ -23,7 +23,9 @@ class FalsoEventSource {
     this.ouvintes.get(ERRO)?.({} as MessageEvent<string>);
   }
   emitir(nome: EventoSse, dados: unknown) {
-    this.ouvintes.get(nome)?.({ data: JSON.stringify(dados) } as MessageEvent<string>);
+    this.ouvintes.get(nome)?.({
+      data: JSON.stringify(dados),
+    } as MessageEvent<string>);
   }
 }
 

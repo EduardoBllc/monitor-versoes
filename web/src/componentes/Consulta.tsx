@@ -1,4 +1,14 @@
-import { Alert, Badge, Code, Group, NavLink, Skeleton, Stack, Table, Text } from "@mantine/core";
+import {
+  Alert,
+  Badge,
+  Code,
+  Group,
+  NavLink,
+  Skeleton,
+  Stack,
+  Table,
+  Text,
+} from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Metodo, api } from "../api/cliente";
@@ -16,7 +26,8 @@ enum Rotulo {
 
 // O estado gravado só distingue aplicado de pendente; lista vazia é "sem commits", como na TUI.
 function rotulo(c: ChamadoConsultado): { texto: Rotulo; cor: string } {
-  if (c.estado === EstadoChamado.APLICADO) return { texto: Rotulo.APLICADO, cor: "green" };
+  if (c.estado === EstadoChamado.APLICADO)
+    return { texto: Rotulo.APLICADO, cor: "green" };
   if (c.commits.length === 0) return { texto: Rotulo.SEM_COMMITS, cor: "red" };
   return { texto: Rotulo.PENDENTE, cor: "yellow" };
 }
@@ -44,7 +55,9 @@ function Detalhe({ chamado }: { chamado: ChamadoConsultado }) {
                 <Table.Td w={90}>
                   <Code>{c.hash_origem.slice(0, TAMANHO_HASH)}</Code>
                 </Table.Td>
-                <Table.Td>{c.msg.split("\n")[0] || "mensagem indisponível"}</Table.Td>
+                <Table.Td>
+                  {c.msg.split("\n")[0] || "mensagem indisponível"}
+                </Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>
@@ -67,7 +80,11 @@ export function Consulta({ repo, versao }: { repo: string; versao: string }) {
   if (isLoading) return <Skeleton height={200} />;
   if (error) return <Alert color="red">{error.message}</Alert>;
   if (!data?.length)
-    return <Text c="dimmed">Nenhum snapshot ainda. Rode Verificar para gerar a consulta.</Text>;
+    return (
+      <Text c="dimmed">
+        Nenhum snapshot ainda. Rode Verificar para gerar a consulta.
+      </Text>
+    );
   const atual = data.find((c) => c.chamado === escolhido) ?? data[0];
   return (
     <Group align="flex-start" wrap="nowrap">
@@ -77,12 +94,16 @@ export function Consulta({ repo, versao }: { repo: string; versao: string }) {
             key={c.chamado}
             active={c === atual}
             label={`#${c.chamado}`}
-            rightSection={<Badge color={rotulo(c).cor}>{rotulo(c).texto}</Badge>}
+            rightSection={
+              <Badge color={rotulo(c).cor}>{rotulo(c).texto}</Badge>
+            }
             onClick={() => setEscolhido(c.chamado)}
           />
         ))}
       </Stack>
-      <div style={{ flex: 1, minWidth: 0 }}>{atual && <Detalhe chamado={atual} />}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {atual && <Detalhe chamado={atual} />}
+      </div>
     </Group>
   );
 }

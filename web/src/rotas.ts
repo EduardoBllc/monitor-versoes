@@ -3,7 +3,9 @@ const PADRAO = /^\/r\/([^/]+)(?:\/v\/([^/]+))?\/?$/;
 export function caminhoDe(repo?: string, versao?: string): string {
   if (repo === undefined) return "/";
   const base = `/r/${encodeURIComponent(repo)}`;
-  return versao === undefined ? base : `${base}/v/${encodeURIComponent(versao)}`;
+  return versao === undefined
+    ? base
+    : `${base}/v/${encodeURIComponent(versao)}`;
 }
 
 export function lerCaminho(path: string): { repo?: string; versao?: string } {

@@ -47,7 +47,11 @@ export function ModalCadastro({
             <Button variant="default" onClick={aoFechar}>
               Cancelar
             </Button>
-            <Button type="submit" loading={enviando} disabled={nome.trim() === ""}>
+            <Button
+              type="submit"
+              loading={enviando}
+              disabled={nome.trim() === ""}
+            >
               Salvar
             </Button>
           </Group>
