@@ -52,7 +52,6 @@ class Ambiente:
             lambda: REPOS,
             lambda repo: self.versoes,
             executar,
-            registrar_repo=lambda nome: self.chamadas.append(("registrar", nome)),
             versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
         )
 
@@ -255,29 +254,23 @@ def test_avaliacao_recusa_numero_existente_e_aceita_sugestao(
     assert aceita["previa"] != ""
 
 
-def test_cadastro_com_nome_invalido_da_422(cliente: TestClient) -> None:
-    r = cliente.post("/api/repos", json={"nome": "pasta/backend"})
-    assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
-    assert r.json()["tipo"] == TipoErro.ENTRADA
-    assert (
-        cliente.post("/api/repos", json={"nome": "novo"}).status_code
-        == HTTPStatus.NO_CONTENT
-    )
-
-
 def test_inscricoes_inscrever_listar_remover(cliente: TestClient) -> None:
     corpo = {"repo": REPO, "versao": VERSAO}
     assert (
         cliente.post("/api/inscricoes", json=corpo).status_code == HTTPStatus.NO_CONTENT
     )
     [vista] = cliente.get("/api/inscricoes").json()
-    assert vista["clone"] == CLONE
+    assert vista["repo"] == REPO
     assert vista["intervalo"] == INTERVALO_PADRAO
     assert vista["ultima"] is None
-    r = cliente.request(
-        "DELETE", "/api/inscricoes", json={"clone": CLONE, "versao": VERSAO}
-    )
+    r = cliente.request("DELETE", "/api/inscricoes", json=corpo)
     assert r.status_code == HTTPStatus.NO_CONTENT
+    assert cliente.get("/api/inscricoes").json() == []
+
+
+def test_inscrever_repo_sem_checkout_da_404(cliente: TestClient) -> None:
+    r = cliente.post("/api/inscricoes", json={"repo": "sem-clone", "versao": VERSAO})
+    assert r.status_code == HTTPStatus.NOT_FOUND
     assert cliente.get("/api/inscricoes").json() == []
 
 
@@ -314,7 +307,7 @@ def test_repo_desconhecido_em_operacao_da_404_na_hora(cliente: TestClient) -> No
 
 
 def test_corpo_invalido_segue_o_formato_da_api(cliente: TestClient) -> None:
-    r = cliente.post("/api/repos", json={})
+    r = cliente.post("/api/inscricoes", json={})
     assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert set(r.json()) == {"tipo", "mensagem"}
     assert r.json()["tipo"] == TipoErro.ENTRADA

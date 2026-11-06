@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
@@ -17,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
+from motor.config import SECAO_REPOS
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
 from motor.daemon.erros import ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
@@ -26,7 +26,6 @@ from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult
 from motor.engine.consultar import ChamadoConsultado
 from motor.errors import ErroDeEntrada, NaoEncontrado, RecusaDeInvariante
-from motor.montagem import validar_nome_repo
 from motor.operacoes import (
     RepoOption,
     Runners,
@@ -48,11 +47,6 @@ MENSAGEM_INDISPONIVEL = "operação indisponível neste ambiente"
 class EventoSse(StrEnum):
     PROGRESSO = "progresso"
     FIM = "fim"
-
-
-@dataclass(frozen=True)
-class NovoRepo:
-    nome: str
 
 
 @dataclass(frozen=True)
@@ -89,7 +83,7 @@ class PedidoInscrever:
 
 @dataclass(frozen=True)
 class PedidoRemover:
-    clone: str
+    repo: str
     versao: str
 
 
@@ -107,7 +101,7 @@ class Avaliacao:
 
 @dataclass(frozen=True)
 class InscricaoVista:
-    clone: str
+    repo: str
     versao: str
     intervalo: str
     ultima: UltimaExecucao | None
@@ -140,7 +134,9 @@ class _Contexto:
         for repo in self.leitura().carregar_repos():
             if repo.nome == nome:
                 return repo
-        raise NaoEncontrado(f"repo {nome} não cadastrado")
+        raise NaoEncontrado(
+            f"repo {nome} sem seção [{SECAO_REPOS}.{nome}] no config.toml"
+        )
 
     def versionamento(self, runners: Runners, repo: RepoOption) -> Versionamento:
         return (runners.versionamento_repo or self.versionamento_repo)(repo)
@@ -164,10 +160,6 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
     @app.get("/api/repos")
     def listar_repos() -> list[RepoOption]:
         return ctx.leitura().carregar_repos()
-
-    @app.post("/api/repos", status_code=HTTPStatus.NO_CONTENT)
-    def cadastrar_repo(corpo: NovoRepo) -> None:
-        _exigir(ctx.leitura().registrar_repo)(validar_nome_repo(corpo.nome))
 
     @app.get("/api/repos/{repo}/versoes")
     def listar_versoes(repo: str) -> list[VersionOption]:
@@ -281,10 +273,10 @@ def _rotas_execucao(app: FastAPI, ctx: _Contexto) -> None:
         return StreamingResponse(fluxo(), media_type="text/event-stream")
 
 
-def _clone_de(opcao: RepoOption) -> str:
-    if opcao.caminho is None:
+def _disponivel(opcao: RepoOption) -> str:
+    if not opcao.disponivel:
         raise NaoEncontrado("checkout local não encontrado")
-    return os.path.abspath(opcao.caminho)
+    return opcao.nome
 
 
 def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
@@ -292,7 +284,7 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
     def listar_inscricoes() -> list[InscricaoVista]:
         return [
             InscricaoVista(
-                i.clone, i.versao, arquivo.formatar_intervalo(i.intervalo), i.ultima
+                i.repo, i.versao, arquivo.formatar_intervalo(i.intervalo), i.ultima
             )
             for i in arquivo.carregar(ctx.inscricoes_em)
         ]
@@ -302,7 +294,7 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
         arquivo.inscrever(
             ctx.inscricoes_em,
             arquivo.Inscricao(
-                _clone_de(ctx.achar(corpo.repo)),
+                _disponivel(ctx.achar(corpo.repo)),
                 corpo.versao,
                 arquivo.parse_intervalo(arquivo.INTERVALO_PADRAO),
                 str(Path.cwd()),
@@ -312,7 +304,7 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
 
     @app.delete("/api/inscricoes", status_code=HTTPStatus.NO_CONTENT)
     def remover(corpo: PedidoRemover) -> None:
-        arquivo.remover(ctx.inscricoes_em, corpo.clone, corpo.versao)
+        arquivo.remover(ctx.inscricoes_em, corpo.repo, corpo.versao)
 
 
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:

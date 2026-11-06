@@ -14,8 +14,7 @@ export interface paths {
         /** Listar Repos */
         get: operations["listar_repos_api_repos_get"];
         put?: never;
-        /** Cadastrar Repo */
-        post: operations["cadastrar_repo_api_repos_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -368,18 +367,13 @@ export interface components {
         };
         /** InscricaoVista */
         InscricaoVista: {
-            /** Clone */
-            clone: string;
+            /** Repo */
+            repo: string;
             /** Versao */
             versao: string;
             /** Intervalo */
             intervalo: string;
             ultima: components["schemas"]["UltimaExecucao"] | null;
-        };
-        /** NovoRepo */
-        NovoRepo: {
-            /** Nome */
-            nome: string;
         };
         /** NumeroVersao */
         NumeroVersao: {
@@ -412,8 +406,8 @@ export interface components {
         };
         /** PedidoRemover */
         PedidoRemover: {
-            /** Clone */
-            clone: string;
+            /** Repo */
+            repo: string;
             /** Versao */
             versao: string;
         };
@@ -570,37 +564,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoOption"][];
-                };
-            };
-        };
-    };
-    cadastrar_repo_api_repos_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NovoRepo"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -2,6 +2,7 @@ import {
   Alert,
   AppShell,
   Button,
+  Code,
   Loader,
   MantineProvider,
   Modal,
@@ -31,7 +32,6 @@ import type { RepoOption, VersionOption } from "./api/tipos";
 import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
 import { ModalAbortar } from "./componentes/ModalAbortar";
-import { ModalCadastro } from "./componentes/ModalCadastro";
 import { ModalConfirmarLote } from "./componentes/ModalConfirmarLote";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
@@ -89,7 +89,6 @@ function Tela() {
   const execRef = useRef(SEM_EXECUCOES);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [criando, setCriando] = useState(false);
-  const [cadastrando, setCadastrando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
   const [atualizacoes, setAtualizacoes] = useState<
     Readonly<Record<string, EstadoAtualizacao>>
@@ -373,7 +372,6 @@ function Tela() {
             )
           }
           aoCriar={() => setCriando(true)}
-          aoCadastrar={() => setCadastrando(true)}
           aoInscricoes={() => setInscricoes(true)}
         />
       </AppShell.Header>
@@ -382,7 +380,9 @@ function Tela() {
         {repos.error && <Alert color="red">{repos.error.message}</Alert>}
         {repos.data?.length === 0 && (
           <Text c="dimmed">
-            Nenhum repositório cadastrado. Use Cadastrar repo para começar.
+            Nenhum repositório configurado. Crie uma seção{" "}
+            <Code>[repos.&lt;nome&gt;]</Code> com o <Code>caminho</Code> do clone no{" "}
+            <Code>config.toml</Code> central (README, “Configurar por projeto”).
           </Text>
         )}
         {versoes.error && (
@@ -444,14 +444,6 @@ function Tela() {
           aoCriar={(numero) => void disparar(base, { numero })}
         />
       )}
-      <ModalCadastro
-        aberto={cadastrando}
-        aoFechar={() => setCadastrando(false)}
-        aoCadastrar={(nome) => {
-          void cliente.invalidateQueries({ queryKey: ["repos"] });
-          ir(nome);
-        }}
-      />
       <ModalInscricoes
         aberto={inscricoes}
         aoFechar={() => setInscricoes(false)}

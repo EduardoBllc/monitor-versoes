@@ -58,9 +58,9 @@ export function ModalInscricoes({
       <Table>
         <Table.Tbody>
           {lista.data?.map((i) => (
-            <Table.Tr key={`${i.clone}@${i.versao}`}>
+            <Table.Tr key={`${i.repo}@${i.versao}`}>
               <Table.Td>{i.versao}</Table.Td>
-              <Table.Td>{i.clone.split("/").pop()}</Table.Td>
+              <Table.Td>{i.repo}</Table.Td>
               <Table.Td>a cada {i.intervalo}</Table.Td>
               <Table.Td c="dimmed">{ultima(i)}</Table.Td>
               <Table.Td>
@@ -71,7 +71,7 @@ export function ModalInscricoes({
                   onClick={() =>
                     gravar.mutate(() =>
                       api<void>(Metodo.DELETE, "/api/inscricoes", {
-                        clone: i.clone,
+                        repo: i.repo,
                         versao: i.versao,
                       }),
                     )

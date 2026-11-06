@@ -15,7 +15,6 @@ export interface PropsBarra {
   aoEscolherVersao: (numero: string) => void;
   aoVerificar: (auditar: boolean) => void;
   aoCriar: () => void;
-  aoCadastrar: () => void;
   aoInscricoes: () => void;
   // Espaço dos botões Atualizar/Abortar, preenchido pela tarefa do fluxo de atualização.
   slotAtualizar?: ReactNode;
@@ -95,9 +94,6 @@ export function Barra(p: PropsBarra) {
         </Group>
       </Tooltip>
       <Group gap="xs" ml="auto">
-        <Button variant="default" onClick={p.aoCadastrar}>
-          Cadastrar repo
-        </Button>
         <Button variant="default" onClick={p.aoInscricoes}>
           Inscrições
         </Button>
