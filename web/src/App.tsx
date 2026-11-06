@@ -207,23 +207,27 @@ function Tela() {
     [cliente, despachar, ir, mudar],
   );
 
-  // Recarregar a página (ou abrir outra aba) durante uma operação passa a acompanhá-la.
+  // Recarregar a página (ou abrir outra aba) retoma os picks abertos e a operação em curso.
   useEffect(() => {
     if (repo === undefined) return;
-    void api<Execucao | null>(
-      Metodo.GET,
-      `/api/repos/${encodeURIComponent(repo)}/execucao`,
-    )
-      .then((e) => {
-        if (e)
-          despachar(chave(e.repo, e.versao), {
+    const url = `/api/repos/${encodeURIComponent(repo)}`;
+    void Promise.all([
+      api<Execucao[]>(Metodo.GET, `${url}/pendencias`),
+      api<Execucao | null>(Metodo.GET, `${url}/execucao`),
+    ])
+      .then(([pendencias, e]) => {
+        // Pendências antes da atual: uma continuação rodando volta ao bloqueio se falhar.
+        for (const x of [...pendencias, ...(e ? [e] : [])])
+          despachar(chave(x.repo, x.versao), {
             tipo: TipoEventoAtualizacao.RECONECTOU,
-            execucao: e,
+            execucao: x,
           });
-        const aviso = avisoPendencia(e, versaoRef.current);
-        if (aviso?.tipo === TipoEfeito.AVISAR && aviso.destino) {
-          const { repo: r, versao: v } = aviso.destino;
-          notificarPendencia(chave(r, v), aviso.mensagem, () => ir(r, v));
+        for (const p of pendencias) {
+          const aviso = avisoPendencia(p, versaoRef.current);
+          if (aviso?.tipo === TipoEfeito.AVISAR && aviso.destino) {
+            const { repo: r, versao: v } = aviso.destino;
+            notificarPendencia(chave(r, v), aviso.mensagem, () => ir(r, v));
+          }
         }
         if (e?.estado === EstadoExecucao.RODANDO) return seguir(repo, e.versao);
       })

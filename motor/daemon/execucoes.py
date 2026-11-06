@@ -10,7 +10,7 @@ from enum import StrEnum
 
 from motor.daemon.erros import ErroApi, RepoOcupado, erro_api
 from motor.domain.types import VersionStatus
-from motor.engine.atualizar import AtualizarResult
+from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.progresso import Progresso, RelatorProgresso
 
 
@@ -41,6 +41,9 @@ class Execucao:
     erro: ErroApi | None = None
 
 
+# Terminam com o pick aberto quando o status não é DONE.
+_APLICACOES = frozenset({Operacao.ATUALIZAR, Operacao.CONTINUAR, Operacao.CRIAR})
+
 Alvo = Callable[[RelatorProgresso], VersionStatus | AtualizarResult | None]
 
 
@@ -50,6 +53,8 @@ class Execucoes:
         self._lock = threading.Lock()
         self._por_repo: dict[str, Execucao] = {}
         self._threads: dict[str, threading.Thread] = {}
+        # Pick aberto por (repo, versão): sobrevive às execuções seguintes do repo.
+        self._pendentes: dict[tuple[str, str], Execucao] = {}
 
     def iniciar(
         self, repo: str, versao: str, operacao: Operacao, alvo: Alvo
@@ -72,6 +77,10 @@ class Execucoes:
     def atual(self, repo: str) -> Execucao | None:
         return self._por_repo.get(repo)
 
+    def pendencias(self, repo: str) -> list[Execucao]:
+        with self._lock:
+            return [e for (r, _), e in self._pendentes.items() if r == repo]
+
     def aguardar(self, repo: str, timeout: float) -> bool:
         """Espera a thread do repo terminar; usado pelos testes."""
         thread = self._threads.get(repo)
@@ -80,8 +89,7 @@ class Execucoes:
         thread.join(timeout)
         return not thread.is_alive()
 
-    @staticmethod
-    def _rodar(execucao: Execucao, alvo: Alvo) -> None:
+    def _rodar(self, execucao: Execucao, alvo: Alvo) -> None:
         # last-writer-wins sem lock, como SlotProgresso
         def relatar(progresso: Progresso) -> None:
             execucao.progresso = progresso
@@ -89,6 +97,21 @@ class Execucoes:
         try:
             execucao.resultado = alvo(relatar)
             execucao.estado = EstadoExecucao.CONCLUIDA
+            self._lembrar(execucao)
         except Exception as e:
             execucao.erro = erro_api(e)[1]
             execucao.estado = EstadoExecucao.FALHOU
+
+    def _lembrar(self, execucao: Execucao) -> None:
+        chave = (execucao.repo, execucao.versao)
+        resultado = execucao.resultado
+        with self._lock:
+            if execucao.operacao is Operacao.ABORTAR:
+                self._pendentes.pop(chave, None)
+            elif execucao.operacao in _APLICACOES and isinstance(
+                resultado, AtualizarResult
+            ):
+                if resultado.status is AtualizarStatus.DONE:
+                    self._pendentes.pop(chave, None)
+                else:
+                    self._pendentes[chave] = execucao

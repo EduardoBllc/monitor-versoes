@@ -202,6 +202,30 @@ def test_atualizar_bloqueado_continua_consultavel_por_execucao(
     assert resultado["culpados"] == ["T-1"]
 
 
+def test_pendencias_guardam_o_bloqueio_depois_de_uma_verificacao(
+    amb: Ambiente, tmp_path: Path
+) -> None:
+    amb.soltar.set()
+    bloqueio = AtualizarResult(AtualizarStatus.BLOCKED, arquivos_conflito=["a.py"])
+    app = criar_app(
+        lambda relatar: replace(
+            amb.fabrica(relatar), atualizar_repo=lambda repo, versao: bloqueio
+        ),
+        porta=PORTA,
+        estaticos=tmp_path,
+        inscricoes_em=amb.inscricoes,
+        ambiente="development",
+    )
+    c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
+    c.post(f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao")
+    _esperar(c)
+    c.post(f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", json={"auditar": False})
+    _esperar(c)
+    [pendente] = c.get(f"/api/repos/{REPO}/pendencias").json()
+    assert pendente["versao"] == VERSAO
+    assert pendente["resultado"]["status"] == AtualizarStatus.BLOCKED
+
+
 def test_runner_opcional_ausente_falha_com_erro_claro(
     cliente: TestClient,
 ) -> None:

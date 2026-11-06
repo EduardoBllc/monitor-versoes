@@ -6,6 +6,7 @@ import {
 } from "./api/enums";
 import type { Execucao, Progresso } from "./api/eventos";
 import type { AtualizarResult, VersionStatus } from "./api/tipos";
+import { pickAberto } from "./atualizacao";
 
 export interface Resultado {
   repo: string;
@@ -94,15 +95,9 @@ export function avisoPendencia(
   fim: Execucao | null,
   versaoAtual: string | undefined,
 ): Efeito | null {
-  if (
-    fim === null ||
-    fim.estado !== EstadoExecucao.CONCLUIDA ||
-    fim.versao === versaoAtual ||
-    (fim.operacao !== Operacao.ATUALIZAR && fim.operacao !== Operacao.CONTINUAR)
-  )
+  if (fim === null || fim.versao === versaoAtual || !pickAberto(fim))
     return null;
   const r = fim.resultado as AtualizarResult;
-  if (r.status === AtualizarStatus.DONE) return null;
   return {
     tipo: TipoEfeito.AVISAR,
     mensagem: `${fim.repo} ${fim.versao}: ${
@@ -173,10 +168,12 @@ export function concluir(
   }
   if (fim.operacao === Operacao.CRIAR) {
     if (!aqui)
-      return {
-        tipo: TipoEfeito.AVISAR,
-        mensagem: `versão ${fim.versao} criada em ${fim.repo}`,
-      };
+      return (
+        avisoPendencia(fim, undefined) ?? {
+          tipo: TipoEfeito.AVISAR,
+          mensagem: `versão ${fim.versao} criada em ${fim.repo}`,
+        }
+      );
     return { tipo: TipoEfeito.NAVEGAR, repo: fim.repo, versao: fim.versao };
   }
   return null;

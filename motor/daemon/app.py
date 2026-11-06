@@ -251,6 +251,10 @@ def _rotas_execucao(app: FastAPI, ctx: _Contexto) -> None:
     def execucao_atual(repo: str) -> Execucao | None:
         return ctx.execucoes.atual(repo)
 
+    @app.get("/api/repos/{repo}/pendencias")
+    def pendencias(repo: str) -> list[Execucao]:
+        return ctx.execucoes.pendencias(repo)
+
     @app.get("/api/repos/{repo}/execucao/eventos")
     async def eventos(repo: str) -> StreamingResponse:
         async def fluxo() -> AsyncIterator[str]:

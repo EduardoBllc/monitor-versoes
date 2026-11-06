@@ -7,6 +7,7 @@ import {
   INICIAL,
   TipoEventoAtualizacao,
   proximo,
+  type EstadoAtualizacao,
 } from "./atualizacao";
 
 const COMMIT = { hash_origem: "abc12345" } as CommitRef;
@@ -129,4 +130,43 @@ it("reconectou reconstitui a fase", () => {
   expect(
     re(execucao(Operacao.ATUALIZAR, atualizar(AtualizarStatus.DONE))),
   ).toBe(FaseAtualizacao.OCIOSA);
+});
+
+it("reconectar pela pendência mantém o bloqueio depois de outra execução", () => {
+  const re = (e: EstadoAtualizacao, x: Execucao | null) =>
+    proximo(e, { tipo: TipoEventoAtualizacao.RECONECTOU, execucao: x });
+  const pendencia = execucao(
+    Operacao.ATUALIZAR,
+    atualizar(AtualizarStatus.BLOCKED),
+  );
+  const reaberta = re(INICIAL, pendencia);
+  expect(reaberta.fase).toBe(FaseAtualizacao.BLOQUEADA);
+  const falhou = execucao(Operacao.CONTINUAR, null, EstadoExecucao.FALHOU);
+  expect(re(reaberta, falhou)).toBe(reaberta);
+  expect(re(reaberta, execucao(Operacao.VERIFICAR, LOTE))).toBe(reaberta);
+
+  const continuando = re(
+    reaberta,
+    execucao(Operacao.CONTINUAR, null, EstadoExecucao.RODANDO),
+  );
+  expect(continuando.fase).toBe(FaseAtualizacao.APLICANDO);
+  expect(
+    proximo(continuando, { tipo: TipoEventoAtualizacao.TERMINOU, execucao: falhou }),
+  ).toBe(reaberta);
+});
+
+it("criar com pick aberto deixa a versão nova bloqueada", () => {
+  const criar = (s: AtualizarStatus) =>
+    execucao(Operacao.CRIAR, atualizar(s));
+  for (const tipo of [
+    TipoEventoAtualizacao.TERMINOU,
+    TipoEventoAtualizacao.RECONECTOU,
+  ] as const) {
+    expect(
+      proximo(INICIAL, { tipo, execucao: criar(AtualizarStatus.BLOCKED) }).fase,
+    ).toBe(FaseAtualizacao.BLOQUEADA);
+    expect(
+      proximo(INICIAL, { tipo, execucao: criar(AtualizarStatus.DONE) }).fase,
+    ).toBe(FaseAtualizacao.OCIOSA);
+  }
 });

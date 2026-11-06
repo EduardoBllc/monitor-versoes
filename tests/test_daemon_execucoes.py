@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from typing import cast
 
 import pytest
 
@@ -105,3 +106,58 @@ def test_execucao_que_falha_guarda_erro_e_libera_o_repo() -> None:
 
     execucoes.iniciar("a", "1.0.0", Operacao.VERIFICAR, lambda _: None)
     assert execucoes.aguardar("a", ESPERA_S)
+
+
+def _concluir(
+    execucoes: Execucoes,
+    operacao: Operacao,
+    status: AtualizarStatus | None = None,
+    versao: str = "1.0.0",
+) -> None:
+    def alvo(_: RelatorProgresso) -> AtualizarResult | None:
+        if status is None:
+            raise RecusaDeInvariante("ainda em conflito")
+        return AtualizarResult(status)
+
+    execucoes.iniciar("a", versao, operacao, alvo)
+    assert execucoes.aguardar("a", ESPERA_S)
+
+
+def _pendentes(execucoes: Execucoes) -> list[tuple[str, AtualizarStatus]]:
+    return [
+        (e.versao, cast(AtualizarResult, e.resultado).status)
+        for e in execucoes.pendencias("a")
+    ]
+
+
+def test_bloqueio_sobrevive_a_continuar_que_falha_e_a_verificar() -> None:
+    execucoes = Execucoes()
+    _concluir(execucoes, Operacao.ATUALIZAR, AtualizarStatus.BLOCKED)
+    _concluir(execucoes, Operacao.CONTINUAR)
+    _concluir(execucoes, Operacao.VERIFICAR, AtualizarStatus.DONE)
+    _concluir(execucoes, Operacao.ATUALIZAR, AtualizarStatus.DONE, versao="2.0.0")
+    assert _pendentes(execucoes) == [("1.0.0", AtualizarStatus.BLOCKED)]
+
+
+def test_continuar_vazio_substitui_o_bloqueio() -> None:
+    execucoes = Execucoes()
+    _concluir(execucoes, Operacao.CRIAR, AtualizarStatus.BLOCKED)
+    _concluir(execucoes, Operacao.CONTINUAR, AtualizarStatus.VAZIO)
+    assert _pendentes(execucoes) == [("1.0.0", AtualizarStatus.VAZIO)]
+
+
+@pytest.mark.parametrize(
+    ("operacao", "resultado"),
+    [
+        (Operacao.CONTINUAR, AtualizarResult(AtualizarStatus.DONE)),
+        (Operacao.ABORTAR, None),
+    ],
+)
+def test_continuar_concluido_ou_abortar_limpa_o_bloqueio(
+    operacao: Operacao, resultado: AtualizarResult | None
+) -> None:
+    execucoes = Execucoes()
+    _concluir(execucoes, Operacao.ATUALIZAR, AtualizarStatus.BLOCKED)
+    execucoes.iniciar("a", "1.0.0", operacao, lambda _: resultado)
+    assert execucoes.aguardar("a", ESPERA_S)
+    assert _pendentes(execucoes) == []

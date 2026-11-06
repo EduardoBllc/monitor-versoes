@@ -99,6 +99,14 @@ const depoisDeAplicar = (r: AtualizarResult): EstadoAtualizacao => {
   }
 };
 
+// Atualizar, continuar e criar concluídos sem DONE deixam o cherry-pick aberto.
+export const pickAberto = (x: Execucao): boolean =>
+  x.estado === EstadoExecucao.CONCLUIDA &&
+  (x.operacao === Operacao.ATUALIZAR ||
+    x.operacao === Operacao.CONTINUAR ||
+    x.operacao === Operacao.CRIAR) &&
+  (x.resultado as AtualizarResult).status !== AtualizarStatus.DONE;
+
 function terminou(e: EstadoAtualizacao, x: Execucao): EstadoAtualizacao {
   if (x.estado === EstadoExecucao.FALHOU) return volta(e);
   switch (x.operacao) {
@@ -109,8 +117,10 @@ function terminou(e: EstadoAtualizacao, x: Execucao): EstadoAtualizacao {
       return depoisDeAplicar(x.resultado as AtualizarResult);
     case Operacao.ABORTAR:
       return INICIAL;
-    case Operacao.VERIFICAR:
     case Operacao.CRIAR:
+      // Criar termina num atualizar: só o pick aberto muda a fase da versão nova.
+      return pickAberto(x) ? depoisDeAplicar(x.resultado as AtualizarResult) : volta(e);
+    case Operacao.VERIFICAR:
       return volta(e);
     default:
       return assertNever(x.operacao);
@@ -122,8 +132,6 @@ function reconectou(
   x: Execucao | null,
 ): EstadoAtualizacao {
   if (x === null || x.estado === EstadoExecucao.FALHOU) return volta(e);
-  const aplicacao =
-    x.operacao === Operacao.ATUALIZAR || x.operacao === Operacao.CONTINUAR;
   if (x.estado === EstadoExecucao.RODANDO) {
     switch (x.operacao) {
       case Operacao.PREVIA:
@@ -131,7 +139,9 @@ function reconectou(
       case Operacao.ATUALIZAR:
       case Operacao.CONTINUAR:
       case Operacao.ABORTAR:
-        return em(FaseAtualizacao.APLICANDO);
+        return em(FaseAtualizacao.APLICANDO, {
+          anterior: emAndamento(e) ? e.anterior : e,
+        });
       case Operacao.VERIFICAR:
       case Operacao.CRIAR:
         return e;
@@ -140,9 +150,7 @@ function reconectou(
     }
   }
   // Concluída: só um pick pendente interessa ao reabrir a página.
-  if (!aplicacao) return e;
-  const r = x.resultado as AtualizarResult;
-  return r.status === AtualizarStatus.DONE ? e : depoisDeAplicar(r);
+  return pickAberto(x) ? depoisDeAplicar(x.resultado as AtualizarResult) : e;
 }
 
 export function proximo(e: EstadoAtualizacao, ev: Evento): EstadoAtualizacao {
