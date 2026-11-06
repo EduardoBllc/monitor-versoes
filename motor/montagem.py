@@ -92,17 +92,6 @@ _DA_CONFIG = FonteTasks()
 GRUPO_TAREFAS = "monitor_versoes.tarefas"
 
 
-def validar_nome_repo(valor: str) -> str:
-    """Nome canonico do repo: basename puro, sem caminho e sem espaco em volta.
-
-    O nome e a chave do estado — aceitar 'pasta/backend' fragmentaria o repo em
-    duas linhas paralelas sem erro nenhum aparecer.
-    """
-    if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
-        raise ErroDeEntrada("use um nome simples, sem caminho")
-    return valor
-
-
 @contextmanager
 def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
     """Ciclo de vida do banco: uma engine e uma sessao por comando.

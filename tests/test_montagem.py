@@ -17,7 +17,7 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.atribuicoes import Exata
-from motor.config import ConfigProjeto, Escolhido
+from motor.config import ConfigProjeto, Escolhido, validar_nome_repo
 from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
@@ -29,7 +29,6 @@ from motor.montagem import (
     montar_commit_source,
     montar_deps,
     montar_task_source,
-    validar_nome_repo,
 )
 from motor.services.versionamento import Versionamento
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa

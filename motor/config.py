@@ -134,6 +134,9 @@ def worktrees_mantidas() -> int:
 
 AMBIENTE_PADRAO = "production"
 
+SECAO_REPOS = "repos"
+CHAVE_CAMINHO = "caminho"
+
 #: Nome do arquivo de config na raiz do repo-alvo.
 ARQUIVO_CONFIG_REPO = ".monitor-versoes.toml"
 
@@ -174,6 +177,18 @@ class ConfigProjeto:
     branch_versao: Escolhido | None = None
     branch_principal: Escolhido | None = None
     fonte_tarefas: Escolhido | None = None
+    caminho: str | None = None
+
+
+def validar_nome_repo(valor: str) -> str:
+    """Nome canonico do repo: basename puro, sem caminho e sem espaco em volta.
+
+    O nome e a chave do estado — aceitar 'pasta/backend' fragmentaria o repo em
+    duas linhas paralelas sem erro nenhum aparecer.
+    """
+    if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
+        raise ErroDeEntrada("use um nome simples, sem caminho")
+    return valor
 
 
 def caminho_config_global() -> str:
@@ -248,6 +263,41 @@ def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
     return None if bruto is None else validar_padrao(bruto, caminho)
 
 
+Camada = tuple[Mapping[str, object], str, Origem]
+
+
+def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto:
+    """Mescla chave a chave, a última camada vencendo."""
+    piso: Escolhido | None = None
+    padrao: str | None = None
+    tarefas: dict[str, object] = {}
+    escolhas: dict[str, Escolhido] = {}
+    for dados, arquivo, origem in camadas:
+        if (p := _texto(dados, "versao", "piso", arquivo)) is not None:
+            piso = Escolhido(p, arquivo, origem)
+        if (r := _padrao_referencia(dados, arquivo)) is not None:
+            padrao = r
+        tarefas.update(_tabela(dados, "tarefas", arquivo))
+        for atributo, tabela, chave, template in _ESCOLHAS:
+            ler = _template if template else _texto
+            if (valor := ler(dados, tabela, chave, arquivo)) is not None:
+                escolhas[atributo] = Escolhido(valor, arquivo, origem)
+    return ConfigProjeto(
+        piso=None if piso is None else piso.valor,
+        arquivo_piso=None if piso is None else piso.arquivo,
+        padrao_referencia=padrao,
+        tarefas=tarefas,
+        arquivos=tuple(c for _, c, _ in camadas),
+        esquema=escolhas.get("esquema"),
+        atribuicao=escolhas.get("atribuicao"),
+        tag_liberacao=escolhas.get("tag_liberacao"),
+        branch_versao=escolhas.get("branch_versao"),
+        branch_principal=escolhas.get("branch_principal"),
+        fonte_tarefas=escolhas.get("fonte_tarefas"),
+        caminho=caminho,
+    )
+
+
 def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
     """Le o global e, havendo `raiz_repo`, o `.monitor-versoes.toml` dela.
 
@@ -258,32 +308,92 @@ def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
     caminhos = [caminho_config_global()]
     if raiz_repo is not None:
         caminhos.append(os.path.join(raiz_repo, ARQUIVO_CONFIG_REPO))
-    piso: Escolhido | None = None
-    padrao: str | None = None
-    tarefas: dict[str, object] = {}
-    escolhas: dict[str, Escolhido] = {}
-    for indice, caminho in enumerate(caminhos):
-        origem: Origem = "central" if indice == 0 else "repo"
-        dados = _ler_toml(caminho)
-        if (p := _texto(dados, "versao", "piso", caminho)) is not None:
-            piso = Escolhido(p, caminho, origem)
-        if (r := _padrao_referencia(dados, caminho)) is not None:
-            padrao = r
-        tarefas.update(_tabela(dados, "tarefas", caminho))
-        for atributo, tabela, chave, template in _ESCOLHAS:
-            ler = _template if template else _texto
-            if (valor := ler(dados, tabela, chave, caminho)) is not None:
-                escolhas[atributo] = Escolhido(valor, caminho, origem)
-    return ConfigProjeto(
-        piso=None if piso is None else piso.valor,
-        arquivo_piso=None if piso is None else piso.arquivo,
-        padrao_referencia=padrao,
-        tarefas=tarefas,
-        arquivos=tuple(caminhos),
-        esquema=escolhas.get("esquema"),
-        atribuicao=escolhas.get("atribuicao"),
-        tag_liberacao=escolhas.get("tag_liberacao"),
-        branch_versao=escolhas.get("branch_versao"),
-        branch_principal=escolhas.get("branch_principal"),
-        fonte_tarefas=escolhas.get("fonte_tarefas"),
+    return _mesclar(
+        [
+            (_ler_toml(c), c, "central" if i == 0 else "repo")
+            for i, c in enumerate(caminhos)
+        ]
+    )
+
+
+def _topo(dados: Mapping[str, object], caminho: str) -> dict[str, object]:
+    """O topo da config central, sem `[repos]`; `piso` aqui e erro."""
+    if _texto(dados, "versao", "piso", caminho) is not None:
+        raise ErroDeEntrada(f"{caminho}: piso só vale em [{SECAO_REPOS}.<nome>.versao]")
+    return {k: v for k, v in dados.items() if k != SECAO_REPOS}
+
+
+def _secoes(
+    dados: Mapping[str, object], caminho: str
+) -> dict[str, Mapping[str, object]]:
+    brutas = _tabela(dados, SECAO_REPOS, caminho)
+    secoes: dict[str, Mapping[str, object]] = {}
+    for nome in brutas:
+        try:
+            validar_nome_repo(nome)
+        except ErroDeEntrada as e:
+            raise ErroDeEntrada(f"{caminho}: [{SECAO_REPOS}.{nome!r}] {e}") from e
+        secoes[nome] = _tabela(brutas, nome, caminho)
+    return secoes
+
+
+def _caminho_da_secao(
+    secao: Mapping[str, object], nome: str, arquivo: str
+) -> str | None:
+    bruto = secao.get(CHAVE_CAMINHO)
+    if bruto is None:
+        return None
+    if not isinstance(bruto, str) or not bruto.strip():
+        raise ErroDeEntrada(
+            f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} deve ser texto "
+            f"nao vazio, veio {bruto!r}"
+        )
+    return os.path.abspath(os.path.expanduser(bruto))
+
+
+def repos_configurados() -> dict[str, str | None]:
+    """Nome -> caminho expandido (`None` sem `caminho`), por nome; não checa o disco."""
+    arquivo = caminho_config_global()
+    secoes = _secoes(_ler_toml(arquivo), arquivo)
+    return {
+        nome: _caminho_da_secao(secoes[nome], nome, arquivo) for nome in sorted(secoes)
+    }
+
+
+def carregar_config_global() -> ConfigProjeto:
+    """So o topo da config central."""
+    arquivo = caminho_config_global()
+    return _mesclar([(_topo(_ler_toml(arquivo), arquivo), arquivo, "central")])
+
+
+def carregar_config_repo(nome: str) -> ConfigProjeto:
+    """Topo mesclado com `[repos.<nome>]`, a seção vencendo; valida o `caminho`."""
+    arquivo = caminho_config_global()
+    dados = _ler_toml(arquivo)
+    secoes = _secoes(dados, arquivo)
+    if nome not in secoes:
+        existentes = ", ".join(sorted(secoes)) or "(nenhuma)"
+        raise ErroDeEntrada(
+            f"{arquivo}: repo {nome!r} sem seção [{SECAO_REPOS}.{nome}] "
+            f"(existentes: {existentes})"
+        )
+    secao = secoes[nome]
+    rotulo = f"{arquivo} [{SECAO_REPOS}.{nome}]"
+    caminho = _caminho_da_secao(secao, nome, arquivo)
+    if caminho is None:
+        raise ErroDeEntrada(
+            f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} é obrigatório"
+        )
+    if not os.path.isdir(caminho):
+        raise ErroDeEntrada(
+            f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} {caminho!r} "
+            "não é um diretório"
+        )
+    sem_caminho = {k: v for k, v in secao.items() if k != CHAVE_CAMINHO}
+    return _mesclar(
+        [
+            (_topo(dados, arquivo), arquivo, "central"),
+            (sem_caminho, rotulo, "central"),
+        ],
+        caminho=caminho,
     )

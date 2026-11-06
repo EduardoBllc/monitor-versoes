@@ -384,3 +384,136 @@ def test_valor_invalido_cita_arquivo_e_valor(camadas, conteudo, valor):
     # O texto é requisito: diz qual arquivo e qual valor corrigir.
     assert str(repo) in str(e.value)
     assert valor in str(e.value)
+
+
+# --- seções [repos.<nome>] da config central ---
+
+
+@pytest.fixture
+def central(tmp_path, monkeypatch):
+    """Caminho do config.toml central, com XDG_CONFIG_HOME e HOME isolados."""
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (xdg / "monitor-versoes").mkdir(parents=True)
+    return xdg / "monitor-versoes" / "config.toml"
+
+
+def _clone(tmp_path, nome="clone"):
+    pasta = tmp_path / nome
+    pasta.mkdir(exist_ok=True)
+    return pasta
+
+
+def _com_caminho(tmp_path, nome="x"):
+    return f'[repos.{nome}]\ncaminho = "{_clone(tmp_path, nome)}"\n'
+
+
+def test_secao_vence_o_topo_chave_a_chave(central, tmp_path):
+    central.write_text(
+        '[versao]\nesquema = "a"\n[branches]\nprincipal = "main"\n'
+        + _com_caminho(tmp_path)
+        + '[repos.x.versao]\nesquema = "b"\n'
+    )
+    cfg = config.carregar_config_repo("x")
+    assert cfg.esquema is not None
+    assert cfg.branch_principal is not None
+    assert cfg.esquema.valor == "b"
+    assert cfg.esquema.arquivo == f"{central} [repos.x]"
+    assert cfg.esquema.origem == "central"
+    assert cfg.branch_principal.valor == "main"
+    assert cfg.branch_principal.arquivo == str(central)
+
+
+def test_piso_na_secao_vale_so_para_o_repo(central, tmp_path):
+    central.write_text(
+        _com_caminho(tmp_path, "x")
+        + '[repos.x.versao]\npiso = "14.0.0"\n'
+        + _com_caminho(tmp_path, "y")
+    )
+    assert config.carregar_config_repo("x").piso == "14.0.0"
+    assert config.carregar_config_repo("y").piso is None
+
+
+def test_piso_no_topo_e_erro(central, tmp_path):
+    central.write_text('[versao]\npiso = "1.0.0"\n' + _com_caminho(tmp_path))
+    padrao = r"piso só vale em \[repos\.<nome>\.versao\]"
+    with pytest.raises(ErroDeEntrada, match=padrao):
+        config.carregar_config_global()
+    with pytest.raises(ErroDeEntrada, match=padrao):
+        config.carregar_config_repo("x")
+
+
+def test_tarefas_da_secao_sobrescreve_so_a_chave_declarada(central, tmp_path):
+    central.write_text(
+        '[tarefas]\nfonte = "t"\n'
+        + _com_caminho(tmp_path)
+        + "[repos.x.tarefas]\nsistema = 7\n"
+    )
+    assert config.carregar_config_repo("x").tarefas == {"fonte": "t", "sistema": 7}
+
+
+def test_padrao_de_referencia_da_secao_vence_o_topo(central, tmp_path):
+    central.write_text(
+        '[referencia]\npadrao = "a{id}"\n'
+        + _com_caminho(tmp_path)
+        + '[repos.x.referencia]\npadrao = "b{id}"\n'
+    )
+    assert config.carregar_config_repo("x").padrao_referencia == "b{id}"
+    assert config.carregar_config_global().padrao_referencia == "a{id}"
+
+
+def test_caminho_expandido(central, tmp_path):
+    _clone(tmp_path)
+    central.write_text('[repos.x]\ncaminho = "~/clone/"\n')
+    assert config.carregar_config_repo("x").caminho == str(tmp_path / "clone")
+    assert config.repos_configurados() == {"x": str(tmp_path / "clone")}
+
+
+def test_repo_sem_secao_lista_as_existentes(central, tmp_path):
+    with pytest.raises(ErroDeEntrada, match=r"\(nenhuma\)"):
+        config.carregar_config_repo("c")
+    central.write_text(_com_caminho(tmp_path, "a") + _com_caminho(tmp_path, "b"))
+    with pytest.raises(ErroDeEntrada, match="a, b"):
+        config.carregar_config_repo("c")
+
+
+def test_secao_sem_caminho_e_erro(central):
+    central.write_text("[repos.x.versao]\n")
+    with pytest.raises(ErroDeEntrada, match=r"\[repos\.x\] caminho"):
+        config.carregar_config_repo("x")
+
+
+def test_caminho_que_nao_e_diretorio_e_erro(central, tmp_path):
+    ausente = tmp_path / "ausente"
+    central.write_text(f'[repos.x]\ncaminho = "{ausente}"\n')
+    with pytest.raises(ErroDeEntrada) as e:
+        config.carregar_config_repo("x")
+    assert "[repos.x]" in str(e.value)
+    assert str(ausente) in str(e.value)
+
+
+def test_nome_de_secao_invalido_e_erro(central):
+    central.write_text('[repos."a/b"]\ncaminho = "/tmp"\n')
+    with pytest.raises(ErroDeEntrada, match="nome simples"):
+        config.repos_configurados()
+
+
+@pytest.mark.parametrize("conteudo", ["repos = 1\n", "[repos]\nx = 1\n"])
+def test_repos_ou_secao_que_nao_e_tabela_e_erro(central, conteudo):
+    central.write_text(conteudo)
+    with pytest.raises(ErroDeEntrada, match=r"config\.toml"):
+        config.repos_configurados()
+
+
+def test_monitor_versoes_toml_no_clone_e_ignorado(central, tmp_path):
+    central.write_text(_com_caminho(tmp_path))
+    (tmp_path / "x" / config.ARQUIVO_CONFIG_REPO).write_text(
+        '[versao]\npiso = "9.0.0"\n'
+    )
+    assert config.carregar_config_repo("x").piso is None
+
+
+def test_repos_configurados_ordena_e_tolera_sem_caminho(central):
+    central.write_text('[repos.b.versao]\n[repos.a]\ncaminho = "/abs"\n')
+    assert list(config.repos_configurados().items()) == [("a", "/abs"), ("b", None)]
