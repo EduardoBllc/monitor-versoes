@@ -125,32 +125,32 @@ def test_instalacao_integra():
         "Tarefas",
         "Bitbucket",
     ]
-    assert por_peca["Tarefas"].estado is Estado.NAO_CONFIGURADO
-    assert por_peca["Bitbucket"].estado is Estado.NAO_CONFIGURADO
+    assert por_peca[Peca.TAREFAS].estado is Estado.NAO_CONFIGURADO
+    assert por_peca[Peca.BITBUCKET].estado is Estado.NAO_CONFIGURADO
 
 
 def test_postgres_fora():
     por_peca, resultados = _rodar(abrir=_banco_fora)
 
     assert falhou(resultados)
-    assert por_peca["Postgres"].estado is Estado.FALHA
-    assert "docker compose up -d" in por_peca["Postgres"].correcao
-    assert por_peca["Migração"].estado is Estado.NAO_VERIFICADA
-    assert por_peca["Tarefas"].estado is Estado.NAO_CONFIGURADO
+    assert por_peca[Peca.POSTGRES].estado is Estado.FALHA
+    assert "docker compose up -d" in por_peca[Peca.POSTGRES].correcao
+    assert por_peca[Peca.MIGRACAO].estado is Estado.NAO_VERIFICADA
+    assert por_peca[Peca.TAREFAS].estado is Estado.NAO_CONFIGURADO
 
 
 @pytest.mark.parametrize("revisao", [None, "antiga"])
 def test_migracao_pendente(revisao):
     por_peca, _ = _rodar(abrir=_sessao_com(revisao))
 
-    assert por_peca["Migração"].estado is Estado.FALHA
-    assert por_peca["Migração"].correcao == "make migrate"
+    assert por_peca[Peca.MIGRACAO].estado is Estado.FALHA
+    assert por_peca[Peca.MIGRACAO].correcao == "make migrate"
 
 
 def test_migracao_em_desenvolvimento_usa_migrate_dev():
     por_peca, _ = _rodar(abrir=_sessao_com(None), ambiente="development")
 
-    assert por_peca["Migração"].correcao == "make migrate-dev"
+    assert por_peca[Peca.MIGRACAO].correcao == "make migrate-dev"
 
 
 @pytest.mark.parametrize("porta", ["", "abc"])
@@ -159,10 +159,10 @@ def test_variaveis_do_banco_invalidas_nao_abrem_sessao(porta):
 
     por_peca, _ = _rodar(env, abrir=_abrir_proibido)
 
-    assert por_peca["Variáveis"].estado is Estado.FALHA
-    assert "DATABASE_PORT" in por_peca["Variáveis"].detalhe
-    assert por_peca["Postgres"].estado is Estado.NAO_VERIFICADA
-    assert por_peca["Migração"].estado is Estado.NAO_VERIFICADA
+    assert por_peca[Peca.VARIAVEIS].estado is Estado.FALHA
+    assert "DATABASE_PORT" in por_peca[Peca.VARIAVEIS].detalhe
+    assert por_peca[Peca.POSTGRES].estado is Estado.NAO_VERIFICADA
+    assert por_peca[Peca.MIGRACAO].estado is Estado.NAO_VERIFICADA
 
 
 def _sessao_com_repos(*nomes: str):
@@ -197,7 +197,7 @@ def test_bitbucket_sem_token_nao_faz_rede():
 
     por_peca, _ = _rodar(handler=handler)
 
-    assert por_peca["Bitbucket"].estado is Estado.NAO_CONFIGURADO
+    assert por_peca[Peca.BITBUCKET].estado is Estado.NAO_CONFIGURADO
 
 
 def test_bitbucket_token_recusado_e_aceito():
@@ -224,7 +224,7 @@ def test_falhas_independentes_no_mesmo_relatorio(tmp_path):
     )
 
     assert Estado.FALHA in [r.estado for r in _repos_de(resultados)]
-    assert por_peca["Postgres"].estado is Estado.FALHA
+    assert por_peca[Peca.POSTGRES].estado is Estado.FALHA
 
 
 def test_credenciais_nunca_aparecem():
@@ -254,23 +254,23 @@ def test_sqlite_nao_exige_partes_do_banco_e_rotula_o_backend():
 
     assert not falhou(resultados)
     assert "Postgres" not in por_peca
-    assert por_peca["SQLite"].estado is Estado.OK
-    assert por_peca["Migração"].estado is Estado.OK
+    assert por_peca[Peca.SQLITE].estado is Estado.OK
+    assert por_peca[Peca.MIGRACAO].estado is Estado.OK
 
 
 def test_sqlite_sem_migracao_nao_sugere_docker_nem_make():
     por_peca, _ = _rodar(ENV_SQLITE, abrir=_sessao_com(None))
 
-    assert por_peca["Migração"].estado is Estado.FALHA
-    assert "docker" not in por_peca["Migração"].correcao
+    assert por_peca[Peca.MIGRACAO].estado is Estado.FALHA
+    assert "docker" not in por_peca[Peca.MIGRACAO].correcao
 
 
 def test_sqlite_fora_nao_sugere_docker():
     por_peca, _ = _rodar(ENV_SQLITE, abrir=_banco_fora)
 
-    assert por_peca["SQLite"].estado is Estado.FALHA
-    assert "docker" not in por_peca["SQLite"].correcao
-    assert por_peca["Migração"].estado is Estado.NAO_VERIFICADA
+    assert por_peca[Peca.SQLITE].estado is Estado.FALHA
+    assert "docker" not in por_peca[Peca.SQLITE].correcao
+    assert por_peca[Peca.MIGRACAO].estado is Estado.NAO_VERIFICADA
 
 
 def test_backend_desconhecido_e_variavel_invalida():
@@ -278,8 +278,8 @@ def test_backend_desconhecido_e_variavel_invalida():
         {**ENV_SQLITE, "DATABASE_BACKEND": "mysql"}, abrir=_abrir_proibido
     )
 
-    assert por_peca["Variáveis"].estado is Estado.FALHA
-    assert "DATABASE_BACKEND" in por_peca["Variáveis"].detalhe
+    assert por_peca[Peca.VARIAVEIS].estado is Estado.FALHA
+    assert "DATABASE_BACKEND" in por_peca[Peca.VARIAVEIS].detalhe
 
 
 # -- linha Tarefas --------------------------------------------------------------
@@ -327,7 +327,7 @@ def test_linha_tarefas_por_estado(
 
     por_peca, resultados = _rodar(config_central=carregar_config_global)
 
-    linha = por_peca["Tarefas"]
+    linha = por_peca[Peca.TAREFAS]
     assert linha.estado is estado
     assert linha.correcao == correcao
     assert falhou(resultados) is (estado is Estado.FALHA)
@@ -343,7 +343,7 @@ def test_linha_tarefas_cita_a_mensagem_da_falha(tmp_path, monkeypatch):
 
     por_peca, _ = _rodar(config_central=carregar_config_global)
 
-    assert "construtor quebrou" in por_peca["Tarefas"].detalhe
+    assert "construtor quebrou" in por_peca[Peca.TAREFAS].detalhe
 
 
 def test_config_central_invalida_falha_so_na_linha_tarefas():
@@ -352,8 +352,8 @@ def test_config_central_invalida_falha_so_na_linha_tarefas():
 
     por_peca, resultados = _rodar(config_central=invalida)
 
-    assert por_peca["Tarefas"].estado is Estado.FALHA
-    assert "TOML invalido" in por_peca["Tarefas"].detalhe
+    assert por_peca[Peca.TAREFAS].estado is Estado.FALHA
+    assert "TOML invalido" in por_peca[Peca.TAREFAS].detalhe
     assert [r.peca for r in resultados] == [
         "Variáveis",
         "Postgres",
@@ -440,3 +440,15 @@ def test_repos_le_o_config_toml_real(tmp_path, monkeypatch):
     _, resultados = _rodar(repos=repos_configurados)
 
     assert _repos_de(resultados)[0].estado is Estado.OK
+
+
+def test_estado_sem_secao_avisa_no_sqlite(tmp_path):
+    _, resultados = _rodar(
+        ENV_SQLITE,
+        abrir=_sessao_com_repos("orfao"),
+        repos=lambda: {"a": str(tmp_path)},
+    )
+
+    (linha,) = _repos_de(resultados)
+    assert linha.estado is Estado.AVISO
+    assert "'orfao'" in linha.detalhe

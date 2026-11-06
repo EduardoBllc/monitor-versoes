@@ -33,6 +33,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.config import SECAO_REPOS
+from motor.diagnostico import Peca
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -1024,7 +1025,7 @@ def test_diagnostico_esta_no_parser_sem_exigir_repo():
 def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     monkeypatch, capsys, falha, codigo
 ):
-    from motor.diagnostico import Estado, Peca, Resultado
+    from motor.diagnostico import Estado, Resultado
 
     estado = Estado.FALHA if falha else Estado.OK
     monkeypatch.setattr(cli, "load_dotenv", None)
