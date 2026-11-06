@@ -19,7 +19,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
-from motor.errors import MotorError, NaoEncontrado
+from motor.errors import MotorError
 from motor.inscricoes import (
     INTERVALO_PADRAO,
     Inscricao,
@@ -41,6 +41,7 @@ from motor.tui import (
     renderizar_chamado,
     renderizar_status,
 )
+from tests.config_repos import secao_repo
 from tests.fontes_falsas import FonteFixa
 from tests.versionamento import ESCALONADO_COMPOSTA
 
@@ -70,77 +71,30 @@ def _checkout(raiz: Path, nome: str) -> Path:
     return caminho
 
 
-def _estado() -> FakeEstado:
-    return FakeEstado(
-        repos={
-            "alpha": RepoInfo(nome="alpha"),
-            "beta": RepoInfo(nome="beta"),
-            "gamma": RepoInfo(nome="gamma"),
-        },
-        aliases={"beta-local": "beta"},
-    )
+def _registrar_repo(
+    central: Path, nome: str, checkout: Path, topo: str = "", do_repo: str = ""
+) -> None:
+    central.write_text(topo + secao_repo(nome, checkout, do_repo))
 
 
-def test_descobrir_repos_prefere_canonico_depois_alias_e_mantem_ausente(tmp_path):
-    alpha = _checkout(tmp_path, "alpha")
-    _checkout(tmp_path, "beta-local")
-    beta = _checkout(tmp_path, "beta")
-    _checkout(tmp_path, "nao-cadastrado")
+def test_descobrir_repos_vem_da_config(tmp_path, xdg_isolado):
+    existente = _checkout(tmp_path, "a")
 
-    assert descobrir_repos(_estado(), str(tmp_path)) == [
-        RepoOption(nome="alpha", caminho=str(alpha)),
-        RepoOption(nome="beta", caminho=str(beta)),
-        RepoOption(nome="gamma", caminho=None),
+    opcoes = descobrir_repos({"a": str(existente), "b": "/nao/existe", "c": None})
+
+    assert opcoes == [
+        RepoOption(nome="a", caminho=str(existente)),
+        RepoOption(nome="b", caminho=None),
+        RepoOption(nome="c", caminho=None),
     ]
 
 
-def test_descobrir_repos_usa_alias_quando_canonico_nao_existe(tmp_path):
-    alias = _checkout(tmp_path, "beta-local")
-
-    opcoes = descobrir_repos(_estado(), str(tmp_path))
-
-    assert opcoes[1] == RepoOption(nome="beta", caminho=str(alias))
-
-
-def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
-    opcoes = descobrir_repos(_estado(), str(tmp_path / "ausente"))
-
-    assert [opcao.caminho for opcao in opcoes] == [None, None, None]
-
-
-def test_descobrir_repos_ignora_naoencontrado_mesmo_sem_a_palavra_desconhecido(
-    tmp_path,
-):
-    """Ramifica por TIPO (NaoEncontrado), nao por substring 'desconhecido' na
-    mensagem: um adapter de terceiro correto, que levanta NaoEncontrado num
-    idioma diferente, nao pode reprovar aqui.
-    """
-
-    class EstadoQueFalaIngles(FakeEstado):
-        def resolver_repo(self, basename: str, /) -> RepoInfo:
-            raise NaoEncontrado("unknown repo")
-
-    _checkout(tmp_path, "nao-cadastrado")
-    estado = EstadoQueFalaIngles(repos={"alpha": RepoInfo(nome="alpha")})
-
-    opcoes = descobrir_repos(estado, str(tmp_path))
-
-    assert opcoes == [RepoOption(nome="alpha", caminho=None)]
-
-
-def test_descobrir_repos_relata_o_banco_e_a_varredura(tmp_path):
-    """Era o unico worker sem fase nenhuma: a tela ficava parada enquanto o
-    banco abria e o PROJECTS_DIR era varrido (um resolver_repo por diretorio
-    desconhecido).
-    """
-    _checkout(tmp_path, "alpha")
-    _checkout(tmp_path, "nao-cadastrado")
+def test_descobrir_repos_relata_cada_checkout(tmp_path):
     relatos: list[Progresso] = []
 
-    descobrir_repos(_estado(), str(tmp_path), progresso=relatos.append)
+    descobrir_repos({"a": None, "b": None}, progresso=relatos.append)
 
-    assert relatos[0] == Progresso("lendo os repos cadastrados")
-    assert relatos[1:] == [
+    assert relatos == [
         Progresso("procurando os checkouts", 1, 2),
         Progresso("procurando os checkouts", 2, 2),
     ]
@@ -171,25 +125,16 @@ def test_app_exibe_loading_enquanto_carrega_repos():
     asyncio.run(executar_fluxo())
 
 
-def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
+def test_repos_do_ambiente_le_a_config_sem_abrir_sessao(
+    tmp_path, monkeypatch, xdg_isolado
+):
     checkout = _checkout(tmp_path, "alpha")
-    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
-    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+    _registrar_repo(xdg_isolado, "alpha", checkout)
+    monkeypatch.setattr(
+        tui, "abrir_sessao", lambda: pytest.fail("a lista de repos não abre banco")
+    )
 
     assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=str(checkout))]
-
-
-def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
-    _checkout(tmp_path, "alpha")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("PROJECTS_DIR", raising=False)
-    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
-
-    assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=None)]
 
 
 class GitCatalogoFake:
@@ -218,7 +163,9 @@ def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_liberada():
     assert git.fetched == ["origin"]
 
 
-def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
+def test_versoes_do_repo_abre_git_no_checkout(monkeypatch, tmp_path, xdg_isolado):
+    checkout = _checkout(tmp_path, "alpha")
+    _registrar_repo(xdg_isolado, "alpha", checkout)
     git = GitCatalogoFake()
     caminhos: list[str] = []
 
@@ -228,11 +175,9 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
 
     monkeypatch.setattr(tui, "new_git_subprocess", abrir_git)
 
-    resultado = tui._versoes_do_repo(
-        RepoOption(nome="alpha", caminho="/projetos/alpha")
-    )
+    resultado = tui._versoes_do_repo(RepoOption(nome="alpha", caminho=str(checkout)))
 
-    assert caminhos == ["/projetos/alpha"]
+    assert caminhos == [str(checkout)]
     assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
 
 
@@ -249,10 +194,15 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     tmp_path, monkeypatch, xdg_isolado
 ):
     checkout = _checkout(tmp_path, "alpha")
-    (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado,
+        "alpha",
+        checkout,
+        topo=f'[tarefas]\nfonte = "{_FIXA}"\n',
+        do_repo="[tarefas]\nsistema = 7\n",
+    )
     monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def verificar_spy(deps, versao, auditar=False):
@@ -295,11 +245,16 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
 
 def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
-    (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado,
+        "alpha",
+        checkout,
+        topo=f'[tarefas]\nfonte = "{_FIXA}"\n',
+        do_repo="[tarefas]\nsistema = 7\n",
+    )
     monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def atualizar_spy(deps, versao):
@@ -340,7 +295,9 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch, xdg_is
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado, "alpha", checkout, topo=f'[tarefas]\nfonte = "{_FIXA}"\n'
+    )
     monkeypatch.setattr(tui, "atualizar_continue", continue_spy)
 
     resultado = tui._continuar_repo(
@@ -364,7 +321,9 @@ def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch, xdg_isolado
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado, "alpha", checkout, topo=f'[tarefas]\nfonte = "{_FIXA}"\n'
+    )
     monkeypatch.setattr(tui, "atualizar_abort", abort_spy)
 
     tui._abortar_repo(RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0")
@@ -577,7 +536,6 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
 
     [app] = apps
     assert app._ambiente == _AMBIENTE_INSCRICAO
-    assert app._registrar is tui._registrar_no_banco
     ligados = {
         tui._repos_do_ambiente: app._carregar_repos,
         tui._versoes_do_repo: app._carregar_versoes,
@@ -2377,133 +2335,6 @@ def test_app_exibe_loading_na_lista_durante_verificacao():
     asyncio.run(executar_fluxo())
 
 
-def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
-    """Base dos testes de cadastro: a lista de repos sai de `repos`, que o
-    registrador de cada teste alimenta, para provar o recarregamento."""
-    return MotorTUI(
-        Runners(
-            carregar_repos=lambda: [
-                RepoOption(nome=nome, caminho=f"/projetos/{nome}") for nome in repos
-            ],
-            carregar_versoes=lambda opcao: [],
-            executar=_nunca_executa,
-            registrar_repo=registrar,
-        )
-    )
-
-
-async def _preencher_cadastro(app: MotorTUI, pilot, nome: str) -> None:
-    await pilot.press("n")
-    await pilot.pause()
-    app.screen.query_one("#cadastro-nome", Input).value = nome
-    await pilot.pause()
-    await pilot.click("#cadastro-salvar")
-    await pilot.pause()
-    await app.workers.wait_for_complete()
-    await pilot.pause()
-
-
-def test_app_cadastra_repo_e_recarrega_lista():
-    repos = ["alpha"]
-    chamadas: list[tuple[str, ...]] = []
-
-    def registrar(nome: str) -> None:
-        chamadas.append((nome,))
-        repos.append(nome)
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, repos)
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta")
-
-            assert chamadas == [("delta",)]
-            assert not isinstance(app.screen, tui.CadastroModal)
-            nomes = [
-                opcao.nome
-                for _, opcao in app.query_one("#repo", Select)._options[1:]
-                if isinstance(opcao, RepoOption)
-            ]
-            assert nomes == ["alpha", "delta"]
-            assert "delta" in _texto(app.query_one("#resultado", Static).content)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
-    def registrar(nome: str) -> None:
-        raise AssertionError("nome invalido nao pode chegar ao registrador")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "sub/delta")
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert "sem caminho" in _texto(
-                app.screen.query_one("#cadastro-erro", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_de_repo_duplicado_mostra_erro_no_painel():
-    def registrar(nome: str) -> None:
-        raise MotorError(f"repo '{nome}' ja cadastrado")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "alpha")
-
-            assert not isinstance(app.screen, tui.CadastroModal)
-            assert "ja cadastrado" in _texto(
-                app.query_one("#resultado", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_sem_registrador_ignora_a_tecla_de_cadastro():
-    async def executar_fluxo() -> None:
-        app = MotorTUI(
-            Runners(
-                carregar_repos=lambda: [RepoOption(nome="alpha", caminho="/p/alpha")],
-                carregar_versoes=lambda opcao: [],
-                executar=_nunca_executa,
-            )
-        )
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-
-            assert not isinstance(app.screen, tui.CadastroModal)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_digita_a_propria_tecla_de_atalho_no_campo():
-    """A tecla que abre o modal e uma letra: dentro dele ela tem de ser texto."""
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome, sistema_id: None, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-            await pilot.press("n", "u", "v", "e", "m")
-            await pilot.pause()
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert len(app.screen_stack) == 2
-            assert app.screen.query_one("#cadastro-nome", Input).value == "nuvem"
-
-    asyncio.run(executar_fluxo())
-
-
 def test_app_desenha_a_fase_e_a_contagem_do_motor_no_lugar_do_spinner():
     """O spinner generico nao diz nada num verificar de 40s. O painel que cobre
     o resultado passa a mostrar a fase do motor e, quando ela e contavel, a
@@ -2688,57 +2519,31 @@ def xdg_isolado(tmp_path, monkeypatch):
     return caminho
 
 
-def test_descobrir_repos_le_o_piso_do_toml_do_checkout(tmp_path, xdg_isolado):
-    checkout = tmp_path / "projetos" / "alpha"
-    (checkout / ".git").mkdir(parents=True)
-    (checkout / ".monitor-versoes.toml").write_text('[versao]\npiso = "14.0.0"\n')
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
-
-    opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
-
-    assert [o.piso_versao for o in opcoes] == ["14.0.0"]
-
-
-def test_descobrir_repos_sem_checkout_usa_so_o_piso_global(tmp_path, xdg_isolado):
-    xdg_isolado.write_text('[versao]\npiso = "12.0.0"\n')
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
-
-    assert [o.piso_versao for o in descobrir_repos(estado, "")] == ["12.0.0"]
-    assert [o.piso_versao for o in descobrir_repos(estado, str(tmp_path / "x"))] == [
-        "12.0.0"
-    ]
-
-
-def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
-    tmp_path, xdg_isolado
-):
-    for nome, conteudo in (
-        ("alpha", "isto = = nao\n"),
-        ("beta", '[versao]\npiso = "1.0.0"\n'),
-    ):
-        checkout = tmp_path / "projetos" / nome
-        (checkout / ".git").mkdir(parents=True)
-        (checkout / ".monitor-versoes.toml").write_text(conteudo)
-    estado = FakeEstado(
-        repos={"alpha": RepoInfo(nome="alpha"), "beta": RepoInfo(nome="beta")}
+def test_repos_do_ambiente_le_o_piso_da_secao(tmp_path, xdg_isolado):
+    checkout = _checkout(tmp_path, "alpha")
+    _registrar_repo(
+        xdg_isolado, "alpha", checkout, do_repo='[versao]\npiso = "14.0.0"\n'
     )
 
-    opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
-
-    assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
+    assert [o.piso_versao for o in tui._repos_do_ambiente()] == ["14.0.0"]
 
 
-def test_cadastro_pede_so_o_nome():
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome: None, [])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-            campos = [w.id for w in app.screen.query(Input)]
-            assert campos == ["cadastro-nome"]
+def test_secao_invalida_nao_derruba_a_lista(tmp_path, xdg_isolado):
+    beta = _checkout(tmp_path, "beta")
+    xdg_isolado.write_text(
+        secao_repo("alpha", beta, '[versao]\npiso = "abc"\n')
+        + secao_repo("beta", beta, '[versao]\npiso = "1.0.0"\n')
+        + secao_repo("gamma", tmp_path / "nao-existe")
+    )
 
-    asyncio.run(executar_fluxo())
+    opcoes = {o.nome: o for o in tui._repos_do_ambiente()}
+
+    assert {n: o.piso_versao for n, o in opcoes.items()} == {
+        "alpha": None,
+        "beta": "1.0.0",
+        "gamma": None,
+    }
+    assert opcoes["gamma"].caminho is None
 
 
 _ARQUIVO_INSCRICOES = "inscricoes.json"
@@ -2748,9 +2553,9 @@ _REMOVE_INSCRICAO = "d"
 _LISTA_INSCRICOES = "#inscricoes-lista"
 
 
-def _inscricao(versao: str, clone: str = "/projetos/alpha") -> Inscricao:
+def _inscricao(versao: str, repo: str = "alpha") -> Inscricao:
     return Inscricao(
-        clone,
+        repo,
         versao,
         parse_intervalo(INTERVALO_PADRAO),
         "/diretorio",
@@ -2817,8 +2622,8 @@ def test_inscricoes_adiciona_selecionada(tmp_path):
 
     asyncio.run(executar_fluxo())
     [gravada] = carregar(arquivo)
-    assert (gravada.clone, gravada.versao, gravada.ambiente) == (
-        cast(str, _REPO_PREVIA.caminho),
+    assert (gravada.repo, gravada.versao, gravada.ambiente) == (
+        _REPO_PREVIA.nome,
         _VERSAO_PREVIA.numero,
         _AMBIENTE_INSCRICAO,
     )
@@ -2861,32 +2666,6 @@ def _gravar_avisos(monkeypatch, app: MotorTUI) -> list[str]:
     avisos: list[str] = []
     monkeypatch.setattr(app, "notify", lambda mensagem, **_: avisos.append(mensagem))
     return avisos
-
-
-def test_inscricoes_guarda_clone_absoluto(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    arquivo = tmp_path / _ARQUIVO_INSCRICOES
-    relativo = RepoOption(nome="alpha", caminho="projetos/alpha")
-
-    async def executar_fluxo() -> None:
-        app = MotorTUI(
-            Runners(lambda: [relativo], lambda opcao: [_VERSAO_PREVIA], _nunca_executa),
-            inscricoes_em=arquivo,
-            ambiente=_AMBIENTE_INSCRICAO,
-        )
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            app.query_one("#repo", Select).value = relativo
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            app.query_one("#versao", Select).value = _VERSAO_PREVIA
-            await pilot.pause()
-            await pilot.press(_ABRE_INSCRICOES, _ADICIONA_INSCRICAO)
-            await pilot.pause()
-
-    asyncio.run(executar_fluxo())
-    [gravada] = carregar(arquivo)
-    assert gravada.clone == str(tmp_path / "projetos/alpha")
 
 
 def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path, monkeypatch):

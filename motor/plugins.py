@@ -4,26 +4,17 @@ from __future__ import annotations
 
 import importlib
 from importlib.metadata import entry_points
-from typing import Literal
 
 from motor.errors import ErroDeEntrada
 
-Origem = Literal["central", "repo"]
 
-
-def carregar_plugin(grupo: str, nome: str, origem: Origem) -> type:
+def carregar_plugin(grupo: str, nome: str) -> type:
     """Resolve `nome` para uma classe.
 
     Sem `:`, e o nome de um entry point do `grupo`. Com `:` (`modulo:Classe`), e
-    import direto, aceito so se a config veio do arquivo central: o repo-alvo nao
-    escolhe codigo a executar.
+    import direto.
     """
     if ":" in nome:
-        if origem != "central":
-            raise ErroDeEntrada(
-                f"plugin {nome!r}: import direto so vale no config.toml central; "
-                "o repo nao escolhe codigo a executar (use o nome de um plugin instalado)"
-            )
         return _importar(nome)
     pontos = {ep.name: ep for ep in entry_points(group=grupo)}
     if nome not in pontos:

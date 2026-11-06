@@ -40,7 +40,6 @@ from motor.domain.types import (
 from motor.errors import NaoEncontrado, RecusaDeInvariante
 
 REPO = "webapp"
-ALIAS = "vbweb"
 QUANDO = datetime.datetime(2026, 1, 15, 10, 30, tzinfo=datetime.UTC)
 DEPOIS = datetime.datetime(2026, 6, 1, 8, 0, tzinfo=datetime.UTC)
 
@@ -62,7 +61,7 @@ def _base(numero: str = "13.34.0") -> VersaoInfo:
     ]
 )
 def estado(request):
-    """Uma implementacao de EstadoRepo com o repo canonico e o alias semeados.
+    """Uma implementacao de EstadoRepo com o repo semeado.
 
     Semear e a unica coisa que difere: o fake recebe dicts, os bancos recebem
     linhas. Tudo depois disto e identico por contrato.
@@ -70,7 +69,6 @@ def estado(request):
     if request.param == "fake":
         return FakeEstado(
             repos={REPO: RepoInfo(nome=REPO)},
-            aliases={ALIAS: REPO},
         )
 
     from motor.adapters.estado.postgres import PostgresEstado
@@ -83,52 +81,35 @@ def estado(request):
         text("insert into repo (nome) values (:n)"),
         {"n": REPO},
     )
-    sessao.execute(
-        text("insert into repo_alias (nome, repo_id) select :a, id from repo"),
-        {"a": ALIAS},
-    )
     sessao.commit()
     return PostgresEstado(sessao=sessao)
 
 
-# -- resolucao de repo --------------------------------------------------------
+# -- garantir repo ------------------------------------------------------------
 
 
-def test_resolver_repo_por_nome_e_por_alias(estado):
-    assert estado.resolver_repo(REPO).nome == REPO
-    # o alias devolve o nome CANONICO: e ele que chaveia todo o resto do estado
-    assert estado.resolver_repo(ALIAS).nome == REPO
+def test_garantir_repo_cria_no_primeiro_uso(estado):
+    estado.garantir_repo("vb2web")
+
+    assert RepoInfo(nome="vb2web") in estado.listar_repos()
 
 
-def test_resolver_repo_desconhecido_indica_o_comando_de_cadastro(estado):
-    with pytest.raises(NaoEncontrado) as e:
-        estado.resolver_repo("nao-existe")
-    assert str(e.value).endswith("motor repo adicionar 'nao-existe'")
+def test_garantir_repo_e_idempotente(estado):
+    estado.garantir_repo("vb2web")
+    estado.garantir_repo("vb2web")
+
+    assert estado.listar_repos().count(RepoInfo(nome="vb2web")) == 1
 
 
-def test_registrar_repo_o_torna_resolvivel(estado):
-    estado.registrar_repo("novo-repo")
+def test_estado_de_repo_garantido_e_gravavel(estado):
+    estado.garantir_repo("x")
 
-    assert estado.resolver_repo("novo-repo") == RepoInfo(nome="novo-repo")
-
-
-def test_registrar_repo_recusa_nome_duplicado(estado):
-    with pytest.raises(RecusaDeInvariante):
-        estado.registrar_repo(REPO)
-
-    assert estado.resolver_repo(REPO).nome == REPO
+    estado.registrar_versao("x", _base())
 
 
-def test_registrar_repo_recusa_nome_que_ja_e_alias(estado):
-    with pytest.raises(RecusaDeInvariante):
-        estado.registrar_repo(ALIAS)
-
-    assert estado.resolver_repo(ALIAS).nome == REPO
-
-
-def test_listar_repos_devolve_canonicos_em_ordem_sem_alias(estado):
-    estado.registrar_repo("zzz")
-    estado.registrar_repo("aaa")
+def test_listar_repos_devolve_em_ordem(estado):
+    estado.garantir_repo("zzz")
+    estado.garantir_repo("aaa")
 
     assert estado.listar_repos() == [
         RepoInfo(nome="aaa"),
@@ -379,7 +360,7 @@ def test_gravar_commits_de_pr_e_idempotente(estado):
 def test_cache_de_pr_e_por_repo(estado):
     # pr_id do host e sequencial POR repositorio: sem o repo na chave, a
     # PR 7 de um repo devolveria os commits da PR 7 do outro.
-    estado.registrar_repo("outro")
+    estado.garantir_repo("outro")
     estado.gravar_commits_de_pr(REPO, {7: [_cr("aaa")]})
     assert estado.commits_de_pr("outro", [7]) == {}
 
@@ -455,7 +436,7 @@ def test_gravar_varredura_sem_pr_nenhuma_ainda_avanca_a_marca(estado):
 
 
 def test_indice_de_pr_e_por_repo(estado):
-    estado.registrar_repo("outro")
+    estado.garantir_repo("outro")
     estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
     assert estado.prs_indexadas("outro") == []
     assert estado.marca_varredura("outro") is None

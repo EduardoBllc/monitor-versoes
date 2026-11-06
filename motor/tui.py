@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -34,9 +34,13 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
-from motor.config import AMBIENTE_PADRAO, carregar_config
+from motor.config import (
+    AMBIENTE_PADRAO,
+    SECAO_REPOS,
+    carregar_config_repo,
+    repos_configurados,
+)
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -66,9 +70,8 @@ from motor.montagem import (
     abrir_sessao,
     montar_deps,
     resolver_versionamento,
-    validar_nome_repo,
 )
-from motor.ports import EstadoRepo, GitRepo
+from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
@@ -113,7 +116,6 @@ class ContinueRunner(Protocol):
 
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
-RepoRegistrar = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -128,7 +130,6 @@ class Runners:
     continuar_repo: ContinueRunner | None = None
     abortar_repo: AbortRunner | None = None
     consultar_versao: ConsultaRunner | None = None
-    registrar_repo: RepoRegistrar | None = None
     criar_repo: CriarRunner | None = None
     previa_atualizacao: PreviewRunner | None = None
     # Sem ele, o versionamento sai da config do repo (`_versionamento_do_repo`).
@@ -217,14 +218,13 @@ class InscricoesModal(ModalScreen[None]):
         lista.add_options(Option(_linha_inscricao(i)) for i in self._inscricoes)
 
     def action_inscrever(self) -> None:
-        caminho = self._repo.caminho if self._repo else None
-        if caminho is None or self._versao is None:
+        if self._repo is None or not self._repo.disponivel or self._versao is None:
             self.notify(
                 "Selecione um repo disponível e uma versão.", severity="warning"
             )
             return
         nova = Inscricao(
-            os.path.abspath(caminho),
+            self._repo.nome,
             self._versao.numero,
             parse_intervalo(INTERVALO_PADRAO),
             str(Path.cwd()),
@@ -237,7 +237,7 @@ class InscricoesModal(ModalScreen[None]):
         if alvo is None:
             return
         i = self._inscricoes[alvo]
-        self._gravar(lambda: remover(self._arquivo, i.clone, i.versao))
+        self._gravar(lambda: remover(self._arquivo, i.repo, i.versao))
 
     def _gravar(self, escrita: Callable[[], None]) -> None:
         try:
@@ -255,65 +255,8 @@ def _linha_inscricao(i: Inscricao) -> str:
         if i.ultima.mensagem:
             ultima += f": {i.ultima.mensagem}"
     return (
-        f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
-        f"  ·  {ultima}"
+        f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  ·  {ultima}"
     )
-
-
-class CadastroModal(ModalScreen[str | None]):
-    """Formulario de cadastro de repo.
-
-    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o nome
-    pronto. Erro de banco (nome duplicado) nao e do formulario: sai pelo
-    caminho de erro normal do app, com o modal ja fechado.
-    """
-
-    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
-    DEFAULT_CSS = """
-    CadastroModal { align: center middle; }
-    CadastroModal > Vertical {
-        width: 60;
-        height: auto;
-        padding: 1 2;
-        border: round $primary;
-        background: $surface;
-    }
-    CadastroModal .rotulo { height: auto; color: $text-muted; }
-    #cadastro-erro { height: auto; color: $error; }
-    #cadastro-botoes { height: auto; align-horizontal: right; padding-top: 1; }
-    #cadastro-botoes Button { margin-left: 1; }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Vertical() as caixa:
-            caixa.border_title = "Cadastrar repositório"
-            caixa.border_subtitle = "esc para cancelar"
-            yield Static("nome", classes="rotulo")
-            yield Input(placeholder="nome canônico, sem caminho", id="cadastro-nome")
-            yield Static(id="cadastro-erro")
-            with Horizontal(id="cadastro-botoes"):
-                yield Button("Cancelar", id="cadastro-cancelar")
-                yield Button("Salvar", id="cadastro-salvar", variant="primary")
-
-    def action_cancelar(self) -> None:
-        self.dismiss(None)
-
-    def on_button_pressed(self, evento: Button.Pressed) -> None:
-        if evento.button.id == "cadastro-salvar":
-            self._salvar()
-        else:
-            self.dismiss(None)
-
-    def on_input_submitted(self, evento: Input.Submitted) -> None:
-        self._salvar()
-
-    def _salvar(self) -> None:
-        try:
-            nome = validar_nome_repo(self.query_one("#cadastro-nome", Input).value)
-        except MotorError as erro:
-            self.query_one("#cadastro-erro", Static).update(str(erro))
-            return
-        self.dismiss(nome)
 
 
 class AbortarModal(ModalScreen[bool]):
@@ -594,7 +537,6 @@ class MotorTUI(App[None]):
         ("u", "atualizar", "Atualizar"),
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
-        ("n", "cadastrar", "Cadastrar repo"),
         ("i", "inscricoes", "Inscrições"),
     ]
     CSS = """
@@ -640,7 +582,6 @@ class MotorTUI(App[None]):
         self._continuar = runners.continuar_repo
         self._abortar = runners.abortar_repo
         self._consultar = runners.consultar_versao
-        self._registrar = runners.registrar_repo
         self._criar = runners.criar_repo
         self._versionamento_repo = runners.versionamento_repo or _versionamento_do_repo
         # O do repo em que o ultimo `criar` foi aberto: ordena a lista depois.
@@ -962,7 +903,10 @@ class MotorTUI(App[None]):
         self._tem_repos = bool(opcoes)
         self._bloquear(False)
         if opcoes and not any(opcao.disponivel for opcao in opcoes):
-            self._erro("nenhum checkout local encontrado; confira PROJECTS_DIR")
+            self._erro(
+                "nenhum checkout local encontrado; "
+                f"confira o caminho das seções [{SECAO_REPOS}] do config.toml"
+            )
 
     def on_select_changed(self, evento: Select.Changed) -> None:
         if evento.select.id == "repo":
@@ -1058,33 +1002,6 @@ class MotorTUI(App[None]):
                 self._inscricoes_em, self._repo, self._versao, self._ambiente
             )
         )
-
-    def action_cadastrar(self) -> None:
-        if self._ocupado or self._registrar is None:
-            return
-        self.push_screen(CadastroModal(), self._cadastrar)
-
-    def _cadastrar(self, nome: str | None) -> None:
-        if nome is None:
-            return
-        self._bloquear(True)
-        self.cadastrar_worker(nome)
-
-    @work(thread=True, exclusive=True, group="cadastro")
-    def cadastrar_worker(self, nome: str) -> None:
-        try:
-            if self._registrar is not None:
-                self._registrar(nome)
-        except Exception as erro:
-            self.call_from_thread(self._falha, erro)
-            self.call_from_thread(self._bloquear, False)
-            return
-        self.call_from_thread(self._cadastrado, nome)
-
-    def _cadastrado(self, nome: str) -> None:
-        self._exibir_resultado(f"repo '{nome}' cadastrado.")
-        self._ocupar_resultado()
-        self.carregar_repos_worker()
 
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:
@@ -1339,55 +1256,27 @@ class MotorTUI(App[None]):
 
 
 def descobrir_repos(
-    estado: EstadoRepo, projects_dir: str, *, progresso: RelatorProgresso = silencioso
+    repos: Mapping[str, str | None], *, progresso: RelatorProgresso = silencioso
 ) -> list[RepoOption]:
-    progresso(Progresso("lendo os repos cadastrados"))
-    repos = estado.listar_repos()
-    if not projects_dir:
-        piso_global = _piso_da_config(None)
-        return [
-            RepoOption(nome=repo.nome, caminho=None, piso_versao=piso_global)
-            for repo in repos
-        ]
-    canonicos = {repo.nome: repo for repo in repos}
-    encontrados: dict[str, Path] = {}
-    raiz = Path(projects_dir)
-
-    if raiz.is_dir():
-        # Conta os diretorios porque a varredura pode consultar o banco em cada
-        # um (`resolver_repo` de nome que nao esta na lista canonica).
-        candidatos = sorted(raiz.iterdir(), key=lambda item: item.name)
-        for indice, caminho in enumerate(candidatos, start=1):
-            progresso(Progresso("procurando os checkouts", indice, len(candidatos)))
-            if not caminho.is_dir() or not (caminho / ".git").exists():
-                continue
-            if caminho.name in canonicos:
-                info = canonicos[caminho.name]
-            else:
-                try:
-                    info = estado.resolver_repo(caminho.name)
-                except NaoEncontrado:
-                    continue
-            atual = encontrados.get(info.nome)
-            if atual is None or (caminho.name == info.nome and atual.name != info.nome):
-                encontrados[info.nome] = caminho
-
     opcoes = []
-    for repo in repos:
-        achado = str(encontrados[repo.nome]) if repo.nome in encontrados else None
+    for indice, (nome, caminho) in enumerate(repos.items(), start=1):
+        progresso(Progresso("procurando os checkouts", indice, len(repos)))
+        achado = caminho if caminho is not None and os.path.isdir(caminho) else None
         opcoes.append(
             RepoOption(
-                nome=repo.nome, caminho=achado, piso_versao=_piso_da_config(achado)
+                nome=nome,
+                caminho=achado,
+                piso_versao=None if achado is None else _piso_da_config(nome),
             )
         )
     return opcoes
 
 
-def _piso_da_config(raiz: str | None) -> str | None:
-    """Piso da config em camadas; config invalida deixa `None` em vez de
-    derrubar a lista (o erro aparece ao operar o repo, pela montagem)."""
+def _piso_da_config(nome: str) -> str | None:
+    """Piso da seção do repo; config invalida deixa `None` em vez de derrubar a
+    lista (o erro aparece ao operar o repo, pela montagem)."""
     try:
-        return resolver_versionamento(carregar_config(raiz)).piso
+        return resolver_versionamento(carregar_config_repo(nome)).piso
     except ErroDeEntrada:
         return None
 
@@ -1409,21 +1298,11 @@ def descobrir_versoes(
 
 
 def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
-    with abrir_sessao() as sessao:
-        return descobrir_repos(
-            PostgresEstado(sessao=sessao),
-            os.environ.get("PROJECTS_DIR", ""),
-            progresso=progresso,
-        )
-
-
-def _registrar_no_banco(nome: str) -> None:
-    with abrir_sessao() as sessao:
-        PostgresEstado(sessao=sessao).registrar_repo(nome)
+    return descobrir_repos(repos_configurados(), progresso=progresso)
 
 
 def _versionamento_do_repo(repo: RepoOption) -> Versionamento:
-    return resolver_versionamento(carregar_config(repo.caminho))
+    return resolver_versionamento(carregar_config_repo(repo.nome))
 
 
 def _versoes_do_repo(
@@ -1448,7 +1327,7 @@ def _deps_do_repo(
         raise NaoEncontrado("checkout local não encontrado")
     # Sem flags: token e email do Bitbucket saem do ambiente dentro do
     # montar_deps, e a fonte de tasks e sempre a da config.
-    return montar_deps(repo.caminho, sessao, progresso=progresso)
+    return montar_deps(repo.nome, sessao, progresso=progresso)
 
 
 def _verificar_repo(
@@ -1526,7 +1405,6 @@ def run_tui(ambiente: str) -> None:
             partial(_continuar_repo, progresso=slot.relatar),
             partial(_abortar_repo, progresso=slot.relatar),
             partial(_consultar_repo, progresso=slot.relatar),
-            _registrar_no_banco,
             partial(_criar_repo, progresso=slot.relatar),
             previa_atualizacao=partial(_previa_repo, progresso=slot.relatar),
         ),

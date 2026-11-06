@@ -11,7 +11,6 @@ from urllib.parse import quote
 
 from motor.domain.referencia import validar_padrao
 from motor.errors import ErroDeEntrada
-from motor.plugins import Origem
 
 _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 
@@ -60,7 +59,7 @@ def _url_postgres() -> str:
     # create_engine converte a porta na hora: um typo aqui viraria ValueError,
     # que o __main__ trata como bug (traceback) em vez de erro do operador.
     if not v["PORT"].isdigit():
-        raise ErroDeEntrada(f"DATABASE_PORT invalido: {v['PORT']!r} (esperado numero)")
+        raise ErroDeEntrada(f"DATABASE_PORT inválido: {v['PORT']!r} (esperado número)")
 
     # quote em usuario e senha: um '@' na senha monta uma URL sintaticamente
     # valida apontando para outro host, e o erro que aparece e "conexao
@@ -78,7 +77,7 @@ def backend() -> str:
         return "sqlite"
     if valor not in _BACKENDS:
         raise ErroDeEntrada(
-            f"DATABASE_BACKEND invalido: {valor!r} (aceitos: {', '.join(_BACKENDS)})"
+            f"DATABASE_BACKEND inválido: {valor!r} (aceitos: {', '.join(_BACKENDS)})"
         )
     return valor
 
@@ -101,7 +100,7 @@ def database_url(avisar: bool = True) -> str:
     ):
         _avisos_emitidos.add("backend_padrao")
         print(
-            "aviso: DATABASE_BACKEND nao definido; usando SQLite. Para usar o "
+            "aviso: DATABASE_BACKEND não definido; usando SQLite. Para usar o "
             "Postgres configurado em DATABASE_*, defina DATABASE_BACKEND=postgres.",
             file=sys.stderr,
         )
@@ -127,30 +126,28 @@ def worktrees_mantidas() -> int:
     # aceitaria negativo, que nao tem significado aqui.
     if not valor.isdigit():
         raise ErroDeEntrada(
-            f"WORKTREES_MANTIDAS invalido: {valor!r} (esperado inteiro >= 0)"
+            f"WORKTREES_MANTIDAS inválido: {valor!r} (esperado inteiro >= 0)"
         )
     return int(valor)
 
 
 AMBIENTE_PADRAO = "production"
 
-#: Nome do arquivo de config na raiz do repo-alvo.
-ARQUIVO_CONFIG_REPO = ".monitor-versoes.toml"
+SECAO_REPOS = "repos"
+CHAVE_CAMINHO = "caminho"
 
 
 @dataclass(frozen=True)
 class Escolhido:
-    """Valor de uma chave com o arquivo que o deu, para erro que cita o arquivo
-    e para o carregador de plugins saber se a escolha veio do arquivo central."""
+    """Valor de uma chave com o arquivo que o deu, para o erro citá-lo."""
 
     valor: str
     arquivo: str
-    origem: Origem
 
 
 @dataclass(frozen=True)
 class ConfigProjeto:
-    """Config por projeto, mesclada das duas camadas (repo vence o global).
+    """Config por projeto, mesclada do topo e da seção do repo (a seção vence).
 
     `tarefas` e opaco ao nucleo, salvo `fonte`: quem le as outras chaves e o
     plugin da fonte de tarefas, que recebe a tabela inteira (`fonte` inclusa).
@@ -174,6 +171,18 @@ class ConfigProjeto:
     branch_versao: Escolhido | None = None
     branch_principal: Escolhido | None = None
     fonte_tarefas: Escolhido | None = None
+    caminho: str | None = None
+
+
+def validar_nome_repo(valor: str) -> str:
+    """Nome canonico do repo: basename puro, sem caminho e sem espaco em volta.
+
+    O nome e a chave do estado — aceitar 'pasta/backend' fragmentaria o repo em
+    duas linhas paralelas sem erro nenhum aparecer.
+    """
+    if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
+        raise ErroDeEntrada("use um nome simples, sem caminho")
+    return valor
 
 
 def caminho_config_global() -> str:
@@ -191,9 +200,9 @@ def _ler_toml(caminho: str) -> dict[str, object]:
     except FileNotFoundError:
         return {}
     except tomllib.TOMLDecodeError as e:
-        raise ErroDeEntrada(f"{caminho}: TOML invalido ({e})") from e
+        raise ErroDeEntrada(f"{caminho}: TOML inválido ({e})") from e
     except OSError as e:
-        raise ErroDeEntrada(f"{caminho}: nao foi possivel ler ({e})") from e
+        raise ErroDeEntrada(f"{caminho}: não foi possível ler ({e})") from e
 
 
 def _tabela(
@@ -208,13 +217,13 @@ def _tabela(
 def _texto(
     dados: Mapping[str, object], tabela: str, chave: str, caminho: str
 ) -> str | None:
-    """`[tabela] chave` como texto nao vazio; `None` se ausente."""
+    """`[tabela] chave` como texto não vazio; `None` se ausente."""
     bruto = _tabela(dados, tabela, caminho).get(chave)
     if bruto is None:
         return None
     if not isinstance(bruto, str) or not bruto.strip():
         raise ErroDeEntrada(
-            f"{caminho}: [{tabela}] {chave} deve ser texto nao vazio, veio {bruto!r}"
+            f"{caminho}: [{tabela}] {chave} deve ser texto não vazio, veio {bruto!r}"
         )
     return bruto
 
@@ -248,42 +257,119 @@ def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
     return None if bruto is None else validar_padrao(bruto, caminho)
 
 
-def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
-    """Le o global e, havendo `raiz_repo`, o `.monitor-versoes.toml` dela.
+Camada = tuple[Mapping[str, object], str]
 
-    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So as
-    chaves de `[versao]`, `[liberacao]`, `[branches]`, `[referencia] padrao` e
-    `[tarefas]` sao lidas; o resto e ignorado.
-    """
-    caminhos = [caminho_config_global()]
-    if raiz_repo is not None:
-        caminhos.append(os.path.join(raiz_repo, ARQUIVO_CONFIG_REPO))
+
+def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto:
+    """Mescla chave a chave, a última camada vencendo."""
     piso: Escolhido | None = None
     padrao: str | None = None
     tarefas: dict[str, object] = {}
     escolhas: dict[str, Escolhido] = {}
-    for indice, caminho in enumerate(caminhos):
-        origem: Origem = "central" if indice == 0 else "repo"
-        dados = _ler_toml(caminho)
-        if (p := _texto(dados, "versao", "piso", caminho)) is not None:
-            piso = Escolhido(p, caminho, origem)
-        if (r := _padrao_referencia(dados, caminho)) is not None:
+    for dados, arquivo in camadas:
+        if (p := _texto(dados, "versao", "piso", arquivo)) is not None:
+            piso = Escolhido(p, arquivo)
+        if (r := _padrao_referencia(dados, arquivo)) is not None:
             padrao = r
-        tarefas.update(_tabela(dados, "tarefas", caminho))
+        tarefas.update(_tabela(dados, "tarefas", arquivo))
         for atributo, tabela, chave, template in _ESCOLHAS:
             ler = _template if template else _texto
-            if (valor := ler(dados, tabela, chave, caminho)) is not None:
-                escolhas[atributo] = Escolhido(valor, caminho, origem)
+            if (valor := ler(dados, tabela, chave, arquivo)) is not None:
+                escolhas[atributo] = Escolhido(valor, arquivo)
     return ConfigProjeto(
         piso=None if piso is None else piso.valor,
         arquivo_piso=None if piso is None else piso.arquivo,
         padrao_referencia=padrao,
         tarefas=tarefas,
-        arquivos=tuple(caminhos),
+        arquivos=tuple(c for _, c in camadas),
         esquema=escolhas.get("esquema"),
         atribuicao=escolhas.get("atribuicao"),
         tag_liberacao=escolhas.get("tag_liberacao"),
         branch_versao=escolhas.get("branch_versao"),
         branch_principal=escolhas.get("branch_principal"),
         fonte_tarefas=escolhas.get("fonte_tarefas"),
+        caminho=caminho,
+    )
+
+
+def _topo(dados: Mapping[str, object], caminho: str) -> dict[str, object]:
+    """O topo da config central, sem `[repos]`; `piso` aqui e erro."""
+    if _texto(dados, "versao", "piso", caminho) is not None:
+        raise ErroDeEntrada(f"{caminho}: piso só vale em [{SECAO_REPOS}.<nome>.versao]")
+    return {k: v for k, v in dados.items() if k != SECAO_REPOS}
+
+
+def _secoes(
+    dados: Mapping[str, object], caminho: str
+) -> dict[str, Mapping[str, object]]:
+    brutas = _tabela(dados, SECAO_REPOS, caminho)
+    secoes: dict[str, Mapping[str, object]] = {}
+    for nome in brutas:
+        try:
+            validar_nome_repo(nome)
+        except ErroDeEntrada as e:
+            raise ErroDeEntrada(f"{caminho}: [{SECAO_REPOS}.{nome!r}] {e}") from e
+        secoes[nome] = _tabela(brutas, nome, caminho)
+    return secoes
+
+
+def _caminho_da_secao(
+    secao: Mapping[str, object], nome: str, arquivo: str
+) -> str | None:
+    bruto = secao.get(CHAVE_CAMINHO)
+    if bruto is None:
+        return None
+    if not isinstance(bruto, str) or not bruto.strip():
+        raise ErroDeEntrada(
+            f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} deve ser texto "
+            f"não vazio, veio {bruto!r}"
+        )
+    return os.path.abspath(os.path.expanduser(bruto))
+
+
+def repos_configurados() -> dict[str, str | None]:
+    """Nome -> caminho expandido (`None` sem `caminho`), por nome; não checa o disco."""
+    arquivo = caminho_config_global()
+    secoes = _secoes(_ler_toml(arquivo), arquivo)
+    return {
+        nome: _caminho_da_secao(secoes[nome], nome, arquivo) for nome in sorted(secoes)
+    }
+
+
+def carregar_config_global() -> ConfigProjeto:
+    """So o topo da config central."""
+    arquivo = caminho_config_global()
+    return _mesclar([(_topo(_ler_toml(arquivo), arquivo), arquivo)])
+
+
+def carregar_config_repo(nome: str) -> ConfigProjeto:
+    """Topo mesclado com `[repos.<nome>]`, a seção vencendo; valida o `caminho`."""
+    arquivo = caminho_config_global()
+    dados = _ler_toml(arquivo)
+    secoes = _secoes(dados, arquivo)
+    if nome not in secoes:
+        existentes = ", ".join(sorted(secoes)) or "(nenhuma)"
+        raise ErroDeEntrada(
+            f"{arquivo}: repo {nome!r} sem seção [{SECAO_REPOS}.{nome}] "
+            f"(existentes: {existentes})"
+        )
+    secao = secoes[nome]
+    rotulo = f"{arquivo} [{SECAO_REPOS}.{nome}]"
+    caminho = _caminho_da_secao(secao, nome, arquivo)
+    if caminho is None:
+        raise ErroDeEntrada(
+            f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} é obrigatório"
+        )
+    if not os.path.isdir(caminho):
+        raise ErroDeEntrada(
+            f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} {caminho!r} "
+            "não é um diretório"
+        )
+    sem_caminho = {k: v for k, v in secao.items() if k != CHAVE_CAMINHO}
+    return _mesclar(
+        [
+            (_topo(dados, arquivo), arquivo),
+            (sem_caminho, rotulo),
+        ],
+        caminho=caminho,
     )

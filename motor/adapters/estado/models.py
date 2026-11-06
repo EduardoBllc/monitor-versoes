@@ -66,21 +66,7 @@ class Repo(Base):
     __tablename__ = "repo"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    nome: Mapped[str] = mapped_column(unique=True)  # basename do --repo
-
-
-class RepoAlias(Base):
-    """Basename alternativo do diretorio.
-
-    Existe porque repo.nome chaveia todo o estado: o mesmo repositorio clonado
-    como 'vb2web' numa maquina e 'vb2' noutra criaria duas linhas em repo e
-    dois estados paralelos, sem erro nenhum aparecer.
-    """
-
-    __tablename__ = "repo_alias"
-
-    nome: Mapped[str] = mapped_column(primary_key=True)
-    repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"))
+    nome: Mapped[str] = mapped_column(unique=True)  # nome da seção [repos.<nome>]
 
 
 class Versao(Base):

@@ -8,19 +8,29 @@ não escreve no banco, não roda git, não exige repo cadastrado.
 from __future__ import annotations
 
 import enum
-import os
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from sqlalchemy.orm import Session
 
 from motor.adapters.commitsource.bitbucket import verificar_credenciais
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.config import ConfigProjeto
+from motor.config import SECAO_REPOS, ConfigProjeto
 from motor.errors import MotorError, formatar_com_notas
 from motor.montagem import instanciar_fonte_tarefas
+
+
+class Peca(enum.StrEnum):
+    VARIAVEIS = "Variáveis"
+    SQLITE = "SQLite"
+    POSTGRES = "Postgres"
+    MIGRACAO = "Migração"
+    REPOS = "Repos"
+    TAREFAS = "Tarefas"
+    BITBUCKET = "Bitbucket"
 
 
 class Estado(enum.Enum):
@@ -28,18 +38,19 @@ class Estado(enum.Enum):
     FALHA = "FALHA"
     NAO_VERIFICADA = "não verificada"
     NAO_CONFIGURADO = "não configurado"
+    AVISO = "aviso"
 
 
 @dataclass(frozen=True)
 class Resultado:
-    peca: str
+    peca: Peca
     estado: Estado
     detalhe: str = ""
     correcao: str = ""
 
 
 def falhou(resultados: list[Resultado]) -> bool:
-    """Só `FALHA` conta; `não verificada` e `não configurado` não."""
+    """Só `FALHA` conta; `aviso`, `não verificada` e `não configurado` não."""
     return any(r.estado is Estado.FALHA for r in resultados)
 
 
@@ -52,7 +63,7 @@ _VARIAVEIS_BANCO = (
 )
 
 
-def _falha(peca: str, erro: MotorError, correcao: str) -> Resultado:
+def _falha(peca: Peca, erro: MotorError, correcao: str) -> Resultado:
     return Resultado(peca, Estado.FALHA, formatar_com_notas(erro), correcao)
 
 
@@ -77,7 +88,7 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
     return problemas
 
 
-# Seis parâmetros, cinco nomeados: cada um é uma peça injetada para o teste
+# Sete parâmetros, seis nomeados: cada um é uma peça injetada para o teste
 # rodar sem banco, rede nem arquivo de config reais.
 def diagnosticar(  # noqa: PLR0913
     env: Mapping[str, str],
@@ -86,6 +97,7 @@ def diagnosticar(  # noqa: PLR0913
     head: str,
     ambiente: str,
     config_central: Callable[[], ConfigProjeto],
+    repos: Callable[[], Mapping[str, str | None]],
     cliente: httpx.Client | None = None,
 ) -> list[Resultado]:
     arquivo = ".env.development" if ambiente == "development" else ".env"
@@ -95,28 +107,36 @@ def diagnosticar(  # noqa: PLR0913
 
     resultados = [
         Resultado(
-            "Variáveis",
+            Peca.VARIAVEIS,
             Estado.FALHA,
             "ausentes ou inválidas: " + ", ".join(problemas),
             f"preencher no {arquivo}",
         )
         if problemas
-        else Resultado("Variáveis", Estado.OK, "todas preenchidas")
+        else Resultado(Peca.VARIAVEIS, Estado.OK, "todas preenchidas")
     ]
     resultados += _banco(
         abrir_sessao, problemas, head, migrar, _backend(env) == "sqlite"
     )
-    resultados.append(_projects_dir(env))
+    banco_ok = [
+        r.estado
+        for r in resultados
+        if r.peca in (Peca.POSTGRES, Peca.SQLITE, Peca.MIGRACAO)
+    ] == [
+        Estado.OK,
+        Estado.OK,
+    ]
+    resultados += _repos(abrir_sessao, repos, banco_ok)
     resultados.append(_tarefas(config_central))
     resultados.append(_bitbucket(env, cliente))
     return resultados
 
 
-def _banco_fora(peca: str, erro: MotorError, dica: str) -> list[Resultado]:
+def _banco_fora(peca: Peca, erro: MotorError, dica: str) -> list[Resultado]:
     """Banco fora implica Migração não verificada."""
     return [
         _falha(peca, erro, dica),
-        Resultado("Migração", Estado.NAO_VERIFICADA, f"{peca} indisponível"),
+        Resultado(Peca.MIGRACAO, Estado.NAO_VERIFICADA, f"{peca} indisponível"),
     ]
 
 
@@ -127,12 +147,12 @@ def _banco(
     migrar: str,
     sqlite: bool = False,
 ) -> list[Resultado]:
-    peca = "SQLite" if sqlite else "Postgres"
+    peca = Peca.SQLITE if sqlite else Peca.POSTGRES
     if problemas_banco:
         motivo = "variáveis do banco inválidas"
         return [
             Resultado(peca, Estado.NAO_VERIFICADA, motivo),
-            Resultado("Migração", Estado.NAO_VERIFICADA, motivo),
+            Resultado(Peca.MIGRACAO, Estado.NAO_VERIFICADA, motivo),
         ]
     if sqlite:
         dica_banco = "conferir DATABASE_SQLITE_PATH e as permissões do arquivo"
@@ -153,39 +173,83 @@ def _banco(
             try:
                 revisao = estado.revisao_migracao()
             except MotorError as e:
-                return [postgres, _falha("Migração", e, dica_banco)]
+                return [postgres, _falha(Peca.MIGRACAO, e, dica_banco)]
     except MotorError as e:
         return _banco_fora(peca, e, dica_banco)
     if revisao is None:
         migracao = Resultado(
-            "Migração", Estado.FALHA, "banco sem migração aplicada", migrar
+            Peca.MIGRACAO, Estado.FALHA, "banco sem migração aplicada", migrar
         )
     elif revisao != head:
         migracao = Resultado(
-            "Migração",
+            Peca.MIGRACAO,
             Estado.FALHA,
             f"banco na revisão {revisao}, esperado {head}",
             migrar,
         )
     else:
-        migracao = Resultado("Migração", Estado.OK, f"revisão {head}")
+        migracao = Resultado(Peca.MIGRACAO, Estado.OK, f"revisão {head}")
     return [postgres, migracao]
 
 
-def _projects_dir(env: Mapping[str, str]) -> Resultado:
-    valor = env.get("PROJECTS_DIR", "").strip()
-    if not valor:
-        return Resultado(
-            "PROJECTS_DIR", Estado.NAO_CONFIGURADO, "--repo aceita caminho absoluto"
+def _estado_sem_secao(
+    abrir_sessao: Callable[..., AbstractContextManager[Session]], nomes: set[str]
+) -> list[Resultado]:
+    try:
+        with abrir_sessao(garantir=False) as sessao:
+            no_banco = [r.nome for r in PostgresEstado(sessao=sessao).listar_repos()]
+    except MotorError as e:
+        return [Resultado(Peca.REPOS, Estado.NAO_VERIFICADA, formatar_com_notas(e))]
+    return [
+        Resultado(
+            Peca.REPOS,
+            Estado.AVISO,
+            f"estado de {nome!r} no banco sem seção [{SECAO_REPOS}.{nome}] "
+            "no config.toml",
+            "remover o estado do banco ou criar a seção",
         )
-    if os.path.isdir(valor):
-        return Resultado("PROJECTS_DIR", Estado.OK, valor)
-    return Resultado(
-        "PROJECTS_DIR",
-        Estado.FALHA,
-        f"diretório não existe: {valor}",
-        "criar o diretório ou corrigir a variável",
-    )
+        for nome in no_banco
+        if nome not in nomes
+    ]
+
+
+def _repos(
+    abrir_sessao: Callable[..., AbstractContextManager[Session]],
+    repos: Callable[[], Mapping[str, str | None]],
+    banco_ok: bool,
+) -> list[Resultado]:
+    """Seções `[repos.<nome>]` do config.toml central contra disco e banco."""
+    correcao = f"conferir [{SECAO_REPOS}.<nome>] no config.toml central"
+    try:
+        configurados = repos()
+    except MotorError as e:
+        return [_falha(Peca.REPOS, e, correcao)]
+    linhas = []
+    for nome, caminho in configurados.items():
+        if caminho is None:
+            detalhe = f"[{SECAO_REPOS}.{nome}] sem caminho"
+        elif not Path(caminho).is_dir():
+            detalhe = f"[{SECAO_REPOS}.{nome}] caminho não é diretório: {caminho}"
+        else:
+            continue
+        linhas.append(Resultado(Peca.REPOS, Estado.FALHA, detalhe, correcao))
+    if banco_ok:
+        linhas += _estado_sem_secao(abrir_sessao, set(configurados))
+    else:
+        linhas.append(
+            Resultado(
+                Peca.REPOS,
+                Estado.NAO_VERIFICADA,
+                "banco indisponível: estado não conferido",
+            )
+        )
+    if not linhas:
+        return [
+            Resultado(
+                Peca.REPOS, Estado.OK, f"{len(configurados)} repo(s) configurado(s)"
+            )
+        ]
+    return linhas
 
 
 def _tarefas(config_central: Callable[[], ConfigProjeto]) -> Resultado:
@@ -197,10 +261,10 @@ def _tarefas(config_central: Callable[[], ConfigProjeto]) -> Resultado:
     try:
         config = config_central()
     except MotorError as e:
-        return _falha("Tarefas", e, plugins)
+        return _falha(Peca.TAREFAS, e, plugins)
     if config.fonte_tarefas is None:
         return Resultado(
-            "Tarefas",
+            Peca.TAREFAS,
             Estado.NAO_CONFIGURADO,
             "sem [tarefas] fonte no config.toml central",
             "definir [tarefas] fonte no config.toml central",
@@ -208,33 +272,33 @@ def _tarefas(config_central: Callable[[], ConfigProjeto]) -> Resultado:
     try:
         fonte = instanciar_fonte_tarefas(config)
     except MotorError as e:
-        return _falha("Tarefas", e, plugins)
+        return _falha(Peca.TAREFAS, e, plugins)
     verificar = getattr(fonte, "verificar_credenciais", None)
     if not callable(verificar):
         return Resultado(
-            "Tarefas", Estado.NAO_VERIFICADA, "a fonte não oferece verificação"
+            Peca.TAREFAS, Estado.NAO_VERIFICADA, "a fonte não oferece verificação"
         )
     try:
         verificar()
     except MotorError as e:
-        return _falha("Tarefas", e, "conferir as credenciais da fonte no .env")
-    return Resultado("Tarefas", Estado.OK, "credenciais aceitas")
+        return _falha(Peca.TAREFAS, e, "conferir as credenciais da fonte no .env")
+    return Resultado(Peca.TAREFAS, Estado.OK, "credenciais aceitas")
 
 
 def _bitbucket(env: Mapping[str, str], cliente: httpx.Client | None) -> Resultado:
     token = env.get("BITBUCKET_TOKEN", "")
     if not token:
-        return Resultado("Bitbucket", Estado.NAO_CONFIGURADO, "sem BITBUCKET_TOKEN")
+        return Resultado(Peca.BITBUCKET, Estado.NAO_CONFIGURADO, "sem BITBUCKET_TOKEN")
     try:
         verificar_credenciais(token, env.get("BITBUCKET_EMAIL", ""), client=cliente)
     except MotorError as e:
         return _falha(
-            "Bitbucket",
+            Peca.BITBUCKET,
             e,
             "conferir BITBUCKET_TOKEN/BITBUCKET_EMAIL "
             "(o token precisa de escopo de leitura de conta)",
         )
-    return Resultado("Bitbucket", Estado.OK, "credencial aceita")
+    return Resultado(Peca.BITBUCKET, Estado.OK, "credencial aceita")
 
 
 def formatar(resultado: Resultado) -> str:
@@ -248,6 +312,7 @@ def formatar(resultado: Resultado) -> str:
 
 __all__ = [
     "Estado",
+    "Peca",
     "Resultado",
     "diagnosticar",
     "falhou",

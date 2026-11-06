@@ -17,12 +17,10 @@ _EXCLUIDOS_PREMISSAS = (_VERSIONS,)
 
 _NOMES = re.compile(r"tickio|vendabem", re.I)
 # Precisam nomear o que saiu: o histórico de migrações (não se reescreve), os
-# testes do script de migração e da migração que derruba as colunas, o dos
-# argumentos recusados e este próprio teste. O script fica fora da varredura
-# porque `scripts/` não está no escopo.
+# testes da migração que derruba as colunas, o dos argumentos recusados e este
+# próprio teste.
 _EXCLUIDOS_NOMES = (
     _VERSIONS,
-    _TESTES / "test_migrar_banco_para_config.py",
     _TESTES / "test_migracoes_sqlite.py",
     _TESTES / "test_estado_postgres.py",
     _TESTES / "test_argumentos_removidos.py",

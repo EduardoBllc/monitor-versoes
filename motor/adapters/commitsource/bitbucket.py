@@ -136,7 +136,7 @@ class BitbucketPRCommitSource:
     # Obrigatorios: o indice local de PRs vive no estado, e sem ele esta fonte
     # nao tem o que ler. Quem nao tem banco monta so o grep (ver montagem.py).
     # `repo_estado` e o nome canonico no banco, que nao e necessariamente o
-    # `repo` do Bitbucket — e para isso que aliases existem.
+    # `repo` do Bitbucket.
     estado: EstadoRepo = field(kw_only=True)
     repo_estado: str = field(kw_only=True)
     referencia: FonteReferencia = field(kw_only=True)

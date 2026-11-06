@@ -31,7 +31,7 @@ def _ep(nome: str, valor: str) -> EntryPoint:
 
 def test_entry_point_carrega_por_nome(monkeypatch):
     _instalar(monkeypatch, _ep("teste", "tests.test_plugins:PluginDeTeste"))
-    assert plugins.carregar_plugin(GRUPO, "teste", "repo") is PluginDeTeste
+    assert plugins.carregar_plugin(GRUPO, "teste") is PluginDeTeste
 
 
 def test_nome_inexistente_lista_os_instalados(monkeypatch):
@@ -41,29 +41,24 @@ def test_nome_inexistente_lista_os_instalados(monkeypatch):
         _ep("a", "tests.test_plugins:PluginDeTeste"),
     )
     with pytest.raises(ErroDeEntrada, match=r"'x'.*instalados: a, b"):
-        plugins.carregar_plugin(GRUPO, "x", "central")
+        plugins.carregar_plugin(GRUPO, "x")
 
 
 def test_sem_instalados_diz_nenhum(monkeypatch):
     _instalar(monkeypatch)
     with pytest.raises(ErroDeEntrada, match="instalados: nenhum"):
-        plugins.carregar_plugin(GRUPO, "x", "central")
+        plugins.carregar_plugin(GRUPO, "x")
 
 
 def test_entry_point_que_nao_e_classe_e_erro(monkeypatch):
     _instalar(monkeypatch, _ep("n", "tests.test_plugins:NAO_E_CLASSE"))
     with pytest.raises(ErroDeEntrada):
-        plugins.carregar_plugin(GRUPO, "n", "central")
+        plugins.carregar_plugin(GRUPO, "n")
 
 
-def test_import_direto_funciona_no_central():
-    alvo = plugins.carregar_plugin(GRUPO, "tests.test_plugins:PluginDeTeste", "central")
+def test_import_direto_aceito_sem_origem():
+    alvo = plugins.carregar_plugin(GRUPO, "tests.test_plugins:PluginDeTeste")
     assert alvo is PluginDeTeste
-
-
-def test_import_direto_no_repo_e_recusado():
-    with pytest.raises(ErroDeEntrada):
-        plugins.carregar_plugin(GRUPO, "tests.test_plugins:PluginDeTeste", "repo")
 
 
 @pytest.mark.parametrize(
@@ -76,4 +71,4 @@ def test_import_direto_no_repo_e_recusado():
 )
 def test_import_direto_invalido_e_erro(pedido):
     with pytest.raises(ErroDeEntrada):
-        plugins.carregar_plugin(GRUPO, pedido, "central")
+        plugins.carregar_plugin(GRUPO, pedido)

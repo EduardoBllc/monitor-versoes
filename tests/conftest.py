@@ -34,7 +34,7 @@ def _sem_dotenv_dentro_do_main(monkeypatch):
 _TRUNCATE_TUDO = (
     "truncate atribuicao_commit, atribuicao, versao, exclusao, "
     "sem_entrega, pr_commit_cache, pr_mergeada, varredura_pr, "
-    "repo_alias, repo restart identity cascade"
+    "repo restart identity cascade"
 )
 
 

@@ -93,39 +93,10 @@ class PostgresEstado:
             self._traduzir_erro(e)
         return None if revisao is None else str(revisao)
 
-    def registrar_repo(self, nome: str, /) -> None:
-        # Nome canonico e alias dividem o mesmo espaco de nomes, entao as duas
-        # tabelas contam para "ja cadastrado". Sao duas consultas so quando a
-        # primeira nao acha nada: o `or` curto-circuita.
-        ja_cadastrado = (
-            self._scalar(select(models.Repo).where(models.Repo.nome == nome))
-            is not None
-            or self._scalar(
-                select(models.RepoAlias).where(models.RepoAlias.nome == nome)
-            )
-            is not None
-        )
-        if ja_cadastrado:
-            raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
-        self.sessao.add(models.Repo(nome=nome))
+    def garantir_repo(self, nome: str, /) -> None:
+        if self._scalar(select(models.Repo).where(models.Repo.nome == nome)) is None:
+            self.sessao.add(models.Repo(nome=nome))
         self._commit()
-
-    def resolver_repo(self, basename: str, /) -> RepoInfo:
-        linha = self._scalar(select(models.Repo).where(models.Repo.nome == basename))
-        if linha is None:
-            alias = self._scalar(
-                select(models.RepoAlias).where(models.RepoAlias.nome == basename)
-            )
-            if alias is not None:
-                linha = self._scalar(
-                    select(models.Repo).where(models.Repo.id == alias.repo_id)
-                )
-        if linha is None:
-            raise NaoEncontrado(
-                f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  motor repo adicionar '{basename}'"
-            )
-        return _repo_info(linha)
 
     def listar_repos(self) -> list[RepoInfo]:
         return [

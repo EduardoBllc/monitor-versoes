@@ -10,7 +10,7 @@ from motor.ports import EsquemaVersao
 
 @pytest.mark.parametrize("nome,classe", [("semver", Semver)])
 def test_esquema_embutido_e_entry_point(nome, classe):
-    assert carregar_plugin("monitor_versoes.esquemas", nome, "repo") is classe
+    assert carregar_plugin("monitor_versoes.esquemas", nome) is classe
 
 
 @pytest.mark.parametrize("esquema", [Semver()])

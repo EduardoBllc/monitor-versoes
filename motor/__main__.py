@@ -20,7 +20,6 @@ from functools import partial
 from pathlib import Path
 from typing import TextIO
 
-from motor.adapters.estado.postgres import PostgresEstado
 from motor.agendador import (
     agendar,
     desagendar,
@@ -29,7 +28,14 @@ from motor.agendador import (
     rodar_comando_do_sistema,
     sistema_atual,
 )
-from motor.config import AMBIENTE_PADRAO, carregar_config
+from motor.config import (
+    AMBIENTE_PADRAO,
+    SECAO_REPOS,
+    carregar_config_global,
+    carregar_config_repo,
+    repos_configurados,
+    validar_nome_repo,
+)
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
@@ -71,7 +77,6 @@ from motor.montagem import (
     abrir_sessao,
     montar_deps,
     montar_notificador,
-    validar_nome_repo,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -86,6 +91,8 @@ except ImportError:
     load_dotenv = None
 else:
     load_dotenv = _load_dotenv
+
+AJUDA_REPO = f"nome da seção [{SECAO_REPOS}.<nome>] do config.toml"
 
 _ARQUIVOS_AMBIENTE = {
     "development": ".env.development",
@@ -134,7 +141,8 @@ def _diagnostico(args: argparse.Namespace) -> None:
         abrir_sessao=abrir_sessao,
         head=head(),
         ambiente=args.env,
-        config_central=lambda: carregar_config(None),
+        config_central=carregar_config_global,
+        repos=repos_configurados,
     )
     for resultado in resultados:
         print(formatar(resultado))
@@ -159,10 +167,11 @@ def _agendador_instalado() -> bool:
 
 
 def _inscricao_adicionar(args: argparse.Namespace) -> None:
+    carregar_config_repo(args.repo)  # recusa já aqui o nome que o executar não acharia
     inscrever(
         caminho_arquivo(),
         Inscricao(
-            clone=os.path.abspath(_resolver_repo(args.repo)),
+            repo=args.repo,
             versao=args.versao,
             intervalo=parse_intervalo(args.intervalo),
             diretorio=str(Path.cwd()),
@@ -187,7 +196,7 @@ def _inscricao_listar() -> None:
             if i.ultima.mensagem:
                 ultima += f": {i.ultima.mensagem}"
         print(
-            f"{i.versao}  {i.clone}  a cada {formatar_intervalo(i.intervalo)}  {ultima}"
+            f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  {ultima}"
         )
 
 
@@ -203,17 +212,20 @@ def _inscricao_agendar(args: argparse.Namespace) -> None:
 
 def _inscricao_executar(args: argparse.Namespace) -> None:
     caminho = caminho_arquivo()
-    clone = os.path.abspath(_resolver_repo(args.repo))
     inscricao = next(
-        (i for i in carregar(caminho) if (i.clone, i.versao) == (clone, args.versao)),
+        (
+            i
+            for i in carregar(caminho)
+            if (i.repo, i.versao) == (args.repo, args.versao)
+        ),
         None,
     )
     if inscricao is None:
-        raise ErroDeEntrada(f"inscrição não encontrada: {clone} {args.versao}")
+        raise ErroDeEntrada(f"inscrição não encontrada: {args.repo} {args.versao}")
     notificador = montar_notificador()
     try:
         with abrir_sessao() as sessao:
-            resultado = executar_inscricao(montar_deps(clone, sessao), args.versao)
+            resultado = executar_inscricao(montar_deps(args.repo, sessao), args.versao)
     except MotorError as e:
         resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
     except Exception as e:
@@ -231,11 +243,7 @@ def _inscricao(args: argparse.Namespace) -> None:
         case AcaoInscricao.LISTAR:
             _inscricao_listar()
         case AcaoInscricao.REMOVER:
-            remover(
-                caminho_arquivo(),
-                os.path.abspath(_resolver_repo(args.repo)),
-                args.versao,
-            )
+            remover(caminho_arquivo(), args.repo, args.versao)
         case AcaoInscricao.AGENDAR:
             _inscricao_agendar(args)
         case AcaoInscricao.RODAR:
@@ -267,7 +275,7 @@ def _build_parser() -> argparse.ArgumentParser:
     comum = argparse.ArgumentParser(add_help=False)
     comum.add_argument("versao", help="versao alvo no formato X.Y.Z")
     comum.add_argument(
-        "--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR"
+        "--repo", required=True, type=_tipo_cli(validar_nome_repo), help=AJUDA_REPO
     )
     comum.add_argument(
         "--debug", action="store_true", help="loga tempos de cada etapa/comando git"
@@ -396,13 +404,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--para", required=True, metavar="URL", help="destino vazio, no mesmo formato"
     )
 
-    p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
-    acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True, metavar="acao")
-    p_adicionar = acoes_repo.add_parser("adicionar", help="cadastra um repositorio")
-    p_adicionar.add_argument(
-        "nome", type=_tipo_cli(validar_nome_repo), help="nome canonico do repo"
-    )
-
     p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
     acoes_insc = p_insc.add_subparsers(
         dest="acao_inscricao", required=True, metavar="acao"
@@ -410,7 +411,7 @@ def _build_parser() -> argparse.ArgumentParser:
     repo_arg = argparse.ArgumentParser(add_help=False)
     repo_arg.add_argument("versao", help="versao alvo no formato X.Y.Z")
     repo_arg.add_argument(
-        "--repo", required=True, help="path do repo ou nome dentro de PROJECTS_DIR"
+        "--repo", required=True, type=_tipo_cli(validar_nome_repo), help=AJUDA_REPO
     )
     p_inscrever = acoes_insc.add_parser(
         AcaoInscricao.ADICIONAR, parents=[repo_arg], help="inscreve uma versão"
@@ -437,27 +438,6 @@ def _iniciar_tui(ambiente: str) -> None:
     from motor.tui import run_tui
 
     run_tui(ambiente)
-
-
-def _resolver_repo(valor: str) -> str:
-    """Resolve --repo: caminho literal existente tem prioridade; senao tenta
-    PROJECTS_DIR/valor (ex: PROJECTS_DIR=/Volumes/ESSD/Projetos/ + --repo=foo)."""
-    if os.path.isdir(valor):
-        return os.path.abspath(valor)
-
-    projects_dir = os.environ.get("PROJECTS_DIR", "")
-    if projects_dir:
-        candidato = os.path.join(projects_dir, valor)
-        if os.path.isdir(candidato):
-            # abspath tambem tira a barra final que o tab-completion do shell
-            # anexa: o basename de "repo/" e "", e esse nome e a chave do estado.
-            return os.path.abspath(candidato)
-
-    print(
-        f"--repo nao encontrado: tentou '{valor}' e '{os.path.join(projects_dir, valor) if projects_dir else '(PROJECTS_DIR nao setada)'}'",
-        file=sys.stderr,
-    )
-    sys.exit(1)
 
 
 def _imprimir_commits_por_task(
@@ -704,13 +684,6 @@ def _migrar_estado(args: argparse.Namespace) -> None:
     print(f"estado copiado: {resumo.total} linhas")
 
 
-def _comando_repo(args: argparse.Namespace) -> None:
-    with abrir_sessao() as sessao:
-        estado = PostgresEstado(sessao=sessao)
-        estado.registrar_repo(args.nome)
-    print(f"repo '{args.nome}' adicionado")
-
-
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     ambiente_pai = dict(os.environ)  # antes do .env: o filho carrega o próprio
@@ -745,16 +718,10 @@ def main(argv: list[str] | None = None) -> None:
             _migrar_estado(args)
             return
 
-        if args.comando == "repo":
-            _comando_repo(args)
-            return
-
-        repo = _resolver_repo(args.repo)
-
         with abrir_sessao() as sessao:
             relator = _relator_do_cli(desligado=getattr(args, "sem_progresso", False))
             deps = montar_deps(
-                repo,
+                args.repo,
                 sessao,
                 tasks=FonteTasks(args.fonte_flag, args.lista_manual),
                 bitbucket=CredenciaisBitbucket(

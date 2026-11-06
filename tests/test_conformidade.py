@@ -97,11 +97,7 @@ def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:
     so o docstring do Protocol tem de ver a subclasse certa — senao levanta
     MotorError puro, que a suite publicada reprova.
     """
-    assert "MotorError" not in (EstadoRepo.registrar_repo.__doc__ or "")
-    assert "RecusaDeInvariante" in (EstadoRepo.registrar_repo.__doc__ or "")
-
-    assert "MotorError" not in (EstadoRepo.resolver_repo.__doc__ or "")
-    assert "NaoEncontrado" in (EstadoRepo.resolver_repo.__doc__ or "")
+    assert "MotorError" not in (EstadoRepo.garantir_repo.__doc__ or "")
 
     assert "MotorError" not in (EstadoRepo.substituir_atribuicoes.__doc__ or "")
     assert "RecusaDeInvariante" in (EstadoRepo.substituir_atribuicoes.__doc__ or "")

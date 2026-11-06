@@ -1,8 +1,9 @@
 # Multi-projeto: as premissas que tornam isso barato
 
 - **Status:** substituída por [024](024-config-por-projeto.md) no ponto "sem config por
-  projeto", e pela #114/024 no ponto da convenção de mensagem (`ch<num>`); vale nos
-  demais pontos
+  projeto", pela #114/024 no ponto da convenção de mensagem (`ch<num>`) e pela
+  [029](029-repos-na-config-central.md) no ponto da linha numa tabela (os repos são seções
+  da config); vale nos demais pontos
 - **Data:** 2026-08-21
 - **Depende de:** [009](009-inferencia-de-base.md)
 

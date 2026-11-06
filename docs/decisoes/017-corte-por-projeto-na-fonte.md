@@ -1,6 +1,6 @@
 # O corte por projeto acontece na fonte
 
-- **Status:** aceita
+- **Status:** aceita; o nome do repo agora é o da seção da config ([029](029-repos-na-config-central.md))
 - **Data:** 2026-08-21
 - **Depende de:** [016](016-multi-projeto-premissas.md)
 
