@@ -156,6 +156,12 @@ jobs:
       - run: uv sync --all-extras --locked --python 3.14
         if: steps.autor.outputs.seguir != 'false' && steps.assinatura.outputs.seguir != 'false'
 
+      # O `make check` do agente inclui o front.
+      - uses: actions/setup-node@v7.1.0
+        if: steps.autor.outputs.seguir != 'false' && steps.assinatura.outputs.seguir != 'false'
+        with:
+          node-version: 24
+
       - uses: anthropics/claude-code-action@v1
         id: claude
         if: steps.autor.outputs.seguir != 'false' && steps.assinatura.outputs.seguir != 'false'

@@ -1,0 +1,50 @@
+// Espelho dos enums do Python; valor novo no motor exige atualizar aqui.
+export enum AtualizarStatus {
+  DONE = 0,
+  BLOCKED = 1,
+  VAZIO = 2,
+}
+
+export enum Operacao {
+  VERIFICAR = "verificar",
+  PREVIA = "previa",
+  ATUALIZAR = "atualizar",
+  CONTINUAR = "continuar",
+  ABORTAR = "abortar",
+  CRIAR = "criar",
+}
+
+export enum EstadoExecucao {
+  RODANDO = "rodando",
+  CONCLUIDA = "concluida",
+  FALHOU = "falhou",
+}
+
+export enum TipoErro {
+  ENTRADA = "entrada",
+  NAO_ENCONTRADO = "nao_encontrado",
+  RECUSA = "recusa",
+  BACKEND = "backend",
+  RESPOSTA = "resposta",
+  MOTOR = "motor",
+  OCUPADO = "ocupado",
+  INTERNO = "interno",
+}
+
+export enum Desfecho {
+  APLICOU = "aplicou",
+  NADA = "nada",
+  BLOQUEADA = "bloqueada",
+  PULADA = "pulada",
+  ERRO = "erro",
+  ENCERRADA = "encerrada",
+}
+
+export enum EventoSse {
+  PROGRESSO = "progresso",
+  FIM = "fim",
+}
+
+export function assertNever(valor: never): never {
+  throw new Error(`valor inesperado: ${String(valor)}`);
+}

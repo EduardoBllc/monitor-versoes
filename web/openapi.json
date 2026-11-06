@@ -1,0 +1,1435 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FastAPI",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/repos": {
+      "get": {
+        "summary": "Listar Repos",
+        "operationId": "listar_repos_api_repos_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RepoOption"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Repos Api Repos Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Cadastrar Repo",
+        "operationId": "cadastrar_repo_api_repos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovoRepo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes": {
+      "get": {
+        "summary": "Listar Versoes",
+        "operationId": "listar_versoes_api_repos__repo__versoes_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionOption"
+                  },
+                  "title": "Response Listar Versoes Api Repos  Repo  Versoes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Criar",
+        "operationId": "criar_api_repos__repo__versoes_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NumeroVersao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/sugestoes": {
+      "get": {
+        "summary": "Sugerir",
+        "operationId": "sugerir_api_repos__repo__versoes_sugestoes_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Sugestao"
+                  },
+                  "title": "Response Sugerir Api Repos  Repo  Versoes Sugestoes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/avaliacao": {
+      "post": {
+        "summary": "Avaliar",
+        "operationId": "avaliar_api_repos__repo__versoes_avaliacao_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NumeroVersao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Avaliacao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/chamados": {
+      "get": {
+        "summary": "Consultar",
+        "operationId": "consultar_api_repos__repo__versoes__versao__chamados_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChamadoConsultado"
+                  },
+                  "title": "Response Consultar Api Repos  Repo  Versoes  Versao  Chamados Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/verificacao": {
+      "post": {
+        "summary": "Verificar",
+        "operationId": "verificar_api_repos__repo__versoes__versao__verificacao_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoVerificacao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/previa": {
+      "post": {
+        "summary": "Previa",
+        "operationId": "previa_api_repos__repo__versoes__versao__previa_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/atualizacao": {
+      "post": {
+        "summary": "Atualizar",
+        "operationId": "atualizar_api_repos__repo__versoes__versao__atualizacao_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/atualizacao/continuar": {
+      "post": {
+        "summary": "Continuar",
+        "operationId": "continuar_api_repos__repo__versoes__versao__atualizacao_continuar_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoContinuar"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/atualizacao/abortar": {
+      "post": {
+        "summary": "Abortar",
+        "operationId": "abortar_api_repos__repo__versoes__versao__atualizacao_abortar_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/execucao": {
+      "get": {
+        "summary": "Execucao Atual",
+        "operationId": "execucao_atual_api_repos__repo__execucao_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Execucao"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Execucao Atual Api Repos  Repo  Execucao Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/execucao/eventos": {
+      "get": {
+        "summary": "Eventos",
+        "operationId": "eventos_api_repos__repo__execucao_eventos_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inscricoes": {
+      "get": {
+        "summary": "Listar Inscricoes",
+        "operationId": "listar_inscricoes_api_inscricoes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InscricaoVista"
+                  },
+                  "type": "array",
+                  "title": "Response Listar Inscricoes Api Inscricoes Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Inscrever",
+        "operationId": "inscrever_api_inscricoes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoInscrever"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remover",
+        "operationId": "remover_api_inscricoes_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoRemover"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AtualizarResult": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/AtualizarStatus"
+          },
+          "blocked_commit": {
+            "type": "string",
+            "title": "Blocked Commit",
+            "default": ""
+          },
+          "arquivos_conflito": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Arquivos Conflito"
+          },
+          "culpados": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Culpados"
+          },
+          "aplicados": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Aplicados"
+          },
+          "ja_presentes": {
+            "type": "integer",
+            "title": "Ja Presentes",
+            "default": 0
+          },
+          "worktree": {
+            "type": "string",
+            "title": "Worktree",
+            "default": ""
+          },
+          "vazios": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Vazios"
+          },
+          "status_versao": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reaproveitada_de": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaproveitada De"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AtualizarResult"
+      },
+      "AtualizarStatus": {
+        "type": "integer",
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "title": "AtualizarStatus"
+      },
+      "Avaliacao": {
+        "properties": {
+          "previa": {
+            "type": "string",
+            "title": "Previa"
+          },
+          "erro": {
+            "type": "string",
+            "title": "Erro"
+          }
+        },
+        "type": "object",
+        "required": [
+          "previa",
+          "erro"
+        ],
+        "title": "Avaliacao"
+      },
+      "ChamadoConsultado": {
+        "properties": {
+          "chamado": {
+            "type": "string",
+            "title": "Chamado"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado"
+          },
+          "commits": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Commits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chamado",
+          "estado",
+          "commits"
+        ],
+        "title": "ChamadoConsultado"
+      },
+      "CommitRef": {
+        "properties": {
+          "hash_origem": {
+            "type": "string",
+            "title": "Hash Origem",
+            "default": ""
+          },
+          "parent": {
+            "type": "string",
+            "title": "Parent",
+            "default": ""
+          },
+          "chamado": {
+            "type": "string",
+            "title": "Chamado",
+            "default": ""
+          },
+          "commit_date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Commit Date",
+            "default": "0001-01-01T00:00:00Z"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "CommitRef"
+      },
+      "Desfecho": {
+        "type": "string",
+        "enum": [
+          "aplicou",
+          "nada",
+          "bloqueada",
+          "pulada",
+          "erro",
+          "encerrada"
+        ],
+        "title": "Desfecho"
+      },
+      "ErroApi": {
+        "properties": {
+          "tipo": {
+            "$ref": "#/components/schemas/TipoErro"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tipo",
+          "mensagem"
+        ],
+        "title": "ErroApi"
+      },
+      "EstadoExecucao": {
+        "type": "string",
+        "enum": [
+          "rodando",
+          "concluida",
+          "falhou"
+        ],
+        "title": "EstadoExecucao"
+      },
+      "Execucao": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "repo": {
+            "type": "string",
+            "title": "Repo"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "operacao": {
+            "$ref": "#/components/schemas/Operacao"
+          },
+          "estado": {
+            "$ref": "#/components/schemas/EstadoExecucao"
+          },
+          "progresso": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Progresso"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resultado": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionStatus"
+              },
+              {
+                "$ref": "#/components/schemas/AtualizarResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resultado"
+          },
+          "erro": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErroApi"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo",
+          "versao",
+          "operacao",
+          "estado"
+        ],
+        "title": "Execucao"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InscricaoVista": {
+        "properties": {
+          "clone": {
+            "type": "string",
+            "title": "Clone"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "intervalo": {
+            "type": "string",
+            "title": "Intervalo"
+          },
+          "ultima": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UltimaExecucao"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "clone",
+          "versao",
+          "intervalo",
+          "ultima"
+        ],
+        "title": "InscricaoVista"
+      },
+      "NovoRepo": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nome"
+        ],
+        "title": "NovoRepo"
+      },
+      "NumeroVersao": {
+        "properties": {
+          "numero": {
+            "type": "string",
+            "title": "Numero"
+          }
+        },
+        "type": "object",
+        "required": [
+          "numero"
+        ],
+        "title": "NumeroVersao"
+      },
+      "Operacao": {
+        "type": "string",
+        "enum": [
+          "verificar",
+          "previa",
+          "atualizar",
+          "continuar",
+          "abortar",
+          "criar"
+        ],
+        "title": "Operacao"
+      },
+      "PedidoContinuar": {
+        "properties": {
+          "allow_empty": {
+            "type": "boolean",
+            "title": "Allow Empty"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allow_empty"
+        ],
+        "title": "PedidoContinuar"
+      },
+      "PedidoInscrever": {
+        "properties": {
+          "repo": {
+            "type": "string",
+            "title": "Repo"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          }
+        },
+        "type": "object",
+        "required": [
+          "repo",
+          "versao"
+        ],
+        "title": "PedidoInscrever"
+      },
+      "PedidoRemover": {
+        "properties": {
+          "clone": {
+            "type": "string",
+            "title": "Clone"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          }
+        },
+        "type": "object",
+        "required": [
+          "clone",
+          "versao"
+        ],
+        "title": "PedidoRemover"
+      },
+      "PedidoVerificacao": {
+        "properties": {
+          "auditar": {
+            "type": "boolean",
+            "title": "Auditar"
+          }
+        },
+        "type": "object",
+        "required": [
+          "auditar"
+        ],
+        "title": "PedidoVerificacao"
+      },
+      "Progresso": {
+        "properties": {
+          "fase": {
+            "type": "string",
+            "title": "Fase"
+          },
+          "feito": {
+            "type": "integer",
+            "title": "Feito",
+            "default": 0
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "fase"
+        ],
+        "title": "Progresso",
+        "description": "Onde o comando esta agora.\n\n`total == 0` significa fase sem contagem (spinner, nao barra): e o caso de\nquase toda borda de I/O — um `fetch` nao sabe dizer quanto falta."
+      },
+      "RepoOption": {
+        "properties": {
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          },
+          "caminho": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caminho"
+          },
+          "piso_versao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Piso Versao"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nome",
+          "caminho"
+        ],
+        "title": "RepoOption"
+      },
+      "Sugestao": {
+        "properties": {
+          "numero": {
+            "type": "string",
+            "title": "Numero"
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "numero",
+          "tipo"
+        ],
+        "title": "Sugestao"
+      },
+      "TipoErro": {
+        "type": "string",
+        "enum": [
+          "entrada",
+          "nao_encontrado",
+          "recusa",
+          "backend",
+          "resposta",
+          "motor",
+          "ocupado",
+          "interno"
+        ],
+        "title": "TipoErro"
+      },
+      "UltimaExecucao": {
+        "properties": {
+          "hora": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Hora"
+          },
+          "desfecho": {
+            "$ref": "#/components/schemas/Desfecho"
+          },
+          "desfecho_aviso": {
+            "$ref": "#/components/schemas/Desfecho"
+          },
+          "vermelhos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true,
+            "title": "Vermelhos"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "hora",
+          "desfecho",
+          "desfecho_aviso",
+          "vermelhos"
+        ],
+        "title": "UltimaExecucao"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VersionOption": {
+        "properties": {
+          "numero": {
+            "type": "string",
+            "title": "Numero"
+          },
+          "liberada": {
+            "type": "boolean",
+            "title": "Liberada"
+          }
+        },
+        "type": "object",
+        "required": [
+          "numero",
+          "liberada"
+        ],
+        "title": "VersionOption"
+      },
+      "VersionStatus": {
+        "properties": {
+          "verde": {
+            "type": "boolean",
+            "title": "Verde",
+            "default": false
+          },
+          "tasks_novas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tasks Novas"
+          },
+          "tasks_removidas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tasks Removidas"
+          },
+          "estado_integro": {
+            "type": "boolean",
+            "title": "Estado Integro",
+            "default": false
+          },
+          "tasks_ambiguas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tasks Ambiguas"
+          },
+          "commits_sumidos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Commits Sumidos"
+          },
+          "faltantes": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Faltantes"
+          },
+          "ancestrais": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Ancestrais"
+          },
+          "conflitantes": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Conflitantes"
+          },
+          "suspeitos_conteudo": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRef"
+            },
+            "type": "array",
+            "title": "Suspeitos Conteudo"
+          },
+          "conflito_causado_por": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Conflito Causado Por"
+          },
+          "tasks_sem_commits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tasks Sem Commits"
+          },
+          "liberada_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liberada Em"
+          },
+          "chamados": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chamados"
+          }
+        },
+        "type": "object",
+        "title": "VersionStatus"
+      }
+    }
+  }
+}

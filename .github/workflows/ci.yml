@@ -29,11 +29,23 @@ jobs:
             alvo: typecheck
           - etapa: pytest
             alvo: test
+          - etapa: web check
+            alvo: web-check
+            node: true
+          - etapa: web dist
+            alvo: web-dist
+            node: true
     env:
       # O `uv run` do Makefile falha em vez de reescrever um uv.lock desatualizado.
       UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.0
+      - uses: actions/setup-node@v7.1.0
+        if: matrix.node
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - run: uv sync --all-extras --locked --python 3.14
       - run: make ${{ matrix.alvo }}
