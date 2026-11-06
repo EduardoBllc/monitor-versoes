@@ -124,7 +124,7 @@ class ContextoAtribuicao:
 
 @dataclass(frozen=True)
 class RepoInfo:
-    nome: str = ""  # canonico, nunca o alias
+    nome: str = ""
 
 
 @dataclass(frozen=True)

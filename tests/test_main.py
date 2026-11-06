@@ -58,6 +58,10 @@ D = datetime.datetime(2026, 1, 1)
 # -- parser -------------------------------------------------------------------
 
 
+#: Saída do argparse para argumento inválido.
+ARGPARSE_USO_INVALIDO = 2
+
+
 def test_task_source_default_e_config():
     args = _build_parser().parse_args(["criar", "1.0.0", "--repo", "."])
     assert args.fonte_flag == "config"
@@ -131,7 +135,7 @@ def test_fonte_de_tasks_disponivel_em_todos_os_subcomandos():
                 comando,
                 "13.34.0",
                 "--repo",
-                "/tmp",
+                "webapp",
                 "--task-source",
                 "manual",
                 "--lista",
@@ -159,7 +163,7 @@ def test_comando_desconhecido_sai_com_erro():
 def test_subcomando_repo_nao_existe_mais():
     with pytest.raises(SystemExit) as saida:
         main(["repo", "adicionar", "x"])
-    assert saida.value.code == 2
+    assert saida.value.code == ARGPARSE_USO_INVALIDO
 
 
 # -- impressao ----------------------------------------------------------------
@@ -675,7 +679,7 @@ def test_worktrees_mantidas_invalido_sai_1(bordas, tmp_path, caplog, monkeypatch
         main(["atualizar", "13.34.0", "--repo", _repo_dir(tmp_path), "--abort"])
 
     assert saida.value.code == 1
-    assert "WORKTREES_MANTIDAS invalido: 'tres'" in caplog.text
+    assert "WORKTREES_MANTIDAS inválido: 'tres'" in caplog.text
 
 
 def test_manual_sem_lista_sai_1(bordas, tmp_path, capsys):
@@ -902,14 +906,17 @@ def test_repo_por_nome_da_secao(bordas, tmp_path, monkeypatch):
     assert "x" in [r.nome for r in estado.listar_repos()]
 
 
-def test_repo_por_caminho_nao_e_aceito(bordas, tmp_path, caplog):
+def test_repo_por_caminho_nao_e_aceito(bordas, tmp_path, capsys):
+    _, estado = bordas
     nome = _repo_dir(tmp_path, "x")
+    antes = estado.listar_repos()
 
     with pytest.raises(SystemExit) as saida:
         main(["consulta", "13.34.0", "--repo", str(tmp_path / nome)])
 
-    assert saida.value.code == 1
-    assert f"existentes: {nome}" in caplog.text
+    assert saida.value.code == ARGPARSE_USO_INVALIDO
+    assert "use um nome simples, sem caminho" in capsys.readouterr().err
+    assert estado.listar_repos() == antes
 
 
 def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):

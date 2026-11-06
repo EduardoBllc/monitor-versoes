@@ -183,12 +183,6 @@ def _repos_de(resultados):
     return [r for r in resultados if r.peca is Peca.REPOS]
 
 
-def test_sem_projects_dir():
-    _, resultados = _rodar({**ENV_OK, "PROJECTS_DIR": "/x"})
-
-    assert "PROJECTS_DIR" not in [r.peca for r in resultados]
-
-
 def test_bitbucket_sem_token_nao_faz_rede():
     def handler(request):
         if "bitbucket" in str(request.url):

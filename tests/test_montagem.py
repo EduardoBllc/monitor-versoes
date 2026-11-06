@@ -17,7 +17,12 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.atribuicoes import Exata
-from motor.config import ConfigProjeto, Escolhido, validar_nome_repo
+from motor.config import (
+    ConfigProjeto,
+    Escolhido,
+    carregar_config_repo,
+    validar_nome_repo,
+)
 from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
@@ -26,6 +31,7 @@ from motor.montagem import (
     CredenciaisBitbucket,
     FonteDaConfig,
     FonteTasks,
+    instanciar_fonte_tarefas,
     montar_commit_source,
     montar_deps,
     montar_task_source,
@@ -153,6 +159,9 @@ def test_task_source_manual_le_a_lista(tmp_path):
     assert fonte.fetch("13.34.0") == ["123456"]
 
 
+FONTE_FIXA = "tests.fontes_falsas:FonteFixa"
+
+
 def _config_com_fonte(valor: str, **tarefas: object) -> ConfigProjeto:
     return ConfigProjeto(
         tarefas={"fonte": valor, **tarefas},
@@ -169,17 +178,31 @@ def test_task_source_da_config_nao_carrega_o_plugin_na_montagem():
 
 
 def test_task_source_da_config_busca_pelo_plugin():
-    fonte = montar_task_source(
-        _config_com_fonte("tests.fontes_falsas:FonteFixa", chamados=["101"])
-    )
+    fonte = montar_task_source(_config_com_fonte(FONTE_FIXA, chamados=["101"]))
 
     assert fonte.fetch("1.0.0") == ["101"]
 
 
-def test_plugin_recebe_tarefas_e_arquivos_nomeados():
-    fonte = montar_task_source(
-        _config_com_fonte("tests.fontes_falsas:FonteFixa", sistema=7)
+def test_plugin_declarado_na_secao_do_repo_carrega(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    central = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
+    central.parent.mkdir(parents=True)
+    central.write_text(
+        secao_repo(
+            "x",
+            tmp_path,
+            f'[tarefas]\nfonte = "{FONTE_FIXA}"\nchamados = ["101"]\n',
+        )
     )
+
+    fonte = instanciar_fonte_tarefas(carregar_config_repo("x"))
+
+    assert isinstance(fonte, FonteFixa)
+    assert fonte.fetch("1.0.0") == ["101"]
+
+
+def test_plugin_recebe_tarefas_e_arquivos_nomeados():
+    fonte = montar_task_source(_config_com_fonte(FONTE_FIXA, sistema=7))
     fonte.fetch("1.0.0")
 
     recebido = FonteFixa.recebidos[-1]
@@ -187,12 +210,12 @@ def test_plugin_recebe_tarefas_e_arquivos_nomeados():
     assert recebido["arquivos"] == ("/a.toml", "/b.toml")
     tarefas = recebido["tarefas"]
     assert isinstance(tarefas, dict)
-    assert tarefas["fonte"] == "tests.fontes_falsas:FonteFixa"
+    assert tarefas["fonte"] == FONTE_FIXA
     assert tarefas["sistema"] == 7
 
 
 def test_plugin_carregado_uma_vez_por_invocacao():
-    fonte = FonteDaConfig(_config_com_fonte("tests.fontes_falsas:FonteFixa"))
+    fonte = FonteDaConfig(_config_com_fonte(FONTE_FIXA))
     antes = len(FonteFixa.recebidos)
 
     fonte.fetch("1.0.0")
@@ -275,7 +298,7 @@ def test_montar_deps_usa_o_caminho_da_secao(repo_montavel, monkeypatch):
 
 
 def test_fonte_da_config_sem_padrao_propoe_a_referencia_dela(repo_montavel):
-    _fonte_central(repo_montavel, "tests.fontes_falsas:FonteFixa")
+    _fonte_central(repo_montavel, FONTE_FIXA)
 
     deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
 
@@ -320,7 +343,7 @@ def _entradas(raiz, **kwargs) -> str:
 
 
 def test_identidade_muda_com_a_fonte(repo_montavel, sem_bitbucket_no_ambiente):
-    _fonte_central(repo_montavel, "tests.fontes_falsas:FonteFixa")
+    _fonte_central(repo_montavel, FONTE_FIXA)
     antes = _entradas(repo_montavel)
     _fonte_central(repo_montavel, "tests.fontes_falsas:FonteComCredencial")
 

@@ -34,6 +34,7 @@ from motor.config import (
     carregar_config_global,
     carregar_config_repo,
     repos_configurados,
+    validar_nome_repo,
 )
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
@@ -273,7 +274,9 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     comum = argparse.ArgumentParser(add_help=False)
     comum.add_argument("versao", help="versao alvo no formato X.Y.Z")
-    comum.add_argument("--repo", required=True, help=AJUDA_REPO)
+    comum.add_argument(
+        "--repo", required=True, type=_tipo_cli(validar_nome_repo), help=AJUDA_REPO
+    )
     comum.add_argument(
         "--debug", action="store_true", help="loga tempos de cada etapa/comando git"
     )
@@ -407,7 +410,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     repo_arg = argparse.ArgumentParser(add_help=False)
     repo_arg.add_argument("versao", help="versao alvo no formato X.Y.Z")
-    repo_arg.add_argument("--repo", required=True, help=AJUDA_REPO)
+    repo_arg.add_argument(
+        "--repo", required=True, type=_tipo_cli(validar_nome_repo), help=AJUDA_REPO
+    )
     p_inscrever = acoes_insc.add_parser(
         AcaoInscricao.ADICIONAR, parents=[repo_arg], help="inscreve uma versão"
     )

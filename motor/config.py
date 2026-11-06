@@ -59,7 +59,7 @@ def _url_postgres() -> str:
     # create_engine converte a porta na hora: um typo aqui viraria ValueError,
     # que o __main__ trata como bug (traceback) em vez de erro do operador.
     if not v["PORT"].isdigit():
-        raise ErroDeEntrada(f"DATABASE_PORT invalido: {v['PORT']!r} (esperado numero)")
+        raise ErroDeEntrada(f"DATABASE_PORT inválido: {v['PORT']!r} (esperado número)")
 
     # quote em usuario e senha: um '@' na senha monta uma URL sintaticamente
     # valida apontando para outro host, e o erro que aparece e "conexao
@@ -77,7 +77,7 @@ def backend() -> str:
         return "sqlite"
     if valor not in _BACKENDS:
         raise ErroDeEntrada(
-            f"DATABASE_BACKEND invalido: {valor!r} (aceitos: {', '.join(_BACKENDS)})"
+            f"DATABASE_BACKEND inválido: {valor!r} (aceitos: {', '.join(_BACKENDS)})"
         )
     return valor
 
@@ -100,7 +100,7 @@ def database_url(avisar: bool = True) -> str:
     ):
         _avisos_emitidos.add("backend_padrao")
         print(
-            "aviso: DATABASE_BACKEND nao definido; usando SQLite. Para usar o "
+            "aviso: DATABASE_BACKEND não definido; usando SQLite. Para usar o "
             "Postgres configurado em DATABASE_*, defina DATABASE_BACKEND=postgres.",
             file=sys.stderr,
         )
@@ -126,7 +126,7 @@ def worktrees_mantidas() -> int:
     # aceitaria negativo, que nao tem significado aqui.
     if not valor.isdigit():
         raise ErroDeEntrada(
-            f"WORKTREES_MANTIDAS invalido: {valor!r} (esperado inteiro >= 0)"
+            f"WORKTREES_MANTIDAS inválido: {valor!r} (esperado inteiro >= 0)"
         )
     return int(valor)
 
@@ -200,9 +200,9 @@ def _ler_toml(caminho: str) -> dict[str, object]:
     except FileNotFoundError:
         return {}
     except tomllib.TOMLDecodeError as e:
-        raise ErroDeEntrada(f"{caminho}: TOML invalido ({e})") from e
+        raise ErroDeEntrada(f"{caminho}: TOML inválido ({e})") from e
     except OSError as e:
-        raise ErroDeEntrada(f"{caminho}: nao foi possivel ler ({e})") from e
+        raise ErroDeEntrada(f"{caminho}: não foi possível ler ({e})") from e
 
 
 def _tabela(
@@ -217,13 +217,13 @@ def _tabela(
 def _texto(
     dados: Mapping[str, object], tabela: str, chave: str, caminho: str
 ) -> str | None:
-    """`[tabela] chave` como texto nao vazio; `None` se ausente."""
+    """`[tabela] chave` como texto não vazio; `None` se ausente."""
     bruto = _tabela(dados, tabela, caminho).get(chave)
     if bruto is None:
         return None
     if not isinstance(bruto, str) or not bruto.strip():
         raise ErroDeEntrada(
-            f"{caminho}: [{tabela}] {chave} deve ser texto nao vazio, veio {bruto!r}"
+            f"{caminho}: [{tabela}] {chave} deve ser texto não vazio, veio {bruto!r}"
         )
     return bruto
 
@@ -322,7 +322,7 @@ def _caminho_da_secao(
     if not isinstance(bruto, str) or not bruto.strip():
         raise ErroDeEntrada(
             f"{arquivo}: [{SECAO_REPOS}.{nome}] {CHAVE_CAMINHO} deve ser texto "
-            f"nao vazio, veio {bruto!r}"
+            f"não vazio, veio {bruto!r}"
         )
     return os.path.abspath(os.path.expanduser(bruto))
 
