@@ -146,6 +146,13 @@ def test_continuar_vazio_substitui_o_bloqueio() -> None:
     assert _pendentes(execucoes) == [("1.0.0", AtualizarStatus.VAZIO)]
 
 
+def test_abortar_que_falha_limpa_o_bloqueio_resolvido_fora_da_web() -> None:
+    execucoes = Execucoes()
+    _concluir(execucoes, Operacao.ATUALIZAR, AtualizarStatus.BLOCKED)
+    _concluir(execucoes, Operacao.ABORTAR)
+    assert _pendentes(execucoes) == []
+
+
 @pytest.mark.parametrize(
     ("operacao", "resultado"),
     [

@@ -96,10 +96,15 @@ class Execucoes:
 
         try:
             execucao.resultado = alvo(relatar)
-            execucao.estado = EstadoExecucao.CONCLUIDA
             self._lembrar(execucao)
+            execucao.estado = EstadoExecucao.CONCLUIDA
         except Exception as e:
             execucao.erro = erro_api(e)[1]
+            # Abortar que falha também limpa: o pick pode ter sido resolvido fora da
+            # web, e um pick ainda aberto reaparece no próximo atualizar.
+            if execucao.operacao is Operacao.ABORTAR:
+                with self._lock:
+                    self._pendentes.pop((execucao.repo, execucao.versao), None)
             execucao.estado = EstadoExecucao.FALHOU
 
     def _lembrar(self, execucao: Execucao) -> None:

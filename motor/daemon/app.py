@@ -18,14 +18,14 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from motor import inscricoes as arquivo
 from motor.config import SECAO_REPOS
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
-from motor.daemon.erros import ErroApi, TipoErro, erro_api
+from motor.daemon.erros import MENSAGEM_INTERNA, ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult
 from motor.engine.consultar import ChamadoConsultado
-from motor.errors import ErroDeEntrada, NaoEncontrado, RecusaDeInvariante
+from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.operacoes import (
     RepoOption,
     Runners,
@@ -335,10 +335,17 @@ def criar_app(  # noqa: PLR0913
     app.state.execucoes = ctx.execucoes  # gancho dos testes
     proteger(app, porta)
 
-    @app.exception_handler(Exception)
-    async def tratar(_: Request, erro: Exception) -> Response:
+    # MotorError fica no ExceptionMiddleware, que não relança: erro esperado sai limpo.
+    @app.exception_handler(MotorError)
+    async def tratar(_: Request, erro: MotorError) -> Response:
         status, corpo = erro_api(erro)
         return JSONResponse(asdict(corpo), status_code=status)
+
+    # Exception fica no ServerErrorMiddleware, que relança: o uvicorn loga o traceback.
+    @app.exception_handler(Exception)
+    async def tratar_interno(_: Request, _erro: Exception) -> Response:
+        corpo = ErroApi(TipoErro.INTERNO, MENSAGEM_INTERNA)
+        return JSONResponse(asdict(corpo), status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     @app.exception_handler(RequestValidationError)
     async def tratar_validacao(_: Request, erro: RequestValidationError) -> Response:

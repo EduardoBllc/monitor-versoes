@@ -16,7 +16,7 @@ from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
-from motor.errors import BackendIndisponivel
+from motor.errors import BackendIndisponivel, MotorError
 from motor.inscricoes import INTERVALO_PADRAO
 from motor.operacoes import RepoOption, Runners, VersionOption
 from motor.progresso import Progresso, RelatorProgresso
@@ -70,10 +70,7 @@ def cliente(amb: Ambiente, tmp_path: Path) -> TestClient:
         inscricoes_em=amb.inscricoes,
         ambiente="development",
     )
-    c = TestClient(
-        app, base_url=f"http://127.0.0.1:{PORTA}", raise_server_exceptions=False
-    )
-    return c
+    return TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
 
 
 def _esperar(c: TestClient, repo: str = REPO) -> None:
@@ -111,9 +108,7 @@ def test_operacao_em_repo_sem_checkout_da_404_com_mensagem_do_motor(
         inscricoes_em=amb.inscricoes,
         ambiente="development",
     )
-    c = TestClient(
-        app, base_url=f"http://127.0.0.1:{PORTA}", raise_server_exceptions=False
-    )
+    c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
     r = c.post(
         "/api/repos/sem-clone/versoes/14.0.0/verificacao", json={"auditar": False}
     )
@@ -274,9 +269,22 @@ def test_inscrever_repo_sem_checkout_da_404(cliente: TestClient) -> None:
     assert cliente.get("/api/inscricoes").json() == []
 
 
-def test_erro_nas_leituras_segue_a_tabela(cliente: TestClient, amb: Ambiente) -> None:
+@pytest.mark.parametrize(
+    ("erro", "status", "tipo"),
+    [
+        (
+            BackendIndisponivel("sem rede"),
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            TipoErro.BACKEND,
+        ),
+        (RuntimeError("segredo"), HTTPStatus.INTERNAL_SERVER_ERROR, TipoErro.INTERNO),
+    ],
+)
+def test_erro_nas_leituras_segue_a_tabela(
+    amb: Ambiente, erro: Exception, status: HTTPStatus, tipo: TipoErro
+) -> None:
     def falha(repo: RepoOption) -> list[VersionOption]:
-        raise BackendIndisponivel("sem rede")
+        raise erro
 
     original = amb.fabrica
 
@@ -290,12 +298,16 @@ def test_erro_nas_leituras_segue_a_tabela(cliente: TestClient, amb: Ambiente) ->
         inscricoes_em=amb.inscricoes,
         ambiente="development",
     )
+    # Só o erro não previsto é relançado (para o traceback ir ao log).
     r = TestClient(
-        app, base_url=f"http://127.0.0.1:{PORTA}", raise_server_exceptions=False
+        app,
+        base_url=f"http://127.0.0.1:{PORTA}",
+        raise_server_exceptions=isinstance(erro, MotorError),
     ).get(f"/api/repos/{REPO}/versoes")
-    assert r.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert r.status_code == status
     assert set(r.json()) == {"tipo", "mensagem"}
-    assert r.json()["tipo"] == TipoErro.BACKEND
+    assert r.json()["tipo"] == tipo
+    assert "segredo" not in r.json()["mensagem"]
 
 
 def test_repo_desconhecido_em_operacao_da_404_na_hora(cliente: TestClient) -> None:

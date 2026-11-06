@@ -46,7 +46,6 @@ make check   # ruff format --check, ruff check, mypy, pytest -rs, web-check (npm
 make fmt     # formata e aplica os fixes automáticos do ruff
 ```
 
-O portão exige Node 24 e npm, por causa do `web/` (ver [Front-end web](#front-end-web)).
 `make check` roda os mesmos alvos, na mesma ordem, que o CI
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)): verde aqui é verde lá. O `-rs`
 do pytest lista o motivo de cada skip — confira se a integração rodou.
