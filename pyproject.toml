@@ -22,6 +22,7 @@ dev = [
     "ruff>=0.17.1",
     "pre-commit>=4.7.0",
     "tomlkit>=0.13",
+    "httpx2>=2.16.0",
 ]
 
 [project.scripts]
