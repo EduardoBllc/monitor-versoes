@@ -74,7 +74,7 @@ WEB_TMP := web/node_modules/.dist
 web-dist:
 	cd web && npm ci
 	mkdir -p $(WEB_TMP)
-	uv run python scripts/openapi.py > $(WEB_TMP)/openapi.json
+	uv run python -m motor.daemon.openapi > $(WEB_TMP)/openapi.json
 	web/node_modules/.bin/openapi-typescript $(WEB_TMP)/openapi.json -o $(WEB_TMP)/esquema.ts
 	web/node_modules/.bin/vite build web --outDir $(abspath $(WEB_TMP))/static --emptyOutDir
 	diff -u web/openapi.json $(WEB_TMP)/openapi.json

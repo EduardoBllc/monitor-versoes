@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "tipos": "uv run --project .. python ../scripts/openapi.py > openapi.json && openapi-typescript openapi.json -o src/api/esquema.ts"
+    "tipos": "uv run --project .. python -m motor.daemon.openapi > openapi.json && openapi-typescript openapi.json -o src/api/esquema.ts"
   },
   "dependencies": {
     "@mantine/core": "^9.7.5",

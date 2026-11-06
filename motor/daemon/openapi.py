@@ -13,11 +13,12 @@ def _nunca_chamada(relatar: RelatorProgresso) -> Runners:
     raise NotImplementedError
 
 
-app = criar_app(
-    _nunca_chamada,
-    porta=PORTA_PADRAO,
-    estaticos=PASTA_ESTATICOS,
-    inscricoes_em=Path("inscricoes.json"),
-    ambiente=AMBIENTE_PADRAO,
-)
-print(json.dumps(app.openapi(), ensure_ascii=False, indent=2))
+if __name__ == "__main__":
+    app = criar_app(
+        _nunca_chamada,
+        porta=PORTA_PADRAO,
+        estaticos=PASTA_ESTATICOS,
+        inscricoes_em=Path("inscricoes.json"),
+        ambiente=AMBIENTE_PADRAO,
+    )
+    print(json.dumps(app.openapi(), ensure_ascii=False, indent=2))
