@@ -53,6 +53,21 @@ do pytest lista o motivo de cada skip — confira se a integração rodou.
 O `make setup` instala o [pre-commit](.pre-commit-config.yaml): ruff (format e check) e
 mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de abrir o PR.
 
+## Front-end web
+
+`web/` é a SPA do `motor serve` ([decisão 029](docs/decisoes/029-front-end-web-spa-com-dist-versionado.md)).
+Node 24 e npm só são necessários para mexer nela.
+
+```bash
+cd web && npm ci     # instala as dependências
+uv run motor serve   # daemon de pé (outro terminal)
+npm run dev          # Vite com proxy de /api para o daemon
+npm run tipos        # regenera os tipos TS depois de mudar a API
+```
+
+O build (`motor/daemon/static/`) e os tipos gerados são versionados: rode `make web-dist`
+(ou `make check`, que confere se estão em dia) antes de commitar.
+
 ## Armadilhas do ambiente
 
 | Sintoma | Causa e saída |

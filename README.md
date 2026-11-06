@@ -261,12 +261,22 @@ motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
 motor atualizar 13.35.0 --repo meu-repo --abort
 motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
 motor tui                                           # interface interativa
+motor serve                                         # interface web local (ver Interface web)
 motor inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
 ```
 
 Todos os comandos de versão aceitam `--repo` (path, ou nome dentro de `PROJECTS_DIR`),
 `--debug`, `--sem-progresso`, `--task-source` e `--lista`. `motor <comando> -h` lista
 o resto.
+
+### Interface web
+
+`motor serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
+(padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
+
+As operações seguem rodando se a aba fechar. Um pick bloqueado por conflito se resolve na
+worktree, no seu editor; depois, **Continuar**. O porquê em
+[decisão 029](docs/decisoes/029-front-end-web-spa-com-dist-versionado.md).
 
 ### Fontes de tasks e de commits
 

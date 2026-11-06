@@ -39,3 +39,4 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 26. [026](026-esquema-e-atribuicao-plugaveis.md) — esquema de versão e política de atribuição plugáveis; liberada e nomes de branch em camadas (config > esquema > padrão), com `semver`, `exata`, `main` e tag `{versao}` como padrão.
 27. [027](027-fonte-de-tarefas-plugavel.md) — fonte de tarefas plugável e sem padrão no núcleo, carregada só no uso; `sistema` e `piso` saem do banco e ficam só na config.
 28. [028](028-inscricoes-fora-do-estado.md) — inscrições num arquivo local fora do estado (clone e `.env` são da máquina); um processo por inscrição isola o ambiente.
+29. [029](029-front-end-web-spa-com-dist-versionado.md) — `motor serve`: daemon local em `127.0.0.1` e SPA React/TS com build versionado (instalar não exige Node) e contrato tipado pelo OpenAPI.
