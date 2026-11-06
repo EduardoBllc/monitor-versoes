@@ -13,10 +13,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
-from motor.daemon.erros import erro_api
+from motor.daemon.erros import ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
@@ -97,6 +98,8 @@ class InscricaoVista:
     ultima: UltimaExecucao | None
 
 
+# Rotas síncronas respondem 409 aqui; nas operações longas o erro cai na Execucao
+# (FALHOU), porque só nelas existe uma execução para carregá-lo.
 def _exigir[T](runner: T | None) -> T:
     if runner is None:
         raise RecusaDeInvariante(MENSAGEM_INDISPONIVEL)
@@ -314,6 +317,14 @@ def criar_app(  # noqa: PLR0913
     async def tratar(_: Request, erro: Exception) -> Response:
         status, corpo = erro_api(erro)
         return JSONResponse(asdict(corpo), status_code=status)
+
+    @app.exception_handler(RequestValidationError)
+    async def tratar_validacao(_: Request, erro: RequestValidationError) -> Response:
+        campos = "; ".join(
+            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in erro.errors()
+        )
+        corpo = ErroApi(TipoErro.ENTRADA, f"requisição inválida ({campos})")
+        return JSONResponse(asdict(corpo), status_code=HTTPStatus.UNPROCESSABLE_ENTITY)
 
     _rotas_repos(app, ctx)
     _rotas_operacoes(app, ctx)

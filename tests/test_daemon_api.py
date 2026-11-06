@@ -1,11 +1,13 @@
 import contextlib
 import json
 import threading
+from dataclasses import replace
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import motor.operacoes as operacoes
@@ -33,6 +35,7 @@ class Ambiente:
         self.chamadas: list[tuple[Any, ...]] = []
         self.soltar = threading.Event()
         self.relatar: RelatorProgresso | None = None
+        self.iniciou = threading.Event()
         self.versoes = [VersionOption("14.0.0", True), VersionOption("13.0.0", True)]
         self.resultado: VersionStatus | AtualizarResult = VersionStatus(verde=True)
         self.inscricoes = tmp_path / "inscricoes.json"
@@ -41,6 +44,7 @@ class Ambiente:
         def executar(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
             self.chamadas.append((repo.nome, versao, auditar))
             self.relatar = relatar
+            self.iniciou.set()
             self.soltar.wait(ESPERA_S)
             return cast(VersionStatus, self.resultado)
 
@@ -70,12 +74,11 @@ def cliente(amb: Ambiente, tmp_path: Path) -> TestClient:
     c = TestClient(
         app, base_url=f"http://127.0.0.1:{PORTA}", raise_server_exceptions=False
     )
-    c.execucoes = app.state.execucoes  # type: ignore[attr-defined]
     return c
 
 
 def _esperar(c: TestClient, repo: str = REPO) -> None:
-    assert c.execucoes.aguardar(repo, ESPERA_S)  # type: ignore[attr-defined]
+    assert cast(FastAPI, c.app).state.execucoes.aguardar(repo, ESPERA_S)
 
 
 def _eventos(c: TestClient, repo: str = REPO) -> list[tuple[str, Any]]:
@@ -169,8 +172,8 @@ def test_eventos_entregam_progresso_e_depois_fim(
     cliente.post(
         f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", json={"auditar": False}
     )
-    while amb.relatar is None:
-        threading.Event().wait(INTERVALO_EVENTOS_S)
+    assert amb.iniciou.wait(ESPERA_S)
+    assert amb.relatar is not None
     amb.relatar(Progresso("fase um", 1, 2))
     # solta depois de alguns ciclos de amostragem
     threading.Timer(INTERVALO_EVENTOS_S * 3, amb.soltar.set).start()
@@ -254,8 +257,6 @@ def test_erro_nas_leituras_segue_a_tabela(cliente: TestClient, amb: Ambiente) ->
     original = amb.fabrica
 
     def fabrica(relatar: RelatorProgresso) -> Runners:
-        from dataclasses import replace
-
         return replace(original(relatar), carregar_versoes=falha)
 
     app = criar_app(
@@ -271,3 +272,18 @@ def test_erro_nas_leituras_segue_a_tabela(cliente: TestClient, amb: Ambiente) ->
     assert r.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert set(r.json()) == {"tipo", "mensagem"}
     assert r.json()["tipo"] == TipoErro.BACKEND
+
+
+def test_repo_desconhecido_em_operacao_da_404_na_hora(cliente: TestClient) -> None:
+    r = cliente.post(
+        "/api/repos/inexistente/versoes/1.0.0/verificacao", json={"auditar": False}
+    )
+    assert r.status_code == HTTPStatus.NOT_FOUND
+    assert r.json()["tipo"] == TipoErro.NAO_ENCONTRADO
+
+
+def test_corpo_invalido_segue_o_formato_da_api(cliente: TestClient) -> None:
+    r = cliente.post("/api/repos", json={})
+    assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert set(r.json()) == {"tipo", "mensagem"}
+    assert r.json()["tipo"] == TipoErro.ENTRADA
