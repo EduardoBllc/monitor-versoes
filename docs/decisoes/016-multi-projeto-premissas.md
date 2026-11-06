@@ -2,7 +2,8 @@
 
 - **Status:** substituída por [024](024-config-por-projeto.md) no ponto "sem config por
   projeto", e pela #114/024 no ponto da convenção de mensagem (`ch<num>`); vale nos
-  demais pontos
+  demais pontos; e pela [029](029-repos-na-config-central.md) no ponto da linha numa tabela
+  (os repos são seções da config)
 - **Data:** 2026-08-21
 - **Depende de:** [009](009-inferencia-de-base.md)
 

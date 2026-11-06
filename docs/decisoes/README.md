@@ -39,3 +39,4 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 26. [026](026-esquema-e-atribuicao-plugaveis.md) — esquema de versão e política de atribuição plugáveis; liberada e nomes de branch em camadas (config > esquema > padrão), com `semver`, `exata`, `main` e tag `{versao}` como padrão.
 27. [027](027-fonte-de-tarefas-plugavel.md) — fonte de tarefas plugável e sem padrão no núcleo, carregada só no uso; `sistema` e `piso` saem do banco e ficam só na config.
 28. [028](028-inscricoes-fora-do-estado.md) — inscrições num arquivo local fora do estado (clone e `.env` são da máquina); um processo por inscrição isola o ambiente.
+29. [029](029-repos-na-config-central.md) — repos são seções `[repos.<nome>]` do `config.toml` central, com `caminho`; saem `.monitor-versoes.toml`, aliases e `PROJECTS_DIR`; a linha `repo` nasce no primeiro uso.

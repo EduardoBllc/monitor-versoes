@@ -119,8 +119,6 @@ Preencha no `.env`:
 
 - As credenciais da fonte de tarefas, com os nomes que o plugin dela documenta. Dispensáveis
   se você só usar `--task-source manual`.
-- `PROJECTS_DIR` — raiz onde `--repo <nome>` é procurado (com `PROJECTS_DIR=/home/voce/Projetos`,
-  `--repo meu-repo` é `/home/voce/Projetos/meu-repo`; use path absoluto, `~` não é expandido). Sem ela, passe o path em `--repo`.
 - `BITBUCKET_TOKEN`, `BITBUCKET_EMAIL` — opcionais; veja "Fontes de tasks e de commits".
 
 Cada variável está comentada no `.env`.
@@ -148,27 +146,20 @@ motor migrar-estado --de sqlite:///$HOME/.local/share/monitor-versoes/estado.db 
 
 Depois, troque `DATABASE_BACKEND` no `.env`: o comando não altera a configuração.
 
-### Cadastrar os repositórios
-
-Cada repositório é cadastrado uma vez, antes do primeiro comando nele:
-
-```bash
-motor repo adicionar meu-repo
-```
-
-O nome é o do diretório do repositório (o basename do path de `--repo`). O resto do que é
-específico do repo vem da config abaixo.
-
 ### Configurar por projeto
 
-Dois arquivos TOML, mesclados chave a chave com o do repo vencendo: o padrão do operador em
-`~/.config/monitor-versoes/config.toml` (ou `$XDG_CONFIG_HOME/monitor-versoes/config.toml`) e
-o específico do projeto em `.monitor-versoes.toml`, na raiz do repositório. Credenciais
-continuam no `.env`.
+Um só arquivo TOML, `~/.config/monitor-versoes/config.toml` (ou
+`$XDG_CONFIG_HOME/monitor-versoes/config.toml`), em duas camadas mescladas chave a chave: o
+topo vale para todos os repos e cada `[repos.<nome>]` o sobrescreve. O `<nome>` é o que você
+passa em `--repo`. Credenciais continuam no `.env`. Exemplo:
 
 ```toml
+[repos.meu-repo]
+caminho = "~/Projetos/meu-repo"   # obrigatório: o clone; `~` é expandido
+[repos.meu-repo.versao]
+piso = "13.0.0"   # menor versão cujas tarefas são buscadas; só vale na seção, sem ele nada é cortado
+
 [versao]
-piso = "13.0.0"   # menor versão cujas tarefas são buscadas; sem ele nada é cortado
 # esquema = "semver"     # esquema de versão (entry point instalado)
 # atribuicao = "exata"   # política de atribuição: exata ou composta
 
@@ -187,18 +178,27 @@ fonte = "minha-fonte"   # fonte de tarefas (entry point instalado); sem ela, só
 # padrao = "ch{id}"   # como a tarefa aparece no commit; o tracker propõe um, a config sobrescreve
 ```
 
-Os templates têm exatamente um `{versao}`. Esquema e política são lidos só quando um comando
+As chaves abaixo do topo também valem dentro de `[repos.<nome>]` (por exemplo
+`[repos.meu-repo.tarefas]`), vencendo o topo. Os templates têm exatamente um `{versao}`. Esquema e política são lidos só quando um comando
 os usa, e o `piso` é validado pelo esquema: config inválida não impede `atualizar --abort`.
 O porquê: [026](docs/decisoes/026-esquema-e-atribuicao-plugaveis.md).
 
 A fonte de tarefas é um plugin, como o esquema e a atribuição: o nome de um entry point do
-grupo `monitor_versoes.tarefas` ou, só no `config.toml` central, um `modulo:Classe`. O núcleo
+grupo `monitor_versoes.tarefas` ou um `modulo:Classe`. O núcleo
 não traz fonte própria: sem `fonte`, a primeira busca de tarefas falha pedindo a chave (ou
 `--task-source manual --lista <arquivo>`). Fora `fonte`, as chaves de `[tarefas]` são do
 plugin, que as recebe como estão e as cobra na primeira busca. O plugin só é carregado
 quando um comando busca tarefas ou precisa da referência: fonte inválida não impede
 `atualizar --abort`, e `reconstruir-estado` roda sem fonte se houver `[referencia] padrao`.
 O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
+Os repos na config: [029](docs/decisoes/029-repos-na-config-central.md).
+
+#### Vindo de uma versão antiga
+
+Para cada repo que já está no banco, crie `[repos.<nome>]` com o mesmo nome que ele tem lá e
+mova para a seção as chaves do antigo `.monitor-versoes.toml` (o `piso` vai para
+`[repos.<nome>.versao]`). Confira com `motor diagnostico`. Inscrições antigas são
+descartadas com um aviso: inscreva de novo com o nome da seção.
 
 O `padrao` é um template com exatamente um `{id}`; o resto é literal e a caixa é ignorada.
 O alfabeto do id (que caracteres ele pode ter) vem do adapter do tracker e a config não o
@@ -221,30 +221,21 @@ começando por letra ou dígito.
    ...
    ```
 
-2. A instalação está íntegra — o diagnóstico checa variáveis, banco, migração, `PROJECTS_DIR`
-   e credenciais, e sai com código 1 se alguma peça falhar:
+2. A instalação está íntegra — o diagnóstico checa variáveis, banco, migração, os repos
+   configurados e credenciais, e sai com código 1 se alguma peça falhar:
 
    ```console
    $ motor diagnostico
    OK  Variáveis: todas preenchidas
    OK  SQLite: conexão funciona
    OK  Migração: revisão a7c3e9d1f2b4
-   não configurado  PROJECTS_DIR: --repo aceita caminho absoluto
+   OK  Repos: 1 repo(s) configurado(s)
    OK  Tarefas: credenciais aceitas
    não configurado  Bitbucket: sem BITBUCKET_TOKEN
    ```
 
    Cada `FALHA` traz a correção na própria linha. Migração pendente se corrige com
    `motor migrar` (`motor --env development migrar` no desenvolvimento).
-
-3. O repositório está cadastrado:
-
-   ```console
-   $ motor repo adicionar meu-repo
-   repo 'meu-repo' adicionado
-   ```
-
-   `ERROR: repo 'meu-repo' ja cadastrado` também serve: o banco responde e o repo está lá.
 
 ## Uso
 
@@ -261,7 +252,7 @@ motor tui                                           # interface interativa
 motor inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
 ```
 
-Todos os comandos de versão aceitam `--repo` (path, ou nome dentro de `PROJECTS_DIR`),
+Todos os comandos de versão aceitam `--repo` (o nome de uma seção `[repos.<nome>]`),
 `--debug`, `--sem-progresso`, `--task-source` e `--lista`. `motor <comando> -h` lista
 o resto.
 
@@ -336,10 +327,11 @@ desfecho):
 | --- | --- |
 | `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | Só com `DATABASE_BACKEND=postgres`: o Postgres não está no ar. `docker compose up -d --wait`. No SQLite, confira `DATABASE_SQLITE_PATH` e as permissões do arquivo. |
 | `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração (Postgres). `motor migrar`; no SQLite o primeiro uso migra sozinho. |
-| `ERROR: repo 'meu-repo' desconhecido. Cadastre com: motor repo adicionar 'meu-repo'` | O repositório não foi cadastrado. Rode o comando sugerido. |
 | `ERROR: faltando [tarefas] fonte em ...; ou use --task-source manual --lista <arquivo>` | Nenhuma fonte de tarefas na config. Defina `[tarefas] fonte` no `config.toml` central, ou use a lista manual. |
-| `--repo nao encontrado: tentou 'meu-repo' e '(PROJECTS_DIR nao setada)'` | `--repo` não é um path existente e `PROJECTS_DIR` está vazia. Preencha `PROJECTS_DIR` no `.env` ou passe o path do repositório. |
-| `--repo nao encontrado: tentou 'meu-repo' e '/home/voce/Projetos/meu-repo'` | O diretório não existe dentro de `PROJECTS_DIR`. Confira o nome e o valor da variável. |
+| `ERROR: .../config.toml: repo 'meu-repo' sem seção [repos.meu-repo] (existentes: ...)` | `--repo` não é o nome de uma seção. Crie `[repos.meu-repo]` no `config.toml` central ou use um nome da lista (`(nenhuma)` se o arquivo não existe). |
+| `ERROR: .../config.toml: [repos.meu-repo] caminho é obrigatório` | A seção não tem `caminho`. Aponte para o clone. |
+| `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `motor diagnostico` checa todas as seções. |
+| `ERROR: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
 
 ## Próximos passos
 

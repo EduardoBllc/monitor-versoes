@@ -52,10 +52,9 @@ O diagnóstico não tem repo: avalia a fonte só com o `config.toml` central.
 
 Desde a [024](024-config-por-projeto.md), `sistema` e `piso` vêm da config e as colunas
 `repo.tickio_sistema_id` e `repo.piso_versao` eram ignoradas. Elas caem: a config é a fonte
-única, e `motor repo adicionar` pede só o nome. O downgrade recria as colunas com valores
+única, e o repo passa a ser só o nome. O downgrade recria as colunas com valores
 fixos, sem os originais, que estão nos arquivos de config.
 
 A migração não confere se os valores foram levados para a config, porque não enxerga os
-repos-alvo. Quem vem de um banco antigo roda antes, com o checkout antigo intacto, o script
-autocontido `scripts/migrar_banco_para_config.py`, que lê o banco e escreve os
-`.monitor-versoes.toml`; a ordem dos passos está na ajuda dele.
+repos-alvo. Quem vem de um banco antigo leva `sistema` e `piso` para a seção do repo
+([029](029-repos-na-config-central.md)) antes de migrar.

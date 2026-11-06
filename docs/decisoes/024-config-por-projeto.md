@@ -1,6 +1,7 @@
 # Config por projeto, em duas camadas
 
-- **Status:** aceita
+- **Status:** substituída por [029](029-repos-na-config-central.md) nas camadas, no import
+  path e na identidade do repo; vale nos demais pontos
 - **Data:** 2026-11-03
 - **Depende de:** [016](016-multi-projeto-premissas.md), [019](019-montagem-no-front-end.md),
   [023](023-onde-nao-se-abstrai.md)
