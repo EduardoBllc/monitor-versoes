@@ -10,6 +10,8 @@ dependencies = [
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
     "desktop-notifier>=6.2.0",
+    "fastapi>=0.162.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.optional-dependencies]
