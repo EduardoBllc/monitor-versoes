@@ -4,7 +4,6 @@ import dataclasses
 import datetime
 import enum
 import io
-import re
 from functools import partial
 from pathlib import Path
 from threading import Event
@@ -17,7 +16,6 @@ from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 import motor.montagem as montagem
 import motor.tui as tui
 from motor.adapters.estado.fake import FakeEstado
-from motor.config import CHAVE_CAMINHO, SECAO_REPOS
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
@@ -43,6 +41,7 @@ from motor.tui import (
     renderizar_chamado,
     renderizar_status,
 )
+from tests.config_repos import secao_repo
 from tests.fontes_falsas import FonteFixa
 from tests.versionamento import ESCALONADO_COMPOSTA
 
@@ -75,12 +74,7 @@ def _checkout(raiz: Path, nome: str) -> Path:
 def _registrar_repo(
     central: Path, nome: str, checkout: Path, topo: str = "", do_repo: str = ""
 ) -> None:
-    """Escreve o `config.toml` central com `[repos.<nome>]`; `do_repo` usa
-    cabeçalhos relativos à seção (`[tarefas]` vira `[repos.<nome>.tarefas]`)."""
-    do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{nome}.", do_repo, flags=re.M)
-    central.write_text(
-        f'{topo}[{SECAO_REPOS}.{nome}]\n{CHAVE_CAMINHO} = "{checkout}"\n{do_repo}'
-    )
+    central.write_text(topo + secao_repo(nome, checkout, do_repo))
 
 
 def test_descobrir_repos_vem_da_config(tmp_path, xdg_isolado):
@@ -2537,9 +2531,9 @@ def test_repos_do_ambiente_le_o_piso_da_secao(tmp_path, xdg_isolado):
 def test_secao_invalida_nao_derruba_a_lista(tmp_path, xdg_isolado):
     beta = _checkout(tmp_path, "beta")
     xdg_isolado.write_text(
-        f'[repos.alpha]\n{CHAVE_CAMINHO} = "{beta}"\n[repos.alpha.versao]\npiso = "abc"\n'
-        f'[repos.beta]\n{CHAVE_CAMINHO} = "{beta}"\n[repos.beta.versao]\npiso = "1.0.0"\n'
-        f'[repos.gamma]\n{CHAVE_CAMINHO} = "{tmp_path / "nao-existe"}"\n'
+        secao_repo("alpha", beta, '[versao]\npiso = "abc"\n')
+        + secao_repo("beta", beta, '[versao]\npiso = "1.0.0"\n')
+        + secao_repo("gamma", tmp_path / "nao-existe")
     )
 
     opcoes = {o.nome: o for o in tui._repos_do_ambiente()}

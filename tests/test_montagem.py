@@ -8,8 +8,6 @@ montagem tocar o git ou a rede, todo comando passa a pagar por ela — inclusive
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from motor import montagem
@@ -19,13 +17,7 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.atribuicoes import Exata
-from motor.config import (
-    CHAVE_CAMINHO,
-    SECAO_REPOS,
-    ConfigProjeto,
-    Escolhido,
-    validar_nome_repo,
-)
+from motor.config import ConfigProjeto, Escolhido, validar_nome_repo
 from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
@@ -39,6 +31,7 @@ from motor.montagem import (
     montar_task_source,
 )
 from motor.services.versionamento import Versionamento
+from tests.config_repos import secao_repo
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 
 
@@ -235,14 +228,9 @@ NOME_REPO = "repo"
 
 
 def _escrever_central(raiz, topo: str = "", do_repo: str = "") -> None:
-    """`config.toml` central com o topo e a seção do repo; `do_repo` usa os
-    cabeçalhos relativos à seção (`[tarefas]` vira `[repos.repo.tarefas]`)."""
     central = raiz.parent / "xdg" / "monitor-versoes"
     central.mkdir(parents=True, exist_ok=True)
-    do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{NOME_REPO}.", do_repo, flags=re.M)
-    (central / "config.toml").write_text(
-        f'{topo}[{SECAO_REPOS}.{NOME_REPO}]\n{CHAVE_CAMINHO} = "{raiz}"\n{do_repo}'
-    )
+    (central / "config.toml").write_text(topo + secao_repo(NOME_REPO, raiz, do_repo))
 
 
 @pytest.fixture

@@ -1,15 +1,14 @@
 """Versionamento: esquema, politica, piso e nomes nas camadas config > esquema > padrao."""
 
-import re
-
 import pytest
 
 from motor.atribuicoes import Exata
-from motor.config import CHAVE_CAMINHO, SECAO_REPOS, carregar_config_repo
+from motor.config import carregar_config_repo
 from motor.errors import ErroDeEntrada
 from motor.esquemas.semver import Semver
 from motor.montagem import resolver_versionamento
 from motor.services.versionamento import Versionamento
+from tests.config_repos import secao_repo
 
 _ESQUEMA_DE_TESTE = "tests.test_versionamento:EsquemaDeTeste"
 
@@ -26,8 +25,7 @@ NOME_REPO = "repo"
 
 @pytest.fixture
 def escrever(tmp_path, monkeypatch):
-    """Escreve o `config.toml` central: topo + `[repos.repo]`. `do_repo` usa
-    cabeçalhos relativos à seção (`[branches]` vira `[repos.repo.branches]`)."""
+    """Escreve o `config.toml` central: topo + a seção do repo."""
     xdg = tmp_path / "xdg"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     raiz = tmp_path / NOME_REPO
@@ -36,10 +34,7 @@ def escrever(tmp_path, monkeypatch):
     central = xdg / "monitor-versoes" / "config.toml"
 
     def _escrever(topo: str = "", do_repo: str = "") -> str:
-        do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{NOME_REPO}.", do_repo, flags=re.M)
-        central.write_text(
-            f'{topo}[{SECAO_REPOS}.{NOME_REPO}]\n{CHAVE_CAMINHO} = "{raiz}"\n{do_repo}'
-        )
+        central.write_text(topo + secao_repo(NOME_REPO, raiz, do_repo))
         return str(central)
 
     _escrever()

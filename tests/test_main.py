@@ -12,7 +12,6 @@ import contextlib
 import dataclasses
 import datetime
 import os
-import re
 import subprocess
 from enum import StrEnum
 from typing import Any
@@ -33,7 +32,7 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.config import CHAVE_CAMINHO, SECAO_REPOS
+from motor.config import SECAO_REPOS
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -48,6 +47,7 @@ from motor.errors import MotorError
 from motor.inscricoes import Inscricao
 from motor.montagem import CredenciaisBitbucket
 from motor.plugins import carregar_plugin
+from tests.config_repos import rotulo_secao, secao_repo
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 from tests.versionamento import ESCALONADO_COMPOSTA
 
@@ -305,14 +305,11 @@ def _central() -> str:
 
 
 def _repo_dir(tmp_path, nome: str = "webapp", do_repo: str = "") -> str:
-    """Cria o checkout, registra `[repos.<nome>]` na config central e devolve o
-    nome. `do_repo` usa cabeçalhos relativos à seção (`[tarefas]` vira
-    `[repos.<nome>.tarefas]`)."""
+    """Cria o checkout, registra a seção do repo na config central e devolve o nome."""
     caminho = tmp_path / nome
     caminho.mkdir()
-    do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{nome}.", do_repo, flags=re.M)
     with open(_central(), "a", encoding="utf-8") as f:
-        f.write(f'[{SECAO_REPOS}.{nome}]\n{CHAVE_CAMINHO} = "{caminho}"\n{do_repo}')
+        f.write(secao_repo(nome, caminho, do_repo))
     return nome
 
 
@@ -466,7 +463,7 @@ def test_fonte_da_config_recebe_o_sistema_do_repo(bordas, tmp_path):
     assert tarefas["fonte"] == _FIXA
     arquivos = recebido["arquivos"]
     assert isinstance(arquivos, tuple)
-    assert arquivos[-1] == f"{_central()} [{SECAO_REPOS}.{repo}]"
+    assert arquivos[-1] == rotulo_secao(_central(), repo)
 
 
 def test_verificar_busca_tarefas_pela_fonte_da_config(bordas, tmp_path, capsys):
@@ -500,7 +497,7 @@ def test_sem_fonte_a_busca_pede_a_chave(bordas, tmp_path, caplog):
     assert saida.value.code == 1
     # o topo e a seção do repo aparecem, unidos por "e"
     assert (
-        f"faltando [tarefas] fonte em {central} e {central} [{SECAO_REPOS}.{repo}]; "
+        f"faltando [tarefas] fonte em {central} e {rotulo_secao(central, repo)}; "
         "ou use --task-source manual --lista <arquivo>"
     ) in caplog.text
 
