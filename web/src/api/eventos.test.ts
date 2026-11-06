@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EstadoExecucao, EventoSse, Operacao } from "./enums";
+import { ErroApi } from "./cliente";
 import { acompanhar, type Execucao } from "./eventos";
 
+const ERRO = "error";
 type Ouvinte = (e: MessageEvent<string>) => void;
 
 class FalsoEventSource {
@@ -16,6 +18,9 @@ class FalsoEventSource {
   }
   close() {
     this.fechado = true;
+  }
+  emitirErro() {
+    this.ouvintes.get(ERRO)?.({} as MessageEvent<string>);
   }
   emitir(nome: EventoSse, dados: unknown) {
     this.ouvintes.get(nome)?.({ data: JSON.stringify(dados) } as MessageEvent<string>);
@@ -52,4 +57,12 @@ it("fim como primeiro evento resolve na hora", async () => {
   const promessa = acompanhar("meu-repo", () => undefined);
   FalsoEventSource.ultimo.emitir(EventoSse.FIM, EXECUCAO);
   expect(await promessa).toEqual(EXECUCAO);
+});
+
+it("erro de conexão fecha a fonte e rejeita com ErroApi", async () => {
+  const promessa = acompanhar("meu-repo", () => undefined);
+  const fonte = FalsoEventSource.ultimo;
+  fonte.emitirErro();
+  await expect(promessa).rejects.toBeInstanceOf(ErroApi);
+  expect(fonte.fechado).toBe(true);
 });

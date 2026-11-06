@@ -48,3 +48,7 @@ export enum EventoSse {
 export function assertNever(valor: never): never {
   throw new Error(`valor inesperado: ${String(valor)}`);
 }
+
+export enum EstadoChamado {
+  APLICADO = "aplicado",
+}
