@@ -14,9 +14,10 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
+from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
 from motor.daemon.erros import ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
@@ -24,7 +25,7 @@ from motor.domain.inscricao import UltimaExecucao
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult
 from motor.engine.consultar import ChamadoConsultado
-from motor.errors import NaoEncontrado, RecusaDeInvariante
+from motor.errors import ErroDeEntrada, NaoEncontrado, RecusaDeInvariante
 from motor.montagem import validar_nome_repo
 from motor.operacoes import (
     RepoOption,
@@ -32,12 +33,15 @@ from motor.operacoes import (
     VersionamentoLoader,
     VersionOption,
     avaliar_numero,
+    runners_com_progresso,
     versionamento_do_repo,
 )
 from motor.progresso import RelatorProgresso, silencioso
 from motor.services.versionamento import Versionamento
 
 INTERVALO_EVENTOS_S = 0.1
+ATRASO_NAVEGADOR_S = 1.0
+PASTA_ESTATICOS = Path(__file__).parent / "static"
 MENSAGEM_INDISPONIVEL = "operação indisponível neste ambiente"
 
 
@@ -298,6 +302,20 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
         arquivo.remover(ctx.inscricoes_em, corpo.clone, corpo.versao)
 
 
+def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:
+    raiz = estaticos.resolve()
+
+    @app.get("/{caminho:path}", include_in_schema=False)
+    def estatico(caminho: str) -> FileResponse:
+        if caminho == "api" or caminho.startswith("api/"):
+            raise NaoEncontrado(f"rota /{caminho} não existe")
+        alvo = (raiz / caminho).resolve()
+        # Fronteira de confiança: o caminho vem da URL e não pode sair de `raiz`.
+        if alvo.is_relative_to(raiz) and alvo.is_file():
+            return FileResponse(alvo)
+        return FileResponse(raiz / "index.html")
+
+
 def criar_app(  # noqa: PLR0913
     fabrica: Callable[[RelatorProgresso], Runners],
     *,
@@ -308,7 +326,6 @@ def criar_app(  # noqa: PLR0913
     versionamento_repo: VersionamentoLoader = versionamento_do_repo,
 ) -> FastAPI:
     app = FastAPI()
-    app.state.estaticos = estaticos  # a Tarefa 6 monta
     ctx = _Contexto(fabrica, versionamento_repo, inscricoes_em, ambiente)
     app.state.execucoes = ctx.execucoes  # gancho dos testes
     proteger(app, porta)
@@ -330,4 +347,41 @@ def criar_app(  # noqa: PLR0913
     _rotas_operacoes(app, ctx)
     _rotas_execucao(app, ctx)
     _rotas_inscricoes(app, ctx)
+    _rotas_estaticos(app, estaticos)
     return app
+
+
+def _abrir_navegador(url: str) -> None:
+    import webbrowser
+
+    webbrowser.open(url)
+
+
+def _rodar(app: FastAPI, porta: int) -> None:
+    import threading
+
+    import uvicorn
+
+    # Atrasa a abertura para o servidor já estar de pé; sem bloquear o uvicorn.
+    threading.Timer(
+        ATRASO_NAVEGADOR_S, _abrir_navegador, [f"http://127.0.0.1:{porta}/"]
+    ).start()
+    uvicorn.run(app, host="127.0.0.1", port=porta)
+
+
+def servir(ambiente: str, porta: int) -> None:
+    import socket
+
+    with socket.socket() as sonda:
+        try:
+            sonda.bind(("127.0.0.1", porta))
+        except OSError as erro:
+            raise ErroDeEntrada(f"porta {porta} em uso; use --porta") from erro
+    app = criar_app(
+        runners_com_progresso,
+        porta=porta,
+        estaticos=PASTA_ESTATICOS,
+        inscricoes_em=arquivo.caminho_arquivo(),
+        ambiente=ambiente,
+    )
+    _rodar(app, porta)

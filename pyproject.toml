@@ -43,7 +43,7 @@ build-backend = "setuptools.build_meta"
 include = ["motor*"]
 
 [tool.setuptools.package-data]
-motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*"]
+motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*", "daemon/static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

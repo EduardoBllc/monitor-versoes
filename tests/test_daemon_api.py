@@ -287,3 +287,35 @@ def test_corpo_invalido_segue_o_formato_da_api(cliente: TestClient) -> None:
     assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert set(r.json()) == {"tipo", "mensagem"}
     assert r.json()["tipo"] == TipoErro.ENTRADA
+
+
+def test_spa_serve_index_em_rota_do_front(cliente: TestClient, tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<p>spa</p>")
+    resposta = cliente.get("/r/alpha/v/14.0.0")
+    assert resposta.status_code == HTTPStatus.OK
+    assert resposta.text == "<p>spa</p>"
+
+
+def test_api_desconhecida_nao_cai_no_index(cliente: TestClient, tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<p>spa</p>")
+    resposta = cliente.get("/api/nada")
+    assert resposta.status_code == HTTPStatus.NOT_FOUND
+    assert resposta.json()["tipo"] == TipoErro.NAO_ENCONTRADO
+
+
+def test_estatico_nao_sai_da_pasta(cliente: TestClient, tmp_path: Path) -> None:
+    pasta = tmp_path / "static"
+    pasta.mkdir()
+    (pasta / "index.html").write_text("<p>spa</p>")
+    (tmp_path / "segredo.txt").write_text("segredo")
+    app = criar_app(
+        lambda relatar: cast(Runners, None),
+        porta=PORTA,
+        estaticos=pasta,
+        inscricoes_em=tmp_path / "i.json",
+        ambiente="development",
+    )
+    c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
+    resposta = c.get("/%2e%2e/segredo.txt")
+    assert "segredo" not in resposta.text
+    assert resposta.text == "<p>spa</p>"

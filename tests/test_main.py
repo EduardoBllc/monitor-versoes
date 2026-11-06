@@ -1358,3 +1358,17 @@ def test_executar_fora_do_help(capsys):
     saida = capsys.readouterr().out
     assert "listar" in saida
     assert "executar" not in saida
+
+
+def test_serve_com_porta_ocupada_sai_com_uma_linha(bordas, caplog):
+    import socket
+
+    with socket.socket() as ocupada:
+        ocupada.bind(("127.0.0.1", 0))
+        porta = ocupada.getsockname()[1]
+        ocupada.listen()
+        with pytest.raises(SystemExit) as saida:
+            main(["serve", "--porta", str(porta)])
+
+    assert saida.value.code == 1
+    assert caplog.messages == [f"porta {porta} em uso; use --porta"]

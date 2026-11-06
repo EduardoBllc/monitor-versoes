@@ -44,6 +44,7 @@ def test_wheel_contem_migracoes_e_modelos(tmp_path: Path):
         "motor/migracoes/script.py.mako",
         "motor/modelos/compose.yml",
         "motor/modelos/env.example",
+        "motor/daemon/static/index.html",
     }
     versions = RAIZ / "motor" / "migracoes" / "versions"
     esperados |= {f"motor/migracoes/versions/{f.name}" for f in versions.glob("*.py")}
