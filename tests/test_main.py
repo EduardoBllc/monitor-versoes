@@ -1312,3 +1312,37 @@ def test_executar_fora_do_help(capsys):
     saida = capsys.readouterr().out
     assert "listar" in saida
     assert "executar" not in saida
+
+
+def test_serve_com_porta_ocupada_sai_com_uma_linha(bordas, caplog):
+    import socket
+
+    with socket.socket() as ocupada:
+        ocupada.bind(("127.0.0.1", 0))
+        porta = ocupada.getsockname()[1]
+        ocupada.listen()
+        with pytest.raises(SystemExit) as saida:
+            main(["serve", "--porta", str(porta)])
+
+    assert saida.value.code == 1
+    assert caplog.messages == [f"porta {porta} em uso; use --porta"]
+
+
+def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
+    import socket
+
+    import motor.daemon.app as daemon_app
+
+    with socket.socket() as escuta:
+        escuta.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # como o uvicorn
+        escuta.bind(("127.0.0.1", 0))
+        porta = escuta.getsockname()[1]
+        escuta.listen()
+        with socket.create_connection(("127.0.0.1", porta)) as cliente:
+            conexao, _ = escuta.accept()
+            conexao.close()  # o lado servidor fecha primeiro e fica em TIME_WAIT
+            cliente.recv(1)
+    rodou = []
+    monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
+    daemon_app.servir("development", porta)
+    assert rodou == [porta]

@@ -36,6 +36,7 @@ from motor.config import (
     repos_configurados,
     validar_nome_repo,
 )
+from motor.daemon import PORTA_PADRAO
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
@@ -381,6 +382,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="abre a interface interativa de consulta, verificacao e atualizacao",
     )
 
+    p_serve = sub.add_parser("serve", help="sobe a interface web local")
+    p_serve.add_argument("--porta", type=int, default=PORTA_PADRAO)
+
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
     sub.add_parser("init", help="escreve compose.yml e .env no diretório atual")
@@ -432,6 +436,12 @@ def _build_parser() -> argparse.ArgumentParser:
     acoes_insc.add_parser(AcaoInscricao.EXECUTAR, parents=[repo_arg])
 
     return parser
+
+
+def _iniciar_serve(ambiente: str, porta: int) -> None:
+    from motor.daemon.app import servir
+
+    servir(ambiente, porta)
 
 
 def _iniciar_tui(ambiente: str) -> None:
@@ -706,6 +716,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
+        if args.comando == "serve":
+            _iniciar_serve(args.env, args.porta)
+            return
+
         if args.comando == "tui":
             _iniciar_tui(args.env)
             return

@@ -7,7 +7,7 @@ como escrever código e teste, em [docs/padroes/codigo.md](docs/padroes/codigo.m
 
 ## Setup de desenvolvimento
 
-Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, `make` e, para o Postgres de desenvolvimento e os testes de integração, Docker.
+Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, `make`, Node 24 e npm (exigidos pelo portão) e, para o Postgres de desenvolvimento e os testes de integração, Docker.
 
 ```bash
 make setup         # uv sync --all-extras, cria .env.development, instala o pre-commit
@@ -42,7 +42,7 @@ O banco de desenvolvimento serve para usar o CLI à mão sem tocar produção.
 ## Verificações
 
 ```bash
-make check   # ruff format --check, ruff check, mypy, pytest -rs
+make check   # ruff format --check, ruff check, mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist
 make fmt     # formata e aplica os fixes automáticos do ruff
 ```
 
@@ -52,6 +52,24 @@ do pytest lista o motivo de cada skip — confira se a integração rodou.
 
 O `make setup` instala o [pre-commit](.pre-commit-config.yaml): ruff (format e check) e
 mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de abrir o PR.
+
+## Front-end web
+
+`web/` é a SPA do `motor serve` ([decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md)).
+
+```bash
+# terminal 1, na raiz do repo
+uv run motor serve
+
+# terminal 2
+cd web
+npm ci               # instala as dependências
+npm run dev          # Vite, com proxy de /api para o daemon
+npm run tipos        # depois de mudar a API
+```
+
+O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
+`web/src/api/esquema.ts`) são versionados: rode `make web-dist` antes de commitar.
 
 ## Armadilhas do ambiente
 
