@@ -237,13 +237,20 @@ def test_runner_opcional_ausente_falha_com_erro_claro(
 
 
 def test_avaliacao_recusa_numero_existente_e_aceita_sugestao(
-    cliente: TestClient,
+    cliente: TestClient, amb: Ambiente
 ) -> None:
+    amb.versoes = []  # só as existentes do pedido valem: nada de carregar_versoes
     url = f"/api/repos/{REPO}/versoes/avaliacao"
-    assert cliente.post(url, json={"numero": VERSAO}).json()["erro"] != ""
-    sugestoes = cliente.get(f"/api/repos/{REPO}/versoes/sugestoes").json()
+    existentes = [VERSAO]
+    pedido = {"numero": VERSAO, "existentes": existentes}
+    assert cliente.post(url, json=pedido).json()["erro"] != ""
+    sugestoes = cliente.post(
+        f"/api/repos/{REPO}/versoes/sugestoes", json={"existentes": existentes}
+    ).json()
     assert sugestoes
-    aceita = cliente.post(url, json={"numero": sugestoes[0]["numero"]}).json()
+    assert VERSAO not in [s["numero"] for s in sugestoes]
+    pedido = {"numero": sugestoes[0]["numero"], "existentes": existentes}
+    aceita = cliente.post(url, json=pedido).json()
     assert aceita["erro"] == ""
     assert aceita["previa"] != ""
 

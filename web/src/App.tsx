@@ -57,7 +57,10 @@ import {
 } from "./execucoes";
 import { caminhoDe, lerCaminho } from "./rotas";
 
-const queryClient = new QueryClient();
+// Sem refetch ao voltar do editor nem retry: cada leitura de versões faz git fetch.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { refetchOnWindowFocus: false, retry: false } },
+});
 const ALTURA_BARRA = 64;
 const chave = (repo: string, versao: string): string => `${repo}@${versao}`;
 
@@ -435,6 +438,7 @@ function Tela() {
       {repo !== undefined && (
         <ModalCriar
           repo={repo}
+          existentes={versoes.data?.map((v) => v.numero) ?? []}
           aberto={criando}
           aoFechar={() => setCriando(false)}
           aoCriar={(numero) => void disparar(base, { numero })}

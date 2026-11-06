@@ -147,9 +147,9 @@
       }
     },
     "/api/repos/{repo}/versoes/sugestoes": {
-      "get": {
+      "post": {
         "summary": "Sugerir",
-        "operationId": "sugerir_api_repos__repo__versoes_sugestoes_get",
+        "operationId": "sugerir_api_repos__repo__versoes_sugestoes_post",
         "parameters": [
           {
             "name": "repo",
@@ -161,6 +161,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoSugestoes"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -171,7 +181,7 @@
                   "items": {
                     "$ref": "#/components/schemas/Sugestao"
                   },
-                  "title": "Response Sugerir Api Repos  Repo  Versoes Sugestoes Get"
+                  "title": "Response Sugerir Api Repos  Repo  Versoes Sugestoes Post"
                 }
               }
             }
@@ -209,7 +219,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NumeroVersao"
+                "$ref": "#/components/schemas/PedidoAvaliacao"
               }
             }
           }
@@ -580,6 +590,49 @@
                     }
                   ],
                   "title": "Response Execucao Atual Api Repos  Repo  Execucao Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/pendencias": {
+      "get": {
+        "summary": "Pendencias",
+        "operationId": "pendencias_api_repos__repo__pendencias_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Execucao"
+                  },
+                  "title": "Response Pendencias Api Repos  Repo  Pendencias Get"
                 }
               }
             }
@@ -1067,6 +1120,27 @@
         ],
         "title": "Operacao"
       },
+      "PedidoAvaliacao": {
+        "properties": {
+          "numero": {
+            "type": "string",
+            "title": "Numero"
+          },
+          "existentes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Existentes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "numero",
+          "existentes"
+        ],
+        "title": "PedidoAvaliacao"
+      },
       "PedidoContinuar": {
         "properties": {
           "allow_empty": {
@@ -1115,6 +1189,22 @@
           "versao"
         ],
         "title": "PedidoRemover"
+      },
+      "PedidoSugestoes": {
+        "properties": {
+          "existentes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Existentes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "existentes"
+        ],
+        "title": "PedidoSugestoes"
       },
       "PedidoVerificacao": {
         "properties": {

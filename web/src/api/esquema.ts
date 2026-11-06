@@ -47,10 +47,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Sugerir */
-        get: operations["sugerir_api_repos__repo__versoes_sugestoes_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Sugerir */
+        post: operations["sugerir_api_repos__repo__versoes_sugestoes_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -185,6 +185,23 @@ export interface paths {
         };
         /** Execucao Atual */
         get: operations["execucao_atual_api_repos__repo__execucao_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{repo}/pendencias": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pendencias */
+        get: operations["pendencias_api_repos__repo__pendencias_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -374,6 +391,13 @@ export interface components {
          * @enum {string}
          */
         Operacao: "verificar" | "previa" | "atualizar" | "continuar" | "abortar" | "criar";
+        /** PedidoAvaliacao */
+        PedidoAvaliacao: {
+            /** Numero */
+            numero: string;
+            /** Existentes */
+            existentes: string[];
+        };
         /** PedidoContinuar */
         PedidoContinuar: {
             /** Allow Empty */
@@ -392,6 +416,11 @@ export interface components {
             clone: string;
             /** Versao */
             versao: string;
+        };
+        /** PedidoSugestoes */
+        PedidoSugestoes: {
+            /** Existentes */
+            existentes: string[];
         };
         /** PedidoVerificacao */
         PedidoVerificacao: {
@@ -642,7 +671,7 @@ export interface operations {
             };
         };
     };
-    sugerir_api_repos__repo__versoes_sugestoes_get: {
+    sugerir_api_repos__repo__versoes_sugestoes_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -651,7 +680,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoSugestoes"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -684,7 +717,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NumeroVersao"];
+                "application/json": components["schemas"]["PedidoAvaliacao"];
             };
         };
         responses: {
@@ -926,6 +959,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Execucao"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pendencias_api_repos__repo__pendencias_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Execucao"][];
                 };
             };
             /** @description Validation Error */

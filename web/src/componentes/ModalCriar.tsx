@@ -10,11 +10,13 @@ const DEBOUNCE_MS = 200;
 
 export function ModalCriar({
   repo,
+  existentes,
   aberto,
   aoFechar,
   aoCriar,
 }: {
   repo: string;
+  existentes: readonly string[];
   aberto: boolean;
   aoFechar: () => void;
   aoCriar: (numero: string) => void;
@@ -23,8 +25,9 @@ export function ModalCriar({
   const [atrasado] = useDebouncedValue(numero.trim(), DEBOUNCE_MS);
   const base = `/api/repos/${encodeURIComponent(repo)}/versoes`;
   const sugestoes = useQuery({
-    queryKey: ["sugestoes", repo],
-    queryFn: () => api<Sugestao[]>(Metodo.GET, `${base}/sugestoes`),
+    queryKey: ["sugestoes", repo, existentes],
+    queryFn: () =>
+      api<Sugestao[]>(Metodo.POST, `${base}/sugestoes`, { existentes }),
     enabled: aberto,
   });
   useEffect(() => {
@@ -35,9 +38,12 @@ export function ModalCriar({
     aoFechar();
   };
   const avaliacao = useQuery({
-    queryKey: ["avaliacao", repo, atrasado],
+    queryKey: ["avaliacao", repo, existentes, atrasado],
     queryFn: () =>
-      api<Avaliacao>(Metodo.POST, `${base}/avaliacao`, { numero: atrasado }),
+      api<Avaliacao>(Metodo.POST, `${base}/avaliacao`, {
+        numero: atrasado,
+        existentes,
+      }),
     enabled: aberto && atrasado !== "",
   });
 

@@ -61,6 +61,17 @@ class NumeroVersao:
 
 
 @dataclass(frozen=True)
+class PedidoSugestoes:
+    existentes: list[str]
+
+
+@dataclass(frozen=True)
+class PedidoAvaliacao:
+    numero: str
+    existentes: list[str]
+
+
+@dataclass(frozen=True)
 class PedidoVerificacao:
     auditar: bool
 
@@ -162,21 +173,19 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
     def listar_versoes(repo: str) -> list[VersionOption]:
         return ctx.leitura().carregar_versoes(ctx.achar(repo))
 
-    @app.get("/api/repos/{repo}/versoes/sugestoes")
-    def sugerir(repo: str) -> list[Sugestao]:
-        runners = ctx.leitura()
-        opcao = ctx.achar(repo)
-        esquema = ctx.versionamento(runners, opcao).esquema
-        existentes = [v.numero for v in runners.carregar_versoes(opcao)]
-        return [Sugestao(n, esquema.tipo(n)) for n in esquema.sugerir(existentes)]
+    # As versões existentes vêm da lista que o cliente já tem, como na TUI:
+    # carregar de novo faria um git fetch por tecla digitada.
+    @app.post("/api/repos/{repo}/versoes/sugestoes")
+    def sugerir(repo: str, corpo: PedidoSugestoes) -> list[Sugestao]:
+        esquema = ctx.versionamento(ctx.leitura(), ctx.achar(repo)).esquema
+        return [Sugestao(n, esquema.tipo(n)) for n in esquema.sugerir(corpo.existentes)]
 
     @app.post("/api/repos/{repo}/versoes/avaliacao")
-    def avaliar(repo: str, corpo: NumeroVersao) -> Avaliacao:
-        runners = ctx.leitura()
-        opcao = ctx.achar(repo)
-        existentes = [v.numero for v in runners.carregar_versoes(opcao)]
+    def avaliar(repo: str, corpo: PedidoAvaliacao) -> Avaliacao:
         previa, erro = avaliar_numero(
-            ctx.versionamento(runners, opcao), existentes, corpo.numero
+            ctx.versionamento(ctx.leitura(), ctx.achar(repo)),
+            corpo.existentes,
+            corpo.numero,
         )
         return Avaliacao(previa, erro)
 
