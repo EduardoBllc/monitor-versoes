@@ -1024,7 +1024,7 @@ def test_diagnostico_esta_no_parser_sem_exigir_repo():
 def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     monkeypatch, capsys, falha, codigo
 ):
-    from motor.diagnostico import Estado, Resultado
+    from motor.diagnostico import Estado, Peca, Resultado
 
     estado = Estado.FALHA if falha else Estado.OK
     monkeypatch.setattr(cli, "load_dotenv", None)
@@ -1032,7 +1032,7 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     monkeypatch.setattr(
         cli,
         "diagnosticar",
-        lambda *a, **k: [Resultado("Postgres", estado, "x", "docker compose up -d")],
+        lambda *a, **k: [Resultado(Peca.POSTGRES, estado, "x", "docker compose up -d")],
     )
     monkeypatch.setattr(
         cli, "abrir_sessao", lambda: pytest.fail("não abre sessão por conta própria")

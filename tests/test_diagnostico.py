@@ -11,9 +11,15 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from motor.config import SECAO_REPOS, ConfigProjeto, carregar_config_global
+from motor.config import (
+    SECAO_REPOS,
+    ConfigProjeto,
+    carregar_config_global,
+    repos_configurados,
+)
 from motor.diagnostico import (
     Estado,
+    Peca,
     Resultado,
     diagnosticar,
     falhou,
@@ -32,6 +38,7 @@ ENV_OK = {
     "DATABASE_PASSWORD": "senha-secreta",
 }
 
+CAMINHO_INEXISTENTE = "/nao/existe"
 TABELA_REPO = "CREATE TABLE repo (id INTEGER PRIMARY KEY, nome TEXT)"
 
 
@@ -233,8 +240,8 @@ def test_credenciais_nunca_aparecem():
 def test_nao_verificada_e_nao_configurado_nao_falham():
     assert not falhou(
         [
-            Resultado("a", Estado.NAO_VERIFICADA),
-            Resultado("b", Estado.NAO_CONFIGURADO),
+            Resultado(Peca.VARIAVEIS, Estado.NAO_VERIFICADA),
+            Resultado(Peca.TAREFAS, Estado.NAO_CONFIGURADO),
         ]
     )
 
@@ -366,7 +373,7 @@ def test_estado_sem_secao_avisa(tmp_path):
 
     assert _repos_de(resultados) == [
         Resultado(
-            "Repos",
+            Peca.REPOS,
             Estado.AVISO,
             f"estado de 'vb2web' no banco sem seção [{SECAO_REPOS}.vb2web] "
             "no config.toml",
@@ -377,12 +384,12 @@ def test_estado_sem_secao_avisa(tmp_path):
 
 
 def test_caminho_inexistente_falha():
-    _, resultados = _rodar(repos=lambda: {"x": "/nao/existe"})
+    _, resultados = _rodar(repos=lambda: {"x": CAMINHO_INEXISTENTE})
 
     (linha,) = _repos_de(resultados)
     assert linha.estado is Estado.FALHA
     assert f"[{SECAO_REPOS}.x]" in linha.detalhe
-    assert "/nao/existe" in linha.detalhe
+    assert CAMINHO_INEXISTENTE in linha.detalhe
     assert falhou(resultados)
 
 
@@ -401,12 +408,12 @@ def test_repos_ok(tmp_path):
     )
 
     assert _repos_de(resultados) == [
-        Resultado("Repos", Estado.OK, "2 repo(s) configurado(s)")
+        Resultado(Peca.REPOS, Estado.OK, "2 repo(s) configurado(s)")
     ]
 
 
 def test_banco_fora_nao_verifica_repos():
-    _, resultados = _rodar(abrir=_banco_fora, repos=lambda: {"x": "/nao/existe"})
+    _, resultados = _rodar(abrir=_banco_fora, repos=lambda: {"x": CAMINHO_INEXISTENTE})
 
     estados = [r.estado for r in _repos_de(resultados)]
     assert Estado.NAO_VERIFICADA in estados
@@ -425,8 +432,6 @@ def test_config_invalida_falha_repos():
 
 
 def test_repos_le_o_config_toml_real(tmp_path, monkeypatch):
-    from motor.config import repos_configurados
-
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     central = tmp_path / "monitor-versoes" / "config.toml"
     central.parent.mkdir()
