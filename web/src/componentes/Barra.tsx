@@ -10,6 +10,7 @@ export interface PropsBarra {
   versoes: VersionOption[];
   versao?: string;
   ocupado: boolean;
+  bloqueadas?: string[];
   aoEscolherRepo: (nome: string) => void;
   aoEscolherVersao: (numero: string) => void;
   aoVerificar: (auditar: boolean) => void;
@@ -54,7 +55,13 @@ export function Barra(p: PropsBarra) {
         value={p.versao ?? null}
         data={p.versoes.map((v) => ({
           value: v.numero,
-          label: v.liberada ? `${v.numero}  ·  liberada` : v.numero,
+          label: [
+            v.numero,
+            v.liberada && "liberada",
+            p.bloqueadas?.includes(v.numero) && "bloqueada",
+          ]
+            .filter(Boolean)
+            .join("  ·  "),
         }))}
         onChange={(v) => v && p.aoEscolherVersao(v)}
         allowDeselect={false}

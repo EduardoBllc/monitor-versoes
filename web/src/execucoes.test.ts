@@ -1,9 +1,10 @@
 import { expect, it } from "vitest";
-import { EstadoExecucao, Operacao } from "./api/enums";
+import { AtualizarStatus, EstadoExecucao, Operacao, TipoErro } from "./api/enums";
 import type { Execucao } from "./api/eventos";
 import {
   SEM_EXECUCOES,
   TipoEfeito,
+  avisoPendencia,
   concluir,
   estaRodando,
   iniciar,
@@ -52,4 +53,80 @@ it("resultado carrega repo, versão e auditar", () => {
   expect(concluir(e, fim("A", Operacao.VERIFICAR), "B")?.tipo).toBe(
     TipoEfeito.AVISAR,
   );
+});
+
+const atualizacao = (
+  operacao: Operacao,
+  status: AtualizarStatus,
+  versao = "14.0.0",
+): Execucao => ({
+  ...fim("A", operacao),
+  versao,
+  resultado: { status },
+});
+
+it("atualização fora da tela avisa com repo, versão e desfecho", () => {
+  const e = SEM_EXECUCOES;
+  const bloq = concluir(
+    e,
+    atualizacao(Operacao.ATUALIZAR, AtualizarStatus.BLOCKED),
+    "B",
+    "14.0.0",
+  );
+  expect(bloq).toEqual({
+    tipo: TipoEfeito.AVISAR,
+    mensagem: "A 14.0.0: atualização bloqueada",
+    destino: { repo: "A", versao: "14.0.0" },
+  });
+  // mesma repo, outra versão na tela
+  const outra = concluir(
+    e,
+    atualizacao(Operacao.CONTINUAR, AtualizarStatus.DONE),
+    "A",
+    "15.0.0",
+  );
+  expect(outra).toEqual({
+    tipo: TipoEfeito.AVISAR,
+    mensagem: "A 14.0.0: atualização concluída",
+  });
+  expect(
+    concluir(e, atualizacao(Operacao.ABORTAR, AtualizarStatus.DONE), "B")
+      ?.tipo,
+  ).toBe(TipoEfeito.AVISAR);
+  // na tela: o estado da atualização já mostra
+  expect(
+    concluir(
+      e,
+      atualizacao(Operacao.ATUALIZAR, AtualizarStatus.BLOCKED),
+      "A",
+      "14.0.0",
+    ),
+  ).toBeNull();
+});
+
+it("atualização que falhou fora da tela nomeia repo e versão", () => {
+  const falha: Execucao = {
+    ...fim("A", Operacao.ATUALIZAR),
+    estado: EstadoExecucao.FALHOU,
+    erro: { tipo: TipoErro.MOTOR, mensagem: "boom" },
+  };
+  const ef = concluir(SEM_EXECUCOES, falha, "B");
+  expect(ef).toMatchObject({ tipo: TipoEfeito.ERRO });
+  expect(ef && "mensagem" in ef && ef.mensagem).toContain("A 14.0.0");
+});
+
+it("bloqueio de outra versão achado ao recarregar vira aviso persistente", () => {
+  const bloq = atualizacao(Operacao.ATUALIZAR, AtualizarStatus.BLOCKED);
+  expect(avisoPendencia(bloq, "15.0.0")).toMatchObject({
+    tipo: TipoEfeito.AVISAR,
+    destino: { repo: "A", versao: "14.0.0" },
+  });
+  expect(avisoPendencia(bloq, "14.0.0")).toBeNull();
+  expect(
+    avisoPendencia(
+      atualizacao(Operacao.ATUALIZAR, AtualizarStatus.DONE),
+      "15.0.0",
+    ),
+  ).toBeNull();
+  expect(avisoPendencia(null, "15.0.0")).toBeNull();
 });

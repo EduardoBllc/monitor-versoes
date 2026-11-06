@@ -24,6 +24,7 @@ import {
   proximo,
   type EstadoAtualizacao,
   type Evento,
+  type EventoSimples,
 } from "./atualizacao";
 import { acompanhar, type Execucao } from "./api/eventos";
 import type { RepoOption, VersionOption } from "./api/tipos";
@@ -38,12 +39,14 @@ import { ModalResultado } from "./componentes/ModalResultado";
 import { PainelBloqueio } from "./componentes/PainelBloqueio";
 import { ResultadoAtualizacao } from "./componentes/ResultadoAtualizacao";
 import { Status } from "./componentes/Status";
+import { notificarPendencia } from "./componentes/notificarPendencia";
 import { notificarErro, notificarOk } from "./componentes/notificar";
 import { ProgressoExecucao } from "./componentes/ProgressoExecucao";
 import {
   PROGRESSO_INICIAL,
   SEM_EXECUCOES,
   TipoEfeito,
+  avisoPendencia,
   concluir,
   estaRodando,
   iniciar,
@@ -131,7 +134,7 @@ function Tela() {
   }, [repo, versao, repos.data, versoes.data, ir]);
 
   const seguir = useCallback(
-    async (nome: string, auditar = false) => {
+    async (nome: string, versaoAlvo: string, auditar = false) => {
       const { estado, seguir: abrir } = iniciar(execRef.current, nome, auditar);
       if (!abrir) return;
       mudar(() => estado);
@@ -141,11 +144,10 @@ function Tela() {
         );
         if (fim === null) {
           // Nada rodando mais: quem ficou em "aplicando" (409) volta ao que era.
-          if (versaoRef.current !== undefined)
-            despachar(chave(nome, versaoRef.current), {
-              tipo: TipoEventoAtualizacao.RECONECTOU,
-              execucao: null,
-            });
+          despachar(chave(nome, versaoAlvo), {
+            tipo: TipoEventoAtualizacao.RECONECTOU,
+            execucao: null,
+          });
           return;
         }
         despachar(chave(fim.repo, fim.versao), {
@@ -169,7 +171,12 @@ function Tela() {
           fim.estado !== EstadoExecucao.FALHOU
         )
           void cliente.invalidateQueries({ queryKey: ["versoes", nome] });
-        const efeito = concluir(execRef.current, fim, repoRef.current);
+        const efeito = concluir(
+          execRef.current,
+          fim,
+          repoRef.current,
+          versaoRef.current,
+        );
         if (efeito?.tipo === TipoEfeito.ERRO)
           notificarErro(new ErroApi(efeito.tipoErro, efeito.mensagem, 0));
         else if (efeito?.tipo === TipoEfeito.RESULTADO)
@@ -177,15 +184,22 @@ function Tela() {
         else if (efeito?.tipo === TipoEfeito.NAVEGAR) {
           notificarOk(`Versão ${efeito.versao} criada`);
           ir(efeito.repo, efeito.versao);
-        } else if (efeito?.tipo === TipoEfeito.AVISAR)
-          notificarOk(efeito.mensagem);
+        } else if (efeito?.tipo === TipoEfeito.AVISAR) {
+          const destino = efeito.destino;
+          if (destino)
+            notificarPendencia(
+              chave(destino.repo, destino.versao),
+              efeito.mensagem,
+              () => ir(destino.repo, destino.versao),
+            );
+          else notificarOk(efeito.mensagem);
+        }
       } catch (erro) {
         notificarErro(erro);
-        if (versaoRef.current !== undefined)
-          despachar(chave(nome, versaoRef.current), {
-            tipo: TipoEventoAtualizacao.RECONECTOU,
-            execucao: null,
-          });
+        despachar(chave(nome, versaoAlvo), {
+          tipo: TipoEventoAtualizacao.RECONECTOU,
+          execucao: null,
+        });
       } finally {
         mudar((e) => terminar(e, nome));
       }
@@ -206,10 +220,15 @@ function Tela() {
             tipo: TipoEventoAtualizacao.RECONECTOU,
             execucao: e,
           });
-        if (e?.estado === EstadoExecucao.RODANDO) return seguir(repo);
+        const aviso = avisoPendencia(e, versaoRef.current);
+        if (aviso?.tipo === TipoEfeito.AVISAR && aviso.destino) {
+          const { repo: r, versao: v } = aviso.destino;
+          notificarPendencia(chave(r, v), aviso.mensagem, () => ir(r, v));
+        }
+        if (e?.estado === EstadoExecucao.RODANDO) return seguir(repo, e.versao);
       })
       .catch(notificarErro);
-  }, [repo, seguir, despachar]);
+  }, [repo, seguir, despachar, ir]);
 
   const disparar = async (caminho: string, corpo: unknown, auditar = false) => {
     if (repo === undefined || versao === undefined) return;
@@ -228,7 +247,7 @@ function Tela() {
       }
       despachar(k, { tipo: TipoEventoAtualizacao.OCUPADO });
     }
-    await seguir(repo, auditar);
+    await seguir(repo, versao, auditar);
   };
 
   const base = `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`;
@@ -241,9 +260,20 @@ function Tela() {
     atualizacao.fase === FaseAtualizacao.VAZIA;
   const disponivel = repos.data?.find((r) => r.nome === repo)?.caminho != null;
   const acaoAtualizacao = `${base}/${encodeURIComponent(versao ?? "")}/atualizacao`;
-  const evento = (tipo: TipoEventoAtualizacao) => {
-    if (chaveAtual !== "") despachar(chaveAtual, { tipo } as Evento);
+  const evento = (tipo: EventoSimples) => {
+    if (chaveAtual !== "") despachar(chaveAtual, { tipo });
   };
+  const bloqueadas = Object.entries(atualizacoes).flatMap(([k, a]) =>
+    (a.fase === FaseAtualizacao.BLOQUEADA ||
+      a.fase === FaseAtualizacao.VAZIA) &&
+    repo !== undefined &&
+    k.startsWith(`${repo}@`)
+      ? [k.slice(repo.length + 1)]
+      : [],
+  );
+  const aplicando =
+    atualizacao.fase === FaseAtualizacao.PREVIA ||
+    atualizacao.fase === FaseAtualizacao.APLICANDO;
   const previa = () => {
     evento(TipoEventoAtualizacao.INICIOU);
     void disparar(`${base}/${encodeURIComponent(versao ?? "")}/previa`, undefined);
@@ -288,6 +318,7 @@ function Tela() {
           versoes={versoes.data ?? []}
           {...(versao && { versao })}
           ocupado={ocupado}
+          bloqueadas={bloqueadas}
           aoEscolherRepo={(nome) => ir(nome)}
           aoEscolherVersao={(numero) => repo && ir(repo, numero)}
           aoVerificar={(auditar) => {
@@ -325,7 +356,9 @@ function Tela() {
             ) : (
               <Button
                 color="orange"
-                disabled={ocupado || !disponivel || versao === undefined}
+                disabled={
+                  ocupado || aplicando || !disponivel || versao === undefined
+                }
                 onClick={previa}
               >
                 Atualizar

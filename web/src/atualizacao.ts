@@ -50,6 +50,12 @@ export type Evento =
   | { tipo: TipoEventoAtualizacao.OCUPADO }
   | { tipo: TipoEventoAtualizacao.RECONECTOU; execucao: Execucao | null };
 
+// Eventos sem payload, os que a tela dispara direto.
+export type EventoSimples = Extract<
+  Evento,
+  { tipo: TipoEventoAtualizacao.INICIOU | TipoEventoAtualizacao.CONFIRMOU | TipoEventoAtualizacao.CANCELOU | TipoEventoAtualizacao.CONTINUOU | TipoEventoAtualizacao.ABORTOU | TipoEventoAtualizacao.FECHOU }
+>["tipo"];
+
 export const INICIAL: EstadoAtualizacao = {
   fase: FaseAtualizacao.OCIOSA,
   status: null,
