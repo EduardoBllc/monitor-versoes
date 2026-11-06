@@ -197,8 +197,10 @@ Os repos na config: [029](docs/decisoes/029-repos-na-config-central.md).
 
 Para cada repo que já está no banco, crie `[repos.<nome>]` com o mesmo nome que ele tem lá e
 mova para a seção as chaves do antigo `.monitor-versoes.toml` (o `piso` vai para
-`[repos.<nome>.versao]`). Confira com `motor diagnostico`. Inscrições antigas são
-descartadas com um aviso: inscreva de novo com o nome da seção.
+`[repos.<nome>.versao]`). Um `[versao] piso` no topo do `config.toml` também precisa ir para
+as seções: no topo ele é erro de leitura e impede qualquer comando. Confira com
+`motor diagnostico`. Inscrições antigas são descartadas com um aviso: inscreva de novo com o
+nome da seção.
 
 O `padrao` é um template com exatamente um `{id}`; o resto é literal e a caixa é ignorada.
 O alfabeto do id (que caracteres ele pode ter) vem do adapter do tracker e a config não o

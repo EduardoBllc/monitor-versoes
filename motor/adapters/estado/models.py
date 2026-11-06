@@ -66,7 +66,7 @@ class Repo(Base):
     __tablename__ = "repo"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    nome: Mapped[str] = mapped_column(unique=True)  # basename do --repo
+    nome: Mapped[str] = mapped_column(unique=True)  # nome da seção [repos.<nome>]
 
 
 class Versao(Base):
