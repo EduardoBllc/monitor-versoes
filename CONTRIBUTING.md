@@ -42,10 +42,11 @@ O banco de desenvolvimento serve para usar o CLI à mão sem tocar produção.
 ## Verificações
 
 ```bash
-make check   # ruff format --check, ruff check, mypy, pytest -rs
+make check   # ruff format --check, ruff check, mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist
 make fmt     # formata e aplica os fixes automáticos do ruff
 ```
 
+O portão exige Node 24 e npm, por causa do `web/` (ver [Front-end web](#front-end-web)).
 `make check` roda os mesmos alvos, na mesma ordem, que o CI
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)): verde aqui é verde lá. O `-rs`
 do pytest lista o motivo de cada skip — confira se a integração rodou.
@@ -56,17 +57,21 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 ## Front-end web
 
 `web/` é a SPA do `motor serve` ([decisão 029](docs/decisoes/029-front-end-web-spa-com-dist-versionado.md)).
-Node 24 e npm só são necessários para mexer nela.
+Requer Node 24 e npm (o portão em [Verificações](#verificações) também).
 
 ```bash
-cd web && npm ci     # instala as dependências
-uv run motor serve   # daemon de pé (outro terminal)
-npm run dev          # Vite com proxy de /api para o daemon
-npm run tipos        # regenera os tipos TS depois de mudar a API
+# terminal 1, na raiz do repo
+uv run motor serve
+
+# terminal 2
+cd web
+npm ci               # instala as dependências
+npm run dev          # Vite, com proxy de /api para o daemon
+npm run tipos        # depois de mudar a API
 ```
 
-O build (`motor/daemon/static/`) e os tipos gerados são versionados: rode `make web-dist`
-(ou `make check`, que confere se estão em dia) antes de commitar.
+O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
+`web/src/api/esquema.ts`) são versionados: rode `make web-dist` antes de commitar.
 
 ## Armadilhas do ambiente
 
