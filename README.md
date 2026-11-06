@@ -266,7 +266,7 @@ o resto.
 
 As operações seguem rodando se a aba fechar. Um pick bloqueado por conflito se resolve na
 worktree, no seu editor; depois, **Continuar**. O porquê em
-[decisão 029](docs/decisoes/029-front-end-web-spa-com-dist-versionado.md).
+[decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md).
 
 ### Fontes de tasks e de commits
 

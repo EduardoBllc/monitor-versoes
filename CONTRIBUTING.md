@@ -56,7 +56,7 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 
 ## Front-end web
 
-`web/` é a SPA do `motor serve` ([decisão 029](docs/decisoes/029-front-end-web-spa-com-dist-versionado.md)).
+`web/` é a SPA do `motor serve` ([decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md)).
 
 ```bash
 # terminal 1, na raiz do repo
