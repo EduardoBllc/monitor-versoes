@@ -91,7 +91,7 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(url: str) -> None:
             )
         )
 
-    command.upgrade(config_alembic(url), "head")
+    command.upgrade(config_alembic(url), "a7c3e9d1f2b4")
 
     with engine.connect() as con:
         colunas = {c["name"] for c in inspect(con).get_columns("repo")}
@@ -114,6 +114,20 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(url: str) -> None:
     assert alias == "web"
     with pytest.raises(IntegrityError), engine.begin() as con:
         con.execute(text("update repo set piso_versao = 'x'"))
+    engine.dispose()
+
+
+def test_repo_alias_sai_e_o_repo_fica(url: str) -> None:
+    command.upgrade(config_alembic(url), "a7c3e9d1f2b4")
+    engine = create_engine(url)
+    with engine.begin() as con:
+        con.execute(text("insert into repo (id, nome) values (1, 'webapp')"))
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        assert "repo_alias" not in inspect(con).get_table_names()
+        assert con.execute(text("select nome from repo")).scalar_one() == "webapp"
     engine.dispose()
 
 

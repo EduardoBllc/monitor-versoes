@@ -19,21 +19,6 @@ def _info(numero: str, liberada=None) -> VersaoInfo:
     )
 
 
-def test_resolver_repo_por_nome_e_por_alias():
-    estado = FakeEstado(
-        repos={"vb2web": RepoInfo(nome="vb2web")},
-        aliases={"vb2": "vb2web"},
-    )
-    assert estado.resolver_repo("vb2web").nome == "vb2web"
-    # o alias resolve para o nome canonico, nao cria repo novo
-    assert estado.resolver_repo("vb2").nome == "vb2web"
-
-
-def test_resolver_repo_desconhecido_indica_comando_de_cadastro():
-    with pytest.raises(MotorError, match="motor repo adicionar"):
-        FakeEstado().resolver_repo("desconhecido")
-
-
 def test_substituir_atribuicoes_sobrescreve():
     estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
     estado.registrar_versao("r", _info("13.34.0"))

@@ -66,7 +66,6 @@ from motor.montagem import (
     abrir_sessao,
     montar_deps,
     resolver_versionamento,
-    validar_nome_repo,
 )
 from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
@@ -113,7 +112,6 @@ class ContinueRunner(Protocol):
 
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
-RepoRegistrar = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -128,7 +126,6 @@ class Runners:
     continuar_repo: ContinueRunner | None = None
     abortar_repo: AbortRunner | None = None
     consultar_versao: ConsultaRunner | None = None
-    registrar_repo: RepoRegistrar | None = None
     criar_repo: CriarRunner | None = None
     previa_atualizacao: PreviewRunner | None = None
     # Sem ele, o versionamento sai da config do repo (`_versionamento_do_repo`).
@@ -258,62 +255,6 @@ def _linha_inscricao(i: Inscricao) -> str:
         f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
         f"  ·  {ultima}"
     )
-
-
-class CadastroModal(ModalScreen[str | None]):
-    """Formulario de cadastro de repo.
-
-    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o nome
-    pronto. Erro de banco (nome duplicado) nao e do formulario: sai pelo
-    caminho de erro normal do app, com o modal ja fechado.
-    """
-
-    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
-    DEFAULT_CSS = """
-    CadastroModal { align: center middle; }
-    CadastroModal > Vertical {
-        width: 60;
-        height: auto;
-        padding: 1 2;
-        border: round $primary;
-        background: $surface;
-    }
-    CadastroModal .rotulo { height: auto; color: $text-muted; }
-    #cadastro-erro { height: auto; color: $error; }
-    #cadastro-botoes { height: auto; align-horizontal: right; padding-top: 1; }
-    #cadastro-botoes Button { margin-left: 1; }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Vertical() as caixa:
-            caixa.border_title = "Cadastrar repositório"
-            caixa.border_subtitle = "esc para cancelar"
-            yield Static("nome", classes="rotulo")
-            yield Input(placeholder="nome canônico, sem caminho", id="cadastro-nome")
-            yield Static(id="cadastro-erro")
-            with Horizontal(id="cadastro-botoes"):
-                yield Button("Cancelar", id="cadastro-cancelar")
-                yield Button("Salvar", id="cadastro-salvar", variant="primary")
-
-    def action_cancelar(self) -> None:
-        self.dismiss(None)
-
-    def on_button_pressed(self, evento: Button.Pressed) -> None:
-        if evento.button.id == "cadastro-salvar":
-            self._salvar()
-        else:
-            self.dismiss(None)
-
-    def on_input_submitted(self, evento: Input.Submitted) -> None:
-        self._salvar()
-
-    def _salvar(self) -> None:
-        try:
-            nome = validar_nome_repo(self.query_one("#cadastro-nome", Input).value)
-        except MotorError as erro:
-            self.query_one("#cadastro-erro", Static).update(str(erro))
-            return
-        self.dismiss(nome)
 
 
 class AbortarModal(ModalScreen[bool]):
@@ -594,7 +535,6 @@ class MotorTUI(App[None]):
         ("u", "atualizar", "Atualizar"),
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
-        ("n", "cadastrar", "Cadastrar repo"),
         ("i", "inscricoes", "Inscrições"),
     ]
     CSS = """
@@ -640,7 +580,6 @@ class MotorTUI(App[None]):
         self._continuar = runners.continuar_repo
         self._abortar = runners.abortar_repo
         self._consultar = runners.consultar_versao
-        self._registrar = runners.registrar_repo
         self._criar = runners.criar_repo
         self._versionamento_repo = runners.versionamento_repo or _versionamento_do_repo
         # O do repo em que o ultimo `criar` foi aberto: ordena a lista depois.
@@ -1059,33 +998,6 @@ class MotorTUI(App[None]):
             )
         )
 
-    def action_cadastrar(self) -> None:
-        if self._ocupado or self._registrar is None:
-            return
-        self.push_screen(CadastroModal(), self._cadastrar)
-
-    def _cadastrar(self, nome: str | None) -> None:
-        if nome is None:
-            return
-        self._bloquear(True)
-        self.cadastrar_worker(nome)
-
-    @work(thread=True, exclusive=True, group="cadastro")
-    def cadastrar_worker(self, nome: str) -> None:
-        try:
-            if self._registrar is not None:
-                self._registrar(nome)
-        except Exception as erro:
-            self.call_from_thread(self._falha, erro)
-            self.call_from_thread(self._bloquear, False)
-            return
-        self.call_from_thread(self._cadastrado, nome)
-
-    def _cadastrado(self, nome: str) -> None:
-        self._exibir_resultado(f"repo '{nome}' cadastrado.")
-        self._ocupar_resultado()
-        self.carregar_repos_worker()
-
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:
             return
@@ -1349,28 +1261,20 @@ def descobrir_repos(
             RepoOption(nome=repo.nome, caminho=None, piso_versao=piso_global)
             for repo in repos
         ]
-    canonicos = {repo.nome: repo for repo in repos}
+    nomes = {repo.nome for repo in repos}
     encontrados: dict[str, Path] = {}
     raiz = Path(projects_dir)
 
     if raiz.is_dir():
-        # Conta os diretorios porque a varredura pode consultar o banco em cada
-        # um (`resolver_repo` de nome que nao esta na lista canonica).
         candidatos = sorted(raiz.iterdir(), key=lambda item: item.name)
         for indice, caminho in enumerate(candidatos, start=1):
             progresso(Progresso("procurando os checkouts", indice, len(candidatos)))
-            if not caminho.is_dir() or not (caminho / ".git").exists():
-                continue
-            if caminho.name in canonicos:
-                info = canonicos[caminho.name]
-            else:
-                try:
-                    info = estado.resolver_repo(caminho.name)
-                except NaoEncontrado:
-                    continue
-            atual = encontrados.get(info.nome)
-            if atual is None or (caminho.name == info.nome and atual.name != info.nome):
-                encontrados[info.nome] = caminho
+            if (
+                caminho.name in nomes
+                and caminho.is_dir()
+                and (caminho / ".git").exists()
+            ):
+                encontrados[caminho.name] = caminho
 
     opcoes = []
     for repo in repos:
@@ -1415,11 +1319,6 @@ def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[Repo
             os.environ.get("PROJECTS_DIR", ""),
             progresso=progresso,
         )
-
-
-def _registrar_no_banco(nome: str) -> None:
-    with abrir_sessao() as sessao:
-        PostgresEstado(sessao=sessao).registrar_repo(nome)
 
 
 def _versionamento_do_repo(repo: RepoOption) -> Versionamento:
@@ -1526,7 +1425,6 @@ def run_tui(ambiente: str) -> None:
             partial(_continuar_repo, progresso=slot.relatar),
             partial(_abortar_repo, progresso=slot.relatar),
             partial(_consultar_repo, progresso=slot.relatar),
-            _registrar_no_banco,
             partial(_criar_repo, progresso=slot.relatar),
             previa_atualizacao=partial(_previa_repo, progresso=slot.relatar),
         ),

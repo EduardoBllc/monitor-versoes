@@ -20,7 +20,6 @@ from motor.errors import NaoEncontrado, RecusaDeInvariante
 @dataclass
 class FakeEstado:
     repos: dict[str, RepoInfo] = field(default_factory=dict)
-    aliases: dict[str, str] = field(default_factory=dict)  # alias -> nome canonico
     versoes: dict[tuple[str, str], VersaoInfo] = field(default_factory=dict)
     _atribuicoes: dict[tuple[str, str], list[Atribuicao]] = field(default_factory=dict)
     _exclusoes: dict[str, list[Exclusion]] = field(default_factory=dict)
@@ -36,20 +35,8 @@ class FakeEstado:
     _marca: dict[str, datetime.datetime] = field(default_factory=dict)
     _verificacoes: dict[tuple[str, str], Verificacao] = field(default_factory=dict)
 
-    def registrar_repo(self, nome: str, /) -> None:
-        if nome in self.repos or nome in self.aliases:
-            raise RecusaDeInvariante(f"repo '{nome}' ja cadastrado")
-        self.repos[nome] = RepoInfo(nome=nome)
-
-    def resolver_repo(self, basename: str, /) -> RepoInfo:
-        nome = self.aliases.get(basename, basename)
-        info = self.repos.get(nome)
-        if info is None:
-            raise NaoEncontrado(
-                f"repo '{basename}' desconhecido. Cadastre com:\n"
-                f"  motor repo adicionar '{basename}'"
-            )
-        return info
+    def garantir_repo(self, nome: str, /) -> None:
+        self.repos.setdefault(nome, RepoInfo(nome=nome))
 
     def listar_repos(self) -> list[RepoInfo]:
         return [self.repos[nome] for nome in sorted(self.repos)]
@@ -197,7 +184,7 @@ class FakeEstado:
         gravava versao pendurada num repo inexistente, onde o adapter real
         levanta. Fake mais leniente que o real e o modo de falha que este
         projeto pagou tres vezes — a suite fica verde num caminho que quebra em
-        producao. Toma o nome canonico, nao alias: o `resolver_repo` ja traduziu.
+        producao.
         """
         if repo not in self.repos:
             raise NaoEncontrado(f"repo '{repo}' nao encontrado no estado")

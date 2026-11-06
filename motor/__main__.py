@@ -20,7 +20,6 @@ from functools import partial
 from pathlib import Path
 from typing import TextIO
 
-from motor.adapters.estado.postgres import PostgresEstado
 from motor.agendador import (
     agendar,
     desagendar,
@@ -71,7 +70,6 @@ from motor.montagem import (
     abrir_sessao,
     montar_deps,
     montar_notificador,
-    validar_nome_repo,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 
@@ -396,13 +394,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--para", required=True, metavar="URL", help="destino vazio, no mesmo formato"
     )
 
-    p_repo = sub.add_parser("repo", help="gerencia repositorios cadastrados")
-    acoes_repo = p_repo.add_subparsers(dest="acao_repo", required=True, metavar="acao")
-    p_adicionar = acoes_repo.add_parser("adicionar", help="cadastra um repositorio")
-    p_adicionar.add_argument(
-        "nome", type=_tipo_cli(validar_nome_repo), help="nome canonico do repo"
-    )
-
     p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
     acoes_insc = p_insc.add_subparsers(
         dest="acao_inscricao", required=True, metavar="acao"
@@ -704,13 +695,6 @@ def _migrar_estado(args: argparse.Namespace) -> None:
     print(f"estado copiado: {resumo.total} linhas")
 
 
-def _comando_repo(args: argparse.Namespace) -> None:
-    with abrir_sessao() as sessao:
-        estado = PostgresEstado(sessao=sessao)
-        estado.registrar_repo(args.nome)
-    print(f"repo '{args.nome}' adicionado")
-
-
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     ambiente_pai = dict(os.environ)  # antes do .env: o filho carrega o próprio
@@ -743,10 +727,6 @@ def main(argv: list[str] | None = None) -> None:
 
         if args.comando == "migrar-estado":
             _migrar_estado(args)
-            return
-
-        if args.comando == "repo":
-            _comando_repo(args)
             return
 
         repo = _resolver_repo(args.repo)

@@ -19,7 +19,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
-from motor.errors import MotorError, NaoEncontrado
+from motor.errors import MotorError
 from motor.inscricoes import (
     INTERVALO_PADRAO,
     Inscricao,
@@ -77,11 +77,10 @@ def _estado() -> FakeEstado:
             "beta": RepoInfo(nome="beta"),
             "gamma": RepoInfo(nome="gamma"),
         },
-        aliases={"beta-local": "beta"},
     )
 
 
-def test_descobrir_repos_prefere_canonico_depois_alias_e_mantem_ausente(tmp_path):
+def test_descobrir_repos_casa_pelo_nome_do_diretorio_e_mantem_ausente(tmp_path):
     alpha = _checkout(tmp_path, "alpha")
     _checkout(tmp_path, "beta-local")
     beta = _checkout(tmp_path, "beta")
@@ -94,44 +93,15 @@ def test_descobrir_repos_prefere_canonico_depois_alias_e_mantem_ausente(tmp_path
     ]
 
 
-def test_descobrir_repos_usa_alias_quando_canonico_nao_existe(tmp_path):
-    alias = _checkout(tmp_path, "beta-local")
-
-    opcoes = descobrir_repos(_estado(), str(tmp_path))
-
-    assert opcoes[1] == RepoOption(nome="beta", caminho=str(alias))
-
-
 def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
     opcoes = descobrir_repos(_estado(), str(tmp_path / "ausente"))
 
     assert [opcao.caminho for opcao in opcoes] == [None, None, None]
 
 
-def test_descobrir_repos_ignora_naoencontrado_mesmo_sem_a_palavra_desconhecido(
-    tmp_path,
-):
-    """Ramifica por TIPO (NaoEncontrado), nao por substring 'desconhecido' na
-    mensagem: um adapter de terceiro correto, que levanta NaoEncontrado num
-    idioma diferente, nao pode reprovar aqui.
-    """
-
-    class EstadoQueFalaIngles(FakeEstado):
-        def resolver_repo(self, basename: str, /) -> RepoInfo:
-            raise NaoEncontrado("unknown repo")
-
-    _checkout(tmp_path, "nao-cadastrado")
-    estado = EstadoQueFalaIngles(repos={"alpha": RepoInfo(nome="alpha")})
-
-    opcoes = descobrir_repos(estado, str(tmp_path))
-
-    assert opcoes == [RepoOption(nome="alpha", caminho=None)]
-
-
 def test_descobrir_repos_relata_o_banco_e_a_varredura(tmp_path):
     """Era o unico worker sem fase nenhuma: a tela ficava parada enquanto o
-    banco abria e o PROJECTS_DIR era varrido (um resolver_repo por diretorio
-    desconhecido).
+    banco abria e o PROJECTS_DIR era varrido .
     """
     _checkout(tmp_path, "alpha")
     _checkout(tmp_path, "nao-cadastrado")
@@ -577,7 +547,6 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
 
     [app] = apps
     assert app._ambiente == _AMBIENTE_INSCRICAO
-    assert app._registrar is tui._registrar_no_banco
     ligados = {
         tui._repos_do_ambiente: app._carregar_repos,
         tui._versoes_do_repo: app._carregar_versoes,
@@ -2377,133 +2346,6 @@ def test_app_exibe_loading_na_lista_durante_verificacao():
     asyncio.run(executar_fluxo())
 
 
-def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
-    """Base dos testes de cadastro: a lista de repos sai de `repos`, que o
-    registrador de cada teste alimenta, para provar o recarregamento."""
-    return MotorTUI(
-        Runners(
-            carregar_repos=lambda: [
-                RepoOption(nome=nome, caminho=f"/projetos/{nome}") for nome in repos
-            ],
-            carregar_versoes=lambda opcao: [],
-            executar=_nunca_executa,
-            registrar_repo=registrar,
-        )
-    )
-
-
-async def _preencher_cadastro(app: MotorTUI, pilot, nome: str) -> None:
-    await pilot.press("n")
-    await pilot.pause()
-    app.screen.query_one("#cadastro-nome", Input).value = nome
-    await pilot.pause()
-    await pilot.click("#cadastro-salvar")
-    await pilot.pause()
-    await app.workers.wait_for_complete()
-    await pilot.pause()
-
-
-def test_app_cadastra_repo_e_recarrega_lista():
-    repos = ["alpha"]
-    chamadas: list[tuple[str, ...]] = []
-
-    def registrar(nome: str) -> None:
-        chamadas.append((nome,))
-        repos.append(nome)
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, repos)
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta")
-
-            assert chamadas == [("delta",)]
-            assert not isinstance(app.screen, tui.CadastroModal)
-            nomes = [
-                opcao.nome
-                for _, opcao in app.query_one("#repo", Select)._options[1:]
-                if isinstance(opcao, RepoOption)
-            ]
-            assert nomes == ["alpha", "delta"]
-            assert "delta" in _texto(app.query_one("#resultado", Static).content)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
-    def registrar(nome: str) -> None:
-        raise AssertionError("nome invalido nao pode chegar ao registrador")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "sub/delta")
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert "sem caminho" in _texto(
-                app.screen.query_one("#cadastro-erro", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_de_repo_duplicado_mostra_erro_no_painel():
-    def registrar(nome: str) -> None:
-        raise MotorError(f"repo '{nome}' ja cadastrado")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "alpha")
-
-            assert not isinstance(app.screen, tui.CadastroModal)
-            assert "ja cadastrado" in _texto(
-                app.query_one("#resultado", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_sem_registrador_ignora_a_tecla_de_cadastro():
-    async def executar_fluxo() -> None:
-        app = MotorTUI(
-            Runners(
-                carregar_repos=lambda: [RepoOption(nome="alpha", caminho="/p/alpha")],
-                carregar_versoes=lambda opcao: [],
-                executar=_nunca_executa,
-            )
-        )
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-
-            assert not isinstance(app.screen, tui.CadastroModal)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_digita_a_propria_tecla_de_atalho_no_campo():
-    """A tecla que abre o modal e uma letra: dentro dele ela tem de ser texto."""
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome, sistema_id: None, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-            await pilot.press("n", "u", "v", "e", "m")
-            await pilot.pause()
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert len(app.screen_stack) == 2
-            assert app.screen.query_one("#cadastro-nome", Input).value == "nuvem"
-
-    asyncio.run(executar_fluxo())
-
-
 def test_app_desenha_a_fase_e_a_contagem_do_motor_no_lugar_do_spinner():
     """O spinner generico nao diz nada num verificar de 40s. O painel que cobre
     o resultado passa a mostrar a fase do motor e, quando ela e contavel, a
@@ -2726,19 +2568,6 @@ def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
     opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
 
     assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
-
-
-def test_cadastro_pede_so_o_nome():
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome: None, [])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-            campos = [w.id for w in app.screen.query(Input)]
-            assert campos == ["cadastro-nome"]
-
-    asyncio.run(executar_fluxo())
 
 
 _ARQUIVO_INSCRICOES = "inscricoes.json"

@@ -154,30 +154,10 @@ def test_comando_desconhecido_sai_com_erro():
     assert saida.value.code != 0
 
 
-def test_repo_adicionar_cadastra_sem_checkout_git(monkeypatch, capsys):
-    estado = FakeEstado()
-    monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(cli, "PostgresEstado", lambda sessao: estado)
-
-    main(["repo", "adicionar", "backend"])
-
-    assert estado.resolver_repo("backend") == RepoInfo(nome="backend")
-    assert capsys.readouterr().out == "repo 'backend' adicionado\n"
-
-
-@pytest.mark.parametrize(
-    ("argumentos", "mensagem"),
-    [
-        (["pasta/backend"], "nome simples"),
-        ([" backend"], "nome simples"),
-    ],
-)
-def test_repo_adicionar_recusa_argumentos_invalidos(argumentos, mensagem, capsys):
+def test_subcomando_repo_nao_existe_mais():
     with pytest.raises(SystemExit) as saida:
-        _build_parser().parse_args(["repo", "adicionar", *argumentos])
-
-    assert saida.value.code != 0
-    assert mensagem in capsys.readouterr().err
+        main(["repo", "adicionar", "x"])
+    assert saida.value.code == 2
 
 
 # -- impressao ----------------------------------------------------------------
@@ -458,29 +438,6 @@ def test_verificar_auditar_exibe_faltantes_de_versao_liberada(bordas, tmp_path, 
     assert "faltantes" in saida and "a0" in saida
     assert estado.atribuicoes("webapp", "13.34.0") == []
     assert git.removed_worktrees == []
-
-
-def test_repo_alias_vira_o_nome_canonico_na_deps(bordas, tmp_path):
-    _git, estado = bordas
-    estado.aliases["vbweb"] = "webapp"
-    lista = tmp_path / "lista.txt"
-    lista.write_text("", encoding="utf-8")
-
-    main(
-        [
-            "verificar",
-            "13.34.0",
-            "--repo",
-            _repo_dir(tmp_path, "vbweb"),
-            "--task-source",
-            "manual",
-            "--lista",
-            str(lista),
-        ]
-    )
-
-    # gravou sob o nome canonico, nao sob o basename do diretorio
-    assert ("webapp", "13.34.0") in estado.versoes
 
 
 def test_fonte_da_config_recebe_o_sistema_do_repo(bordas, tmp_path):

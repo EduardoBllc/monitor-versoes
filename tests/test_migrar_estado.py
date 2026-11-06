@@ -36,7 +36,6 @@ def _povoar(url: str) -> None:
                 insert(T["repo"]),
                 {"id": 5, "nome": REPO},
             )
-            con.execute(insert(T["repo_alias"]), {"nome": "vbweb", "repo_id": 5})
             con.execute(
                 insert(T["versao"]),
                 [

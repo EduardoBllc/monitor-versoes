@@ -9,9 +9,8 @@ consulta o git: `atualizar --abort` e `reconstruir-estado` recebem as mesmas
 fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
 O plugin da fonte de tarefas nem e carregado aqui: a `FonteDaConfig` o carrega
 na primeira busca ou na primeira resolucao da referencia.
-Unica excecao deliberada: `resolver_repo`, porque o nome canonico decide
-*como* montar o resto. O I/O do `motor diagnostico`
-vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
+Unica excecao deliberada: `garantir_repo`, que cria a linha do repo no estado.
+O I/O do `motor diagnostico` vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
 """
 
 from __future__ import annotations
@@ -371,10 +370,8 @@ def montar_deps(
     """
     git = new_git_subprocess(caminho_repo, progresso=progresso)
     estado = PostgresEstado(sessao=sessao)
-    # O estado vem antes das fontes: o nome canonico do repo e o
-    # nome canonico sai da linha `repo` (que aceita nome ou alias); piso e
-    # sistema, da config em camadas.
-    info = estado.resolver_repo(os.path.basename(caminho_repo))
+    nome_repo = os.path.basename(caminho_repo)
+    estado.garantir_repo(nome_repo)
     config = carregar_config(caminho_repo)
     fonte_tasks = montar_task_source(
         config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
@@ -400,7 +397,7 @@ def montar_deps(
             email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),
         ),
         estado=estado,
-        repo=info.nome,
+        repo=nome_repo,
         progresso=progresso,
         versionamento=versionamento,
     )
@@ -408,7 +405,7 @@ def montar_deps(
         git=git,
         tasks=fonte_tasks,
         estado=estado,
-        repo=info.nome,
+        repo=nome_repo,
         commit_source=commit_source,
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),
