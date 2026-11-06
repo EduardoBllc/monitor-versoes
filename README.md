@@ -109,9 +109,6 @@ BITBUCKET_EMAIL=
 # Levantar uma worktree e um checkout inteiro; mantendo as ultimas usadas, o
 # comando seguinte na mesma versao reusa o diretorio. 0 = descarta a cada run.
 WORKTREES_MANTIDAS=3
-
-# Raiz onde --repo <nome> e procurado
-PROJECTS_DIR=
 ```
 
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).

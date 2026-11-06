@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from motor import config
@@ -158,122 +160,7 @@ def test_worktrees_mantidas_recusa_valor_invalido(monkeypatch, valor):
     assert "WORKTREES_MANTIDAS" in str(erro.value)
 
 
-# --- config em camadas ---
-
-
-@pytest.fixture
-def camadas(tmp_path, monkeypatch):
-    """(global, repo): XDG e raiz do repo isolados em tmp_path."""
-    xdg = tmp_path / "xdg"
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (xdg / "monitor-versoes").mkdir(parents=True)
-    return xdg / "monitor-versoes" / "config.toml", repo / ".monitor-versoes.toml"
-
-
-def test_piso_so_no_global(camadas):
-    glob, repo = camadas
-    glob.write_text('[versao]\npiso = "1.0.0"\n')
-    assert config.carregar_config(str(repo.parent)).piso == "1.0.0"
-
-
-def test_piso_so_no_repo(camadas):
-    _, repo = camadas
-    repo.write_text('[versao]\npiso = "2.0.0"\n')
-    assert config.carregar_config(str(repo.parent)).piso == "2.0.0"
-
-
-def test_piso_nos_dois_vence_o_repo(camadas):
-    glob, repo = camadas
-    glob.write_text('[versao]\npiso = "1.0.0"\n')
-    repo.write_text('[versao]\npiso = "2.0.0"\n')
-    assert config.carregar_config(str(repo.parent)).piso == "2.0.0"
-
-
-def test_sem_piso_nas_duas_camadas_e_none(camadas):
-    _, repo = camadas
-    assert config.carregar_config(str(repo.parent)).piso is None
-
-
-def test_tarefas_parcial_no_repo_sobrescreve_so_a_chave_declarada(camadas):
-    glob, repo = camadas
-    glob.write_text("[tarefas]\nsistema = 1\noutra = 'x'\n")
-    repo.write_text("[tarefas]\nsistema = 2\n")
-    assert dict(config.carregar_config(str(repo.parent)).tarefas) == {
-        "sistema": 2,
-        "outra": "x",
-    }
-
-
-def test_toml_invalido_cita_o_arquivo(camadas):
-    _, repo = camadas
-    repo.write_text("isto = = nao\n")
-    with pytest.raises(ErroDeEntrada, match=r"\.monitor-versoes\.toml"):
-        config.carregar_config(str(repo.parent))
-
-
-@pytest.mark.parametrize("piso", ["1.2", "12", '""'])
-def test_piso_invalido_e_erro_de_entrada(camadas, piso):
-    _, repo = camadas
-    repo.write_text(f"[versao]\npiso = {piso}\n")
-    with pytest.raises(ErroDeEntrada):
-        config.carregar_config(str(repo.parent))
-
-
-def test_piso_fora_do_formato_e_lido_cru(camadas):
-    # Quem valida o numero e o esquema em uso, quando e resolvido: ler o piso
-    # nao pode derrubar `atualizar --abort`.
-    _, repo = camadas
-    repo.write_text('[versao]\npiso = "abc"\n')
-    config_lida = config.carregar_config(str(repo.parent))
-    assert (config_lida.piso, config_lida.arquivo_piso) == ("abc", str(repo))
-
-
-@pytest.mark.parametrize(
-    "tabela", ["versao", "tarefas", "referencia", "liberacao", "branches"]
-)
-def test_tabela_que_nao_e_tabela_e_erro(camadas, tabela):
-    _, repo = camadas
-    repo.write_text(f'{tabela} = "x"\n')
-    with pytest.raises(ErroDeEntrada):
-        config.carregar_config(str(repo.parent))
-
-
-def test_padrao_de_referencia_do_repo_vence_o_global(camadas):
-    glob, repo = camadas
-    glob.write_text('[referencia]\npadrao = "a{id}"\n')
-    repo.write_text('[referencia]\npadrao = "b{id}"\n')
-    assert config.carregar_config(str(repo.parent)).padrao_referencia == "b{id}"
-
-
-def test_padrao_de_referencia_so_no_global(camadas):
-    glob, repo = camadas
-    glob.write_text('[referencia]\npadrao = "a{id}"\n')
-    assert config.carregar_config(str(repo.parent)).padrao_referencia == "a{id}"
-
-
-def test_sem_referencia_o_padrao_e_none(camadas):
-    _, repo = camadas
-    assert config.carregar_config(str(repo.parent)).padrao_referencia is None
-
-
-@pytest.mark.parametrize(
-    ("conteudo", "valor"),
-    [
-        ('referencia = "x"\n', "'x'"),
-        ("[referencia]\npadrao = 1\n", "1"),
-        ('[referencia]\npadrao = "sem"\n', "'sem'"),
-    ],
-)
-def test_referencia_invalida_cita_arquivo_e_valor(camadas, conteudo, valor):
-    _, repo = camadas
-    repo.write_text(conteudo)
-    with pytest.raises(ErroDeEntrada) as e:
-        config.carregar_config(str(repo.parent))
-    # O texto é requisito: diz qual arquivo e qual valor corrigir.
-    assert str(repo) in str(e.value)
-    assert valor in str(e.value)
+# --- caminho e leitura da config central ---
 
 
 def test_xdg_config_home_e_respeitado(tmp_path, monkeypatch):
@@ -295,26 +182,86 @@ def test_sem_xdg_cai_em_config_do_home(tmp_path, monkeypatch, xdg):
     )
 
 
-def test_arquivos_traz_global_primeiro(camadas):
-    glob, repo = camadas
-    assert config.carregar_config(str(repo.parent)).arquivos == (str(glob), str(repo))
+def _escrever(central, tmp_path, do_repo: str = "", topo: str = "") -> None:
+    """Topo + `[repos.x]`; `do_repo` usa cabeçalhos relativos à seção."""
+    do_repo = re.sub(r"^\[", "[repos.x.", do_repo, flags=re.M)
+    central.write_text(topo + _com_caminho(tmp_path) + do_repo)
 
 
-def test_sem_raiz_ignora_a_camada_do_repo(camadas):
-    glob, _ = camadas
-    assert config.carregar_config(None).arquivos == (str(glob),)
+def test_toml_invalido_cita_o_arquivo(central):
+    central.write_text("isto = = nao\n")
+    with pytest.raises(ErroDeEntrada, match=r"config\.toml"):
+        config.carregar_config_global()
 
 
-def test_chave_esquema_e_ignorada(camadas):
-    glob, _ = camadas
-    glob.write_text('esquema = "escalonado"\n')
-    assert config.carregar_config(None) == config.ConfigProjeto(arquivos=(str(glob),))
+@pytest.mark.parametrize("piso", ["1.2", "12", '""'])
+def test_piso_invalido_e_erro_de_entrada(central, tmp_path, piso):
+    _escrever(central, tmp_path, f"[versao]\npiso = {piso}\n")
+    with pytest.raises(ErroDeEntrada):
+        config.carregar_config_repo("x")
+
+
+def test_piso_fora_do_formato_e_lido_cru(central, tmp_path):
+    # Quem valida o numero e o esquema em uso, quando e resolvido: ler o piso
+    # nao pode derrubar `atualizar --abort`.
+    _escrever(central, tmp_path, '[versao]\npiso = "abc"\n')
+    lida = config.carregar_config_repo("x")
+    assert (lida.piso, lida.arquivo_piso) == ("abc", f"{central} [repos.x]")
+
+
+@pytest.mark.parametrize(
+    "tabela", ["versao", "tarefas", "referencia", "liberacao", "branches"]
+)
+def test_tabela_que_nao_e_tabela_e_erro(central, tabela):
+    central.write_text(f'{tabela} = "x"\n')
+    with pytest.raises(ErroDeEntrada):
+        config.carregar_config_global()
+
+
+def test_sem_referencia_o_padrao_e_none(central):
+    assert config.carregar_config_global().padrao_referencia is None
+
+
+def test_arquivos_do_repo_traz_o_topo_e_a_secao(central, tmp_path):
+    _escrever(central, tmp_path)
+    assert config.carregar_config_repo("x").arquivos == (
+        str(central),
+        f"{central} [repos.x]",
+    )
+
+
+def test_config_global_ignora_as_secoes_de_repo(central, tmp_path):
+    _escrever(central, tmp_path, "[tarefas]\nsistema = 7\n")
+    assert config.carregar_config_global() == config.ConfigProjeto(
+        arquivos=(str(central),)
+    )
+
+
+def test_chave_esquema_solta_e_ignorada(central):
+    central.write_text('esquema = "escalonado"\n')
+    assert config.carregar_config_global() == config.ConfigProjeto(
+        arquivos=(str(central),)
+    )
+
+
+def test_fonte_de_tarefas_continua_em_tarefas(central, tmp_path):
+    _escrever(
+        central,
+        tmp_path,
+        "[tarefas]\nsistema = 7\n",
+        topo='[tarefas]\nfonte = "rastreador"\n',
+    )
+
+    lido = config.carregar_config_repo("x")
+
+    # o plugin recebe a tabela inteira, `fonte` inclusa.
+    assert lido.tarefas == {"fonte": "rastreador", "sistema": 7}
 
 
 # --- esquema, atribuicao, liberacao e branches ---
 
 _CHAVES_NOVAS = [
-    # (atributo, tabela, chave, valor do global, valor do repo)
+    # (atributo, tabela, chave, valor do topo, valor da seção)
     ("esquema", "versao", "esquema", "semver", "escalonado"),
     ("atribuicao", "versao", "atribuicao", "exata", "composta"),
     ("tag_liberacao", "liberacao", "tag", "{versao}", "v{versao}"),
@@ -324,49 +271,42 @@ _CHAVES_NOVAS = [
 ]
 
 
-def test_fonte_de_tarefas_continua_em_tarefas(camadas):
-    glob, repo = camadas
-    glob.write_text('[tarefas]\nfonte = "rastreador"\n')
-    repo.write_text("[tarefas]\nsistema = 7\n")
+@pytest.mark.parametrize(
+    ("atributo", "tabela", "chave", "topo_v", "secao_v"), _CHAVES_NOVAS
+)
+def test_chave_nova_da_secao_vence_o_topo(
+    central, tmp_path, atributo, tabela, chave, topo_v, secao_v
+):
+    _escrever(
+        central,
+        tmp_path,
+        f'[{tabela}]\n{chave} = "{secao_v}"\n',
+        topo=f'[{tabela}]\n{chave} = "{topo_v}"\n',
+    )
 
-    lido = config.carregar_config(str(repo.parent))
+    escolhido = getattr(config.carregar_config_repo("x"), atributo)
 
-    # o plugin recebe a tabela inteira, `fonte` inclusa.
-    assert lido.tarefas == {"fonte": "rastreador", "sistema": 7}
+    assert escolhido == config.Escolhido(secao_v, f"{central} [repos.x]")
 
 
 @pytest.mark.parametrize(
-    ("atributo", "tabela", "chave", "glob_v", "repo_v"), _CHAVES_NOVAS
+    ("atributo", "tabela", "chave", "topo_v", "secao_v"), _CHAVES_NOVAS
 )
-def test_chave_nova_do_repo_vence_o_global(
-    camadas, atributo, tabela, chave, glob_v, repo_v
+def test_chave_nova_so_no_topo_vem_do_topo(
+    central, tmp_path, atributo, tabela, chave, topo_v, secao_v
 ):
-    glob, repo = camadas
-    glob.write_text(f'[{tabela}]\n{chave} = "{glob_v}"\n')
-    repo.write_text(f'[{tabela}]\n{chave} = "{repo_v}"\n')
+    _escrever(central, tmp_path, topo=f'[{tabela}]\n{chave} = "{topo_v}"\n')
 
-    escolhido = getattr(config.carregar_config(str(repo.parent)), atributo)
+    escolhido = getattr(config.carregar_config_repo("x"), atributo)
 
-    assert escolhido == config.Escolhido(repo_v, str(repo), "repo")
-
-
-@pytest.mark.parametrize(
-    ("atributo", "tabela", "chave", "glob_v", "repo_v"), _CHAVES_NOVAS
-)
-def test_chave_nova_so_no_global_vem_do_central(
-    camadas, atributo, tabela, chave, glob_v, repo_v
-):
-    glob, repo = camadas
-    glob.write_text(f'[{tabela}]\n{chave} = "{glob_v}"\n')
-
-    escolhido = getattr(config.carregar_config(str(repo.parent)), atributo)
-
-    assert escolhido == config.Escolhido(glob_v, str(glob), "central")
+    assert escolhido == config.Escolhido(topo_v, str(central))
 
 
 @pytest.mark.parametrize(
     ("conteudo", "valor"),
     [
+        ("[referencia]\npadrao = 1\n", "1"),
+        ('[referencia]\npadrao = "sem"\n', "'sem'"),
         ('[liberacao]\ntag = "v"\n', "'v'"),
         ('[liberacao]\ntag = "{versao}-{versao}"\n', "'{versao}-{versao}'"),
         ('[branches]\nversao = "release"\n', "'release'"),
@@ -376,13 +316,12 @@ def test_chave_nova_so_no_global_vem_do_central(
         ("[versao]\natribuicao = []\n", "[]"),
     ],
 )
-def test_valor_invalido_cita_arquivo_e_valor(camadas, conteudo, valor):
-    _, repo = camadas
-    repo.write_text(conteudo)
+def test_valor_invalido_cita_arquivo_e_valor(central, tmp_path, conteudo, valor):
+    _escrever(central, tmp_path, conteudo)
     with pytest.raises(ErroDeEntrada) as e:
-        config.carregar_config(str(repo.parent))
+        config.carregar_config_repo("x")
     # O texto é requisito: diz qual arquivo e qual valor corrigir.
-    assert str(repo) in str(e.value)
+    assert str(central) in str(e.value)
     assert valor in str(e.value)
 
 
@@ -420,7 +359,6 @@ def test_secao_vence_o_topo_chave_a_chave(central, tmp_path):
     assert cfg.branch_principal is not None
     assert cfg.esquema.valor == "b"
     assert cfg.esquema.arquivo == f"{central} [repos.x]"
-    assert cfg.esquema.origem == "central"
     assert cfg.branch_principal.valor == "main"
     assert cfg.branch_principal.arquivo == str(central)
 
@@ -508,9 +446,7 @@ def test_repos_ou_secao_que_nao_e_tabela_e_erro(central, conteudo):
 
 def test_monitor_versoes_toml_no_clone_e_ignorado(central, tmp_path):
     central.write_text(_com_caminho(tmp_path))
-    (tmp_path / "x" / config.ARQUIVO_CONFIG_REPO).write_text(
-        '[versao]\npiso = "9.0.0"\n'
-    )
+    (tmp_path / "x" / ".monitor-versoes.toml").write_text('[versao]\npiso = "9.0.0"\n')
     assert config.carregar_config_repo("x").piso is None
 
 

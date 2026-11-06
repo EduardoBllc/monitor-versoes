@@ -35,7 +35,7 @@ from motor.adapters.tasksource.manuallist import ManualList
 from motor.config import (
     ConfigProjeto,
     Escolhido,
-    carregar_config,
+    carregar_config_repo,
     database_url,
     worktrees_mantidas,
 )
@@ -132,7 +132,7 @@ def instanciar_fonte_tarefas(config: ConfigProjeto) -> TaskSource:
             f"faltando [tarefas] fonte em {onde}; "
             "ou use --task-source manual --lista <arquivo>"
         )
-    classe = carregar_plugin(GRUPO_TAREFAS, escolhido.valor, escolhido.origem)
+    classe = carregar_plugin(GRUPO_TAREFAS, escolhido.valor)
     try:
         fonte: TaskSource = classe(tarefas=config.tarefas, arquivos=config.arquivos)
     except MotorError:
@@ -243,9 +243,7 @@ def _identidade_das_entradas(
 
 def _plugin(grupo: str, escolhido: Escolhido | None, padrao: str) -> type:
     """A classe escolhida na config, ou a do padrao embutido."""
-    if escolhido is None:
-        return carregar_plugin(grupo, padrao, "central")
-    return carregar_plugin(grupo, escolhido.valor, escolhido.origem)
+    return carregar_plugin(grupo, padrao if escolhido is None else escolhido.valor)
 
 
 def resolver_versionamento(config: ConfigProjeto) -> Versionamento:
@@ -345,7 +343,7 @@ def montar_notificador() -> Notificador:
 
 
 def montar_deps(
-    caminho_repo: str,
+    nome_repo: str,
     sessao: Session,
     *,
     tasks: FonteTasks = _DA_CONFIG,
@@ -357,11 +355,11 @@ def montar_deps(
     Token e email vazios caem no ambiente: e assim que a TUI, que nao tem flag
     nenhuma, liga a fonte de PR do Bitbucket.
     """
-    git = new_git_subprocess(caminho_repo, progresso=progresso)
+    config = carregar_config_repo(nome_repo)
+    assert config.caminho is not None  # carregar_config_repo sempre o preenche
+    git = new_git_subprocess(config.caminho, progresso=progresso)
     estado = PostgresEstado(sessao=sessao)
-    nome_repo = os.path.basename(caminho_repo)
     estado.garantir_repo(nome_repo)
-    config = carregar_config(caminho_repo)
     fonte_tasks = montar_task_source(
         config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
     )

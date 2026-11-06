@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -34,9 +34,13 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
-from motor.config import AMBIENTE_PADRAO, carregar_config
+from motor.config import (
+    AMBIENTE_PADRAO,
+    SECAO_REPOS,
+    carregar_config_repo,
+    repos_configurados,
+)
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -67,7 +71,7 @@ from motor.montagem import (
     montar_deps,
     resolver_versionamento,
 )
-from motor.ports import EstadoRepo, GitRepo
+from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
@@ -214,14 +218,13 @@ class InscricoesModal(ModalScreen[None]):
         lista.add_options(Option(_linha_inscricao(i)) for i in self._inscricoes)
 
     def action_inscrever(self) -> None:
-        caminho = self._repo.caminho if self._repo else None
-        if caminho is None or self._versao is None:
+        if self._repo is None or not self._repo.disponivel or self._versao is None:
             self.notify(
                 "Selecione um repo disponível e uma versão.", severity="warning"
             )
             return
         nova = Inscricao(
-            os.path.abspath(caminho),
+            self._repo.nome,
             self._versao.numero,
             parse_intervalo(INTERVALO_PADRAO),
             str(Path.cwd()),
@@ -234,7 +237,7 @@ class InscricoesModal(ModalScreen[None]):
         if alvo is None:
             return
         i = self._inscricoes[alvo]
-        self._gravar(lambda: remover(self._arquivo, i.clone, i.versao))
+        self._gravar(lambda: remover(self._arquivo, i.repo, i.versao))
 
     def _gravar(self, escrita: Callable[[], None]) -> None:
         try:
@@ -252,8 +255,7 @@ def _linha_inscricao(i: Inscricao) -> str:
         if i.ultima.mensagem:
             ultima += f": {i.ultima.mensagem}"
     return (
-        f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
-        f"  ·  {ultima}"
+        f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  ·  {ultima}"
     )
 
 
@@ -901,7 +903,10 @@ class MotorTUI(App[None]):
         self._tem_repos = bool(opcoes)
         self._bloquear(False)
         if opcoes and not any(opcao.disponivel for opcao in opcoes):
-            self._erro("nenhum checkout local encontrado; confira PROJECTS_DIR")
+            self._erro(
+                "nenhum checkout local encontrado; "
+                f"confira o caminho das seções [{SECAO_REPOS}] do config.toml"
+            )
 
     def on_select_changed(self, evento: Select.Changed) -> None:
         if evento.select.id == "repo":
@@ -1251,47 +1256,27 @@ class MotorTUI(App[None]):
 
 
 def descobrir_repos(
-    estado: EstadoRepo, projects_dir: str, *, progresso: RelatorProgresso = silencioso
+    repos: Mapping[str, str | None], *, progresso: RelatorProgresso = silencioso
 ) -> list[RepoOption]:
-    progresso(Progresso("lendo os repos cadastrados"))
-    repos = estado.listar_repos()
-    if not projects_dir:
-        piso_global = _piso_da_config(None)
-        return [
-            RepoOption(nome=repo.nome, caminho=None, piso_versao=piso_global)
-            for repo in repos
-        ]
-    nomes = {repo.nome for repo in repos}
-    encontrados: dict[str, Path] = {}
-    raiz = Path(projects_dir)
-
-    if raiz.is_dir():
-        candidatos = sorted(raiz.iterdir(), key=lambda item: item.name)
-        for indice, caminho in enumerate(candidatos, start=1):
-            progresso(Progresso("procurando os checkouts", indice, len(candidatos)))
-            if (
-                caminho.name in nomes
-                and caminho.is_dir()
-                and (caminho / ".git").exists()
-            ):
-                encontrados[caminho.name] = caminho
-
     opcoes = []
-    for repo in repos:
-        achado = str(encontrados[repo.nome]) if repo.nome in encontrados else None
+    for indice, (nome, caminho) in enumerate(repos.items(), start=1):
+        progresso(Progresso("procurando os checkouts", indice, len(repos)))
+        achado = caminho if caminho is not None and os.path.isdir(caminho) else None
         opcoes.append(
             RepoOption(
-                nome=repo.nome, caminho=achado, piso_versao=_piso_da_config(achado)
+                nome=nome,
+                caminho=achado,
+                piso_versao=None if achado is None else _piso_da_config(nome),
             )
         )
     return opcoes
 
 
-def _piso_da_config(raiz: str | None) -> str | None:
-    """Piso da config em camadas; config invalida deixa `None` em vez de
-    derrubar a lista (o erro aparece ao operar o repo, pela montagem)."""
+def _piso_da_config(nome: str) -> str | None:
+    """Piso da seção do repo; config invalida deixa `None` em vez de derrubar a
+    lista (o erro aparece ao operar o repo, pela montagem)."""
     try:
-        return resolver_versionamento(carregar_config(raiz)).piso
+        return resolver_versionamento(carregar_config_repo(nome)).piso
     except ErroDeEntrada:
         return None
 
@@ -1313,16 +1298,11 @@ def descobrir_versoes(
 
 
 def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
-    with abrir_sessao() as sessao:
-        return descobrir_repos(
-            PostgresEstado(sessao=sessao),
-            os.environ.get("PROJECTS_DIR", ""),
-            progresso=progresso,
-        )
+    return descobrir_repos(repos_configurados(), progresso=progresso)
 
 
 def _versionamento_do_repo(repo: RepoOption) -> Versionamento:
-    return resolver_versionamento(carregar_config(repo.caminho))
+    return resolver_versionamento(carregar_config_repo(repo.nome))
 
 
 def _versoes_do_repo(
@@ -1347,7 +1327,7 @@ def _deps_do_repo(
         raise NaoEncontrado("checkout local não encontrado")
     # Sem flags: token e email do Bitbucket saem do ambiente dentro do
     # montar_deps, e a fonte de tasks e sempre a da config.
-    return montar_deps(repo.caminho, sessao, progresso=progresso)
+    return montar_deps(repo.nome, sessao, progresso=progresso)
 
 
 def _verificar_repo(

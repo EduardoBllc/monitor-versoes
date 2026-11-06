@@ -4,6 +4,7 @@ import dataclasses
 import datetime
 import enum
 import io
+import re
 from functools import partial
 from pathlib import Path
 from threading import Event
@@ -16,6 +17,7 @@ from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 import motor.montagem as montagem
 import motor.tui as tui
 from motor.adapters.estado.fake import FakeEstado
+from motor.config import CHAVE_CAMINHO, SECAO_REPOS
 from motor.domain.types import CommitRef, RepoInfo, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
@@ -70,47 +72,35 @@ def _checkout(raiz: Path, nome: str) -> Path:
     return caminho
 
 
-def _estado() -> FakeEstado:
-    return FakeEstado(
-        repos={
-            "alpha": RepoInfo(nome="alpha"),
-            "beta": RepoInfo(nome="beta"),
-            "gamma": RepoInfo(nome="gamma"),
-        },
+def _registrar_repo(
+    central: Path, nome: str, checkout: Path, topo: str = "", do_repo: str = ""
+) -> None:
+    """Escreve o `config.toml` central com `[repos.<nome>]`; `do_repo` usa
+    cabeçalhos relativos à seção (`[tarefas]` vira `[repos.<nome>.tarefas]`)."""
+    do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{nome}.", do_repo, flags=re.M)
+    central.write_text(
+        f'{topo}[{SECAO_REPOS}.{nome}]\n{CHAVE_CAMINHO} = "{checkout}"\n{do_repo}'
     )
 
 
-def test_descobrir_repos_casa_pelo_nome_do_diretorio_e_mantem_ausente(tmp_path):
-    alpha = _checkout(tmp_path, "alpha")
-    _checkout(tmp_path, "beta-local")
-    beta = _checkout(tmp_path, "beta")
-    _checkout(tmp_path, "nao-cadastrado")
+def test_descobrir_repos_vem_da_config(tmp_path, xdg_isolado):
+    existente = _checkout(tmp_path, "a")
 
-    assert descobrir_repos(_estado(), str(tmp_path)) == [
-        RepoOption(nome="alpha", caminho=str(alpha)),
-        RepoOption(nome="beta", caminho=str(beta)),
-        RepoOption(nome="gamma", caminho=None),
+    opcoes = descobrir_repos({"a": str(existente), "b": "/nao/existe", "c": None})
+
+    assert opcoes == [
+        RepoOption(nome="a", caminho=str(existente)),
+        RepoOption(nome="b", caminho=None),
+        RepoOption(nome="c", caminho=None),
     ]
 
 
-def test_descobrir_repos_sem_projects_dir_desabilita_todos(tmp_path):
-    opcoes = descobrir_repos(_estado(), str(tmp_path / "ausente"))
-
-    assert [opcao.caminho for opcao in opcoes] == [None, None, None]
-
-
-def test_descobrir_repos_relata_o_banco_e_a_varredura(tmp_path):
-    """Era o unico worker sem fase nenhuma: a tela ficava parada enquanto o
-    banco abria e o PROJECTS_DIR era varrido .
-    """
-    _checkout(tmp_path, "alpha")
-    _checkout(tmp_path, "nao-cadastrado")
+def test_descobrir_repos_relata_cada_checkout(tmp_path):
     relatos: list[Progresso] = []
 
-    descobrir_repos(_estado(), str(tmp_path), progresso=relatos.append)
+    descobrir_repos({"a": None, "b": None}, progresso=relatos.append)
 
-    assert relatos[0] == Progresso("lendo os repos cadastrados")
-    assert relatos[1:] == [
+    assert relatos == [
         Progresso("procurando os checkouts", 1, 2),
         Progresso("procurando os checkouts", 2, 2),
     ]
@@ -141,25 +131,16 @@ def test_app_exibe_loading_enquanto_carrega_repos():
     asyncio.run(executar_fluxo())
 
 
-def test_repos_do_ambiente_usa_estado_e_projects_dir(tmp_path, monkeypatch):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
+def test_repos_do_ambiente_le_a_config_sem_abrir_sessao(
+    tmp_path, monkeypatch, xdg_isolado
+):
     checkout = _checkout(tmp_path, "alpha")
-    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
-    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
+    _registrar_repo(xdg_isolado, "alpha", checkout)
+    monkeypatch.setattr(
+        tui, "abrir_sessao", lambda: pytest.fail("a lista de repos não abre banco")
+    )
 
     assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=str(checkout))]
-
-
-def test_repos_do_ambiente_sem_projects_dir_nao_varre_cwd(tmp_path, monkeypatch):
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
-    _checkout(tmp_path, "alpha")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("PROJECTS_DIR", raising=False)
-    monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(tui, "PostgresEstado", lambda sessao: estado)
-
-    assert tui._repos_do_ambiente() == [RepoOption(nome="alpha", caminho=None)]
 
 
 class GitCatalogoFake:
@@ -188,7 +169,9 @@ def test_descobrir_versoes_faz_fetch_deduplica_ordena_e_marca_liberada():
     assert git.fetched == ["origin"]
 
 
-def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
+def test_versoes_do_repo_abre_git_no_checkout(monkeypatch, tmp_path, xdg_isolado):
+    checkout = _checkout(tmp_path, "alpha")
+    _registrar_repo(xdg_isolado, "alpha", checkout)
     git = GitCatalogoFake()
     caminhos: list[str] = []
 
@@ -198,11 +181,9 @@ def test_versoes_do_repo_abre_git_no_checkout(monkeypatch):
 
     monkeypatch.setattr(tui, "new_git_subprocess", abrir_git)
 
-    resultado = tui._versoes_do_repo(
-        RepoOption(nome="alpha", caminho="/projetos/alpha")
-    )
+    resultado = tui._versoes_do_repo(RepoOption(nome="alpha", caminho=str(checkout)))
 
-    assert caminhos == ["/projetos/alpha"]
+    assert caminhos == [str(checkout)]
     assert resultado[0] == VersionOption(numero="14.0.0", liberada=False)
 
 
@@ -219,10 +200,15 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     tmp_path, monkeypatch, xdg_isolado
 ):
     checkout = _checkout(tmp_path, "alpha")
-    (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado,
+        "alpha",
+        checkout,
+        topo=f'[tarefas]\nfonte = "{_FIXA}"\n',
+        do_repo="[tarefas]\nsistema = 7\n",
+    )
     monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def verificar_spy(deps, versao, auditar=False):
@@ -265,11 +251,16 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
 
 def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_isolado):
     checkout = _checkout(tmp_path, "alpha")
-    (checkout / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
     estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
     capturado: dict[str, object] = {}
     esperado = AtualizarResult(status=AtualizarStatus.DONE)
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado,
+        "alpha",
+        checkout,
+        topo=f'[tarefas]\nfonte = "{_FIXA}"\n',
+        do_repo="[tarefas]\nsistema = 7\n",
+    )
     monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def atualizar_spy(deps, versao):
@@ -310,7 +301,9 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch, xdg_is
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado, "alpha", checkout, topo=f'[tarefas]\nfonte = "{_FIXA}"\n'
+    )
     monkeypatch.setattr(tui, "atualizar_continue", continue_spy)
 
     resultado = tui._continuar_repo(
@@ -334,7 +327,9 @@ def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch, xdg_isolado
     monkeypatch.setattr(tui, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
-    xdg_isolado.write_text(f'[tarefas]\nfonte = "{_FIXA}"\n')
+    _registrar_repo(
+        xdg_isolado, "alpha", checkout, topo=f'[tarefas]\nfonte = "{_FIXA}"\n'
+    )
     monkeypatch.setattr(tui, "atualizar_abort", abort_spy)
 
     tui._abortar_repo(RepoOption(nome="alpha", caminho=str(checkout)), "14.0.0")
@@ -2530,44 +2525,31 @@ def xdg_isolado(tmp_path, monkeypatch):
     return caminho
 
 
-def test_descobrir_repos_le_o_piso_do_toml_do_checkout(tmp_path, xdg_isolado):
-    checkout = tmp_path / "projetos" / "alpha"
-    (checkout / ".git").mkdir(parents=True)
-    (checkout / ".monitor-versoes.toml").write_text('[versao]\npiso = "14.0.0"\n')
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
-
-    opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
-
-    assert [o.piso_versao for o in opcoes] == ["14.0.0"]
-
-
-def test_descobrir_repos_sem_checkout_usa_so_o_piso_global(tmp_path, xdg_isolado):
-    xdg_isolado.write_text('[versao]\npiso = "12.0.0"\n')
-    estado = FakeEstado(repos={"alpha": RepoInfo(nome="alpha")})
-
-    assert [o.piso_versao for o in descobrir_repos(estado, "")] == ["12.0.0"]
-    assert [o.piso_versao for o in descobrir_repos(estado, str(tmp_path / "x"))] == [
-        "12.0.0"
-    ]
-
-
-def test_descobrir_repos_toml_invalido_deixa_o_piso_none_sem_derrubar(
-    tmp_path, xdg_isolado
-):
-    for nome, conteudo in (
-        ("alpha", "isto = = nao\n"),
-        ("beta", '[versao]\npiso = "1.0.0"\n'),
-    ):
-        checkout = tmp_path / "projetos" / nome
-        (checkout / ".git").mkdir(parents=True)
-        (checkout / ".monitor-versoes.toml").write_text(conteudo)
-    estado = FakeEstado(
-        repos={"alpha": RepoInfo(nome="alpha"), "beta": RepoInfo(nome="beta")}
+def test_repos_do_ambiente_le_o_piso_da_secao(tmp_path, xdg_isolado):
+    checkout = _checkout(tmp_path, "alpha")
+    _registrar_repo(
+        xdg_isolado, "alpha", checkout, do_repo='[versao]\npiso = "14.0.0"\n'
     )
 
-    opcoes = descobrir_repos(estado, str(tmp_path / "projetos"))
+    assert [o.piso_versao for o in tui._repos_do_ambiente()] == ["14.0.0"]
 
-    assert {o.nome: o.piso_versao for o in opcoes} == {"alpha": None, "beta": "1.0.0"}
+
+def test_secao_invalida_nao_derruba_a_lista(tmp_path, xdg_isolado):
+    beta = _checkout(tmp_path, "beta")
+    xdg_isolado.write_text(
+        f'[repos.alpha]\n{CHAVE_CAMINHO} = "{beta}"\n[repos.alpha.versao]\npiso = "abc"\n'
+        f'[repos.beta]\n{CHAVE_CAMINHO} = "{beta}"\n[repos.beta.versao]\npiso = "1.0.0"\n'
+        f'[repos.gamma]\n{CHAVE_CAMINHO} = "{tmp_path / "nao-existe"}"\n'
+    )
+
+    opcoes = {o.nome: o for o in tui._repos_do_ambiente()}
+
+    assert {n: o.piso_versao for n, o in opcoes.items()} == {
+        "alpha": None,
+        "beta": "1.0.0",
+        "gamma": None,
+    }
+    assert opcoes["gamma"].caminho is None
 
 
 _ARQUIVO_INSCRICOES = "inscricoes.json"
@@ -2577,9 +2559,9 @@ _REMOVE_INSCRICAO = "d"
 _LISTA_INSCRICOES = "#inscricoes-lista"
 
 
-def _inscricao(versao: str, clone: str = "/projetos/alpha") -> Inscricao:
+def _inscricao(versao: str, repo: str = "alpha") -> Inscricao:
     return Inscricao(
-        clone,
+        repo,
         versao,
         parse_intervalo(INTERVALO_PADRAO),
         "/diretorio",
@@ -2646,8 +2628,8 @@ def test_inscricoes_adiciona_selecionada(tmp_path):
 
     asyncio.run(executar_fluxo())
     [gravada] = carregar(arquivo)
-    assert (gravada.clone, gravada.versao, gravada.ambiente) == (
-        cast(str, _REPO_PREVIA.caminho),
+    assert (gravada.repo, gravada.versao, gravada.ambiente) == (
+        _REPO_PREVIA.nome,
         _VERSAO_PREVIA.numero,
         _AMBIENTE_INSCRICAO,
     )
@@ -2690,32 +2672,6 @@ def _gravar_avisos(monkeypatch, app: MotorTUI) -> list[str]:
     avisos: list[str] = []
     monkeypatch.setattr(app, "notify", lambda mensagem, **_: avisos.append(mensagem))
     return avisos
-
-
-def test_inscricoes_guarda_clone_absoluto(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    arquivo = tmp_path / _ARQUIVO_INSCRICOES
-    relativo = RepoOption(nome="alpha", caminho="projetos/alpha")
-
-    async def executar_fluxo() -> None:
-        app = MotorTUI(
-            Runners(lambda: [relativo], lambda opcao: [_VERSAO_PREVIA], _nunca_executa),
-            inscricoes_em=arquivo,
-            ambiente=_AMBIENTE_INSCRICAO,
-        )
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            app.query_one("#repo", Select).value = relativo
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            app.query_one("#versao", Select).value = _VERSAO_PREVIA
-            await pilot.pause()
-            await pilot.press(_ABRE_INSCRICOES, _ADICIONA_INSCRICAO)
-            await pilot.pause()
-
-    asyncio.run(executar_fluxo())
-    [gravada] = carregar(arquivo)
-    assert gravada.clone == str(tmp_path / "projetos/alpha")
 
 
 def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path, monkeypatch):

@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from motor.config import ConfigProjeto, carregar_config
+from motor.config import ConfigProjeto, carregar_config_global
 from motor.diagnostico import (
     Estado,
     Resultado,
@@ -298,7 +298,7 @@ def test_linha_tarefas_por_estado(
     central.parent.mkdir()
     central.write_text("" if fonte is None else f'[tarefas]\nfonte = "{fonte}"\n')
 
-    por_peca, resultados = _rodar(config_central=lambda: carregar_config(None))
+    por_peca, resultados = _rodar(config_central=carregar_config_global)
 
     linha = por_peca["Tarefas"]
     assert linha.estado is estado
@@ -314,7 +314,7 @@ def test_linha_tarefas_cita_a_mensagem_da_falha(tmp_path, monkeypatch):
         '[tarefas]\nfonte = "tests.fontes_falsas:FonteConstrutorQuebra"\n'
     )
 
-    por_peca, _ = _rodar(config_central=lambda: carregar_config(None))
+    por_peca, _ = _rodar(config_central=carregar_config_global)
 
     assert "construtor quebrou" in por_peca["Tarefas"].detalhe
 

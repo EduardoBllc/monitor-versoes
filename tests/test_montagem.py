@@ -8,6 +8,8 @@ montagem tocar o git ou a rede, todo comando passa a pagar por ela — inclusive
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from motor import montagem
@@ -17,7 +19,13 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.atribuicoes import Exata
-from motor.config import ConfigProjeto, Escolhido, validar_nome_repo
+from motor.config import (
+    CHAVE_CAMINHO,
+    SECAO_REPOS,
+    ConfigProjeto,
+    Escolhido,
+    validar_nome_repo,
+)
 from motor.domain.referencia import ALFABETO_PADRAO, Referencia
 from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
@@ -156,7 +164,7 @@ def _config_com_fonte(valor: str, **tarefas: object) -> ConfigProjeto:
     return ConfigProjeto(
         tarefas={"fonte": valor, **tarefas},
         arquivos=("/a.toml", "/b.toml"),
-        fonte_tarefas=Escolhido(valor, "/a.toml", "central"),
+        fonte_tarefas=Escolhido(valor, "/a.toml"),
     )
 
 
@@ -223,13 +231,28 @@ def test_construtor_com_bug_vira_erro_de_entrada():
 # -- referencia de tarefa ----------------------------------------------------
 
 
+NOME_REPO = "repo"
+
+
+def _escrever_central(raiz, topo: str = "", do_repo: str = "") -> None:
+    """`config.toml` central com o topo e a seção do repo; `do_repo` usa os
+    cabeçalhos relativos à seção (`[tarefas]` vira `[repos.repo.tarefas]`)."""
+    central = raiz.parent / "xdg" / "monitor-versoes"
+    central.mkdir(parents=True, exist_ok=True)
+    do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{NOME_REPO}.", do_repo, flags=re.M)
+    (central / "config.toml").write_text(
+        f'{topo}[{SECAO_REPOS}.{NOME_REPO}]\n{CHAVE_CAMINHO} = "{raiz}"\n{do_repo}'
+    )
+
+
 @pytest.fixture
 def repo_montavel(monkeypatch, tmp_path):
-    """Raiz de repo com git e estado fakes e config global isolada."""
+    """Raiz de repo registrada na config global, com git e estado fakes."""
     raiz = tmp_path / "repo"
     raiz.mkdir()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    estado = FakeEstado(repos={"repo": RepoInfo(nome="repo")})
+    _escrever_central(raiz)
+    estado = FakeEstado(repos={NOME_REPO: RepoInfo(nome=NOME_REPO)})
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda *_, **__: FakeGit())
     monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
     return raiz
@@ -242,15 +265,31 @@ def _lista(raiz):
 
 
 def _fonte_central(raiz, valor: str) -> None:
-    central = raiz.parent / "xdg" / "monitor-versoes"
-    central.mkdir(parents=True, exist_ok=True)
-    (central / "config.toml").write_text(f'[tarefas]\nfonte = "{valor}"\n')
+    _escrever_central(raiz, topo=f'[tarefas]\nfonte = "{valor}"\n')
+
+
+def test_montar_deps_usa_o_caminho_da_secao(repo_montavel, monkeypatch):
+    abertos: list[str] = []
+
+    def abrir_git(caminho: str, **_: object) -> FakeGit:
+        abertos.append(caminho)
+        return FakeGit()
+
+    monkeypatch.setattr(montagem, "new_git_subprocess", abrir_git)
+    estado = FakeEstado()
+    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+
+    deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
+
+    assert abertos == [str(repo_montavel)]
+    assert deps.repo == NOME_REPO
+    assert NOME_REPO in [r.nome for r in estado.listar_repos()]
 
 
 def test_fonte_da_config_sem_padrao_propoe_a_referencia_dela(repo_montavel):
     _fonte_central(repo_montavel, "tests.fontes_falsas:FonteFixa")
 
-    deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
+    deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
 
     assert deps.referencia() == REFERENCIA_CH
 
@@ -258,7 +297,7 @@ def test_fonte_da_config_sem_padrao_propoe_a_referencia_dela(repo_montavel):
 def test_montar_deps_nao_carrega_o_plugin(repo_montavel):
     _fonte_central(repo_montavel, "inexistente")
 
-    deps = montar_deps(str(repo_montavel), None)  # type: ignore[arg-type]
+    deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
 
     with pytest.raises(ErroDeEntrada, match="plugin 'inexistente' nao encontrado"):
         deps.referencia()
@@ -266,7 +305,7 @@ def test_montar_deps_nao_carrega_o_plugin(repo_montavel):
 
 def test_lista_manual_sem_padrao_monta_e_so_cobra_no_uso(repo_montavel):
     # montar nao pode falhar: `atualizar --abort` nao usa a referencia.
-    deps = montar_deps(str(repo_montavel), None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
+    deps = montar_deps(NOME_REPO, None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
 
     with pytest.raises(ErroDeEntrada) as e:
         deps.referencia()
@@ -275,11 +314,9 @@ def test_lista_manual_sem_padrao_monta_e_so_cobra_no_uso(repo_montavel):
 
 
 def test_lista_manual_com_padrao_usa_o_alfabeto_default(repo_montavel):
-    (repo_montavel / ".monitor-versoes.toml").write_text(
-        '[referencia]\npadrao = "ch{id}"\n'
-    )
+    _escrever_central(repo_montavel, do_repo='[referencia]\npadrao = "ch{id}"\n')
 
-    deps = montar_deps(str(repo_montavel), None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
+    deps = montar_deps(NOME_REPO, None, tasks=_lista(repo_montavel))  # type: ignore[arg-type]
 
     assert deps.referencia() == Referencia("ch{id}", ALFABETO_PADRAO)
 
@@ -291,7 +328,7 @@ def sem_bitbucket_no_ambiente(monkeypatch):
 
 
 def _entradas(raiz, **kwargs) -> str:
-    return montar_deps(str(raiz), None, **kwargs).identidade_das_entradas()  # type: ignore[arg-type]
+    return montar_deps(NOME_REPO, None, **kwargs).identidade_das_entradas()  # type: ignore[arg-type]
 
 
 def test_identidade_muda_com_a_fonte(repo_montavel, sem_bitbucket_no_ambiente):
@@ -330,9 +367,7 @@ def test_entradas_mudam_com_a_config_de_referencia_e_piso(
     repo_montavel, sem_bitbucket_no_ambiente
 ):
     antes = _entradas(repo_montavel)
-    (repo_montavel / ".monitor-versoes.toml").write_text(
-        '[referencia]\npadrao = "ch{id}"\n'
-    )
+    _escrever_central(repo_montavel, do_repo='[referencia]\npadrao = "ch{id}"\n')
 
     assert _entradas(repo_montavel) != antes
 
@@ -340,9 +375,9 @@ def test_entradas_mudam_com_a_config_de_referencia_e_piso(
 def test_entradas_mudam_com_o_sistema_de_tarefas(
     repo_montavel, sem_bitbucket_no_ambiente
 ):
-    (repo_montavel / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 7\n")
+    _escrever_central(repo_montavel, do_repo="[tarefas]\nsistema = 7\n")
     antes = _entradas(repo_montavel)
-    (repo_montavel / ".monitor-versoes.toml").write_text("[tarefas]\nsistema = 8\n")
+    _escrever_central(repo_montavel, do_repo="[tarefas]\nsistema = 8\n")
 
     assert _entradas(repo_montavel) != antes
 

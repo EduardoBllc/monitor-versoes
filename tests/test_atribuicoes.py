@@ -32,7 +32,7 @@ def _contexto(
 
 @pytest.mark.parametrize("nome,classe", [("exata", Exata), ("composta", Composta)])
 def test_politica_embutida_e_entry_point(nome, classe):
-    assert carregar_plugin("monitor_versoes.atribuicoes", nome, "repo") is classe
+    assert carregar_plugin("monitor_versoes.atribuicoes", nome) is classe
 
 
 # Cenario canonico da distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md).

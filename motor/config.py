@@ -11,7 +11,6 @@ from urllib.parse import quote
 
 from motor.domain.referencia import validar_padrao
 from motor.errors import ErroDeEntrada
-from motor.plugins import Origem
 
 _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 
@@ -137,23 +136,18 @@ AMBIENTE_PADRAO = "production"
 SECAO_REPOS = "repos"
 CHAVE_CAMINHO = "caminho"
 
-#: Nome do arquivo de config na raiz do repo-alvo.
-ARQUIVO_CONFIG_REPO = ".monitor-versoes.toml"
-
 
 @dataclass(frozen=True)
 class Escolhido:
-    """Valor de uma chave com o arquivo que o deu, para erro que cita o arquivo
-    e para o carregador de plugins saber se a escolha veio do arquivo central."""
+    """Valor de uma chave com o arquivo que o deu, para o erro citá-lo."""
 
     valor: str
     arquivo: str
-    origem: Origem
 
 
 @dataclass(frozen=True)
 class ConfigProjeto:
-    """Config por projeto, mesclada das duas camadas (repo vence o global).
+    """Config por projeto, mesclada do topo e da seção do repo (a seção vence).
 
     `tarefas` e opaco ao nucleo, salvo `fonte`: quem le as outras chaves e o
     plugin da fonte de tarefas, que recebe a tabela inteira (`fonte` inclusa).
@@ -263,7 +257,7 @@ def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
     return None if bruto is None else validar_padrao(bruto, caminho)
 
 
-Camada = tuple[Mapping[str, object], str, Origem]
+Camada = tuple[Mapping[str, object], str]
 
 
 def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto:
@@ -272,22 +266,22 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
     padrao: str | None = None
     tarefas: dict[str, object] = {}
     escolhas: dict[str, Escolhido] = {}
-    for dados, arquivo, origem in camadas:
+    for dados, arquivo in camadas:
         if (p := _texto(dados, "versao", "piso", arquivo)) is not None:
-            piso = Escolhido(p, arquivo, origem)
+            piso = Escolhido(p, arquivo)
         if (r := _padrao_referencia(dados, arquivo)) is not None:
             padrao = r
         tarefas.update(_tabela(dados, "tarefas", arquivo))
         for atributo, tabela, chave, template in _ESCOLHAS:
             ler = _template if template else _texto
             if (valor := ler(dados, tabela, chave, arquivo)) is not None:
-                escolhas[atributo] = Escolhido(valor, arquivo, origem)
+                escolhas[atributo] = Escolhido(valor, arquivo)
     return ConfigProjeto(
         piso=None if piso is None else piso.valor,
         arquivo_piso=None if piso is None else piso.arquivo,
         padrao_referencia=padrao,
         tarefas=tarefas,
-        arquivos=tuple(c for _, c, _ in camadas),
+        arquivos=tuple(c for _, c in camadas),
         esquema=escolhas.get("esquema"),
         atribuicao=escolhas.get("atribuicao"),
         tag_liberacao=escolhas.get("tag_liberacao"),
@@ -295,24 +289,6 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
         branch_principal=escolhas.get("branch_principal"),
         fonte_tarefas=escolhas.get("fonte_tarefas"),
         caminho=caminho,
-    )
-
-
-def carregar_config(raiz_repo: str | None) -> ConfigProjeto:
-    """Le o global e, havendo `raiz_repo`, o `.monitor-versoes.toml` dela.
-
-    Mescla chave a chave, o repo vencendo. Arquivo ausente vale vazio. So as
-    chaves de `[versao]`, `[liberacao]`, `[branches]`, `[referencia] padrao` e
-    `[tarefas]` sao lidas; o resto e ignorado.
-    """
-    caminhos = [caminho_config_global()]
-    if raiz_repo is not None:
-        caminhos.append(os.path.join(raiz_repo, ARQUIVO_CONFIG_REPO))
-    return _mesclar(
-        [
-            (_ler_toml(c), c, "central" if i == 0 else "repo")
-            for i, c in enumerate(caminhos)
-        ]
     )
 
 
@@ -363,7 +339,7 @@ def repos_configurados() -> dict[str, str | None]:
 def carregar_config_global() -> ConfigProjeto:
     """So o topo da config central."""
     arquivo = caminho_config_global()
-    return _mesclar([(_topo(_ler_toml(arquivo), arquivo), arquivo, "central")])
+    return _mesclar([(_topo(_ler_toml(arquivo), arquivo), arquivo)])
 
 
 def carregar_config_repo(nome: str) -> ConfigProjeto:
@@ -392,8 +368,8 @@ def carregar_config_repo(nome: str) -> ConfigProjeto:
     sem_caminho = {k: v for k, v in secao.items() if k != CHAVE_CAMINHO}
     return _mesclar(
         [
-            (_topo(dados, arquivo), arquivo, "central"),
-            (sem_caminho, rotulo, "central"),
+            (_topo(dados, arquivo), arquivo),
+            (sem_caminho, rotulo),
         ],
         caminho=caminho,
     )

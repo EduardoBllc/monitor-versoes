@@ -12,6 +12,7 @@ import contextlib
 import dataclasses
 import datetime
 import os
+import re
 import subprocess
 from enum import StrEnum
 from typing import Any
@@ -23,7 +24,6 @@ import motor.__main__ as cli
 import motor.montagem as montagem
 from motor.__main__ import (
     _build_parser,
-    _resolver_repo,
     imprimir_atualizacao,
     imprimir_status,
     main,
@@ -33,6 +33,7 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
+from motor.config import CHAVE_CAMINHO, SECAO_REPOS
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -46,7 +47,7 @@ from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.inscricoes import Inscricao
 from motor.montagem import CredenciaisBitbucket
-from motor.plugins import Origem, carregar_plugin
+from motor.plugins import carregar_plugin
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 from tests.versionamento import ESCALONADO_COMPOSTA
 
@@ -299,18 +300,25 @@ def test_imprimir_atualizacao_bloqueada_nomeia_os_culpados(
 # -- main() ponta a ponta -----------------------------------------------------
 
 
-def _repo_dir(tmp_path, nome: str = "webapp") -> str:
+def _central() -> str:
+    return os.path.join(os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml")
+
+
+def _repo_dir(tmp_path, nome: str = "webapp", do_repo: str = "") -> str:
+    """Cria o checkout, registra `[repos.<nome>]` na config central e devolve o
+    nome. `do_repo` usa cabeçalhos relativos à seção (`[tarefas]` vira
+    `[repos.<nome>.tarefas]`)."""
     caminho = tmp_path / nome
     caminho.mkdir()
-    return str(caminho)
+    do_repo = re.sub(r"^\[", f"[{SECAO_REPOS}.{nome}.", do_repo, flags=re.M)
+    with open(_central(), "a", encoding="utf-8") as f:
+        f.write(f'[{SECAO_REPOS}.{nome}]\n{CHAVE_CAMINHO} = "{caminho}"\n{do_repo}')
+    return nome
 
 
 def _repo_com_padrao(tmp_path) -> str:
     """Repo com `padrao = "ch{id}"`: a lista manual nao propoe referencia."""
-    caminho = _repo_dir(tmp_path)
-    with open(f"{caminho}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
-        f.write('[referencia]\npadrao = "ch{id}"\n')
-    return caminho
+    return _repo_dir(tmp_path, do_repo='[referencia]\npadrao = "ch{id}"\n')
 
 
 def _git() -> FakeGit:
@@ -331,17 +339,19 @@ _FIXA = "tests.fontes_falsas:FonteFixa"
 
 
 def _fonte_central(fonte: str | None, chamados: list[str] | None = None) -> None:
-    """Reescreve o `config.toml` central da fixture `bordas` com outra fonte."""
-    global_ = os.path.join(
-        os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml"
-    )
+    """Reescreve o topo do `config.toml` central da fixture `bordas` com outra
+    fonte, mantendo as seções `[repos.*]` já registradas."""
+    with open(_central(), encoding="utf-8") as f:
+        atual = f.read()
+    indice = atual.find(f"[{SECAO_REPOS}.")
+    repos = "" if indice < 0 else atual[indice:]
     conteudo = '[versao]\nesquema = "tests.versionamento:Escalonado"\natribuicao = "composta"\n'
     if fonte is not None:
         conteudo += f'[tarefas]\nfonte = "{fonte}"\n'
         if chamados is not None:
             conteudo += "chamados = [" + ", ".join(f'"{c}"' for c in chamados) + "]\n"
-    with open(global_, "w", encoding="utf-8") as f:
-        f.write(conteudo)
+    with open(_central(), "w", encoding="utf-8") as f:
+        f.write(conteudo + repos)
 
 
 @pytest.fixture
@@ -444,21 +454,19 @@ def test_fonte_da_config_recebe_o_sistema_do_repo(bordas, tmp_path):
     _fonte_central(_FIXA)
 
     # sem --task-source: prova que o default do CLI e a fonte da config
-    repo = _repo_dir(tmp_path)
-    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
-        f.write("[tarefas]\nsistema = 7\n")
+    repo = _repo_dir(tmp_path, do_repo="[tarefas]\nsistema = 7\n")
     main(["verificar", "13.34.0", "--repo", repo])
 
     assert len(FonteFixa.recebidos) == 1
     recebido = FonteFixa.recebidos[0]
     tarefas = recebido["tarefas"]
     assert isinstance(tarefas, dict)
-    # 7 vem do .monitor-versoes.toml do repo, nao do banco
+    # 7 vem da seção do repo no config.toml, nao do banco
     assert tarefas["sistema"] == 7
     assert tarefas["fonte"] == _FIXA
     arquivos = recebido["arquivos"]
     assert isinstance(arquivos, tuple)
-    assert arquivos[-1] == f"{repo}/.monitor-versoes.toml"
+    assert arquivos[-1] == f"{_central()} [{SECAO_REPOS}.{repo}]"
 
 
 def test_verificar_busca_tarefas_pela_fonte_da_config(bordas, tmp_path, capsys):
@@ -469,19 +477,6 @@ def test_verificar_busca_tarefas_pela_fonte_da_config(bordas, tmp_path, capsys):
     saida = capsys.readouterr().out
     # a0 cita ch123456 e so existe no master: a task chegou pela fonte
     assert "a0" in saida and "123456" in saida
-
-
-def test_fonte_por_import_no_repo_e_recusada(bordas, tmp_path, caplog):
-    _fonte_central(None)
-    repo = _repo_dir(tmp_path)
-    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
-        f.write(f'[tarefas]\nfonte = "{_FIXA}"\n')
-
-    with pytest.raises(SystemExit) as saida:
-        main(["verificar", "13.34.0", "--repo", repo])
-
-    assert saida.value.code == 1
-    assert "import direto so vale no config.toml central" in caplog.text
 
 
 def test_fonte_nao_instalada_e_recusada(bordas, tmp_path, caplog):
@@ -497,17 +492,15 @@ def test_fonte_nao_instalada_e_recusada(bordas, tmp_path, caplog):
 def test_sem_fonte_a_busca_pede_a_chave(bordas, tmp_path, caplog):
     _fonte_central(None)
     repo = _repo_com_padrao(tmp_path)
-    central = os.path.join(
-        os.environ["XDG_CONFIG_HOME"], "monitor-versoes", "config.toml"
-    )
+    central = _central()
 
     with pytest.raises(SystemExit) as saida:
         main(["verificar", "13.34.0", "--repo", repo])
 
     assert saida.value.code == 1
-    # as duas configs lidas aparecem, unidas por "e"
+    # o topo e a seção do repo aparecem, unidos por "e"
     assert (
-        f"faltando [tarefas] fonte em {central} e {repo}/.monitor-versoes.toml; "
+        f"faltando [tarefas] fonte em {central} e {central} [{SECAO_REPOS}.{repo}]; "
         "ou use --task-source manual --lista <arquivo>"
     ) in caplog.text
 
@@ -525,10 +518,10 @@ def test_reconstruir_sem_fonte_usa_o_padrao_da_config(
 ):
     _fonte_central(None)
 
-    def so_sem_tarefas(grupo: str, nome: str, origem: Origem) -> type:
+    def so_sem_tarefas(grupo: str, nome: str) -> type:
         if grupo == montagem.GRUPO_TAREFAS:
             raise AssertionError("o plugin da fonte de tarefas foi carregado")
-        return carregar_plugin(grupo, nome, origem)
+        return carregar_plugin(grupo, nome)
 
     monkeypatch.setattr(montagem, "carregar_plugin", so_sem_tarefas)
 
@@ -641,9 +634,7 @@ def test_atualizar_abort_ponta_a_ponta(bordas, tmp_path, capsys, monkeypatch):
 def test_abort_nao_resolve_o_versionamento(bordas, tmp_path, capsys, config):
     """Sair de um lote travado nao pode depender de o esquema carregar nem de
     o piso valer (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md)."""
-    repo = _repo_dir(tmp_path)
-    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
-        f.write(config)
+    repo = _repo_dir(tmp_path, do_repo=config)
 
     main(["atualizar", "13.34.0", "--repo", repo, "--abort"])
 
@@ -653,11 +644,10 @@ def test_abort_nao_resolve_o_versionamento(bordas, tmp_path, capsys, config):
 def test_abort_usa_a_branch_da_versao_da_config(bordas, tmp_path, capsys):
     git, _ = bordas
     git.set_branch("release/13.34.0", "m0")
-    repo = _repo_dir(tmp_path)
-    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
-        f.write(
-            '[versao]\nesquema = "naoexiste"\n[branches]\nversao = "release/{versao}"\n'
-        )
+    repo = _repo_dir(
+        tmp_path,
+        do_repo='[versao]\nesquema = "naoexiste"\n[branches]\nversao = "release/{versao}"\n',
+    )
 
     main(["atualizar", "13.34.0", "--repo", repo, "--abort"])
 
@@ -886,39 +876,42 @@ def test_repr_de_deps_nao_vaza_credencial_do_bitbucket():
     assert "dev@x.com" not in repr(deps)
 
 
-# -- _resolver_repo -----------------------------------------------------------
+# -- --repo pelo nome da seção -------------------------------------------------
 
 
-def test_resolver_repo_caminho_literal(tmp_path):
-    alvo = tmp_path / "meurepo"
-    alvo.mkdir()
-    assert _resolver_repo(str(alvo)) == str(alvo)
+def test_repo_por_nome_da_secao(bordas, tmp_path, monkeypatch):
+    git, estado = bordas
+    assert isinstance(git, FakeGit)
+    abertos: list[str] = []
+    vistos: list[str] = []
+
+    def abrir_git(caminho: str, **_: object) -> FakeGit:
+        abertos.append(caminho)
+        return git
+
+    def consultar_espiao(deps: Deps, versao: str) -> list[Any]:
+        vistos.append(deps.repo)
+        return []
+
+    monkeypatch.setattr(montagem, "new_git_subprocess", abrir_git)
+    monkeypatch.setattr(cli, "consultar", consultar_espiao)
+    nome = _repo_dir(tmp_path, "x")
+
+    main(["consulta", "13.34.0", "--repo", nome])
+
+    assert abertos == [str(tmp_path / "x")]
+    assert vistos == ["x"]
+    assert "x" in [r.nome for r in estado.listar_repos()]
 
 
-def test_resolver_repo_via_projects_dir(tmp_path, monkeypatch):
-    projetos = tmp_path / "projetos"
-    (projetos / "webapp").mkdir(parents=True)
-    monkeypatch.setenv("PROJECTS_DIR", str(projetos))
+def test_repo_por_caminho_nao_e_aceito(bordas, tmp_path, caplog):
+    nome = _repo_dir(tmp_path, "x")
 
-    resolvido = _resolver_repo("webapp")
+    with pytest.raises(SystemExit) as saida:
+        main(["consulta", "13.34.0", "--repo", str(tmp_path / nome)])
 
-    assert resolvido == os.path.join(str(projetos), "webapp")
-
-
-def test_resolver_repo_tira_a_barra_final(tmp_path, monkeypatch):
-    # tab-completion do shell manda "webapp/", e o basename disso e "" —
-    # o nome do repo e a chave do estado inteiro.
-    projetos = tmp_path / "projetos"
-    (projetos / "webapp").mkdir(parents=True)
-    monkeypatch.setenv("PROJECTS_DIR", str(projetos))
-
-    assert os.path.basename(_resolver_repo("webapp/")) == "webapp"
-
-
-def test_resolver_repo_nao_encontrado(tmp_path, monkeypatch):
-    monkeypatch.delenv("PROJECTS_DIR", raising=False)
-    with pytest.raises(SystemExit):
-        _resolver_repo(str(tmp_path / "nao-existe"))
+    assert saida.value.code == 1
+    assert f"existentes: {nome}" in caplog.text
 
 
 def test_imprimir_status_nomeia_os_chamados_culpados_pelo_conflito(capsys):
@@ -1005,9 +998,7 @@ def test_imprimir_status_sem_culpados_mantem_a_tag_seca(capsys):
 
 def test_verificar_nao_busca_versao_abaixo_do_piso_do_repo(bordas, tmp_path):
     _fonte_central(_FIXA)
-    repo = _repo_dir(tmp_path)
-    with open(f"{repo}/.monitor-versoes.toml", "w", encoding="utf-8") as f:
-        f.write('[versao]\npiso = "13.34.0"\n')
+    repo = _repo_dir(tmp_path, do_repo='[versao]\npiso = "13.34.0"\n')
 
     main(["verificar", "13.34.0", "--repo", repo])
 
@@ -1078,7 +1069,6 @@ def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path)
 
     fonte = recebido["config"].fonte_tarefas
     assert fonte is not None and fonte.valor == "tests.fontes_falsas:FonteFixa"
-    assert fonte.origem == "central"
 
 
 # -- migrar-estado ------------------------------------------------------------
@@ -1155,41 +1145,43 @@ def inscricoes_env(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "caminho_arquivo", lambda: arquivo)
     monkeypatch.setattr(cli, "load_dotenv", None)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    (tmp_path / "xdg" / "monitor-versoes").mkdir(parents=True)
     notificador = FakeNotificador()
     monkeypatch.setattr(cli, "montar_notificador", lambda: notificador)
     return arquivo, notificador
 
 
-def _inscrever_clone(clone: str) -> None:
-    main(["inscricao", "adicionar", _Inscr.VERSAO, "--repo", clone])
+def _inscrever(repo: str) -> None:
+    main(["inscricao", "adicionar", _Inscr.VERSAO, "--repo", repo])
 
 
-def test_inscricao_adicionar_por_nome_e_por_caminho_dao_a_mesma(
-    inscricoes_env, monkeypatch, tmp_path
+def test_inscricao_adicionar_guarda_o_nome_e_recusa_repo_fora_da_config(
+    inscricoes_env, tmp_path
 ):
     from motor.inscricoes import carregar
 
     arquivo, _ = inscricoes_env
-    clone = _repo_dir(tmp_path)
-    monkeypatch.setenv("PROJECTS_DIR", str(tmp_path))
-    _inscrever_clone(clone)
-    _inscrever_clone(os.path.basename(clone))
-    assert [i.clone for i in carregar(arquivo)] == [clone]
+    nome = _repo_dir(tmp_path)
+    _inscrever(nome)
+    with pytest.raises(SystemExit):
+        _inscrever("inexistente")
+    assert [i.repo for i in carregar(arquivo)] == [nome]
 
 
 def test_inscricao_adicionar_avisa_sem_agendador(inscricoes_env, tmp_path, capsys):
-    _inscrever_clone(_repo_dir(tmp_path))
+    _inscrever(_repo_dir(tmp_path))
     assert "agendador não instalado" in capsys.readouterr().err
 
 
 def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
-    clone = _repo_dir(tmp_path)
-    _inscrever_clone(clone)
+    nome = _repo_dir(tmp_path)
+    _inscrever(nome)
     capsys.readouterr()
     main(["inscricao", "listar"])
     saida = capsys.readouterr().out
     assert _Inscr.VERSAO in saida
-    assert clone in saida
+    assert nome in saida
     assert "nunca rodou" in saida
 
 
@@ -1198,7 +1190,7 @@ def test_inscricao_listar_mostra_a_mensagem_do_erro(inscricoes_env, tmp_path, ca
     from motor.inscricoes import carregar, salvar
 
     arquivo, _ = inscricoes_env
-    _inscrever_clone(_repo_dir(tmp_path))
+    _inscrever(_repo_dir(tmp_path))
     [i] = carregar(arquivo)
     ultima = UltimaExecucao(
         datetime.datetime.now(datetime.UTC),
@@ -1216,7 +1208,7 @@ def test_inscricao_listar_mostra_a_mensagem_do_erro(inscricoes_env, tmp_path, ca
 def test_inscricao_listar_mostra_intervalo_formatado(inscricoes_env, tmp_path, capsys):
     from motor.inscricoes import INTERVALO_PADRAO, formatar_intervalo, parse_intervalo
 
-    _inscrever_clone(_repo_dir(tmp_path))
+    _inscrever(_repo_dir(tmp_path))
     capsys.readouterr()
     main(["inscricao", "listar"])
     padrao = formatar_intervalo(parse_intervalo(INTERVALO_PADRAO))
@@ -1258,12 +1250,12 @@ def test_inscricao_rodar_nao_vaza_o_env_carregado_do_dotenv(
 
 
 def _preparar_execucao(monkeypatch, tmp_path, executar):
-    clone = _repo_dir(tmp_path)
-    _inscrever_clone(clone)
+    nome = _repo_dir(tmp_path)
+    _inscrever(nome)
     monkeypatch.setattr(cli, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(cli, "montar_deps", lambda *a, **k: None)
     monkeypatch.setattr(cli, "executar_inscricao", executar)
-    return clone
+    return nome
 
 
 def test_inscricao_executar_grava_resultado(inscricoes_env, monkeypatch, tmp_path):
@@ -1271,10 +1263,10 @@ def test_inscricao_executar_grava_resultado(inscricoes_env, monkeypatch, tmp_pat
     from motor.inscricoes import carregar
 
     arquivo, _ = inscricoes_env
-    clone = _preparar_execucao(
+    nome = _preparar_execucao(
         monkeypatch, tmp_path, lambda deps, versao: Resultado(Desfecho.NADA)
     )
-    main(["inscricao", "executar", _Inscr.VERSAO, "--repo", clone])
+    main(["inscricao", "executar", _Inscr.VERSAO, "--repo", nome])
     ultima = carregar(arquivo)[0].ultima
     assert ultima is not None
     assert ultima.desfecho == Desfecho.NADA
@@ -1290,9 +1282,9 @@ def test_inscricao_executar_bug_grava_erro_e_propaga(
         raise RuntimeError(_Inscr.BUG)
 
     arquivo, _ = inscricoes_env
-    clone = _preparar_execucao(monkeypatch, tmp_path, bug)
+    nome = _preparar_execucao(monkeypatch, tmp_path, bug)
     with pytest.raises(SystemExit):
-        main(["inscricao", "executar", _Inscr.VERSAO, "--repo", clone])
+        main(["inscricao", "executar", _Inscr.VERSAO, "--repo", nome])
     ultima = carregar(arquivo)[0].ultima
     assert ultima is not None
     assert ultima.desfecho == Desfecho.ERRO
@@ -1305,7 +1297,7 @@ def test_inscricao_nao_abre_banco_exceto_executar(
     monkeypatch.setattr(
         cli, "abrir_sessao", lambda: pytest.fail("só o executar abre sessão")
     )
-    _inscrever_clone(_repo_dir(tmp_path))
+    _inscrever(_repo_dir(tmp_path))
     main(["inscricao", "listar"])
 
 
