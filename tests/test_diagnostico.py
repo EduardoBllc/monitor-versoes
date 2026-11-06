@@ -118,12 +118,12 @@ def test_instalacao_integra():
 
     assert not falhou(resultados)
     assert [r.peca for r in resultados] == [
-        "Variáveis",
-        "Postgres",
-        "Migração",
-        "Repos",
-        "Tarefas",
-        "Bitbucket",
+        Peca.VARIAVEIS,
+        Peca.POSTGRES,
+        Peca.MIGRACAO,
+        Peca.REPOS,
+        Peca.TAREFAS,
+        Peca.BITBUCKET,
     ]
     assert por_peca[Peca.TAREFAS].estado is Estado.NAO_CONFIGURADO
     assert por_peca[Peca.BITBUCKET].estado is Estado.NAO_CONFIGURADO
@@ -180,7 +180,7 @@ def _sessao_com_repos(*nomes: str):
 
 
 def _repos_de(resultados):
-    return [r for r in resultados if r.peca == "Repos"]
+    return [r for r in resultados if r.peca is Peca.REPOS]
 
 
 def test_sem_projects_dir():
@@ -212,10 +212,10 @@ def test_bitbucket_token_recusado_e_aceito():
     aceito, _ = _rodar(env, handler=lambda r: httpx.Response(200, json={"access": "t"}))
     sem_email, _ = _rodar({**ENV_OK, "BITBUCKET_TOKEN": "tok"})
 
-    assert recusado["Bitbucket"].estado is Estado.FALHA
+    assert recusado[Peca.BITBUCKET].estado is Estado.FALHA
     assert falhou(resultados)
-    assert aceito["Bitbucket"].estado is Estado.OK
-    assert sem_email["Bitbucket"].estado is Estado.FALHA
+    assert aceito[Peca.BITBUCKET].estado is Estado.OK
+    assert sem_email[Peca.BITBUCKET].estado is Estado.FALHA
 
 
 def test_falhas_independentes_no_mesmo_relatorio(tmp_path):
@@ -253,7 +253,7 @@ def test_sqlite_nao_exige_partes_do_banco_e_rotula_o_backend():
     por_peca, resultados = _rodar(ENV_SQLITE)
 
     assert not falhou(resultados)
-    assert "Postgres" not in por_peca
+    assert Peca.POSTGRES not in por_peca
     assert por_peca[Peca.SQLITE].estado is Estado.OK
     assert por_peca[Peca.MIGRACAO].estado is Estado.OK
 
@@ -355,14 +355,14 @@ def test_config_central_invalida_falha_so_na_linha_tarefas():
     assert por_peca[Peca.TAREFAS].estado is Estado.FALHA
     assert "TOML invalido" in por_peca[Peca.TAREFAS].detalhe
     assert [r.peca for r in resultados] == [
-        "Variáveis",
-        "Postgres",
-        "Migração",
-        "Repos",
-        "Tarefas",
-        "Bitbucket",
+        Peca.VARIAVEIS,
+        Peca.POSTGRES,
+        Peca.MIGRACAO,
+        Peca.REPOS,
+        Peca.TAREFAS,
+        Peca.BITBUCKET,
     ]
-    outras = [r for r in resultados if r.peca != "Tarefas"]
+    outras = [r for r in resultados if r.peca is not Peca.TAREFAS]
     assert all(r.estado is not Estado.FALHA for r in outras)
 
 
