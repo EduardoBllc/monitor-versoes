@@ -1,4 +1,12 @@
-import { Alert, AppShell, Loader, MantineProvider, Text } from "@mantine/core";
+import {
+  Alert,
+  AppShell,
+  Button,
+  Loader,
+  MantineProvider,
+  Modal,
+  Text,
+} from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import {
   QueryClient,
@@ -9,14 +17,27 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Metodo, api, ErroApi } from "./api/cliente";
 import { EstadoExecucao, Operacao, TipoErro } from "./api/enums";
+import {
+  FaseAtualizacao,
+  INICIAL,
+  TipoEventoAtualizacao,
+  proximo,
+  type EstadoAtualizacao,
+  type Evento,
+} from "./atualizacao";
 import { acompanhar, type Execucao } from "./api/eventos";
 import type { RepoOption, VersionOption } from "./api/tipos";
 import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
+import { ModalAbortar } from "./componentes/ModalAbortar";
 import { ModalCadastro } from "./componentes/ModalCadastro";
+import { ModalConfirmarLote } from "./componentes/ModalConfirmarLote";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
 import { ModalResultado } from "./componentes/ModalResultado";
+import { PainelBloqueio } from "./componentes/PainelBloqueio";
+import { ResultadoAtualizacao } from "./componentes/ResultadoAtualizacao";
+import { Status } from "./componentes/Status";
 import { notificarErro, notificarOk } from "./componentes/notificar";
 import { ProgressoExecucao } from "./componentes/ProgressoExecucao";
 import {
@@ -35,6 +56,7 @@ import { caminhoDe, lerCaminho } from "./rotas";
 
 const queryClient = new QueryClient();
 const ALTURA_BARRA = 64;
+const chave = (repo: string, versao: string): string => `${repo}@${versao}`;
 
 function useCaminho() {
   const [caminho, setCaminho] = useState(() =>
@@ -63,8 +85,17 @@ function Tela() {
   const [criando, setCriando] = useState(false);
   const [cadastrando, setCadastrando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
+  const [atualizacoes, setAtualizacoes] = useState<
+    Readonly<Record<string, EstadoAtualizacao>>
+  >({});
+  const [abortando, setAbortando] = useState(false);
   const repoRef = useRef(repo);
   repoRef.current = repo;
+  const versaoRef = useRef(versao);
+  versaoRef.current = versao;
+  const despachar = useCallback((k: string, ev: Evento) => {
+    setAtualizacoes((a) => ({ ...a, [k]: proximo(a[k] ?? INICIAL, ev) }));
+  }, []);
   // O ref é a fonte síncrona (evita duplo acompanhamento); o state só repinta.
   const mudar = useCallback((f: (e: EstadoExecucoes) => EstadoExecucoes) => {
     execRef.current = f(execRef.current);
@@ -108,7 +139,31 @@ function Tela() {
         const fim = await acompanhar(nome, (p) =>
           mudar((e) => progredir(e, nome, p)),
         );
-        if (fim === null) return;
+        if (fim === null) {
+          // Nada rodando mais: quem ficou em "aplicando" (409) volta ao que era.
+          if (versaoRef.current !== undefined)
+            despachar(chave(nome, versaoRef.current), {
+              tipo: TipoEventoAtualizacao.RECONECTOU,
+              execucao: null,
+            });
+          return;
+        }
+        despachar(chave(fim.repo, fim.versao), {
+          tipo: TipoEventoAtualizacao.TERMINOU,
+          execucao: fim,
+        });
+        if (
+          fim.operacao === Operacao.ABORTAR &&
+          fim.estado !== EstadoExecucao.FALHOU
+        )
+          notificarOk("Atualização abortada");
+        if (
+          fim.operacao !== Operacao.VERIFICAR &&
+          fim.operacao !== Operacao.CRIAR
+        )
+          void cliente.invalidateQueries({
+            queryKey: ["chamados", fim.repo, fim.versao],
+          });
         if (
           fim.operacao === Operacao.CRIAR &&
           fim.estado !== EstadoExecucao.FALHOU
@@ -126,11 +181,16 @@ function Tela() {
           notificarOk(efeito.mensagem);
       } catch (erro) {
         notificarErro(erro);
+        if (versaoRef.current !== undefined)
+          despachar(chave(nome, versaoRef.current), {
+            tipo: TipoEventoAtualizacao.RECONECTOU,
+            execucao: null,
+          });
       } finally {
         mudar((e) => terminar(e, nome));
       }
     },
-    [cliente, ir, mudar],
+    [cliente, despachar, ir, mudar],
   );
 
   // Recarregar a página (ou abrir outra aba) durante uma operação passa a acompanhá-la.
@@ -141,27 +201,76 @@ function Tela() {
       `/api/repos/${encodeURIComponent(repo)}/execucao`,
     )
       .then((e) => {
+        if (e)
+          despachar(chave(e.repo, e.versao), {
+            tipo: TipoEventoAtualizacao.RECONECTOU,
+            execucao: e,
+          });
         if (e?.estado === EstadoExecucao.RODANDO) return seguir(repo);
       })
       .catch(notificarErro);
-  }, [repo, seguir]);
+  }, [repo, seguir, despachar]);
 
   const disparar = async (caminho: string, corpo: unknown, auditar = false) => {
-    if (repo === undefined) return;
+    if (repo === undefined || versao === undefined) return;
+    const k = chave(repo, versao);
     try {
       await api<Execucao>(Metodo.POST, caminho, corpo);
     } catch (erro) {
       // 409: já há operação rodando neste repo (outra aba); passa a acompanhá-la.
       if (!(erro instanceof ErroApi && erro.tipo === TipoErro.OCUPADO)) {
         notificarErro(erro);
+        despachar(k, {
+          tipo: TipoEventoAtualizacao.RECONECTOU,
+          execucao: null,
+        });
         return;
       }
+      despachar(k, { tipo: TipoEventoAtualizacao.OCUPADO });
     }
     await seguir(repo, auditar);
   };
 
   const base = `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`;
   const ocupado = repo !== undefined && estaRodando(execucoes, repo);
+  const chaveAtual =
+    repo !== undefined && versao !== undefined ? chave(repo, versao) : "";
+  const atualizacao = atualizacoes[chaveAtual] ?? INICIAL;
+  const pendente =
+    atualizacao.fase === FaseAtualizacao.BLOQUEADA ||
+    atualizacao.fase === FaseAtualizacao.VAZIA;
+  const disponivel = repos.data?.find((r) => r.nome === repo)?.caminho != null;
+  const acaoAtualizacao = `${base}/${encodeURIComponent(versao ?? "")}/atualizacao`;
+  const evento = (tipo: TipoEventoAtualizacao) => {
+    if (chaveAtual !== "") despachar(chaveAtual, { tipo } as Evento);
+  };
+  const previa = () => {
+    evento(TipoEventoAtualizacao.INICIOU);
+    void disparar(`${base}/${encodeURIComponent(versao ?? "")}/previa`, undefined);
+  };
+  const aplicar = (continuar: boolean) => {
+    evento(
+      continuar
+        ? TipoEventoAtualizacao.CONTINUOU
+        : TipoEventoAtualizacao.CONFIRMOU,
+    );
+    void disparar(
+      continuar ? `${acaoAtualizacao}/continuar` : acaoAtualizacao,
+      continuar
+        ? { allow_empty: atualizacao.fase === FaseAtualizacao.VAZIA }
+        : undefined,
+    );
+  };
+  const cancelarLote = () => {
+    evento(TipoEventoAtualizacao.CANCELOU);
+    // Cancelar não desfaz a prévia (ela regravou o snapshot): a lista atrás está velha.
+    void cliente.invalidateQueries({ queryKey: ["chamados", repo, versao] });
+  };
+  const abortar = () => {
+    setAbortando(false);
+    evento(TipoEventoAtualizacao.ABORTOU);
+    void disparar(`${acaoAtualizacao}/abortar`, undefined);
+  };
   const fecharResultado = () => {
     if (resultado)
       void cliente.invalidateQueries({
@@ -188,6 +297,41 @@ function Tela() {
               auditar,
             );
           }}
+          slotAtualizar={
+            pendente ? (
+              <>
+                <Button
+                  color={
+                    atualizacao.fase === FaseAtualizacao.VAZIA
+                      ? "yellow"
+                      : "red"
+                  }
+                  disabled={ocupado}
+                  onClick={() => aplicar(true)}
+                >
+                  {atualizacao.fase === FaseAtualizacao.VAZIA
+                    ? "Registrar vazio"
+                    : "Continuar"}
+                </Button>
+                <Button
+                  variant="light"
+                  color="red"
+                  disabled={ocupado}
+                  onClick={() => setAbortando(true)}
+                >
+                  Abortar
+                </Button>
+              </>
+            ) : (
+              <Button
+                color="orange"
+                disabled={ocupado || !disponivel || versao === undefined}
+                onClick={previa}
+              >
+                Atualizar
+              </Button>
+            )
+          }
           aoCriar={() => setCriando(true)}
           aoCadastrar={() => setCadastrando(true)}
           aoInscricoes={() => setInscricoes(true)}
@@ -212,6 +356,8 @@ function Tela() {
           <ProgressoExecucao
             progresso={execucoes.progresso[repo] ?? PROGRESSO_INICIAL}
           />
+        ) : pendente && atualizacao.resultado ? (
+          <PainelBloqueio resultado={atualizacao.resultado} />
         ) : (
           repo !== undefined &&
           versao !== undefined && (
@@ -219,6 +365,35 @@ function Tela() {
           )
         )}
       </AppShell.Main>
+      <ModalConfirmarLote
+        status={
+          atualizacao.fase === FaseAtualizacao.CONFIRMANDO
+            ? atualizacao.status
+            : null
+        }
+        versao={versao ?? ""}
+        aoConfirmar={() => aplicar(false)}
+        aoCancelar={cancelarLote}
+      />
+      <ModalAbortar
+        aberto={abortando}
+        aoConfirmar={abortar}
+        aoFechar={() => setAbortando(false)}
+      />
+      <Modal
+        opened={atualizacao.fase === FaseAtualizacao.CONCLUIDA}
+        onClose={() => evento(TipoEventoAtualizacao.FECHOU)}
+        title="Atualização"
+        size="xl"
+      >
+        {atualizacao.resultado ? (
+          <ResultadoAtualizacao resultado={atualizacao.resultado} />
+        ) : (
+          atualizacao.status && (
+            <Status status={atualizacao.status} auditado={false} />
+          )
+        )}
+      </Modal>
       <ModalResultado resultado={resultado} aoFechar={fecharResultado} />
       {repo !== undefined && (
         <ModalCriar
