@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from motor.adapters.estado.postgres import PostgresEstado
 from motor.adapters.git.subprocess import new_git_subprocess
-from motor.config import carregar_config
+from motor.config import carregar_config_repo, repos_configurados
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
@@ -28,7 +26,7 @@ from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado
 from motor.montagem import abrir_sessao, montar_deps, resolver_versionamento
-from motor.ports import EstadoRepo, GitRepo
+from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
@@ -73,7 +71,6 @@ class ContinueRunner(Protocol):
 
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
-RepoRegistrar = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -88,7 +85,6 @@ class Runners:
     continuar_repo: ContinueRunner | None = None
     abortar_repo: AbortRunner | None = None
     consultar_versao: ConsultaRunner | None = None
-    registrar_repo: RepoRegistrar | None = None
     criar_repo: CriarRunner | None = None
     previa_atualizacao: PreviewRunner | None = None
     # Sem ele, o versionamento sai da config do repo (`versionamento_do_repo`).
@@ -96,55 +92,27 @@ class Runners:
 
 
 def descobrir_repos(
-    estado: EstadoRepo, projects_dir: str, *, progresso: RelatorProgresso = silencioso
+    repos: Mapping[str, str | None], *, progresso: RelatorProgresso = silencioso
 ) -> list[RepoOption]:
-    progresso(Progresso("lendo os repos cadastrados"))
-    repos = estado.listar_repos()
-    if not projects_dir:
-        piso_global = _piso_da_config(None)
-        return [
-            RepoOption(nome=repo.nome, caminho=None, piso_versao=piso_global)
-            for repo in repos
-        ]
-    canonicos = {repo.nome: repo for repo in repos}
-    encontrados: dict[str, Path] = {}
-    raiz = Path(projects_dir)
-
-    if raiz.is_dir():
-        # Conta os diretorios porque a varredura pode consultar o banco em cada
-        # um (`resolver_repo` de nome que nao esta na lista canonica).
-        candidatos = sorted(raiz.iterdir(), key=lambda item: item.name)
-        for indice, caminho in enumerate(candidatos, start=1):
-            progresso(Progresso("procurando os checkouts", indice, len(candidatos)))
-            if not caminho.is_dir() or not (caminho / ".git").exists():
-                continue
-            if caminho.name in canonicos:
-                info = canonicos[caminho.name]
-            else:
-                try:
-                    info = estado.resolver_repo(caminho.name)
-                except NaoEncontrado:
-                    continue
-            atual = encontrados.get(info.nome)
-            if atual is None or (caminho.name == info.nome and atual.name != info.nome):
-                encontrados[info.nome] = caminho
-
     opcoes = []
-    for repo in repos:
-        achado = str(encontrados[repo.nome]) if repo.nome in encontrados else None
+    for indice, (nome, caminho) in enumerate(repos.items(), start=1):
+        progresso(Progresso("procurando os checkouts", indice, len(repos)))
+        achado = caminho if caminho is not None and os.path.isdir(caminho) else None
         opcoes.append(
             RepoOption(
-                nome=repo.nome, caminho=achado, piso_versao=_piso_da_config(achado)
+                nome=nome,
+                caminho=achado,
+                piso_versao=None if achado is None else _piso_da_config(nome),
             )
         )
     return opcoes
 
 
-def _piso_da_config(raiz: str | None) -> str | None:
-    """Piso da config em camadas; config invalida deixa `None` em vez de
-    derrubar a lista (o erro aparece ao operar o repo, pela montagem)."""
+def _piso_da_config(nome: str) -> str | None:
+    """Piso da seção do repo; config invalida deixa `None` em vez de derrubar a
+    lista (o erro aparece ao operar o repo, pela montagem)."""
     try:
-        return resolver_versionamento(carregar_config(raiz)).piso
+        return resolver_versionamento(carregar_config_repo(nome)).piso
     except ErroDeEntrada:
         return None
 
@@ -166,21 +134,11 @@ def descobrir_versoes(
 
 
 def repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
-    with abrir_sessao() as sessao:
-        return descobrir_repos(
-            PostgresEstado(sessao=sessao),
-            os.environ.get("PROJECTS_DIR", ""),
-            progresso=progresso,
-        )
-
-
-def registrar_no_banco(nome: str) -> None:
-    with abrir_sessao() as sessao:
-        PostgresEstado(sessao=sessao).registrar_repo(nome)
+    return descobrir_repos(repos_configurados(), progresso=progresso)
 
 
 def versionamento_do_repo(repo: RepoOption) -> Versionamento:
-    return resolver_versionamento(carregar_config(repo.caminho))
+    return resolver_versionamento(carregar_config_repo(repo.nome))
 
 
 def versoes_do_repo(
@@ -205,7 +163,7 @@ def _deps_do_repo(
         raise NaoEncontrado("checkout local não encontrado")
     # Sem flags: token e email do Bitbucket saem do ambiente dentro do
     # montar_deps, e a fonte de tasks e sempre a da config.
-    return montar_deps(repo.caminho, sessao, progresso=progresso)
+    return montar_deps(repo.nome, sessao, progresso=progresso)
 
 
 def verificar_repo(
@@ -305,7 +263,6 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         partial(continuar_repo, progresso=relatar),
         partial(abortar_repo, progresso=relatar),
         partial(consultar_repo, progresso=relatar),
-        registrar_no_banco,
         partial(criar_repo, progresso=relatar),
         previa_atualizacao=partial(previa_repo, progresso=relatar),
     )

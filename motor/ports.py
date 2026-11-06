@@ -330,18 +330,12 @@ class EstadoRepo(Protocol):
     registro unico e imutavel para versao liberada.
     """
 
-    def registrar_repo(self, nome: str, /) -> None:
-        """Cadastra um repo canonico. RecusaDeInvariante se nome ou alias ja existir."""
-        ...
-
-    def resolver_repo(self, basename: str, /) -> RepoInfo:
-        """Resolve nome ou alias para o repo canonico. NaoEncontrado se
-        desconhecido — nunca cria linha sozinho, senao um clone com nome
-        diferente fragmenta o estado."""
+    def garantir_repo(self, nome: str, /) -> None:
+        """Cria o repo no primeiro uso; idempotente."""
         ...
 
     def listar_repos(self) -> list[RepoInfo]:
-        """Repos canonicos cadastrados, em ordem de nome; aliases nao entram."""
+        """Repos conhecidos, em ordem de nome."""
         ...
 
     def registrar_versao(self, repo: str, info: VersaoInfo, /) -> None:

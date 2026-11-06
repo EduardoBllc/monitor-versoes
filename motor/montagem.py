@@ -9,9 +9,8 @@ consulta o git: `atualizar --abort` e `reconstruir-estado` recebem as mesmas
 fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
 O plugin da fonte de tarefas nem e carregado aqui: a `FonteDaConfig` o carrega
 na primeira busca ou na primeira resolucao da referencia.
-Unica excecao deliberada: `resolver_repo`, porque o nome canonico decide
-*como* montar o resto. O I/O do `motor diagnostico`
-vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
+Unica excecao deliberada: `garantir_repo`, que cria a linha do repo no estado.
+O I/O do `motor diagnostico` vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ from motor.adapters.tasksource.manuallist import ManualList
 from motor.config import (
     ConfigProjeto,
     Escolhido,
-    carregar_config,
+    carregar_config_repo,
     database_url,
     worktrees_mantidas,
 )
@@ -93,17 +92,6 @@ _DA_CONFIG = FonteTasks()
 GRUPO_TAREFAS = "monitor_versoes.tarefas"
 
 
-def validar_nome_repo(valor: str) -> str:
-    """Nome canonico do repo: basename puro, sem caminho e sem espaco em volta.
-
-    O nome e a chave do estado — aceitar 'pasta/backend' fragmentaria o repo em
-    duas linhas paralelas sem erro nenhum aparecer.
-    """
-    if not valor.strip() or valor != valor.strip() or os.path.basename(valor) != valor:
-        raise ErroDeEntrada("use um nome simples, sem caminho")
-    return valor
-
-
 @contextmanager
 def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
     """Ciclo de vida do banco: uma engine e uma sessao por comando.
@@ -144,7 +132,7 @@ def instanciar_fonte_tarefas(config: ConfigProjeto) -> TaskSource:
             f"faltando [tarefas] fonte em {onde}; "
             "ou use --task-source manual --lista <arquivo>"
         )
-    classe = carregar_plugin(GRUPO_TAREFAS, escolhido.valor, escolhido.origem)
+    classe = carregar_plugin(GRUPO_TAREFAS, escolhido.valor)
     try:
         fonte: TaskSource = classe(tarefas=config.tarefas, arquivos=config.arquivos)
     except MotorError:
@@ -255,9 +243,7 @@ def _identidade_das_entradas(
 
 def _plugin(grupo: str, escolhido: Escolhido | None, padrao: str) -> type:
     """A classe escolhida na config, ou a do padrao embutido."""
-    if escolhido is None:
-        return carregar_plugin(grupo, padrao, "central")
-    return carregar_plugin(grupo, escolhido.valor, escolhido.origem)
+    return carregar_plugin(grupo, padrao if escolhido is None else escolhido.valor)
 
 
 def resolver_versionamento(config: ConfigProjeto) -> Versionamento:
@@ -357,7 +343,7 @@ def montar_notificador() -> Notificador:
 
 
 def montar_deps(
-    caminho_repo: str,
+    nome_repo: str,
     sessao: Session,
     *,
     tasks: FonteTasks = _DA_CONFIG,
@@ -369,13 +355,11 @@ def montar_deps(
     Token e email vazios caem no ambiente: e assim que a TUI, que nao tem flag
     nenhuma, liga a fonte de PR do Bitbucket.
     """
-    git = new_git_subprocess(caminho_repo, progresso=progresso)
+    config = carregar_config_repo(nome_repo)
+    assert config.caminho is not None  # carregar_config_repo sempre o preenche
+    git = new_git_subprocess(config.caminho, progresso=progresso)
     estado = PostgresEstado(sessao=sessao)
-    # O estado vem antes das fontes: o nome canonico do repo e o
-    # nome canonico sai da linha `repo` (que aceita nome ou alias); piso e
-    # sistema, da config em camadas.
-    info = estado.resolver_repo(os.path.basename(caminho_repo))
-    config = carregar_config(caminho_repo)
+    estado.garantir_repo(nome_repo)
     fonte_tasks = montar_task_source(
         config, fonte=tasks.fonte, lista_manual=tasks.lista_manual
     )
@@ -400,7 +384,7 @@ def montar_deps(
             email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),
         ),
         estado=estado,
-        repo=info.nome,
+        repo=nome_repo,
         progresso=progresso,
         versionamento=versionamento,
     )
@@ -408,7 +392,7 @@ def montar_deps(
         git=git,
         tasks=fonte_tasks,
         estado=estado,
-        repo=info.nome,
+        repo=nome_repo,
         commit_source=commit_source,
         progresso=progresso,
         worktrees_mantidas=worktrees_mantidas(),

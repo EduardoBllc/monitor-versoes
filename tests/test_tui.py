@@ -6,7 +6,6 @@ import io
 from functools import partial
 from pathlib import Path
 from threading import Event
-from typing import cast
 
 import pytest
 from rich.console import Console
@@ -304,7 +303,6 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
     for obtido, previsto in ligados:
         assert isinstance(obtido, partial) and isinstance(previsto, partial)
         assert (obtido.func, obtido.keywords) == (previsto.func, previsto.keywords)
-    assert app._registrar is esperado.registrar_repo
 
 
 def test_app_seleciona_repo_tag_e_executa_auditoria():
@@ -2090,133 +2088,6 @@ def test_app_exibe_loading_na_lista_durante_verificacao():
     asyncio.run(executar_fluxo())
 
 
-def _app_de_cadastro(registrar, repos: list[str]) -> MotorTUI:
-    """Base dos testes de cadastro: a lista de repos sai de `repos`, que o
-    registrador de cada teste alimenta, para provar o recarregamento."""
-    return MotorTUI(
-        Runners(
-            carregar_repos=lambda: [
-                RepoOption(nome=nome, caminho=f"/projetos/{nome}") for nome in repos
-            ],
-            carregar_versoes=lambda opcao: [],
-            executar=_nunca_executa,
-            registrar_repo=registrar,
-        )
-    )
-
-
-async def _preencher_cadastro(app: MotorTUI, pilot, nome: str) -> None:
-    await pilot.press("n")
-    await pilot.pause()
-    app.screen.query_one("#cadastro-nome", Input).value = nome
-    await pilot.pause()
-    await pilot.click("#cadastro-salvar")
-    await pilot.pause()
-    await app.workers.wait_for_complete()
-    await pilot.pause()
-
-
-def test_app_cadastra_repo_e_recarrega_lista():
-    repos = ["alpha"]
-    chamadas: list[tuple[str, ...]] = []
-
-    def registrar(nome: str) -> None:
-        chamadas.append((nome,))
-        repos.append(nome)
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, repos)
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "delta")
-
-            assert chamadas == [("delta",)]
-            assert not isinstance(app.screen, tui.CadastroModal)
-            nomes = [
-                opcao.nome
-                for _, opcao in app.query_one("#repo", Select)._options[1:]
-                if isinstance(opcao, RepoOption)
-            ]
-            assert nomes == ["alpha", "delta"]
-            assert "delta" in _texto(app.query_one("#resultado", Static).content)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_recusa_nome_com_caminho_e_mantem_modal():
-    def registrar(nome: str) -> None:
-        raise AssertionError("nome invalido nao pode chegar ao registrador")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "sub/delta")
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert "sem caminho" in _texto(
-                app.screen.query_one("#cadastro-erro", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_de_repo_duplicado_mostra_erro_no_painel():
-    def registrar(nome: str) -> None:
-        raise MotorError(f"repo '{nome}' ja cadastrado")
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(registrar, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await _preencher_cadastro(app, pilot, "alpha")
-
-            assert not isinstance(app.screen, tui.CadastroModal)
-            assert "ja cadastrado" in _texto(
-                app.query_one("#resultado", Static).content
-            )
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_sem_registrador_ignora_a_tecla_de_cadastro():
-    async def executar_fluxo() -> None:
-        app = MotorTUI(
-            Runners(
-                carregar_repos=lambda: [RepoOption(nome="alpha", caminho="/p/alpha")],
-                carregar_versoes=lambda opcao: [],
-                executar=_nunca_executa,
-            )
-        )
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-
-            assert not isinstance(app.screen, tui.CadastroModal)
-
-    asyncio.run(executar_fluxo())
-
-
-def test_app_cadastro_digita_a_propria_tecla_de_atalho_no_campo():
-    """A tecla que abre o modal e uma letra: dentro dele ela tem de ser texto."""
-
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome, sistema_id: None, ["alpha"])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-            await pilot.press("n", "u", "v", "e", "m")
-            await pilot.pause()
-
-            assert isinstance(app.screen, tui.CadastroModal)
-            assert len(app.screen_stack) == 2
-            assert app.screen.query_one("#cadastro-nome", Input).value == "nuvem"
-
-    asyncio.run(executar_fluxo())
-
-
 def test_app_desenha_a_fase_e_a_contagem_do_motor_no_lugar_do_spinner():
     """O spinner generico nao diz nada num verificar de 40s. O painel que cobre
     o resultado passa a mostrar a fase do motor e, quando ela e contavel, a
@@ -2377,19 +2248,6 @@ def test_renderizar_chamado_mostra_o_descendente_no_topo():
     assert texto.index("Commit novo") < texto.index("Commit antigo")
 
 
-def test_cadastro_pede_so_o_nome():
-    async def executar_fluxo() -> None:
-        app = _app_de_cadastro(lambda nome: None, [])
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            await pilot.press("n")
-            await pilot.pause()
-            campos = [w.id for w in app.screen.query(Input)]
-            assert campos == ["cadastro-nome"]
-
-    asyncio.run(executar_fluxo())
-
-
 _ARQUIVO_INSCRICOES = "inscricoes.json"
 _ABRE_INSCRICOES = "i"
 _ADICIONA_INSCRICAO = "a"
@@ -2397,9 +2255,9 @@ _REMOVE_INSCRICAO = "d"
 _LISTA_INSCRICOES = "#inscricoes-lista"
 
 
-def _inscricao(versao: str, clone: str = "/projetos/alpha") -> Inscricao:
+def _inscricao(versao: str, repo: str = "alpha") -> Inscricao:
     return Inscricao(
-        clone,
+        repo,
         versao,
         parse_intervalo(INTERVALO_PADRAO),
         "/diretorio",
@@ -2466,8 +2324,8 @@ def test_inscricoes_adiciona_selecionada(tmp_path):
 
     asyncio.run(executar_fluxo())
     [gravada] = carregar(arquivo)
-    assert (gravada.clone, gravada.versao, gravada.ambiente) == (
-        cast(str, _REPO_PREVIA.caminho),
+    assert (gravada.repo, gravada.versao, gravada.ambiente) == (
+        _REPO_PREVIA.nome,
         _VERSAO_PREVIA.numero,
         _AMBIENTE_INSCRICAO,
     )
@@ -2510,32 +2368,6 @@ def _gravar_avisos(monkeypatch, app: MotorTUI) -> list[str]:
     avisos: list[str] = []
     monkeypatch.setattr(app, "notify", lambda mensagem, **_: avisos.append(mensagem))
     return avisos
-
-
-def test_inscricoes_guarda_clone_absoluto(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    arquivo = tmp_path / _ARQUIVO_INSCRICOES
-    relativo = RepoOption(nome="alpha", caminho="projetos/alpha")
-
-    async def executar_fluxo() -> None:
-        app = MotorTUI(
-            Runners(lambda: [relativo], lambda opcao: [_VERSAO_PREVIA], _nunca_executa),
-            inscricoes_em=arquivo,
-            ambiente=_AMBIENTE_INSCRICAO,
-        )
-        async with app.run_test(size=(120, 36)) as pilot:
-            await app.workers.wait_for_complete()
-            app.query_one("#repo", Select).value = relativo
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            app.query_one("#versao", Select).value = _VERSAO_PREVIA
-            await pilot.pause()
-            await pilot.press(_ABRE_INSCRICOES, _ADICIONA_INSCRICAO)
-            await pilot.pause()
-
-    asyncio.run(executar_fluxo())
-    [gravada] = carregar(arquivo)
-    assert gravada.clone == str(tmp_path / "projetos/alpha")
 
 
 def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path, monkeypatch):

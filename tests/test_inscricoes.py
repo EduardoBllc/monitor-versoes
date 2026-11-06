@@ -16,6 +16,7 @@ from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
 from motor.errors import ErroDeEntrada, RespostaInvalida
 from motor.inscricoes import (
     ARQUIVO_INSCRICOES,
+    CAMPO_CLONE_ANTIGO,
     LIMITE_EXECUCAO_S,
     MENSAGEM_SEM_RESULTADO,
     MENSAGEM_TEMPO_ESGOTADO,
@@ -48,8 +49,8 @@ NAO_JSON = "{nao e json"
 
 
 class Repo(StrEnum):
-    A = "/repo/a"
-    B = "/repo/b"
+    A = "a"
+    B = "b"
 
 
 class Versao(StrEnum):
@@ -62,13 +63,13 @@ class Ambiente(StrEnum):
 
 
 def _insc(
-    clone: str = Repo.A,
+    repo: str = Repo.A,
     versao: str = Versao.V1,
     intervalo: datetime.timedelta = MIN30,
     ultima: UltimaExecucao | None = None,
     diretorio: str = DIRETORIO,
 ) -> Inscricao:
-    return Inscricao(clone, versao, intervalo, diretorio, Ambiente.DEV, ultima)
+    return Inscricao(repo, versao, intervalo, diretorio, Ambiente.DEV, ultima)
 
 
 def _ultima(hora: datetime.datetime = HORA) -> UltimaExecucao:
@@ -103,6 +104,31 @@ def test_ida_e_volta_do_arquivo(arq: Path) -> None:
     lista = [_insc(ultima=_ultima()), _insc(Repo.B, Versao.V2)]
     salvar(arq, lista)
     assert carregar(arq) == lista
+
+
+def test_inscricao_guarda_o_nome(arq: Path) -> None:
+    salvar(arq, [_insc(Repo.A)])
+    (gravada,) = json.loads(arq.read_text())
+    assert gravada[Campo.REPO] == Repo.A
+    assert CAMPO_CLONE_ANTIGO not in gravada
+
+
+def test_entrada_antiga_e_descartada_com_aviso(
+    arq: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    salvar(arq, [_insc(Repo.B)])
+    dados = json.loads(arq.read_text())
+    antiga = {**dados[0], CAMPO_CLONE_ANTIGO: "/p/antigo"}
+    del antiga[Campo.REPO]
+    arq.write_text(json.dumps([antiga, *dados]))
+
+    assert [i.repo for i in carregar(arq)] == [Repo.B]
+
+    stderr = capsys.readouterr().err
+    assert "aviso:" in stderr
+    assert f"motor inscricao adicionar {Versao.V1} --repo" in stderr
+    inscrever(arq, _insc(Repo.A, Versao.V2))
+    assert CAMPO_CLONE_ANTIGO not in arq.read_text()
 
 
 def test_arquivo_ausente_da_lista_vazia(arq: Path) -> None:
@@ -151,7 +177,7 @@ def test_remover_inexistente_da_erro_de_entrada(arq: Path) -> None:
 def test_remover_tira_so_a_escolhida(arq: Path) -> None:
     salvar(arq, [_insc(), _insc(Repo.B)])
     remover(arq, Repo.A, Versao.V1)
-    assert [i.clone for i in carregar(arq)] == [Repo.B]
+    assert [i.repo for i in carregar(arq)] == [Repo.B]
 
 
 def test_vencidas() -> None:
@@ -197,7 +223,7 @@ def test_encerrada_sai_do_arquivo(arq: Path) -> None:
     salvar(arq, [_insc(), _insc(Repo.B)])
     fake = FakeNotificador()
     registrar_execucao(arq, _insc(), Resultado(Desfecho.ENCERRADA), fake, HORA)
-    assert [i.clone for i in carregar(arq)] == [Repo.B]
+    assert [i.repo for i in carregar(arq)] == [Repo.B]
     assert len(fake.enviadas) == 1
 
 
@@ -205,7 +231,7 @@ def test_registrar_de_inscricao_removida_nao_recria(arq: Path) -> None:
     salvar(arq, [_insc(Repo.B)])
     fake = FakeNotificador()
     registrar_execucao(arq, _insc(), Resultado(Desfecho.NADA), fake, HORA)
-    assert [i.clone for i in carregar(arq)] == [Repo.B]
+    assert [i.repo for i in carregar(arq)] == [Repo.B]
 
 
 def test_rodar_falha_de_um_nao_para_os_outros_e_grava_erro(arq: Path) -> None:
@@ -214,8 +240,8 @@ def test_rodar_falha_de_um_nao_para_os_outros_e_grava_erro(arq: Path) -> None:
     chamadas: list[str] = []
 
     def disparar(i: Inscricao) -> int:
-        chamadas.append(i.clone)
-        if i.clone == Repo.A:
+        chamadas.append(i.repo)
+        if i.repo == Repo.A:
             return SEM_PROCESSO
         registrar_execucao(arq, i, Resultado(Desfecho.NADA), fake, HORA)
         return 0
@@ -263,7 +289,7 @@ def test_rodar_tempo_esgotado_grava_erro_e_segue(arq: Path) -> None:
     chamadas: list[str] = []
 
     def disparar(i: Inscricao) -> int:
-        chamadas.append(i.clone)
+        chamadas.append(i.repo)
         return TEMPO_ESGOTADO
 
     rodar(arq, HORA, disparar, FakeNotificador())
@@ -298,7 +324,7 @@ def test_disparar_subprocesso_monta_o_comando(
     assert disparar_subprocesso(i, ambiente) == 0
     assert visto["cmd"] == [
         sys.executable, "-P", "-m", "motor", "--env", i.ambiente,
-        "inscricao", "executar", i.versao, "--repo", i.clone,
+        "inscricao", "executar", i.versao, "--repo", i.repo,
     ]  # fmt: skip
     assert visto["cwd"] == i.diretorio
     assert visto["env"] == ambiente

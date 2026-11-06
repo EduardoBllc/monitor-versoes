@@ -12,6 +12,10 @@ from sqlalchemy.exc import IntegrityError
 from motor.adapters.estado.models import Base
 from motor.migracoes import config_alembic
 
+REV_TIPO_LIVRE_ANTERIOR = "e5a8b1c2d3f4"
+REV_COM_TRACKER = "f6b9c3d2e1a7"
+REV_SEM_TRACKER = "a7c3e9d1f2b4"
+
 
 @pytest.fixture
 def url(tmp_path: Path) -> str:
@@ -51,7 +55,7 @@ def test_upgrade_cria_todas_as_tabelas_e_o_indice_unico(url: str) -> None:
 
 
 def test_tipo_gravado_antes_do_tipo_livre_sobrevive_ao_upgrade(url: str) -> None:
-    command.upgrade(config_alembic(url), "e5a8b1c2d3f4")
+    command.upgrade(config_alembic(url), REV_TIPO_LIVRE_ANTERIOR)
     engine = create_engine(url)
     with engine.begin() as con:
         con.execute(
@@ -74,7 +78,7 @@ def test_tipo_gravado_antes_do_tipo_livre_sobrevive_ao_upgrade(url: str) -> None
 
 
 def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(url: str) -> None:
-    command.upgrade(config_alembic(url), "f6b9c3d2e1a7")
+    command.upgrade(config_alembic(url), REV_COM_TRACKER)
     engine = create_engine(url)
     with engine.begin() as con:
         con.execute(
@@ -91,7 +95,7 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(url: str) -> None:
             )
         )
 
-    command.upgrade(config_alembic(url), "head")
+    command.upgrade(config_alembic(url), REV_SEM_TRACKER)
 
     with engine.connect() as con:
         colunas = {c["name"] for c in inspect(con).get_columns("repo")}
@@ -103,7 +107,7 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(url: str) -> None:
     assert colunas == {"id", "nome"}
     assert linhas == ["webapp", "web", "14.1.0"]
 
-    command.downgrade(config_alembic(url), "f6b9c3d2e1a7")
+    command.downgrade(config_alembic(url), REV_COM_TRACKER)
 
     with engine.connect() as con:
         recriadas = con.execute(
@@ -114,6 +118,27 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(url: str) -> None:
     assert alias == "web"
     with pytest.raises(IntegrityError), engine.begin() as con:
         con.execute(text("update repo set piso_versao = 'x'"))
+    engine.dispose()
+
+
+def test_repo_alias_sai_e_o_repo_fica(url: str) -> None:
+    command.upgrade(config_alembic(url), REV_SEM_TRACKER)
+    engine = create_engine(url)
+    with engine.begin() as con:
+        con.execute(text("insert into repo (id, nome) values (1, 'webapp')"))
+        con.execute(
+            text(
+                "insert into versao (repo_id, numero, tipo, base_ref, base_commit) "
+                "values (1, '14.1.0', null, '14.0.0', 'aaa111')"
+            )
+        )
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        assert "repo_alias" not in inspect(con).get_table_names()
+        assert con.execute(text("select nome from repo")).scalar_one() == "webapp"
+        assert con.execute(text("select numero from versao")).scalar_one() == "14.1.0"
     engine.dispose()
 
 

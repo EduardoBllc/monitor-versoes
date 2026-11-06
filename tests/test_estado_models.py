@@ -6,7 +6,6 @@ from motor.adapters.estado.models import Base
 def test_metadata_tem_todas_as_tabelas():
     assert set(Base.metadata.tables) == {
         "repo",
-        "repo_alias",
         "versao",
         "atribuicao",
         "atribuicao_commit",

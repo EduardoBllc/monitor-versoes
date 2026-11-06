@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -32,7 +31,7 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from motor.config import AMBIENTE_PADRAO
+from motor.config import AMBIENTE_PADRAO, SECAO_REPOS
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -50,9 +49,6 @@ from motor.inscricoes import (
     inscrever,
     parse_intervalo,
     remover,
-)
-from motor.montagem import (
-    validar_nome_repo,
 )
 from motor.operacoes import (
     AbortRunner,
@@ -151,14 +147,13 @@ class InscricoesModal(ModalScreen[None]):
         lista.add_options(Option(_linha_inscricao(i)) for i in self._inscricoes)
 
     def action_inscrever(self) -> None:
-        caminho = self._repo.caminho if self._repo else None
-        if caminho is None or self._versao is None:
+        if self._repo is None or not self._repo.disponivel or self._versao is None:
             self.notify(
                 "Selecione um repo disponível e uma versão.", severity="warning"
             )
             return
         nova = Inscricao(
-            os.path.abspath(caminho),
+            self._repo.nome,
             self._versao.numero,
             parse_intervalo(INTERVALO_PADRAO),
             str(Path.cwd()),
@@ -171,7 +166,7 @@ class InscricoesModal(ModalScreen[None]):
         if alvo is None:
             return
         i = self._inscricoes[alvo]
-        self._gravar(lambda: remover(self._arquivo, i.clone, i.versao))
+        self._gravar(lambda: remover(self._arquivo, i.repo, i.versao))
 
     def _gravar(self, escrita: Callable[[], None]) -> None:
         try:
@@ -189,65 +184,8 @@ def _linha_inscricao(i: Inscricao) -> str:
         if i.ultima.mensagem:
             ultima += f": {i.ultima.mensagem}"
     return (
-        f"{i.versao}  {Path(i.clone).name}  a cada {formatar_intervalo(i.intervalo)}"
-        f"  ·  {ultima}"
+        f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  ·  {ultima}"
     )
-
-
-class CadastroModal(ModalScreen[str | None]):
-    """Formulario de cadastro de repo.
-
-    Valida o formato aqui, com as mesmas funcoes que o CLI usa, e devolve o nome
-    pronto. Erro de banco (nome duplicado) nao e do formulario: sai pelo
-    caminho de erro normal do app, com o modal ja fechado.
-    """
-
-    BINDINGS: ClassVar[list[BindingType]] = [("escape", "cancelar", "Cancelar")]
-    DEFAULT_CSS = """
-    CadastroModal { align: center middle; }
-    CadastroModal > Vertical {
-        width: 60;
-        height: auto;
-        padding: 1 2;
-        border: round $primary;
-        background: $surface;
-    }
-    CadastroModal .rotulo { height: auto; color: $text-muted; }
-    #cadastro-erro { height: auto; color: $error; }
-    #cadastro-botoes { height: auto; align-horizontal: right; padding-top: 1; }
-    #cadastro-botoes Button { margin-left: 1; }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Vertical() as caixa:
-            caixa.border_title = "Cadastrar repositório"
-            caixa.border_subtitle = "esc para cancelar"
-            yield Static("nome", classes="rotulo")
-            yield Input(placeholder="nome canônico, sem caminho", id="cadastro-nome")
-            yield Static(id="cadastro-erro")
-            with Horizontal(id="cadastro-botoes"):
-                yield Button("Cancelar", id="cadastro-cancelar")
-                yield Button("Salvar", id="cadastro-salvar", variant="primary")
-
-    def action_cancelar(self) -> None:
-        self.dismiss(None)
-
-    def on_button_pressed(self, evento: Button.Pressed) -> None:
-        if evento.button.id == "cadastro-salvar":
-            self._salvar()
-        else:
-            self.dismiss(None)
-
-    def on_input_submitted(self, evento: Input.Submitted) -> None:
-        self._salvar()
-
-    def _salvar(self) -> None:
-        try:
-            nome = validar_nome_repo(self.query_one("#cadastro-nome", Input).value)
-        except MotorError as erro:
-            self.query_one("#cadastro-erro", Static).update(str(erro))
-            return
-        self.dismiss(nome)
 
 
 class AbortarModal(ModalScreen[bool]):
@@ -510,7 +448,6 @@ class MotorTUI(App[None]):
         ("u", "atualizar", "Atualizar"),
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
-        ("n", "cadastrar", "Cadastrar repo"),
         ("i", "inscricoes", "Inscrições"),
     ]
     CSS = """
@@ -556,7 +493,6 @@ class MotorTUI(App[None]):
         self._continuar = runners.continuar_repo
         self._abortar = runners.abortar_repo
         self._consultar = runners.consultar_versao
-        self._registrar = runners.registrar_repo
         self._criar = runners.criar_repo
         self._versionamento_repo = runners.versionamento_repo or versionamento_do_repo
         # O do repo em que o ultimo `criar` foi aberto: ordena a lista depois.
@@ -878,7 +814,10 @@ class MotorTUI(App[None]):
         self._tem_repos = bool(opcoes)
         self._bloquear(False)
         if opcoes and not any(opcao.disponivel for opcao in opcoes):
-            self._erro("nenhum checkout local encontrado; confira PROJECTS_DIR")
+            self._erro(
+                "nenhum checkout local encontrado; "
+                f"confira o caminho das seções [{SECAO_REPOS}] do config.toml"
+            )
 
     def on_select_changed(self, evento: Select.Changed) -> None:
         if evento.select.id == "repo":
@@ -974,33 +913,6 @@ class MotorTUI(App[None]):
                 self._inscricoes_em, self._repo, self._versao, self._ambiente
             )
         )
-
-    def action_cadastrar(self) -> None:
-        if self._ocupado or self._registrar is None:
-            return
-        self.push_screen(CadastroModal(), self._cadastrar)
-
-    def _cadastrar(self, nome: str | None) -> None:
-        if nome is None:
-            return
-        self._bloquear(True)
-        self.cadastrar_worker(nome)
-
-    @work(thread=True, exclusive=True, group="cadastro")
-    def cadastrar_worker(self, nome: str) -> None:
-        try:
-            if self._registrar is not None:
-                self._registrar(nome)
-        except Exception as erro:
-            self.call_from_thread(self._falha, erro)
-            self.call_from_thread(self._bloquear, False)
-            return
-        self.call_from_thread(self._cadastrado, nome)
-
-    def _cadastrado(self, nome: str) -> None:
-        self._exibir_resultado(f"repo '{nome}' cadastrado.")
-        self._ocupar_resultado()
-        self.carregar_repos_worker()
 
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:

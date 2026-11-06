@@ -3,11 +3,12 @@
 import pytest
 
 from motor.atribuicoes import Exata
-from motor.config import carregar_config
+from motor.config import carregar_config_repo
 from motor.errors import ErroDeEntrada
 from motor.esquemas.semver import Semver
 from motor.montagem import resolver_versionamento
 from motor.services.versionamento import Versionamento
+from tests.config_repos import secao_repo
 
 _ESQUEMA_DE_TESTE = "tests.test_versionamento:EsquemaDeTeste"
 
@@ -19,25 +20,33 @@ class EsquemaDeTeste(Semver):
     branch_principal = "trunk"
 
 
+NOME_REPO = "repo"
+
+
 @pytest.fixture
-def camadas(tmp_path, monkeypatch):
-    """(global, repo): XDG e raiz do repo isolados em tmp_path."""
+def escrever(tmp_path, monkeypatch):
+    """Escreve o `config.toml` central: topo + a seção do repo."""
     xdg = tmp_path / "xdg"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
-    repo = tmp_path / "repo"
-    repo.mkdir()
+    raiz = tmp_path / NOME_REPO
+    raiz.mkdir()
     (xdg / "monitor-versoes").mkdir(parents=True)
-    return xdg / "monitor-versoes" / "config.toml", repo / ".monitor-versoes.toml"
+    central = xdg / "monitor-versoes" / "config.toml"
+
+    def _escrever(topo: str = "", do_repo: str = "") -> str:
+        central.write_text(topo + secao_repo(NOME_REPO, raiz, do_repo))
+        return str(central)
+
+    _escrever()
+    return _escrever
 
 
-def _resolver(repo) -> Versionamento:
-    return resolver_versionamento(carregar_config(str(repo.parent)))
+def _resolver() -> Versionamento:
+    return resolver_versionamento(carregar_config_repo(NOME_REPO))
 
 
-def test_sem_config_vale_semver_exata_e_main(camadas):
-    _, repo = camadas
-
-    v = _resolver(repo)
+def test_sem_config_vale_semver_exata_e_main(escrever):
+    v = _resolver()
 
     assert isinstance(v.esquema, Semver)
     assert isinstance(v.politica, Exata)
@@ -50,7 +59,7 @@ def test_sem_config_vale_semver_exata_e_main(camadas):
 
 
 @pytest.mark.parametrize(
-    ("no_repo", "atributo", "esperado"),
+    ("na_secao", "atributo", "esperado"),
     [
         ("", "principal", "trunk"),
         ('[branches]\nprincipal = "dev"\n', "principal", "dev"),
@@ -63,24 +72,21 @@ def test_sem_config_vale_semver_exata_e_main(camadas):
     ],
 )
 def test_config_vence_o_esquema_nos_nomes_de_branch(
-    camadas, no_repo, atributo, esperado
+    escrever, na_secao, atributo, esperado
 ):
-    glob, repo = camadas
-    glob.write_text(f'[versao]\nesquema = "{_ESQUEMA_DE_TESTE}"\n')
-    repo.write_text(no_repo)
+    escrever(topo=f'[versao]\nesquema = "{_ESQUEMA_DE_TESTE}"\n', do_repo=na_secao)
 
-    assert getattr(_resolver(repo), atributo) == esperado
+    assert getattr(_resolver(), atributo) == esperado
 
 
-def test_piso_que_o_esquema_nao_reconhece_cita_valor_e_arquivo(camadas):
-    _, repo = camadas
-    repo.write_text('[versao]\npiso = "abc"\n')
-    config = carregar_config(str(repo.parent))
+def test_piso_que_o_esquema_nao_reconhece_cita_valor_e_arquivo(escrever):
+    arquivo = escrever(do_repo='[versao]\npiso = "abc"\n')
+    config = carregar_config_repo(NOME_REPO)
 
     with pytest.raises(ErroDeEntrada) as e:
         resolver_versionamento(config)
     assert "'abc'" in str(e.value)
-    assert str(repo) in str(e.value)
+    assert arquivo in str(e.value)
 
 
 @pytest.mark.parametrize(
@@ -88,17 +94,15 @@ def test_piso_que_o_esquema_nao_reconhece_cita_valor_e_arquivo(camadas):
     [
         ('[versao]\nesquema = "naoexiste"\n', "monitor_versoes.esquemas"),
         ('[versao]\natribuicao = "naoexiste"\n', "monitor_versoes.atribuicoes"),
-        (f'[versao]\nesquema = "{_ESQUEMA_DE_TESTE}"\n', "config.toml central"),
     ],
 )
-def test_plugin_que_nao_carrega_e_erro_de_entrada(camadas, conteudo, trecho):
-    _, repo = camadas
-    repo.write_text(conteudo)
-    config = carregar_config(str(repo.parent))
+def test_plugin_que_nao_carrega_e_erro_de_entrada(escrever, conteudo, trecho):
+    escrever(do_repo=conteudo)
+    config = carregar_config_repo(NOME_REPO)
 
     with pytest.raises(ErroDeEntrada) as e:
         resolver_versionamento(config)
-    # A mensagem do carregador diz o grupo ou por que o import direto foi recusado.
+    # A mensagem do carregador diz o grupo.
     assert trecho in str(e.value)
 
 

@@ -62,7 +62,7 @@ git divergente).
 `pytest.raises(NaoEncontrado)`, não `match="não encontrado"`. A classe é o
 contrato que o chamador usa para decidir o que fazer; a mensagem muda por
 redação sem que nada tenha regredido. Exceção: quando o *texto* é o requisito
-(a dica de `docker compose up -d`, a instrução `motor repo adicionar`), asserir
+(a dica de `docker compose up -d`, a lista de seções existentes), asserir
 tipo e texto.
 
 ## Ambiente e integração

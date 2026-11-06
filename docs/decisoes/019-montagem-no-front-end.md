@@ -15,7 +15,7 @@ front-ends, "montar no chamador" precisa de um lugar só — e esse lugar não �
 montagem tocasse a rede ou o git, todo comando pagaria por elas, e um clone sem `origin`
 passaria a falhar antes de começar. Por isso o `workspace/repo` do Bitbucket sai do remote na
 primeira busca, dentro do adapter, e não na construção. Única exceção deliberada:
-`resolver_repo`, porque o nome canônico e o `tickio_sistema_id` decidem _como_ montar o resto.
+`garantir_repo`, porque as escritas do estado exigem a linha `repo`, que nasce no primeiro uso ([029](029-repos-na-config-central.md)).
 
 `motor diagnostico` não abre exceção na montagem: o I/O dele (conexão ao banco, autenticação no
 Tickio e no Bitbucket) fica em `motor/diagnostico.py` e em métodos de verificação públicos dos

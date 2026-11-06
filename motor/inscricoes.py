@@ -41,6 +41,12 @@ MINUTOS_POR_HORA = 60
 PREFIXO_TITULO = "monitor-versoes"
 MENSAGEM_SEM_RESULTADO = "execução terminou com código {codigo} sem gravar resultado"
 MENSAGEM_TEMPO_ESGOTADO = "execução excedeu {limite}s e foi interrompida"
+# Antes de #143 a inscrição guardava o caminho do clone, não o nome do repo.
+CAMPO_CLONE_ANTIGO = "clone"
+AVISO_INSCRICAO_ANTIGA = (
+    "aviso: inscrição antiga de {clone} {versao} descartada; reinscreva com "
+    "`motor inscricao adicionar {versao} --repo <nome>`"
+)
 _PADRAO_INTERVALO = re.compile(r"([1-9]\d*)([mh])")
 
 
@@ -50,7 +56,7 @@ class UnidadeIntervalo(StrEnum):
 
 
 class Campo(StrEnum):
-    CLONE = "clone"
+    REPO = "repo"
     VERSAO = "versao"
     INTERVALO_S = "intervalo_s"
     DIRETORIO = "diretorio"
@@ -76,7 +82,7 @@ _ROTULOS = {TipoEvento(r.name.lower()): r for r in RotuloEvento}
 
 @dataclass(frozen=True)
 class Inscricao:
-    clone: str
+    repo: str
     versao: str
     intervalo: timedelta
     diretorio: str
@@ -121,7 +127,7 @@ def _ultima_para_json(u: UltimaExecucao | None) -> dict[str, Any] | None:
 
 def _para_json(i: Inscricao) -> dict[str, Any]:
     return {
-        Campo.CLONE: i.clone,
+        Campo.REPO: i.repo,
         Campo.VERSAO: i.versao,
         Campo.INTERVALO_S: int(i.intervalo.total_seconds()),
         Campo.DIRETORIO: i.diretorio,
@@ -147,7 +153,7 @@ def _ultima_de_json(d: dict[str, Any] | None) -> UltimaExecucao | None:
 
 def _de_json(d: dict[str, Any]) -> Inscricao:
     return Inscricao(
-        str(d[Campo.CLONE]),
+        str(d[Campo.REPO]),
         str(d[Campo.VERSAO]),
         timedelta(seconds=int(d[Campo.INTERVALO_S])),
         str(d[Campo.DIRETORIO]),
@@ -156,9 +162,24 @@ def _de_json(d: dict[str, Any]) -> Inscricao:
     )
 
 
+def _inscricoes_de(dados: list[Any]) -> list[Inscricao]:
+    inscricoes = []
+    for d in dados:
+        if isinstance(d, dict) and Campo.REPO not in d and CAMPO_CLONE_ANTIGO in d:
+            print(
+                AVISO_INSCRICAO_ANTIGA.format(
+                    clone=d[CAMPO_CLONE_ANTIGO], versao=d.get(Campo.VERSAO)
+                ),
+                file=sys.stderr,
+            )
+            continue
+        inscricoes.append(_de_json(d))
+    return inscricoes
+
+
 def carregar(caminho: Path) -> list[Inscricao]:
     try:
-        return [_de_json(d) for d in json.loads(caminho.read_text(encoding="utf-8"))]
+        return _inscricoes_de(json.loads(caminho.read_text(encoding="utf-8")))
     except FileNotFoundError:
         return []
     except OSError as e:
@@ -184,7 +205,7 @@ def salvar(caminho: Path, inscricoes: list[Inscricao]) -> None:
 def inscrever(caminho: Path, nova: Inscricao) -> None:
     atuais = carregar(caminho)
     for n, i in enumerate(atuais):
-        if (i.clone, i.versao) == (nova.clone, nova.versao):
+        if (i.repo, i.versao) == (nova.repo, nova.versao):
             atuais[n] = replace(i, intervalo=nova.intervalo)
             break
     else:
@@ -192,11 +213,11 @@ def inscrever(caminho: Path, nova: Inscricao) -> None:
     salvar(caminho, atuais)
 
 
-def remover(caminho: Path, clone: str, versao: str) -> None:
+def remover(caminho: Path, repo: str, versao: str) -> None:
     atuais = carregar(caminho)
-    restantes = [i for i in atuais if (i.clone, i.versao) != (clone, versao)]
+    restantes = [i for i in atuais if (i.repo, i.versao) != (repo, versao)]
     if len(restantes) == len(atuais):
-        raise ErroDeEntrada(f"inscrição não encontrada: {clone} {versao}")
+        raise ErroDeEntrada(f"inscrição não encontrada: {repo} {versao}")
     salvar(caminho, restantes)
 
 
@@ -217,11 +238,7 @@ def registrar_execucao(
 ) -> None:
     atuais = carregar(caminho)
     alvo = next(
-        (
-            i
-            for i in atuais
-            if (i.clone, i.versao) == (inscricao.clone, inscricao.versao)
-        ),
+        (i for i in atuais if (i.repo, i.versao) == (inscricao.repo, inscricao.versao)),
         None,
     )
     if alvo is None:
@@ -241,10 +258,10 @@ def registrar_execucao(
 
 
 def _ultima_de(
-    caminho: Path, clone: str, versao: str
+    caminho: Path, repo: str, versao: str
 ) -> tuple[bool, UltimaExecucao | None]:
     for i in carregar(caminho):
-        if (i.clone, i.versao) == (clone, versao):
+        if (i.repo, i.versao) == (repo, versao):
             return True, i.ultima
     return False, None
 
@@ -257,7 +274,7 @@ def rodar(
 ) -> None:
     for i in vencidas(carregar(caminho), agora):
         codigo = disparar(i)
-        existe, depois = _ultima_de(caminho, i.clone, i.versao)
+        existe, depois = _ultima_de(caminho, i.repo, i.versao)
         if existe and depois == i.ultima:
             mensagem = (
                 MENSAGEM_TEMPO_ESGOTADO.format(limite=LIMITE_EXECUCAO_S)
@@ -272,7 +289,7 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
     # -P: o cwd da inscrição não pode sombrear o pacote `motor` instalado.
     cmd = [
         sys.executable, "-P", "-m", "motor", "--env", i.ambiente,
-        "inscricao", "executar", i.versao, "--repo", i.clone,
+        "inscricao", "executar", i.versao, "--repo", i.repo,
     ]  # fmt: skip
     try:
         return subprocess.run(

@@ -15,9 +15,6 @@ pytestmark = pytest.mark.integracao
 
 def _semear_repo(sessao) -> None:
     sessao.execute(text("insert into repo (nome) values ('webapp')"))
-    sessao.execute(
-        text("insert into repo_alias (nome, repo_id) select 'vbweb', id from repo")
-    )
     sessao.commit()
 
 
@@ -28,19 +25,6 @@ def _info(numero: str) -> VersaoInfo:
         base_ref="13.33.0",
         base_commit="aaa111",
     )
-
-
-def test_resolver_repo_por_alias(sessao_postgres):
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
-
-    assert estado.resolver_repo("vbweb").nome == "webapp"
-
-
-def test_resolver_repo_desconhecido(sessao_postgres):
-    estado = PostgresEstado(sessao=sessao_postgres)
-    with pytest.raises(MotorError, match="motor repo adicionar"):
-        estado.resolver_repo("nunca-visto")
 
 
 def test_ciclo_de_atribuicoes(sessao_postgres):
@@ -350,7 +334,7 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(sessao_postgres):
         }
         linhas = [
             sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
-            for t in ("repo", "repo_alias", "versao")
+            for t in ("repo", "versao")
         ]
         sessao_postgres.rollback()
     finally:
@@ -359,4 +343,4 @@ def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(sessao_postgres):
 
     assert recriadas == (0, "13.0.0")
     assert colunas == {"id", "nome"}
-    assert linhas == [1, 1, 1]
+    assert linhas == [1, 1]
