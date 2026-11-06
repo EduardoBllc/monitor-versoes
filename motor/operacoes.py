@@ -78,8 +78,8 @@ RepoRegistrar = Callable[[str], None]
 
 @dataclass(frozen=True)
 class Runners:
-    """O que a TUI chama para falar com o motor. Os opcionais ausentes deixam
-    a acao correspondente indisponivel na tela."""
+    """O que as telas (TUI e daemon web) chamam para falar com o motor. Os
+    opcionais ausentes deixam a acao correspondente indisponivel."""
 
     carregar_repos: RepoLoader
     carregar_versoes: VersionLoader

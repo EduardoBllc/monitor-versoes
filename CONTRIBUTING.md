@@ -7,7 +7,7 @@ como escrever código e teste, em [docs/padroes/codigo.md](docs/padroes/codigo.m
 
 ## Setup de desenvolvimento
 
-Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, `make` e, para o Postgres de desenvolvimento e os testes de integração, Docker.
+Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/), git, `make`, Node 24 e npm (exigidos pelo portão) e, para o Postgres de desenvolvimento e os testes de integração, Docker.
 
 ```bash
 make setup         # uv sync --all-extras, cria .env.development, instala o pre-commit
@@ -57,7 +57,6 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 ## Front-end web
 
 `web/` é a SPA do `motor serve` ([decisão 029](docs/decisoes/029-front-end-web-spa-com-dist-versionado.md)).
-Requer Node 24 e npm (o portão em [Verificações](#verificações) também).
 
 ```bash
 # terminal 1, na raiz do repo

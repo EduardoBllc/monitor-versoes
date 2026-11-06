@@ -376,9 +376,11 @@ def _rodar(app: FastAPI, porta: int) -> None:
     import uvicorn
 
     # Atrasa a abertura para o servidor já estar de pé; sem bloquear o uvicorn.
-    threading.Timer(
+    abrir = threading.Timer(
         ATRASO_NAVEGADOR_S, _abrir_navegador, [f"http://127.0.0.1:{porta}/"]
-    ).start()
+    )
+    abrir.daemon = True
+    abrir.start()
     uvicorn.run(app, host="127.0.0.1", port=porta)
 
 

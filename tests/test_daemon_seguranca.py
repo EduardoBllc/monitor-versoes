@@ -4,6 +4,7 @@ from http import HTTPMethod, HTTPStatus
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.types import Message, Scope
 
 from motor.daemon.seguranca import proteger
 
@@ -67,15 +68,15 @@ def test_host_parecido_e_recusado(cliente: TestClient, host: str) -> None:
 
 
 def test_requisicao_sem_host_e_recusada(cliente: TestClient) -> None:
-    mensagens: list[dict[str, object]] = []
+    mensagens: list[Message] = []
 
-    async def receber() -> dict[str, object]:
+    async def receber() -> Message:
         return {"type": "http.request", "body": b"", "more_body": False}
 
-    async def enviar(mensagem: dict[str, object]) -> None:
+    async def enviar(mensagem: Message) -> None:
         mensagens.append(mensagem)
 
-    scope = {
+    scope: Scope = {
         "type": "http",
         "asgi": {"version": "3.0"},
         "http_version": "1.1",
@@ -88,7 +89,7 @@ def test_requisicao_sem_host_e_recusada(cliente: TestClient) -> None:
         "server": ("127.0.0.1", PORTA),
         "client": ("127.0.0.1", 1),
     }
-    asyncio.run(cliente.app(scope, receber, enviar))  # type: ignore[arg-type]
+    asyncio.run(cliente.app(scope, receber, enviar))
     assert mensagens[0]["status"] == HTTPStatus.FORBIDDEN
 
 

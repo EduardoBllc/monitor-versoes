@@ -49,3 +49,6 @@ def test_wheel_contem_migracoes_e_modelos(tmp_path: Path):
     versions = RAIZ / "motor" / "migracoes" / "versions"
     esperados |= {f"motor/migracoes/versions/{f.name}" for f in versions.glob("*.py")}
     assert esperados <= nomes
+    assert any(
+        n.startswith("motor/daemon/static/assets/") and n.endswith(".js") for n in nomes
+    )
