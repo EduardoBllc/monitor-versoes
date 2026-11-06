@@ -33,6 +33,7 @@ from motor.config import (
     SECAO_REPOS,
     carregar_config_global,
     carregar_config_repo,
+    repos_configurados,
 )
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
@@ -140,6 +141,7 @@ def _diagnostico(args: argparse.Namespace) -> None:
         head=head(),
         ambiente=args.env,
         config_central=carregar_config_global,
+        repos=repos_configurados,
     )
     for resultado in resultados:
         print(formatar(resultado))

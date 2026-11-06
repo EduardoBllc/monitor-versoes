@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from motor.config import ConfigProjeto, carregar_config_global
+from motor.config import SECAO_REPOS, ConfigProjeto, carregar_config_global
 from motor.diagnostico import (
     Estado,
     Resultado,
@@ -20,6 +20,7 @@ from motor.diagnostico import (
 )
 from motor.errors import ErroDeEntrada
 from motor.migracoes import head
+from tests.config_repos import secao_repo
 
 HEAD = "rev2"
 ENV_OK = {
@@ -31,6 +32,8 @@ ENV_OK = {
     "DATABASE_PASSWORD": "senha-secreta",
 }
 
+TABELA_REPO = "CREATE TABLE repo (id INTEGER PRIMARY KEY, nome TEXT)"
+
 
 def _sessao_com(revisao: str | None):
     @contextlib.contextmanager
@@ -41,6 +44,7 @@ def _sessao_com(revisao: str | None):
                 sessao.execute(
                     text("INSERT INTO alembic_version VALUES (:r)"), {"r": revisao}
                 )
+            sessao.execute(text(TABELA_REPO))
             yield sessao
 
     return abrir
@@ -79,6 +83,7 @@ def _rodar(
     ambiente="production",
     handler=_bitbucket_ok,
     config_central=_sem_fonte,
+    repos=dict,
 ):
     resultados = diagnosticar(
         ENV_OK if env is None else env,
@@ -86,6 +91,7 @@ def _rodar(
         head=HEAD,
         ambiente=ambiente,
         config_central=config_central,
+        repos=repos,
         cliente=_cliente(handler),
     )
     return {r.peca: r for r in resultados}, resultados
@@ -108,12 +114,11 @@ def test_instalacao_integra():
         "Variáveis",
         "Postgres",
         "Migração",
-        "PROJECTS_DIR",
+        "Repos",
         "Tarefas",
         "Bitbucket",
     ]
     assert por_peca["Tarefas"].estado is Estado.NAO_CONFIGURADO
-    assert por_peca["PROJECTS_DIR"].estado is Estado.NAO_CONFIGURADO
     assert por_peca["Bitbucket"].estado is Estado.NAO_CONFIGURADO
 
 
@@ -153,13 +158,28 @@ def test_variaveis_do_banco_invalidas_nao_abrem_sessao(porta):
     assert por_peca["Migração"].estado is Estado.NAO_VERIFICADA
 
 
-def test_projects_dir(tmp_path):
-    existente, _ = _rodar({**ENV_OK, "PROJECTS_DIR": str(tmp_path)})
-    inexistente, _ = _rodar({**ENV_OK, "PROJECTS_DIR": str(tmp_path / "nao")})
+def _sessao_com_repos(*nomes: str):
+    @contextlib.contextmanager
+    def abrir(garantir=True):
+        with Session(create_engine("sqlite://")) as sessao:
+            sessao.execute(text("CREATE TABLE alembic_version (version_num TEXT)"))
+            sessao.execute(text("INSERT INTO alembic_version VALUES (:r)"), {"r": HEAD})
+            sessao.execute(text(TABELA_REPO))
+            for nome in nomes:
+                sessao.execute(text("INSERT INTO repo (nome) VALUES (:n)"), {"n": nome})
+            yield sessao
 
-    assert existente["PROJECTS_DIR"].estado is Estado.OK
-    assert inexistente["PROJECTS_DIR"].estado is Estado.FALHA
-    assert inexistente["PROJECTS_DIR"].correcao
+    return abrir
+
+
+def _repos_de(resultados):
+    return [r for r in resultados if r.peca == "Repos"]
+
+
+def test_sem_projects_dir():
+    _, resultados = _rodar({**ENV_OK, "PROJECTS_DIR": "/x"})
+
+    assert "PROJECTS_DIR" not in [r.peca for r in resultados]
 
 
 def test_bitbucket_sem_token_nao_faz_rede():
@@ -192,11 +212,11 @@ def test_bitbucket_token_recusado_e_aceito():
 
 
 def test_falhas_independentes_no_mesmo_relatorio(tmp_path):
-    env = {**ENV_OK, "PROJECTS_DIR": str(tmp_path / "nao")}
+    por_peca, resultados = _rodar(
+        abrir=_banco_fora, repos=lambda: {"x": str(tmp_path / "nao")}
+    )
 
-    por_peca, _ = _rodar(env, abrir=_banco_fora)
-
-    assert por_peca["PROJECTS_DIR"].estado is Estado.FALHA
+    assert Estado.FALHA in [r.estado for r in _repos_de(resultados)]
     assert por_peca["Postgres"].estado is Estado.FALHA
 
 
@@ -331,9 +351,87 @@ def test_config_central_invalida_falha_so_na_linha_tarefas():
         "Variáveis",
         "Postgres",
         "Migração",
-        "PROJECTS_DIR",
+        "Repos",
         "Tarefas",
         "Bitbucket",
     ]
     outras = [r for r in resultados if r.peca != "Tarefas"]
     assert all(r.estado is not Estado.FALHA for r in outras)
+
+
+def test_estado_sem_secao_avisa(tmp_path):
+    _, resultados = _rodar(
+        abrir=_sessao_com_repos("vb2web"), repos=lambda: {"vb2": str(tmp_path)}
+    )
+
+    assert _repos_de(resultados) == [
+        Resultado(
+            "Repos",
+            Estado.AVISO,
+            f"estado de 'vb2web' no banco sem seção [{SECAO_REPOS}.vb2web] "
+            "no config.toml",
+            "remover o estado do banco ou criar a seção",
+        )
+    ]
+    assert not falhou(resultados)
+
+
+def test_caminho_inexistente_falha():
+    _, resultados = _rodar(repos=lambda: {"x": "/nao/existe"})
+
+    (linha,) = _repos_de(resultados)
+    assert linha.estado is Estado.FALHA
+    assert f"[{SECAO_REPOS}.x]" in linha.detalhe
+    assert "/nao/existe" in linha.detalhe
+    assert falhou(resultados)
+
+
+def test_secao_sem_caminho_falha():
+    _, resultados = _rodar(repos=lambda: {"x": None})
+
+    (linha,) = _repos_de(resultados)
+    assert linha.estado is Estado.FALHA
+    assert f"[{SECAO_REPOS}.x]" in linha.detalhe
+
+
+def test_repos_ok(tmp_path):
+    _, resultados = _rodar(
+        abrir=_sessao_com_repos("a"),
+        repos=lambda: {"a": str(tmp_path), "b": str(tmp_path)},
+    )
+
+    assert _repos_de(resultados) == [
+        Resultado("Repos", Estado.OK, "2 repo(s) configurado(s)")
+    ]
+
+
+def test_banco_fora_nao_verifica_repos():
+    _, resultados = _rodar(abrir=_banco_fora, repos=lambda: {"x": "/nao/existe"})
+
+    estados = [r.estado for r in _repos_de(resultados)]
+    assert Estado.NAO_VERIFICADA in estados
+    assert Estado.FALHA in estados
+
+
+def test_config_invalida_falha_repos():
+    def invalida():
+        raise ErroDeEntrada("config.toml: TOML invalido")
+
+    _, resultados = _rodar(repos=invalida)
+
+    (linha,) = _repos_de(resultados)
+    assert linha.estado is Estado.FALHA
+    assert "TOML invalido" in linha.detalhe
+
+
+def test_repos_le_o_config_toml_real(tmp_path, monkeypatch):
+    from motor.config import repos_configurados
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text(secao_repo("a", tmp_path))
+
+    _, resultados = _rodar(repos=repos_configurados)
+
+    assert _repos_de(resultados)[0].estado is Estado.OK
