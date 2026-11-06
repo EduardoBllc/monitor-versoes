@@ -204,6 +204,8 @@ def test_atualizar_para_em_conflito():
     assert resultado.blocked_commit == "a0", (
         f"blocked_commit = {resultado.blocked_commit!r}, quer a0"
     )
+    assert resultado.worktree
+    assert resultado.worktree == g.worktree_atual()
     assert "13.7.0" not in g.remotes, (
         "nao esperava push com lote bloqueado por conflito"
     )
@@ -565,6 +567,8 @@ def test_atualizar_continue_com_resolucao_vazia_espera_confirmacao():
         f"status = {resultado.status!r}, quer VAZIO"
     )
     assert resultado.blocked_commit == "a0"
+    assert resultado.worktree
+    assert resultado.worktree == g.worktree_atual()
     _, pendente = g.pending_cherry_pick()
     assert pendente, "o pick tem de seguir aberto: o operador ainda vai decidir"
     assert "13.7.0" not in g.remotes, "nao pode publicar sem a confirmacao"

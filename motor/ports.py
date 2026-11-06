@@ -161,6 +161,10 @@ class GitRepo(Protocol):
         """Seleciona worktree por branch."""
         ...
 
+    def worktree_atual(self, /) -> str:
+        """Diretório da worktree do último `use_worktree`, sem I/O."""
+        ...
+
     def cherry_pick_x(self, hash: str, /) -> CherryPickOutcome:
         """Cherry-pick de um commit."""
         ...

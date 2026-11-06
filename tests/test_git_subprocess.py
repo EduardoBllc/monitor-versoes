@@ -482,6 +482,16 @@ def test_git_subprocess_use_worktree_adota_branch_existente(tmp_path):
     assert g.resolve_ref("14.0.0") == g.resolve_ref("master")
 
 
+def test_worktree_atual_aponta_o_diretorio_da_branch(tmp_path):
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "branch", "14.0.0")
+    g = new_git_subprocess(repo_dir)
+
+    g.use_worktree("14.0.0")
+
+    assert g.worktree_atual() == g._worktree_dir("14.0.0")
+
+
 def test_git_subprocess_listar_tags(tmp_path):
     """listar_tags devolve so tags (nao branches), sem filtro de formato e
     sem repeticao. Cobre: tag-only, branch-only, ambas, fora do formato.
