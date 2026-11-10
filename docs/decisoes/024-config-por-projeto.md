@@ -1,7 +1,8 @@
 # Config por projeto, em duas camadas
 
 - **Status:** substituída por [029](029-repos-na-config-central.md) nas camadas, no import
-  path e na identidade do repo; vale nos demais pontos
+  path e na identidade do repo; o ponto "credenciais continuam no `.env`" foi revisto pela
+  [031](031-ambiente-na-config-central.md); vale nos demais pontos
 - **Data:** 2026-11-03
 - **Depende de:** [016](016-multi-projeto-premissas.md), [019](019-montagem-no-front-end.md),
   [023](023-onde-nao-se-abstrai.md)

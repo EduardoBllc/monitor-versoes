@@ -26,9 +26,16 @@ Para rodar o CLI contra o banco de desenvolvimento, passe `--env development`:
 
 ## Produção é o padrão; desenvolvimento é explícito
 
-CLI e `compose.yml` leem `.env` (o CLI o procura no diretório atual) — **produção**, porta 5433. O ambiente de
-desenvolvimento (`.env.development`, porta **5434**) só entra quando pedido: alvos
-`-dev` do Makefile e `--env development` no CLI.
+Sem `--env`, o CLI é **produção**: lê o `[ambiente]` do `config.toml` central e, como
+alternativa, o `.env` do diretório atual ([precedência no README](README.md#configurar-o-ambiente)).
+O `compose.yml` lê o `.env` ou usa os padrões dele (porta 5433). O ambiente de desenvolvimento
+(`.env.development`, porta **5434**) só entra quando pedido: alvos `-dev` do Makefile e
+`--env development` no CLI.
+
+O `[ambiente]` do central vence também o `.env.development`. Na máquina em que você
+desenvolve, não ponha `[ambiente]` no central, ou aponte `XDG_CONFIG_HOME` para outro
+diretório ao rodar os alvos `-dev`; senão `make migrate-dev` e `motor --env development ...`
+usam o banco do `[ambiente]`.
 
 A suíte de testes não usa nenhum dos dois. O contrato do estado roda também num SQLite em
 `tmp_path`, sem Docker. Os testes de integração sobem um Postgres
@@ -77,7 +84,7 @@ O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
 | --- | --- |
 | `uv run pytest` morre na coleta com `SyntaxError: future feature annotations is not defined` | Um `VIRTUAL_ENV` de outro projeto (Python antigo) vazou para o shell e o `uv` o prefere ao `.venv`. Não é erro de código. Use `make` (ele faz `unexport VIRTUAL_ENV`), ou `unset VIRTUAL_ENV`, ou chame `./.venv/bin/python -m pytest` (idem `mypy`, `ruff`). Sem `.venv`: `unset VIRTUAL_ENV; uv sync --all-extras`. |
 | `docker compose up -d` subiu, mas não é o banco de desenvolvimento | Sem `--env-file`, o compose lê `.env` (produção, porta 5433). Desenvolvimento é `make db-dev`, ou `docker compose -f motor/modelos/compose.yml --project-directory . --env-file .env.development up -d --wait`. |
-| `motor migrar` migrou o banco errado | Sem `--env development`, o motor lê `.env` (produção). Use `make migrate-dev`, ou `motor --env development migrar`. |
+| `motor migrar` migrou o banco errado | Sem `--env development`, o motor usa o `[ambiente]` do central ou o `.env` (produção). Use `make migrate-dev`, ou `motor --env development migrar`. Se mesmo assim foi para produção, o `[ambiente]` do central está vencendo o `.env.development`: tire-o do central ou aponte `XDG_CONFIG_HOME` para outro diretório. |
 
 ## Fluxo
 

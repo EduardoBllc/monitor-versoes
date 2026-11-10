@@ -10,7 +10,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("modelo", ["compose.yml", "env.example"])
+@pytest.mark.parametrize("modelo", ["compose.yml"])
 def test_readme_traz_o_modelo_inline(modelo: str):
     readme = (RAIZ / "README.md").read_text(encoding="utf-8")
     achado = re.search(

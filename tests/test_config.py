@@ -452,3 +452,53 @@ def test_monitor_versoes_toml_no_clone_e_ignorado(central, tmp_path):
 def test_repos_configurados_ordena_e_tolera_sem_caminho(central):
     central.write_text(secao_repo("b", None, "[versao]\n") + secao_repo("a", "/abs"))
     assert list(config.repos_configurados().items()) == [("a", "/abs"), ("b", None)]
+
+
+# --- [ambiente] ---
+
+
+@pytest.mark.parametrize("conteudo", [None, '[versao]\nesquema = "a"\n'])
+def test_ambiente_ausente_e_vazio(central, conteudo):
+    if conteudo is not None:
+        central.write_text(conteudo)
+    assert config.ambiente_central() == {}
+
+
+def test_ambiente_exporta_texto_e_inteiro_como_texto(central):
+    central.write_text('[ambiente]\nA = "x"\nB = 5\n')
+    assert config.ambiente_central() == {"A": "x", "B": "5"}
+
+
+@pytest.mark.parametrize("valor", ["true", "2026-11-10", "[1, 2]", "{ x = 1 }"])
+def test_ambiente_recusa_tipo_sem_forma_textual(central, valor):
+    central.write_text(f"[ambiente]\nCHAVE_X = {valor}\n")
+    with pytest.raises(ErroDeEntrada) as e:
+        config.ambiente_central()
+    assert str(central) in str(e.value)
+    assert "CHAVE_X" in str(e.value)
+
+
+def test_ambiente_que_nao_e_tabela_e_erro(central):
+    central.write_text('ambiente = "x"\n')
+    with pytest.raises(ErroDeEntrada, match=r"\[ambiente\] deve ser uma tabela"):
+        config.ambiente_central()
+
+
+@pytest.mark.parametrize(
+    "ler", [config.ambiente_central, lambda: config.carregar_config_repo(NOME)]
+)
+def test_ambiente_por_repo_e_erro(central, tmp_path, ler):
+    _escrever(central, tmp_path, '[ambiente]\nA = "x"\n')
+    with pytest.raises(ErroDeEntrada) as e:
+        ler()
+    assert str(central) in str(e.value)
+    assert f"[{SECAO_REPOS}.{NOME}.ambiente]" in str(e.value)
+
+
+def test_postgres_incompleto_aponta_o_ambiente_central(central, monkeypatch):
+    _ambiente(monkeypatch, POSTGRES)
+    with pytest.raises(ErroDeEntrada) as e:
+        database_url()
+    assert "[ambiente]" in str(e.value)
+    assert str(central) in str(e.value)
+    assert ".env" in str(e.value)

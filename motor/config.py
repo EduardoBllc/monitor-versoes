@@ -50,12 +50,15 @@ def _partes_postgres() -> dict[str, str]:
 def _url_postgres() -> str:
     """Monta a URL do Postgres a partir das partes.
 
-    As partes existem separadas porque o compose.yml (modelo) le as mesmas variaveis do
-    mesmo .env — uma fonte so para aplicacao e container.
+    As partes existem separadas porque o compose.yml (modelo) le as mesmas variaveis,
+    com os mesmos nomes — quem preferir um .env ao lado serve aplicacao e container.
     """
     v = _partes_postgres()
     if faltando := [f"DATABASE_{c}" for c, valor in v.items() if not valor]:
-        raise ErroDeEntrada(f"faltando no .env: {', '.join(faltando)}")
+        raise ErroDeEntrada(
+            f"faltando em [{TABELA_AMBIENTE}] de {caminho_config_global()} "
+            f"(ou no .env): {', '.join(faltando)}"
+        )
     # create_engine converte a porta na hora: um typo aqui viraria ValueError,
     # que o __main__ trata como bug (traceback) em vez de erro do operador.
     if not v["PORT"].isdigit():
@@ -134,6 +137,7 @@ def worktrees_mantidas() -> int:
 AMBIENTE_PADRAO = "production"
 
 SECAO_REPOS = "repos"
+TABELA_AMBIENTE = "ambiente"
 CHAVE_CAMINHO = "caminho"
 
 
@@ -310,6 +314,13 @@ def _secoes(
         except ErroDeEntrada as e:
             raise ErroDeEntrada(f"{caminho}: [{SECAO_REPOS}.{nome!r}] {e}") from e
         secoes[nome] = _tabela(brutas, nome, caminho)
+        if TABELA_AMBIENTE in secoes[nome]:
+            # Banco e credenciais sao da instalacao: um [ambiente] por repo
+            # sugeriria que cada repo pode ter o seu, e nao pode.
+            raise ErroDeEntrada(
+                f"{caminho}: [{SECAO_REPOS}.{nome}.{TABELA_AMBIENTE}] não vale; "
+                f"[{TABELA_AMBIENTE}] só no topo"
+            )
     return secoes
 
 
@@ -334,6 +345,32 @@ def repos_configurados() -> dict[str, str | None]:
     return {
         nome: _caminho_da_secao(secoes[nome], nome, arquivo) for nome in sorted(secoes)
     }
+
+
+def ambiente_central() -> dict[str, str]:
+    """`[ambiente]` do topo da config central, como variaveis de ambiente.
+
+    Os nomes sao os das variaveis (os mesmos do .env), para que adapters e
+    plugins leiam do ambiente sem saber de onde veio. Inteiro vira texto porque
+    `DATABASE_PORT = 5433` e o natural em TOML; booleano, data e lista nao tem
+    uma forma textual unica, e adivinhar uma seria configurar outra coisa.
+    """
+    arquivo = caminho_config_global()
+    dados = _ler_toml(arquivo)
+    bruto = _tabela(dados, TABELA_AMBIENTE, arquivo)
+    _secoes(dados, arquivo)
+    ambiente: dict[str, str] = {}
+    for chave, valor in bruto.items():
+        if isinstance(valor, str):
+            ambiente[chave] = valor
+        elif isinstance(valor, int) and not isinstance(valor, bool):
+            ambiente[chave] = str(valor)
+        else:
+            raise ErroDeEntrada(
+                f"{arquivo}: [{TABELA_AMBIENTE}] {chave} deve ser texto ou inteiro, "
+                f"veio {valor!r}"
+            )
+    return ambiente
 
 
 def carregar_config_global() -> ConfigProjeto:

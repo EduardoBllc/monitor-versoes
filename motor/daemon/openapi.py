@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-from motor.config import AMBIENTE_PADRAO
 from motor.daemon.app import PASTA_ESTATICOS, PORTA_PADRAO, criar_app
 from motor.operacoes import Runners
 from motor.progresso import RelatorProgresso
@@ -19,6 +18,5 @@ if __name__ == "__main__":
         porta=PORTA_PADRAO,
         estaticos=PASTA_ESTATICOS,
         inscricoes_em=Path("inscricoes.json"),
-        ambiente=AMBIENTE_PADRAO,
     )
     print(json.dumps(app.openapi(), ensure_ascii=False, indent=2))

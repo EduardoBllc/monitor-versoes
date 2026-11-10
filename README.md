@@ -44,7 +44,7 @@ Em um diretório de trabalho qualquer (não precisa clonar o repositório):
 
 ```bash
 uv tool install git+https://github.com/EduardoBllc/monitor-versoes
-motor init                      # escreve compose.yml e .env no diretório atual
+motor init                      # escreve compose.yml no diretório atual
 ```
 
 O estado fica num arquivo SQLite (`~/.local/share/monitor-versoes/estado.db`), criado com as
@@ -53,7 +53,7 @@ opcional (veja "Estado: SQLite (padrão) ou Postgres").
 
 Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
 
-`motor init` não sobrescreve arquivo existente. Se preferir, copie os dois arquivos abaixo.
+`motor init` não sobrescreve arquivo existente. Se preferir, copie o arquivo abaixo.
 
 `compose.yml`:
 
@@ -66,10 +66,10 @@ services:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DATABASE_NAME}
-      POSTGRES_USER: ${DATABASE_USER}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-    ports: ["${DATABASE_PORT}:5432"]
+      POSTGRES_DB: ${DATABASE_NAME:-monitor_versoes}
+      POSTGRES_USER: ${DATABASE_USER:-motor}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-motor}
+    ports: ["${DATABASE_PORT:-5433}:5432"]
     # /var/lib/postgresql, nao /var/lib/postgresql/data: no postgres:18-alpine o
     # PGDATA e /var/lib/postgresql/18/docker, entao montar em /data criaria um
     # diretorio vazio irmao do PGDATA e os dados sumiriam na recriacao do volume.
@@ -84,44 +84,58 @@ volumes:
   pgdata:
 ```
 
-`.env` (modelo `.env.example`):
-
-<!-- modelo: env.example -->
-```bash
-# Backend do estado: sqlite (padrão, arquivo local, sem Docker) ou postgres.
-DATABASE_BACKEND=sqlite
-# Arquivo do SQLite (opcional; padrão ~/.local/share/monitor-versoes/estado.db)
-# DATABASE_SQLITE_PATH=
-
-# Postgres (opt-in): troque DATABASE_BACKEND para postgres. Estas partes só são
-# lidas com esse backend; o compose.yml lê as mesmas variáveis (make db).
-DATABASE_HOST=localhost
-DATABASE_PORT=5433
-DATABASE_NAME=monitor_versoes
-DATABASE_USER=motor
-DATABASE_PASSWORD=motor
-
-# Bitbucket (opcional — ativa descoberta de commits por PR)
-BITBUCKET_TOKEN=
-BITBUCKET_EMAIL=
-
-# Worktrees de versao mantidas em disco entre operacoes (default 3).
-# Levantar uma worktree e um checkout inteiro; mantendo as ultimas usadas, o
-# comando seguinte na mesma versao reusa o diretorio. 0 = descarta a cada run.
-WORKTREES_MANTIDAS=3
-```
-
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### Configurar o `.env`
+### Configurar o ambiente
 
-Preencha no `.env`:
+Banco, Bitbucket e as credenciais da fonte de tarefas ficam na tabela `[ambiente]` do
+`config.toml` central (`~/.config/monitor-versoes/config.toml`, ou
+`$XDG_CONFIG_HOME/monitor-versoes/config.toml`), no topo do arquivo. Cada chave é o nome de uma
+variável de ambiente, e o motor a exporta no início de todo comando:
 
-- As credenciais da fonte de tarefas, com os nomes que o plugin dela documenta. Dispensáveis
-  se você só usar `--task-source manual`.
-- `BITBUCKET_TOKEN`, `BITBUCKET_EMAIL` — opcionais; veja "Fontes de tasks e de commits".
+```toml
+[ambiente]
+# Backend do estado: sqlite (padrão, arquivo local, sem Docker) ou postgres.
+DATABASE_BACKEND = "sqlite"
+# DATABASE_SQLITE_PATH = "..."   # opcional; padrão ~/.local/share/monitor-versoes/estado.db
 
-Cada variável está comentada no `.env`.
+# Postgres (opt-in): só lidas com DATABASE_BACKEND = "postgres". Os valores abaixo são os
+# padrões do compose.yml.
+DATABASE_HOST = "localhost"
+DATABASE_PORT = 5433
+DATABASE_NAME = "monitor_versoes"
+DATABASE_USER = "motor"
+DATABASE_PASSWORD = "motor"
+
+# Bitbucket (opcional — ativa descoberta de commits por PR)
+# BITBUCKET_TOKEN = "..."
+# BITBUCKET_EMAIL = "..."
+
+# Worktrees de versão mantidas em disco entre operações (padrão 3). Mantendo as últimas
+# usadas, o comando seguinte na mesma versão reusa o diretório. 0 = descarta a cada run.
+WORKTREES_MANTIDAS = 3
+
+# Credenciais da fonte de tarefas, com os nomes que o plugin dela documenta. Dispensáveis
+# se você só usar `--task-source manual`.
+```
+
+Valor texto é exportado como está e inteiro vira o texto do número; outro tipo é erro.
+Chave presente com valor vazio também conta como definida e vence as outras fontes: deixe
+comentada a chave que você define no `.env` ou no shell. A
+tabela só vale no topo: `[repos.<nome>.ambiente]` é erro.
+
+Um `.env` no diretório atual, com os mesmos nomes (`DATABASE_BACKEND=postgres`), continua
+valendo como alternativa. Para cada variável vence a primeira fonte que a define:
+
+| Ordem | Fonte |
+| --- | --- |
+| 1 | `[ambiente]` do config central |
+| 2 | `.env` do diretório atual (`.env.development` com `--env development`) |
+| 3 | variável já exportada no shell (ou no agendador) |
+
+O `[ambiente]` vence também o `.env.development`: com ele definido, `--env development` não
+leva a outro banco. Flags explícitas (`--bitbucket-token`, `--bitbucket-email`) vencem o
+`[ambiente]`.
 
 ### Estado: SQLite (padrão) ou Postgres
 
@@ -132,7 +146,7 @@ o primeiro uso cria as tabelas.
 
 Para usar Postgres: suba o banco (`docker compose up -d --wait`, com o `compose.yml` do
 `motor init`), defina `DATABASE_BACKEND=postgres` e as cinco
-`DATABASE_HOST/PORT/NAME/USER/PASSWORD` no `.env` (só são lidas nesse caso) e rode
+`DATABASE_HOST/PORT/NAME/USER/PASSWORD` no `[ambiente]` (ou no `.env`; só são lidas nesse caso) e rode
 `motor migrar` (ou deixe o primeiro comando aplicar as migrações). Se as cinco partes estiverem
 preenchidas e `DATABASE_BACKEND` não, o motor usa SQLite e avisa em stderr.
 
@@ -144,14 +158,14 @@ motor migrar-estado --de sqlite:///$HOME/.local/share/monitor-versoes/estado.db 
     --para postgresql://motor:motor@localhost:5433/monitor_versoes
 ```
 
-Depois, troque `DATABASE_BACKEND` no `.env`: o comando não altera a configuração.
+Depois, troque `DATABASE_BACKEND` no `[ambiente]` (ou no `.env`): o comando não altera a configuração.
 
 ### Configurar por projeto
 
 Um só arquivo TOML, `~/.config/monitor-versoes/config.toml` (ou
 `$XDG_CONFIG_HOME/monitor-versoes/config.toml`), em duas camadas mescladas chave a chave: o
 topo vale para todos os repos e cada `[repos.<nome>]` o sobrescreve. O `<nome>` é o que você
-passa em `--repo`. Credenciais continuam no `.env`. Exemplo:
+passa em `--repo`. Banco e credenciais ficam no `[ambiente]` (veja "Configurar o ambiente"). Exemplo:
 
 ```toml
 [repos.meu-repo]
@@ -300,8 +314,9 @@ motor inscricao agendar --desfazer
 motor inscricao rodar                                             # o que o agendador chama
 ```
 
-A identidade é o caminho absoluto do clone mais a versão; reinscrever só troca o intervalo.
-A inscrição guarda o diretório atual e o `--env`, que decidem qual `.env` a execução carrega.
+A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
+A execução agendada não depende de diretório: não lê `.env` e usa o `[ambiente]` do config
+central ou o ambiente do agendador.
 Também dá para gerenciar na TUI (tecla `i`).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as

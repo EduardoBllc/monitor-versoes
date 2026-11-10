@@ -1,6 +1,7 @@
 # Inscrições fora do estado, um processo por inscrição
 
-- **Status:** aceita
+- **Status:** aceita; o ponto "cada inscrição roda com o diretório e o `--env` dela" foi
+  revisto pela [031](031-ambiente-na-config-central.md)
 - **Data:** 2026-11-05
 - **Depende de:** [004](004-estado-descartavel.md), [021](021-motor-nao-interativo.md)
 

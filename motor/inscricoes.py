@@ -59,8 +59,6 @@ class Campo(StrEnum):
     REPO = "repo"
     VERSAO = "versao"
     INTERVALO_S = "intervalo_s"
-    DIRETORIO = "diretorio"
-    AMBIENTE = "ambiente"
     ULTIMA = "ultima"
     HORA = "hora"
     DESFECHO = "desfecho"
@@ -85,8 +83,6 @@ class Inscricao:
     repo: str
     versao: str
     intervalo: timedelta
-    diretorio: str
-    ambiente: str
     ultima: UltimaExecucao | None = None
 
 
@@ -130,8 +126,6 @@ def _para_json(i: Inscricao) -> dict[str, Any]:
         Campo.REPO: i.repo,
         Campo.VERSAO: i.versao,
         Campo.INTERVALO_S: int(i.intervalo.total_seconds()),
-        Campo.DIRETORIO: i.diretorio,
-        Campo.AMBIENTE: i.ambiente,
         Campo.ULTIMA: _ultima_para_json(i.ultima),
     }
 
@@ -156,8 +150,6 @@ def _de_json(d: dict[str, Any]) -> Inscricao:
         str(d[Campo.REPO]),
         str(d[Campo.VERSAO]),
         timedelta(seconds=int(d[Campo.INTERVALO_S])),
-        str(d[Campo.DIRETORIO]),
-        str(d[Campo.AMBIENTE]),
         _ultima_de_json(d[Campo.ULTIMA]),
     )
 
@@ -286,16 +278,15 @@ def rodar(
 
 
 def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
-    # -P: o cwd da inscrição não pode sombrear o pacote `motor` instalado.
+    # -P: o cwd herdado não pode sombrear o pacote `motor` instalado.
     cmd = [
-        sys.executable, "-P", "-m", "motor", "--env", i.ambiente,
+        sys.executable, "-P", "-m", "motor",
         "inscricao", "executar", i.versao, "--repo", i.repo,
     ]  # fmt: skip
     try:
         return subprocess.run(
             cmd,
             check=False,
-            cwd=i.diretorio,
             env=dict(env),
             timeout=LIMITE_EXECUCAO_S,
         ).returncode

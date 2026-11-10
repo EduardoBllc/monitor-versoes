@@ -31,6 +31,8 @@ from motor.agendador import (
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
+    ambiente_central,
+    caminho_config_global,
     carregar_config_global,
     carregar_config_repo,
     repos_configurados,
@@ -118,16 +120,53 @@ def _tipo_cli[T](validador: Callable[[str], T]) -> Callable[[str], T]:
     return converter
 
 
-def _carregar_ambiente(argv: list[str]) -> None:
+def _selecionar(argv: list[str]) -> tuple[str, str | None, str | None]:
+    """`--env`, comando e ação, lidos antes do parser montar os defaults."""
     seletor = argparse.ArgumentParser(add_help=False)
     seletor.add_argument("--env", choices=_ARQUIVOS_AMBIENTE, default=AMBIENTE_PADRAO)
-    ambiente = seletor.parse_known_args(argv)[0].env
-    if load_dotenv:
+    seletor.add_argument("comando", nargs="?")
+    seletor.add_argument("acao", nargs="?")
+    lidos = seletor.parse_known_args(argv)[0]
+    return lidos.env, lidos.comando, lidos.acao
+
+
+def _carregar_ambiente(argv: list[str]) -> MotorError | None:
+    """Aplica `[ambiente]` do central > `.env` do cwd > shell.
+
+    O caminho do central sai do `XDG_CONFIG_HOME` herdado e é restaurado no fim:
+    um `.env` (ou o próprio `[ambiente]`) que o mudasse faria o motor ler um
+    arquivo diferente do que acabou de aplicar.
+
+    O `inscricao rodar` não lê nada e repassa aos filhos o ambiente que herdou;
+    o `inscricao executar` não lê `.env`, para não depender de onde o agendador
+    o chamou. Devolve o erro do central quando o comando o tolera.
+    """
+    ambiente, comando, acao = _selecionar(argv)
+    if (comando, acao) == ("inscricao", AcaoInscricao.RODAR):
+        return None
+    filho = (comando, acao) == ("inscricao", AcaoInscricao.EXECUTAR)
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    erro: MotorError | None = None
+    try:
+        central = ambiente_central()
+    except ErroDeEntrada as e:
+        # O diagnóstico mostra o erro numa linha própria; o filho o grava como
+        # desfecho da inscrição. Os demais comandos morrem com ele.
+        if comando != "diagnostico" and not filho:
+            raise
+        central, erro = {}, e
+    if load_dotenv and not filho:
         load_dotenv(Path.cwd() / _ARQUIVOS_AMBIENTE[ambiente], override=True)
+    os.environ.update(central)
+    if xdg is None:
+        os.environ.pop("XDG_CONFIG_HOME", None)
+    else:
+        os.environ["XDG_CONFIG_HOME"] = xdg
+    return erro
 
 
 def _init(_args: argparse.Namespace) -> None:
-    for mensagem in iniciar(Path.cwd()):
+    for mensagem in iniciar(Path.cwd(), caminho_config_global()):
         print(mensagem)
 
 
@@ -144,6 +183,8 @@ def _diagnostico(args: argparse.Namespace) -> None:
         ambiente=args.env,
         config_central=carregar_config_global,
         repos=repos_configurados,
+        config_em=caminho_config_global(),
+        erro_ambiente=args.erro_central,
     )
     for resultado in resultados:
         print(formatar(resultado))
@@ -175,8 +216,6 @@ def _inscricao_adicionar(args: argparse.Namespace) -> None:
             repo=args.repo,
             versao=args.versao,
             intervalo=parse_intervalo(args.intervalo),
-            diretorio=str(Path.cwd()),
-            ambiente=args.env,
         ),
     )
     print(f"inscrição de {args.versao} registrada")
@@ -224,6 +263,14 @@ def _inscricao_executar(args: argparse.Namespace) -> None:
     if inscricao is None:
         raise ErroDeEntrada(f"inscrição não encontrada: {args.repo} {args.versao}")
     notificador = montar_notificador()
+    if args.erro_central is not None:
+        # Meia configuração (sem o [ambiente]) poderia cair noutro banco: o
+        # erro do arquivo é o desfecho, visível no `listar`.
+        erro_central = Resultado(Desfecho.ERRO, mensagem=str(args.erro_central))
+        registrar_execucao(
+            caminho, inscricao, erro_central, notificador, datetime.now(UTC)
+        )
+        return
     try:
         with abrir_sessao() as sessao:
             resultado = executar_inscricao(montar_deps(args.repo, sessao), args.versao)
@@ -251,7 +298,7 @@ def _inscricao(args: argparse.Namespace) -> None:
             rodar(
                 caminho_arquivo(),
                 datetime.now(UTC),
-                partial(disparar_subprocesso, env=args.ambiente_pai),
+                partial(disparar_subprocesso, env=dict(os.environ)),
                 montar_notificador(),
             )
         case AcaoInscricao.EXECUTAR:
@@ -387,7 +434,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
-    sub.add_parser("init", help="escreve compose.yml e .env no diretório atual")
+    sub.add_parser("init", help="escreve compose.yml no diretório atual")
 
     sub.add_parser(
         "diagnostico",
@@ -438,16 +485,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_serve(ambiente: str, porta: int) -> None:
+def _iniciar_serve(porta: int) -> None:
     from motor.daemon.app import servir
 
-    servir(ambiente, porta)
+    servir(porta)
 
 
-def _iniciar_tui(ambiente: str) -> None:
+def _iniciar_tui() -> None:
     from motor.tui import run_tui
 
-    run_tui(ambiente)
+    run_tui()
 
 
 def _imprimir_commits_por_task(
@@ -696,11 +743,14 @@ def _migrar_estado(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    ambiente_pai = dict(os.environ)  # antes do .env: o filho carrega o próprio
-    _carregar_ambiente(argv)
+    try:
+        erro_central = _carregar_ambiente(argv)
+    except MotorError as e:
+        print(f"ERROR: {formatar_com_notas(e)}", file=sys.stderr)
+        sys.exit(1)
 
     args = _build_parser().parse_args(argv)
-    args.ambiente_pai = ambiente_pai
+    args.erro_central = erro_central
 
     logging.basicConfig(
         level=logging.DEBUG if getattr(args, "debug", False) else logging.ERROR,
@@ -717,11 +767,11 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         if args.comando == "serve":
-            _iniciar_serve(args.env, args.porta)
+            _iniciar_serve(args.porta)
             return
 
         if args.comando == "tui":
-            _iniciar_tui(args.env)
+            _iniciar_tui()
             return
 
         if args.comando in _SEM_BANCO:

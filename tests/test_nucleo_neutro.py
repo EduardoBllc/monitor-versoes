@@ -29,7 +29,6 @@ _EXCLUIDOS_NOMES = (
 _ARQUIVOS_AVULSOS = (
     _RAIZ / "pyproject.toml",
     _RAIZ / "README.md",
-    _MOTOR / "modelos" / "env.example",
     _RAIZ / ".env.development.example",
 )
 
