@@ -1076,6 +1076,60 @@ def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path)
     assert fonte is not None and fonte.valor == "tests.fontes_falsas:FonteFixa"
 
 
+def test_diagnostico_mostra_o_central_invalido_e_as_demais_linhas(
+    monkeypatch, capsys, tmp_path
+):
+    from motor.errors import BackendIndisponivel
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text("isto = = nao\n")
+    monkeypatch.setenv("BITBUCKET_TOKEN", "")  # sem rede
+    monkeypatch.setattr(cli, "head", lambda: "rev")
+
+    def banco_fora(garantir=True):
+        raise BackendIndisponivel("banco fora")
+
+    monkeypatch.setattr(cli, "abrir_sessao", banco_fora)
+
+    with pytest.raises(SystemExit):
+        main(["diagnostico"])
+
+    linhas = capsys.readouterr().out.splitlines()
+    assert linhas[0].startswith("FALHA  Ambiente:")
+    assert str(central) in linhas[0]
+    for peca in ("Variáveis", "Postgres", "Tarefas", "Bitbucket"):
+        assert any(f"  {peca}" in linha for linha in linhas), peca
+
+
+def test_diagnostico_com_postgres_so_no_ambiente_central(
+    _postgres_efemero, sessao_postgres, monkeypatch, tmp_path
+):
+    container = {
+        "DATABASE_HOST": _postgres_efemero.get_container_host_ip(),
+        "DATABASE_PORT": str(_postgres_efemero.get_exposed_port(5432)),
+        "DATABASE_NAME": _postgres_efemero.dbname,
+        "DATABASE_USER": _postgres_efemero.username,
+        "DATABASE_PASSWORD": _postgres_efemero.password,
+    }
+    for chave in (*container, "DATABASE_BACKEND", "BITBUCKET_TOKEN", "BITBUCKET_EMAIL"):
+        monkeypatch.setenv(chave, "")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    central = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
+    central.parent.mkdir(parents=True)
+    central.write_text(
+        '[ambiente]\nDATABASE_BACKEND = "postgres"\n'
+        + "".join(f'{k} = "{v}"\n' for k, v in container.items())
+    )
+    cwd = tmp_path / "sem-env"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
+
+    main(["diagnostico"])  # SystemExit(1) se alguma linha falhar
+
+
 # -- migrar-estado ------------------------------------------------------------
 
 
@@ -1220,13 +1274,13 @@ def test_inscricao_listar_mostra_intervalo_formatado(inscricoes_env, tmp_path, c
     assert f"a cada {padrao}  " in capsys.readouterr().out
 
 
-def test_inscricao_rodar_nao_vaza_o_env_carregado_do_dotenv(
-    inscricoes_env, monkeypatch, tmp_path
-):
+def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp_path):
     chave = "CHAVE_SO_DO_DOTENV"
-    monkeypatch.setenv(chave, "")  # registra a limpeza do que o .env vai pôr
+    monkeypatch.setenv(chave, "")  # registra a limpeza do que o .env poria
     monkeypatch.delenv(chave)
     (tmp_path / ".env").write_text(f"{chave}=x\n")
+    with open(_central(), "w", encoding="utf-8") as f:
+        f.write("isto = = nao\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
     visto: dict[str, Any] = {}
@@ -1235,7 +1289,7 @@ def test_inscricao_rodar_nao_vaza_o_env_carregado_do_dotenv(
     )
     monkeypatch.setattr(cli, "montar_notificador", lambda: None)
     main(["inscricao", "rodar"])
-    assert os.environ[chave] == "x"
+    assert chave not in os.environ
     capturado: dict[str, Any] = {}
 
     def falso(cmd, **kw):
@@ -1252,6 +1306,42 @@ def test_inscricao_rodar_nao_vaza_o_env_carregado_do_dotenv(
     )
     visto["d"](inscricao)
     assert chave not in capturado["env"]
+
+
+def test_central_invalido_derruba_o_comando(inscricoes_env, capsys):
+    with open(_central(), "w", encoding="utf-8") as f:
+        f.write("isto = = nao\n")
+    with pytest.raises(SystemExit) as saida:
+        main(["inscricao", "listar"])
+    assert saida.value.code == 1
+    assert _central() in capsys.readouterr().err
+
+
+def test_central_invalido_no_executar_vira_erro_da_inscricao(
+    inscricoes_env, monkeypatch, tmp_path, capsys
+):
+    nome = _preparar_execucao(
+        monkeypatch, tmp_path, lambda deps, versao: pytest.fail("não executa")
+    )
+    with open(_central(), encoding="utf-8") as f:
+        valido = f.read()
+    with open(_central(), "w", encoding="utf-8") as f:
+        f.write("isto = = nao\n" + valido)
+    monkeypatch.setattr(
+        cli,
+        "abrir_sessao",
+        lambda: pytest.fail("não abre sessão com o central quebrado"),
+    )
+
+    main(["inscricao", "executar", _Inscr.VERSAO, "--repo", nome])
+
+    with open(_central(), "w", encoding="utf-8") as f:
+        f.write(valido)
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    linha = capsys.readouterr().out
+    assert "erro" in linha
+    assert _central() in linha
 
 
 def _preparar_execucao(monkeypatch, tmp_path, executar):

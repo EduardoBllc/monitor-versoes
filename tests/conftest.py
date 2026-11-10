@@ -31,6 +31,17 @@ def _sem_dotenv_dentro_do_main(monkeypatch):
     monkeypatch.setattr(cli, "load_dotenv", None)
 
 
+@pytest.fixture(autouse=True)
+def _config_central_isolado(monkeypatch, tmp_path):
+    """Nenhum teste lê o `config.toml` real de quem roda a suíte.
+
+    O `main()` aplica o `[ambiente]` do central: sem isolar, o banco e as
+    credenciais da máquina entrariam no teste. Quem precisa de um central
+    próprio sobrescreve o `XDG_CONFIG_HOME`.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-isolado"))
+
+
 _TRUNCATE_TUDO = (
     "truncate atribuicao_commit, atribuicao, versao, exclusao, "
     "sem_entrega, pr_commit_cache, pr_mergeada, varredura_pr, "
