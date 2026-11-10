@@ -83,6 +83,9 @@ def _sem_fonte() -> ConfigProjeto:
     return ConfigProjeto()
 
 
+CONFIG_EM = "/xdg/monitor-versoes/config.toml"
+
+
 def _rodar(
     env=None,
     *,
@@ -91,6 +94,7 @@ def _rodar(
     handler=_bitbucket_ok,
     config_central=_sem_fonte,
     repos=dict,
+    erro_ambiente=None,
 ):
     resultados = diagnosticar(
         ENV_OK if env is None else env,
@@ -99,6 +103,8 @@ def _rodar(
         ambiente=ambiente,
         config_central=config_central,
         repos=repos,
+        config_em=CONFIG_EM,
+        erro_ambiente=erro_ambiente,
         cliente=_cliente(handler),
     )
     return {r.peca: r for r in resultados}, resultados
@@ -127,6 +133,35 @@ def test_instalacao_integra():
     ]
     assert por_peca[Peca.TAREFAS].estado is Estado.NAO_CONFIGURADO
     assert por_peca[Peca.BITBUCKET].estado is Estado.NAO_CONFIGURADO
+
+
+def test_erro_no_ambiente_central_vira_linha_propria_e_o_resto_segue():
+    por_peca, resultados = _rodar(
+        erro_ambiente=ErroDeEntrada(f"{CONFIG_EM}: TOML inválido")
+    )
+
+    assert falhou(resultados)
+    assert resultados[0].peca is Peca.AMBIENTE
+    assert resultados[0].estado is Estado.FALHA
+    assert CONFIG_EM in resultados[0].detalhe
+    assert resultados[0].correcao == f"corrigir {CONFIG_EM}"
+    assert {Peca.VARIAVEIS, Peca.POSTGRES, Peca.TAREFAS, Peca.BITBUCKET} <= set(
+        por_peca
+    )
+
+
+@pytest.mark.parametrize(
+    ("ambiente", "arquivo"),
+    [("production", ".env"), ("development", ".env.development")],
+)
+def test_variaveis_ausentes_apontam_o_ambiente_central(ambiente, arquivo):
+    por_peca, _ = _rodar(
+        {"DATABASE_BACKEND": "postgres"}, abrir=_abrir_proibido, ambiente=ambiente
+    )
+
+    assert por_peca[Peca.VARIAVEIS].correcao == (
+        f"preencher em [ambiente] de {CONFIG_EM} (ou no {arquivo})"
+    )
 
 
 def test_postgres_fora():
@@ -298,7 +333,8 @@ _PLUGINS = "conferir [tarefas] fonte e os plugins instalados"
             "tests.fontes_falsas:FonteComCredencial",
             "errado",
             Estado.FALHA,
-            "conferir as credenciais da fonte no .env",
+            f"conferir as credenciais da fonte em [ambiente] de {CONFIG_EM} "
+            "(ou no .env)",
         ),
     ],
     ids=[

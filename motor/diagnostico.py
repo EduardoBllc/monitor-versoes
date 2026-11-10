@@ -24,6 +24,7 @@ from motor.montagem import instanciar_fonte_tarefas
 
 
 class Peca(enum.StrEnum):
+    AMBIENTE = "Ambiente"
     VARIAVEIS = "Variáveis"
     SQLITE = "SQLite"
     POSTGRES = "Postgres"
@@ -88,7 +89,7 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
     return problemas
 
 
-# Sete parâmetros, seis nomeados: cada um é uma peça injetada para o teste
+# Nove parâmetros, oito nomeados: cada um é uma peça injetada para o teste
 # rodar sem banco, rede nem arquivo de config reais.
 def diagnosticar(  # noqa: PLR0913
     env: Mapping[str, str],
@@ -98,23 +99,31 @@ def diagnosticar(  # noqa: PLR0913
     ambiente: str,
     config_central: Callable[[], ConfigProjeto],
     repos: Callable[[], Mapping[str, str | None]],
+    config_em: str,
+    erro_ambiente: MotorError | None = None,
     cliente: httpx.Client | None = None,
 ) -> list[Resultado]:
+    """`config_em` é o caminho do config central; `erro_ambiente`, o erro ao ler
+    o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
     arquivo = ".env.development" if ambiente == "development" else ".env"
     migrar = "make migrate-dev" if ambiente == "development" else "make migrate"
+    onde = f"[ambiente] de {config_em} (ou no {arquivo})"
 
     problemas = _problemas_do_banco(env)
 
-    resultados = [
+    resultados = []
+    if erro_ambiente is not None:
+        resultados.append(_falha(Peca.AMBIENTE, erro_ambiente, f"corrigir {config_em}"))
+    resultados.append(
         Resultado(
             Peca.VARIAVEIS,
             Estado.FALHA,
             "ausentes ou inválidas: " + ", ".join(problemas),
-            f"preencher no {arquivo}",
+            f"preencher em {onde}",
         )
         if problemas
         else Resultado(Peca.VARIAVEIS, Estado.OK, "todas preenchidas")
-    ]
+    )
     resultados += _banco(
         abrir_sessao, problemas, head, migrar, _backend(env) == "sqlite"
     )
@@ -127,7 +136,7 @@ def diagnosticar(  # noqa: PLR0913
         Estado.OK,
     ]
     resultados += _repos(abrir_sessao, repos, banco_ok)
-    resultados.append(_tarefas(config_central))
+    resultados.append(_tarefas(config_central, onde))
     resultados.append(_bitbucket(env, cliente))
     return resultados
 
@@ -252,7 +261,7 @@ def _repos(
     return linhas
 
 
-def _tarefas(config_central: Callable[[], ConfigProjeto]) -> Resultado:
+def _tarefas(config_central: Callable[[], ConfigProjeto], onde: str) -> Resultado:
     """A fonte de tarefas do `config.toml` central: o diagnóstico não tem repo.
 
     Credencial só é conferida se o plugin oferece `verificar_credenciais`.
@@ -281,7 +290,7 @@ def _tarefas(config_central: Callable[[], ConfigProjeto]) -> Resultado:
     try:
         verificar()
     except MotorError as e:
-        return _falha(Peca.TAREFAS, e, "conferir as credenciais da fonte no .env")
+        return _falha(Peca.TAREFAS, e, f"conferir as credenciais da fonte em {onde}")
     return Resultado(Peca.TAREFAS, Estado.OK, "credenciais aceitas")
 
 

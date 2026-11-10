@@ -31,6 +31,7 @@ from motor.agendador import (
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
+    caminho_config_global,
     carregar_config_global,
     carregar_config_repo,
     repos_configurados,
@@ -144,6 +145,7 @@ def _diagnostico(args: argparse.Namespace) -> None:
         ambiente=args.env,
         config_central=carregar_config_global,
         repos=repos_configurados,
+        config_em=caminho_config_global(),
     )
     for resultado in resultados:
         print(formatar(resultado))
