@@ -20,6 +20,9 @@ from motor.ports import CherryPickOutcome, MergePrediction
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 
 
+FAKE_WORKTREES = "/fake-worktrees"
+
+
 @dataclass
 class FakeCommit:
     hash: str
@@ -240,6 +243,9 @@ class FakeGit:
             raise NaoEncontrado(f"branch {branch} nao existe")
         self._registrar_uso(branch)
         self._current_branch = branch
+
+    def worktree_atual(self, /) -> str:
+        return f"{FAKE_WORKTREES}/{self._current_branch}"
 
     def _registrar_uso(self, branch: str) -> None:
         """Move a branch para o topo do mru (espelha o `_registrar_uso` real)."""

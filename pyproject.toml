@@ -10,6 +10,8 @@ dependencies = [
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
     "desktop-notifier>=6.2.0",
+    "fastapi>=0.162.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +22,7 @@ dev = [
     "ruff>=0.17.1",
     "pre-commit>=4.7.0",
     "tomlkit>=0.13",
+    "httpx2>=2.16.0",
 ]
 
 [project.scripts]
@@ -40,7 +43,7 @@ build-backend = "setuptools.build_meta"
 include = ["motor*"]
 
 [tool.setuptools.package-data]
-motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*"]
+motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*", "daemon/static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

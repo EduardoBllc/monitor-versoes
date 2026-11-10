@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import logging
-import os
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import ClassVar, Protocol
+from typing import ClassVar
 
 from rich import box
 from rich.console import Group, RenderableType
@@ -14,7 +12,6 @@ from rich.panel import Panel
 from rich.progress_bar import ProgressBar as BarraRich
 from rich.table import Table
 from rich.text import Text
-from sqlalchemy.orm import Session
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import BindingType
@@ -34,28 +31,15 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from motor.adapters.git.subprocess import new_git_subprocess
-from motor.config import (
-    AMBIENTE_PADRAO,
-    SECAO_REPOS,
-    carregar_config_repo,
-    repos_configurados,
-)
+from motor.config import AMBIENTE_PADRAO, SECAO_REPOS
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
     AtualizarStatus,
-    atualizar,
-    atualizar_abort,
-    atualizar_continue,
-    previa_atualizacao,
 )
-from motor.engine.consultar import ChamadoConsultado, consultar
-from motor.engine.criar import criar
-from motor.engine.deps import Deps
-from motor.engine.verificar import verificar
-from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, formatar_com_notas
+from motor.engine.consultar import ChamadoConsultado
+from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
 from motor.inscricoes import (
     INTERVALO_PADRAO,
     Inscricao,
@@ -66,74 +50,19 @@ from motor.inscricoes import (
     parse_intervalo,
     remover,
 )
-from motor.montagem import (
-    abrir_sessao,
-    montar_deps,
-    resolver_versionamento,
+from motor.operacoes import (
+    AbortRunner,
+    CriarRunner,
+    RepoOption,
+    Runners,
+    UpdateRunner,
+    VersionOption,
+    avaliar_numero,
+    runners_com_progresso,
+    versionamento_do_repo,
 )
-from motor.ports import GitRepo
-from motor.progresso import Progresso, RelatorProgresso, SlotProgresso, silencioso
-from motor.services.catalogo import Catalogo
+from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import Versionamento
-
-
-@dataclass(frozen=True)
-class RepoOption:
-    nome: str
-    caminho: str | None
-    # Piso da config do projeto (`[versao] piso`); None = nada cortado.
-    piso_versao: str | None = None
-
-    @property
-    def disponivel(self) -> bool:
-        return self.caminho is not None
-
-
-@dataclass(frozen=True)
-class VersionOption:
-    numero: str
-    liberada: bool
-
-
-RepoLoader = Callable[[], list[RepoOption]]
-VersionLoader = Callable[[RepoOption], list[VersionOption]]
-VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
-UpdateRunner = Callable[[RepoOption, str], AtualizarResult]
-PreviewRunner = Callable[[RepoOption, str], VersionStatus]
-AbortRunner = Callable[[RepoOption, str], None]
-CriarRunner = Callable[[RepoOption, str], AtualizarResult]
-VersionamentoLoader = Callable[[RepoOption], Versionamento]
-
-
-class ContinueRunner(Protocol):
-    """Como UpdateRunner, mais o `allow_empty` do `atualizar_continue`: e a
-    confirmacao do operador de que a resolucao sem alteracao pode entrar como
-    commit vazio."""
-
-    def __call__(
-        self, repo: RepoOption, versao: str, /, *, allow_empty: bool = False
-    ) -> AtualizarResult: ...
-
-
-ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
-
-
-@dataclass(frozen=True)
-class Runners:
-    """O que a TUI chama para falar com o motor. Os opcionais ausentes deixam
-    a acao correspondente indisponivel na tela."""
-
-    carregar_repos: RepoLoader
-    carregar_versoes: VersionLoader
-    executar: VerifyRunner
-    atualizar_repo: UpdateRunner | None = None
-    continuar_repo: ContinueRunner | None = None
-    abortar_repo: AbortRunner | None = None
-    consultar_versao: ConsultaRunner | None = None
-    criar_repo: CriarRunner | None = None
-    previa_atualizacao: PreviewRunner | None = None
-    # Sem ele, o versionamento sai da config do repo (`_versionamento_do_repo`).
-    versionamento_repo: VersionamentoLoader | None = None
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -444,25 +373,7 @@ class CriarModal(ModalScreen["str | None"]):
         self._confirmar()
 
     def _avaliar(self, numero: str) -> tuple[str, str]:
-        """(previa, erro) do que esta digitado. Campo vazio nao e erro ainda."""
-        numero = numero.strip()
-        if not numero:
-            return "", ""
-        esquema = self._versionamento.esquema
-        try:
-            numero = esquema.validar(numero)
-            tipo = esquema.tipo(numero)
-        except MotorError as erro:
-            return "", str(erro)
-        if numero in self._existentes:
-            return "", f"versao {numero} ja existe - use Atualizar"
-        try:
-            base = esquema.base(numero, self._existentes, self._versionamento.principal)
-        except MotorError as erro:
-            return "", str(erro)
-        if tipo is None:
-            return f"base {base}", ""
-        return f"{tipo} · base {base}", ""
+        return avaliar_numero(self._versionamento, self._existentes, numero)
 
     def _confirmar(self) -> None:
         numero = self.query_one("#criar-numero", Input).value.strip()
@@ -583,7 +494,7 @@ class MotorTUI(App[None]):
         self._abortar = runners.abortar_repo
         self._consultar = runners.consultar_versao
         self._criar = runners.criar_repo
-        self._versionamento_repo = runners.versionamento_repo or _versionamento_do_repo
+        self._versionamento_repo = runners.versionamento_repo or versionamento_do_repo
         # O do repo em que o ultimo `criar` foi aberto: ordena a lista depois.
         self._versionamento: Versionamento | None = None
         self._repo: RepoOption | None = None
@@ -1255,162 +1166,9 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._bloquear, False)
 
 
-def descobrir_repos(
-    repos: Mapping[str, str | None], *, progresso: RelatorProgresso = silencioso
-) -> list[RepoOption]:
-    opcoes = []
-    for indice, (nome, caminho) in enumerate(repos.items(), start=1):
-        progresso(Progresso("procurando os checkouts", indice, len(repos)))
-        achado = caminho if caminho is not None and os.path.isdir(caminho) else None
-        opcoes.append(
-            RepoOption(
-                nome=nome,
-                caminho=achado,
-                piso_versao=None if achado is None else _piso_da_config(nome),
-            )
-        )
-    return opcoes
-
-
-def _piso_da_config(nome: str) -> str | None:
-    """Piso da seção do repo; config invalida deixa `None` em vez de derrubar a
-    lista (o erro aparece ao operar o repo, pela montagem)."""
-    try:
-        return resolver_versionamento(carregar_config_repo(nome)).piso
-    except ErroDeEntrada:
-        return None
-
-
-def descobrir_versoes(
-    git: GitRepo,
-    versionamento: Versionamento,
-    *,
-    progresso: RelatorProgresso = silencioso,
-) -> list[VersionOption]:
-    progresso(Progresso("buscando refs do origin"))
-    git.fetch("origin")
-    catalogo = Catalogo(git, versionamento)
-    liberadas = catalogo.liberadas()
-    return [
-        VersionOption(numero, numero in liberadas)
-        for numero in reversed(catalogo.existentes())
-    ]
-
-
-def _repos_do_ambiente(*, progresso: RelatorProgresso = silencioso) -> list[RepoOption]:
-    return descobrir_repos(repos_configurados(), progresso=progresso)
-
-
-def _versionamento_do_repo(repo: RepoOption) -> Versionamento:
-    return resolver_versionamento(carregar_config_repo(repo.nome))
-
-
-def _versoes_do_repo(
-    repo: RepoOption, *, progresso: RelatorProgresso = silencioso
-) -> list[VersionOption]:
-    if repo.caminho is None:
-        return []
-    # Config invalida sobe como a falha de git ao listar versoes: o operador ve
-    # o erro ao escolher o repo.
-    versionamento = _versionamento_do_repo(repo)
-    return descobrir_versoes(
-        new_git_subprocess(repo.caminho, progresso=progresso),
-        versionamento,
-        progresso=progresso,
-    )
-
-
-def _deps_do_repo(
-    repo: RepoOption, sessao: Session, progresso: RelatorProgresso = silencioso
-) -> Deps:
-    if repo.caminho is None:
-        raise NaoEncontrado("checkout local não encontrado")
-    # Sem flags: token e email do Bitbucket saem do ambiente dentro do
-    # montar_deps, e a fonte de tasks e sempre a da config.
-    return montar_deps(repo.nome, sessao, progresso=progresso)
-
-
-def _verificar_repo(
-    repo: RepoOption,
-    versao: str,
-    auditar: bool,
-    *,
-    progresso: RelatorProgresso = silencioso,
-) -> VersionStatus:
-    with abrir_sessao() as sessao:
-        deps = _deps_do_repo(repo, sessao, progresso)
-        return verificar(deps, versao, auditar=auditar)
-
-
-def _atualizar_repo(
-    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
-) -> AtualizarResult:
-    with abrir_sessao() as sessao:
-        return atualizar(_deps_do_repo(repo, sessao, progresso), versao)
-
-
-def _previa_repo(
-    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
-) -> VersionStatus:
-    with abrir_sessao() as sessao:
-        return previa_atualizacao(_deps_do_repo(repo, sessao, progresso), versao)
-
-
-def _continuar_repo(
-    repo: RepoOption,
-    versao: str,
-    *,
-    allow_empty: bool = False,
-    progresso: RelatorProgresso = silencioso,
-) -> AtualizarResult:
-    with abrir_sessao() as sessao:
-        return atualizar_continue(
-            _deps_do_repo(repo, sessao, progresso), versao, allow_empty=allow_empty
-        )
-
-
-def _abortar_repo(
-    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
-) -> None:
-    with abrir_sessao() as sessao:
-        atualizar_abort(_deps_do_repo(repo, sessao, progresso), versao)
-
-
-def _criar_repo(
-    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
-) -> AtualizarResult:
-    with abrir_sessao() as sessao:
-        return criar(_deps_do_repo(repo, sessao, progresso), versao)
-
-
-def _consultar_repo(
-    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
-) -> list[ChamadoConsultado]:
-    with abrir_sessao() as sessao:
-        return consultar(_deps_do_repo(repo, sessao, progresso), versao)
-
-
 def run_tui(ambiente: str) -> None:
-    # O relator entra por `partial`, nao na assinatura dos runners que a TUI
-    # chama: assim os aliases (VerifyRunner e companhia) e os doubles dos testes
-    # seguem com a mesma aridade, e quem injeta runner nao precisa saber que
-    # progresso existe.
     slot = SlotProgresso()
-    MotorTUI(
-        Runners(
-            partial(_repos_do_ambiente, progresso=slot.relatar),
-            partial(_versoes_do_repo, progresso=slot.relatar),
-            partial(_verificar_repo, progresso=slot.relatar),
-            partial(_atualizar_repo, progresso=slot.relatar),
-            partial(_continuar_repo, progresso=slot.relatar),
-            partial(_abortar_repo, progresso=slot.relatar),
-            partial(_consultar_repo, progresso=slot.relatar),
-            partial(_criar_repo, progresso=slot.relatar),
-            previa_atualizacao=partial(_previa_repo, progresso=slot.relatar),
-        ),
-        slot=slot,
-        ambiente=ambiente,
-    ).run()
+    MotorTUI(runners_com_progresso(slot.relatar), slot=slot, ambiente=ambiente).run()
 
 
 def _resumo(status: VersionStatus) -> Text:

@@ -558,6 +558,9 @@ class GitSubprocess:
         self._registrar_uso(branch)
         self._current_branch = branch
 
+    def worktree_atual(self, /) -> str:
+        return self._worktree_dir(self._current_branch)
+
     def cherry_pick_x(self, hash: str, /) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)
         with _cronometrar("cherry-pick", "-x", hash):

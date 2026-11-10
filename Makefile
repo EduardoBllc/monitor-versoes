@@ -6,7 +6,7 @@ unexport VIRTUAL_ENV
 # `python -m`, como o pre-commit e o CI sempre rodaram: a raiz entra no sys.path.
 DEV := uv run --extra dev python -m
 
-.PHONY: install db migrate setup db-dev migrate-dev migracao check fmt fmt-check lint typecheck test
+.PHONY: install db migrate setup db-dev migrate-dev migracao check fmt fmt-check lint typecheck test web-check web-dist
 
 # --- Usuário: produção (.env, porta 5433) ---
 
@@ -42,7 +42,7 @@ migracao:
 	set -a; . ./.env.development; set +a; uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
 
 # Mesma sequência das etapas do CI (.github/workflows/ci.yml chama estes alvos).
-check: fmt-check lint typecheck test
+check: fmt-check lint typecheck test web-check web-dist
 
 fmt:
 	$(DEV) ruff format .
@@ -60,3 +60,23 @@ typecheck:
 # -rs lista o motivo de cada skip: integração pulada aparece no log.
 test:
 	$(DEV) pytest -rs
+
+# --- Front (web/): o build vive versionado em motor/daemon/static ---
+
+web-check:
+	cd web && npm ci && npm run typecheck && npm run lint && npm test
+
+# Regera OpenAPI, tipos e build num diretório temporário (ignorado pelo git) e
+# compara com a árvore: passa logo após um rebuild e acusa build defasado num
+# checkout limpo.
+WEB_TMP := web/node_modules/.dist
+
+web-dist:
+	cd web && npm ci
+	mkdir -p $(WEB_TMP)
+	uv run python -m motor.daemon.openapi > $(WEB_TMP)/openapi.json
+	web/node_modules/.bin/openapi-typescript $(WEB_TMP)/openapi.json -o $(WEB_TMP)/esquema.ts
+	web/node_modules/.bin/vite build web --outDir $(abspath $(WEB_TMP))/static --emptyOutDir
+	diff -u web/openapi.json $(WEB_TMP)/openapi.json
+	diff -u web/src/api/esquema.ts $(WEB_TMP)/esquema.ts
+	diff -r motor/daemon/static $(WEB_TMP)/static

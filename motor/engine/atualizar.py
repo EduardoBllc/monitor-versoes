@@ -48,6 +48,8 @@ class AtualizarResult:
     aplicados: list[CommitRef] = field(default_factory=list)
     # commits que ja estavam no historico (ancestrais, sem cherry-pick a fazer)
     ja_presentes: int = 0
+    # onde o operador resolve o conflito; so em BLOCKED e VAZIO
+    worktree: str = ""
     # commits cujo pick nao deixou alteracao e entraram como commit vazio (com
     # o trailer -x, para o oraculo nao os devolver como faltantes no proximo run)
     vazios: list[CommitRef] = field(default_factory=list)
@@ -207,6 +209,7 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
                 ja_presentes=ja_presentes,
                 status_versao=status,
                 reaproveitada_de=reaproveitada_de,
+                worktree=deps.git.worktree_atual(),
             )
         aplicados.append(c)
     logger.debug("cherry-pick de %d commits: %.3fs", len(faltam), time.monotonic() - t)
@@ -275,7 +278,9 @@ def atualizar_continue(
     if deps.git.continue_cherry_pick() == CherryPickOutcome.VAZIO:
         if not allow_empty:
             return AtualizarResult(
-                status=AtualizarStatus.VAZIO, blocked_commit=pendente
+                status=AtualizarStatus.VAZIO,
+                blocked_commit=pendente,
+                worktree=deps.git.worktree_atual(),
             )
         deps.git.commit_pick_vazio()
         resultado = atualizar(deps, versao)
