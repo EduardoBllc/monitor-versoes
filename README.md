@@ -108,8 +108,8 @@ DATABASE_USER = "motor"
 DATABASE_PASSWORD = "motor"
 
 # Bitbucket (opcional — ativa descoberta de commits por PR)
-BITBUCKET_TOKEN = ""
-BITBUCKET_EMAIL = ""
+# BITBUCKET_TOKEN = "..."
+# BITBUCKET_EMAIL = "..."
 
 # Worktrees de versão mantidas em disco entre operações (padrão 3). Mantendo as últimas
 # usadas, o comando seguinte na mesma versão reusa o diretório. 0 = descarta a cada run.
@@ -119,7 +119,9 @@ WORKTREES_MANTIDAS = 3
 # se você só usar `--task-source manual`.
 ```
 
-Valor texto é exportado como está e inteiro vira o texto do número; outro tipo é erro. A
+Valor texto é exportado como está e inteiro vira o texto do número; outro tipo é erro.
+Chave presente com valor vazio também conta como definida e vence as outras fontes: deixe
+comentada a chave que você define no `.env` ou no shell. A
 tabela só vale no topo: `[repos.<nome>.ambiente]` é erro.
 
 Um `.env` no diretório atual, com os mesmos nomes (`DATABASE_BACKEND=postgres`), continua

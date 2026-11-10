@@ -1104,6 +1104,7 @@ def test_diagnostico_mostra_o_central_invalido_e_as_demais_linhas(
         assert any(f"  {peca}" in linha for linha in linhas), peca
 
 
+@pytest.mark.integracao
 def test_diagnostico_com_postgres_so_no_ambiente_central(
     _postgres_efemero, sessao_postgres, monkeypatch, tmp_path
 ):
