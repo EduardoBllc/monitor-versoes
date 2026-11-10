@@ -216,8 +216,6 @@ def _inscricao_adicionar(args: argparse.Namespace) -> None:
             repo=args.repo,
             versao=args.versao,
             intervalo=parse_intervalo(args.intervalo),
-            diretorio=str(Path.cwd()),
-            ambiente=args.env,
         ),
     )
     print(f"inscrição de {args.versao} registrada")
@@ -487,16 +485,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_serve(ambiente: str, porta: int) -> None:
+def _iniciar_serve(porta: int) -> None:
     from motor.daemon.app import servir
 
-    servir(ambiente, porta)
+    servir(porta)
 
 
-def _iniciar_tui(ambiente: str) -> None:
+def _iniciar_tui() -> None:
     from motor.tui import run_tui
 
-    run_tui(ambiente)
+    run_tui()
 
 
 def _imprimir_commits_por_task(
@@ -769,11 +767,11 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         if args.comando == "serve":
-            _iniciar_serve(args.env, args.porta)
+            _iniciar_serve(args.porta)
             return
 
         if args.comando == "tui":
-            _iniciar_tui(args.env)
+            _iniciar_tui()
             return
 
         if args.comando in _SEM_BANCO:

@@ -41,9 +41,9 @@ HORA = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 MIN30 = datetime.timedelta(minutes=30)
 
 
-DIRETORIO = "/dir/original"
-OUTRO_DIRETORIO = "/dir/outro"
 CHAMADO = "100"
+CAMPO_DIRETORIO_ANTIGO = "diretorio"
+CAMPO_AMBIENTE_ANTIGO = "ambiente"
 VERMELHO = "sumido:abc"
 NAO_JSON = "{nao e json"
 
@@ -58,18 +58,13 @@ class Versao(StrEnum):
     V2 = "2.0"
 
 
-class Ambiente(StrEnum):
-    DEV = "development"
-
-
 def _insc(
     repo: str = Repo.A,
     versao: str = Versao.V1,
     intervalo: datetime.timedelta = MIN30,
     ultima: UltimaExecucao | None = None,
-    diretorio: str = DIRETORIO,
 ) -> Inscricao:
-    return Inscricao(repo, versao, intervalo, diretorio, Ambiente.DEV, ultima)
+    return Inscricao(repo, versao, intervalo, ultima)
 
 
 def _ultima(hora: datetime.datetime = HORA) -> UltimaExecucao:
@@ -156,11 +151,26 @@ def test_campo_com_tipo_errado_da_resposta_invalida(arq: Path) -> None:
 def test_reinscrever_troca_so_intervalo(arq: Path) -> None:
     salvar(arq, [_insc(ultima=_ultima())])
     horas = datetime.timedelta(hours=1)
-    inscrever(arq, _insc(intervalo=horas, diretorio=OUTRO_DIRETORIO))
+    inscrever(arq, _insc(intervalo=horas))
     (unica,) = carregar(arq)
     assert unica.intervalo == horas
     assert unica.ultima == _ultima()
-    assert unica.diretorio == DIRETORIO
+
+
+def test_inscricao_antiga_com_diretorio_e_ambiente_e_lida_e_regravada_sem_eles(
+    arq: Path,
+) -> None:
+    salvar(arq, [_insc()])
+    dados = json.loads(arq.read_text())
+    dados[0][CAMPO_DIRETORIO_ANTIGO] = "/dir/original"
+    dados[0][CAMPO_AMBIENTE_ANTIGO] = "development"
+    arq.write_text(json.dumps(dados))
+    (lida,) = carregar(arq)
+    assert lida == _insc()
+    salvar(arq, [lida])
+    (crua,) = json.loads(arq.read_text())
+    assert CAMPO_DIRETORIO_ANTIGO not in crua
+    assert CAMPO_AMBIENTE_ANTIGO not in crua
 
 
 def test_inscrever_nova_acrescenta(arq: Path) -> None:
@@ -267,13 +277,14 @@ def test_rodar_inscricao_removida_pelo_filho_nao_e_recriada(arq: Path) -> None:
     assert carregar(arq) == []
 
 
-def test_disparar_subprocesso_diretorio_sumido_devolve_menos_um(
-    tmp_path: Path,
+def test_disparar_subprocesso_oserror_devolve_sem_processo(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert (
-        disparar_subprocesso(_insc(diretorio=str(tmp_path / "nao-existe")), {})
-        == SEM_PROCESSO
-    )
+    def falha(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        raise OSError("sem executável")
+
+    monkeypatch.setattr(subprocess, "run", falha)
+    assert disparar_subprocesso(_insc(), {}) == SEM_PROCESSO
 
 
 def test_disparar_subprocesso_tempo_esgotado(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -323,10 +334,10 @@ def test_disparar_subprocesso_monta_o_comando(
     ambiente = {"CHAVE_PAI": "v"}
     assert disparar_subprocesso(i, ambiente) == 0
     assert visto["cmd"] == [
-        sys.executable, "-P", "-m", "motor", "--env", i.ambiente,
+        sys.executable, "-P", "-m", "motor",
         "inscricao", "executar", i.versao, "--repo", i.repo,
     ]  # fmt: skip
-    assert visto["cwd"] == i.diretorio
+    assert "cwd" not in visto
     assert visto["env"] == ambiente
     assert visto["timeout"] == LIMITE_EXECUCAO_S
 

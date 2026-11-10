@@ -3,6 +3,7 @@ import dataclasses
 import datetime
 import enum
 import io
+import json
 from functools import partial
 from pathlib import Path
 from threading import Event
@@ -39,7 +40,6 @@ from motor.tui import (
 )
 from tests.versionamento import ESCALONADO_COMPOSTA
 
-_AMBIENTE_INSCRICAO = "development"
 _MENSAGEM_ERRO = "falhou"
 
 
@@ -284,10 +284,9 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
 
     monkeypatch.setattr(MotorTUI, "run", capturar)
 
-    tui.run_tui(_AMBIENTE_INSCRICAO)
+    tui.run_tui()
 
     [app] = apps
-    assert app._ambiente == _AMBIENTE_INSCRICAO
     esperado = runners_com_progresso(app._slot.relatar)
     ligados = [
         (app._carregar_repos, esperado.carregar_repos),
@@ -2260,8 +2259,6 @@ def _inscricao(versao: str, repo: str = "alpha") -> Inscricao:
         repo,
         versao,
         parse_intervalo(INTERVALO_PADRAO),
-        "/diretorio",
-        _AMBIENTE_INSCRICAO,
     )
 
 
@@ -2291,7 +2288,6 @@ def _app_inscricoes(arquivo: Path) -> MotorTUI:
     return MotorTUI(
         Runners(lambda: [_REPO_PREVIA], lambda opcao: [_VERSAO_PREVIA], _nunca_executa),
         inscricoes_em=arquivo,
-        ambiente=_AMBIENTE_INSCRICAO,
     )
 
 
@@ -2324,13 +2320,11 @@ def test_inscricoes_adiciona_selecionada(tmp_path):
 
     asyncio.run(executar_fluxo())
     [gravada] = carregar(arquivo)
-    assert (gravada.repo, gravada.versao, gravada.ambiente) == (
-        _REPO_PREVIA.nome,
-        _VERSAO_PREVIA.numero,
-        _AMBIENTE_INSCRICAO,
-    )
+    assert (gravada.repo, gravada.versao) == (_REPO_PREVIA.nome, _VERSAO_PREVIA.numero)
     assert gravada.intervalo == parse_intervalo(INTERVALO_PADRAO)
-    assert gravada.diretorio == str(Path.cwd())
+    [crua] = json.loads(arquivo.read_text())
+    assert "diretorio" not in crua
+    assert "ambiente" not in crua
 
 
 def test_inscricoes_remove(tmp_path):

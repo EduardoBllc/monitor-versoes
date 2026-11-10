@@ -68,7 +68,6 @@ def cliente(amb: Ambiente, tmp_path: Path) -> TestClient:
         porta=PORTA,
         estaticos=tmp_path,
         inscricoes_em=amb.inscricoes,
-        ambiente="development",
     )
     return TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
 
@@ -106,7 +105,6 @@ def test_operacao_em_repo_sem_checkout_da_404_com_mensagem_do_motor(
         porta=PORTA,
         estaticos=tmp_path,
         inscricoes_em=amb.inscricoes,
-        ambiente="development",
     )
     c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
     r = c.post(
@@ -208,7 +206,6 @@ def test_pendencias_guardam_o_bloqueio_depois_de_uma_verificacao(
         porta=PORTA,
         estaticos=tmp_path,
         inscricoes_em=amb.inscricoes,
-        ambiente="development",
     )
     c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
     c.post(f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao")
@@ -263,6 +260,15 @@ def test_inscricoes_inscrever_listar_remover(cliente: TestClient) -> None:
     assert cliente.get("/api/inscricoes").json() == []
 
 
+def test_inscrever_grava_sem_diretorio_nem_ambiente(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    cliente.post("/api/inscricoes", json={"repo": REPO, "versao": VERSAO})
+    [crua] = json.loads(amb.inscricoes.read_text(encoding="utf-8"))
+    assert "diretorio" not in crua
+    assert "ambiente" not in crua
+
+
 def test_inscrever_repo_sem_checkout_da_404(cliente: TestClient) -> None:
     r = cliente.post("/api/inscricoes", json={"repo": "sem-clone", "versao": VERSAO})
     assert r.status_code == HTTPStatus.NOT_FOUND
@@ -296,7 +302,6 @@ def test_erro_nas_leituras_segue_a_tabela(
         porta=PORTA,
         estaticos=amb.inscricoes.parent,
         inscricoes_em=amb.inscricoes,
-        ambiente="development",
     )
     # Só o erro não previsto é relançado (para o traceback ir ao log).
     r = TestClient(
@@ -349,7 +354,6 @@ def test_estatico_nao_sai_da_pasta(cliente: TestClient, tmp_path: Path) -> None:
         porta=PORTA,
         estaticos=pasta,
         inscricoes_em=tmp_path / "i.json",
-        ambiente="development",
     )
     c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
     resposta = c.get("/%2e%2e/segredo.txt")

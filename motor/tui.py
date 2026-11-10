@@ -31,7 +31,7 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from motor.config import AMBIENTE_PADRAO, SECAO_REPOS
+from motor.config import SECAO_REPOS
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -118,13 +118,11 @@ class InscricoesModal(ModalScreen[None]):
         arquivo: Path,
         repo: RepoOption | None,
         versao: VersionOption | None,
-        ambiente: str,
     ) -> None:
         super().__init__()
         self._arquivo = arquivo
         self._repo = repo
         self._versao = versao
-        self._ambiente = ambiente
         self._inscricoes: list[Inscricao] = []
 
     def compose(self) -> ComposeResult:
@@ -156,8 +154,6 @@ class InscricoesModal(ModalScreen[None]):
             self._repo.nome,
             self._versao.numero,
             parse_intervalo(INTERVALO_PADRAO),
-            str(Path.cwd()),
-            self._ambiente,
         )
         self._gravar(lambda: inscrever(self._arquivo, nova))
 
@@ -476,11 +472,9 @@ class MotorTUI(App[None]):
         runners: Runners,
         slot: SlotProgresso | None = None,
         inscricoes_em: Path | None = None,
-        ambiente: str = AMBIENTE_PADRAO,
     ) -> None:
         super().__init__()
         self._inscricoes_em = inscricoes_em or caminho_arquivo()
-        self._ambiente = ambiente
         # Compartilhado com os runners (ver run_tui): eles relatam de dentro da
         # thread do worker, esta classe so amostra na thread principal.
         self._slot = slot or SlotProgresso()
@@ -908,11 +902,7 @@ class MotorTUI(App[None]):
             self._iniciar_abort()
 
     def action_inscricoes(self) -> None:
-        self.push_screen(
-            InscricoesModal(
-                self._inscricoes_em, self._repo, self._versao, self._ambiente
-            )
-        )
+        self.push_screen(InscricoesModal(self._inscricoes_em, self._repo, self._versao))
 
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:
@@ -1166,9 +1156,9 @@ class MotorTUI(App[None]):
             self.call_from_thread(self._bloquear, False)
 
 
-def run_tui(ambiente: str) -> None:
+def run_tui() -> None:
     slot = SlotProgresso()
-    MotorTUI(runners_com_progresso(slot.relatar), slot=slot, ambiente=ambiente).run()
+    MotorTUI(runners_com_progresso(slot.relatar), slot=slot).run()
 
 
 def _resumo(status: VersionStatus) -> Text:

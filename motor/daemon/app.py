@@ -124,7 +124,6 @@ class _Contexto:
     fabrica: Callable[[RelatorProgresso], Runners]
     versionamento_repo: VersionamentoLoader
     inscricoes_em: Path
-    ambiente: str
     execucoes: Execucoes = field(default_factory=Execucoes)
 
     def leitura(self) -> Runners:
@@ -297,8 +296,6 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
                 _disponivel(ctx.achar(corpo.repo)),
                 corpo.versao,
                 arquivo.parse_intervalo(arquivo.INTERVALO_PADRAO),
-                str(Path.cwd()),
-                ctx.ambiente,
             ),
         )
 
@@ -321,17 +318,16 @@ def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:
         return FileResponse(raiz / "index.html")
 
 
-def criar_app(  # noqa: PLR0913
+def criar_app(
     fabrica: Callable[[RelatorProgresso], Runners],
     *,
     porta: int,
     estaticos: Path,
     inscricoes_em: Path,
-    ambiente: str,
     versionamento_repo: VersionamentoLoader = versionamento_do_repo,
 ) -> FastAPI:
     app = FastAPI()
-    ctx = _Contexto(fabrica, versionamento_repo, inscricoes_em, ambiente)
+    ctx = _Contexto(fabrica, versionamento_repo, inscricoes_em)
     app.state.execucoes = ctx.execucoes  # gancho dos testes
     proteger(app, porta)
 
@@ -383,7 +379,7 @@ def _rodar(app: FastAPI, porta: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=porta)
 
 
-def servir(ambiente: str, porta: int) -> None:
+def servir(porta: int) -> None:
     import socket
 
     with socket.socket() as sonda:
@@ -399,6 +395,5 @@ def servir(ambiente: str, porta: int) -> None:
         porta=porta,
         estaticos=PASTA_ESTATICOS,
         inscricoes_em=arquivo.caminho_arquivo(),
-        ambiente=ambiente,
     )
     _rodar(app, porta)

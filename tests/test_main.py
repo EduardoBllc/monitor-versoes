@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime
+import json
 import os
 import subprocess
 from enum import StrEnum
@@ -82,7 +83,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo, ambient
         "load_dotenv",
         lambda caminho, **opcoes: ambientes.append(os.path.basename(caminho)),
     )
-    monkeypatch.setattr(cli, "_iniciar_tui", chamadas.append)
+    monkeypatch.setattr(cli, "_iniciar_tui", lambda: chamadas.append("tui"))
     monkeypatch.setattr(
         cli,
         "abrir_sessao",
@@ -91,7 +92,7 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo, ambient
 
     main(argv)
 
-    assert chamadas == [ambiente]
+    assert chamadas == ["tui"]
     assert ambientes == [arquivo]
 
 
@@ -1228,6 +1229,14 @@ def test_inscricao_adicionar_guarda_o_nome_e_recusa_repo_fora_da_config(
     assert [i.repo for i in carregar(arquivo)] == [nome]
 
 
+def test_inscricao_adicionar_grava_sem_diretorio_nem_ambiente(inscricoes_env, tmp_path):
+    arquivo, _ = inscricoes_env
+    _inscrever(_repo_dir(tmp_path))
+    [crua] = json.loads(arquivo.read_text(encoding="utf-8"))
+    assert "diretorio" not in crua
+    assert "ambiente" not in crua
+
+
 def test_inscricao_adicionar_avisa_sem_agendador(inscricoes_env, tmp_path, capsys):
     _inscrever(_repo_dir(tmp_path))
     assert "agendador não instalado" in capsys.readouterr().err
@@ -1297,13 +1306,7 @@ def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(subprocess, "run", falso)
-    inscricao = Inscricao(
-        str(tmp_path),
-        _Inscr.VERSAO,
-        datetime.timedelta(minutes=1),
-        str(tmp_path),
-        "production",
-    )
+    inscricao = Inscricao(str(tmp_path), _Inscr.VERSAO, datetime.timedelta(minutes=1))
     visto["d"](inscricao)
     assert chave not in capturado["env"]
 
@@ -1434,5 +1437,5 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
             cliente.recv(1)
     rodou = []
     monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
-    daemon_app.servir("development", porta)
+    daemon_app.servir(porta)
     assert rodou == [porta]
