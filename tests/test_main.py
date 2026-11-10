@@ -795,11 +795,11 @@ def test_comando_que_nao_busca_tarefa_roda_sem_credencial_da_fonte(
 ):
     """`atualizar --abort` e `reconstruir-estado` montam a fonte de tarefas mas
     nunca chamam fetch. Sao os comandos de recuperacao: exigir a credencial da
-    fonte (vazia no env.example) travaria justamente o comando que se usa
+    fonte (vazia num [ambiente] recém-escrito) travaria justamente o comando que se usa
     quando algo ja esta quebrado.
     """
-    # "" e nao delenv: o que se testa aqui e credencial vazia, o caso do
-    # env.example — nao a variavel ausente.
+    # "" e nao delenv: o que se testa aqui e credencial vazia, nao a
+    # variavel ausente.
     monkeypatch.setenv("FONTE_FALSA_TOKEN", "")
 
     main([*comando, "--repo", _repo_dir(tmp_path)])

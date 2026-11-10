@@ -3,40 +3,57 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import dotenv
 import pytest
 
 import motor.__main__ as cli
+from motor.config import caminho_config_global
 from motor.init import iniciar
 
 MODELOS = Path(cli.__file__).parent / "modelos"
 COMPOSE = (MODELOS / "compose.yml").read_text(encoding="utf-8")
-ENV = (MODELOS / "env.example").read_text(encoding="utf-8")
 
 
-def test_diretorio_vazio_cria_os_dois(tmp_path, monkeypatch):
+_PADROES_COMPOSE = {
+    "DATABASE_NAME": "monitor_versoes",
+    "DATABASE_USER": "motor",
+    "DATABASE_PASSWORD": "motor",
+    "DATABASE_PORT": "5433",
+}
+
+
+def test_diretorio_vazio_cria_so_o_compose(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
 
     cli.main(["init"])
 
     assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == COMPOSE
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV
+    assert not (tmp_path / ".env").exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["compose.yml"]
+    saida = capsys.readouterr().out
+    assert f"[ambiente] de {caminho_config_global()}" in saida
 
 
-@pytest.mark.parametrize("existente", ["compose.yml", ".env"])
-def test_arquivo_existente_fica_intacto(tmp_path, existente):
-    (tmp_path / existente).write_text("meu", encoding="utf-8")
+def test_compose_existente_fica_intacto(tmp_path):
+    (tmp_path / "compose.yml").write_text("meu", encoding="utf-8")
 
-    mensagens = iniciar(tmp_path)
+    mensagens = iniciar(tmp_path, "/cfg/config.toml")
 
-    assert (tmp_path / existente).read_text(encoding="utf-8") == "meu"
-    assert f"{existente} já existe; mantido" in mensagens
-    outro, conteudo = (
-        (".env", ENV) if existente == "compose.yml" else ("compose.yml", COMPOSE)
-    )
-    assert (tmp_path / outro).read_text(encoding="utf-8") == conteudo
+    assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == "meu"
+    assert "compose.yml já existe; mantido" in mensagens
+    assert not (tmp_path / ".env").exists()
+
+
+def test_compose_sobe_sem_env_com_os_padroes():
+    usadas = set(re.findall(r"\$\{(DATABASE_\w+)", COMPOSE))
+    assert usadas == set(_PADROES_COMPOSE)
+    for variavel, padrao in _PADROES_COMPOSE.items():
+        ocorrencias = re.findall(rf"\$\{{{variavel}([^}}]*)\}}", COMPOSE)
+        assert ocorrencias
+        assert all(o == f":-{padrao}" for o in ocorrencias), variavel
 
 
 _CHAVES = ("HOST", "PORT", "NAME", "USER", "PASSWORD")

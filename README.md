@@ -66,10 +66,10 @@ services:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DATABASE_NAME}
-      POSTGRES_USER: ${DATABASE_USER}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-    ports: ["${DATABASE_PORT}:5432"]
+      POSTGRES_DB: ${DATABASE_NAME:-monitor_versoes}
+      POSTGRES_USER: ${DATABASE_USER:-motor}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-motor}
+    ports: ["${DATABASE_PORT:-5433}:5432"]
     # /var/lib/postgresql, nao /var/lib/postgresql/data: no postgres:18-alpine o
     # PGDATA e /var/lib/postgresql/18/docker, entao montar em /data criaria um
     # diretorio vazio irmao do PGDATA e os dados sumiriam na recriacao do volume.

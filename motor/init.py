@@ -1,25 +1,23 @@
-"""`motor init`: escreve `compose.yml` e `.env` a partir dos modelos do pacote."""
+"""`motor init`: escreve `compose.yml` a partir do modelo do pacote."""
 
 from __future__ import annotations
 
 from importlib.resources import files
 from pathlib import Path
 
-# (modelo no pacote, arquivo escrito no destino)
-_ARQUIVOS = (("compose.yml", "compose.yml"), ("env.example", ".env"))
+MODELO_COMPOSE = "compose.yml"
 
 
-def iniciar(destino: Path) -> list[str]:
-    """Copia os modelos para `destino` sem sobrescrever; devolve as mensagens."""
-    modelos = files("motor") / "modelos"
-    mensagens: list[str] = []
-    for modelo, nome in _ARQUIVOS:
-        alvo = destino / nome
-        if alvo.exists():
-            mensagens.append(f"{nome} já existe; mantido")
-            continue
-        alvo.write_text(
-            (modelos / modelo).read_text(encoding="utf-8"), encoding="utf-8"
-        )
-        mensagens.append(f"criado {nome}")
+def iniciar(destino: Path, config_em: str) -> list[str]:
+    """Copia o modelo para `destino` sem sobrescrever; devolve as mensagens."""
+    alvo = destino / MODELO_COMPOSE
+    if alvo.exists():
+        mensagens = [f"{MODELO_COMPOSE} já existe; mantido"]
+    else:
+        modelo = files("motor") / "modelos" / MODELO_COMPOSE
+        alvo.write_text(modelo.read_text(encoding="utf-8"), encoding="utf-8")
+        mensagens = [f"criado {MODELO_COMPOSE}"]
+    mensagens.append(
+        f"o motor se configura pelo [ambiente] de {config_em}; o README explica as chaves"
+    )
     return mensagens

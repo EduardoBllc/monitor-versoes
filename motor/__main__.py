@@ -166,7 +166,7 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
 
 
 def _init(_args: argparse.Namespace) -> None:
-    for mensagem in iniciar(Path.cwd()):
+    for mensagem in iniciar(Path.cwd(), caminho_config_global()):
         print(mensagem)
 
 
@@ -434,7 +434,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
-    sub.add_parser("init", help="escreve compose.yml e .env no diretório atual")
+    sub.add_parser("init", help="escreve compose.yml no diretório atual")
 
     sub.add_parser(
         "diagnostico",
