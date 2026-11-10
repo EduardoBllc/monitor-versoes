@@ -108,7 +108,10 @@ export const pickAberto = (x: Execucao): boolean =>
   (x.resultado as AtualizarResult).status !== AtualizarStatus.DONE;
 
 function terminou(e: EstadoAtualizacao, x: Execucao): EstadoAtualizacao {
-  if (x.estado === EstadoExecucao.FALHOU) return volta(e);
+  // Abortar que falha também sai do bloqueio, como no daemon: o pick pode ter sido
+  // resolvido fora da web, e um pick ainda aberto reaparece no próximo atualizar.
+  if (x.estado === EstadoExecucao.FALHOU && x.operacao !== Operacao.ABORTAR)
+    return volta(e);
   switch (x.operacao) {
     case Operacao.PREVIA:
       return previaPronta(x.resultado as VersionStatus);

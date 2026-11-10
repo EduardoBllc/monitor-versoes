@@ -96,14 +96,20 @@ it("continuar e abortar só em bloqueada/vazia, e falha devolve o bloqueio", () 
   expect(falhou).toBe(bloqueada);
 });
 
-it("abortar concluído volta a ociosa", () => {
-  const abortando = proximo(bloqueada, { tipo: TipoEventoAtualizacao.ABORTOU });
-  const e = proximo(abortando, {
-    tipo: TipoEventoAtualizacao.TERMINOU,
-    execucao: execucao(Operacao.ABORTAR, null),
-  });
-  expect(e.fase).toBe(FaseAtualizacao.OCIOSA);
-});
+// Com falha: o pick foi resolvido fora da web e o daemon já esqueceu o bloqueio.
+it.each([EstadoExecucao.CONCLUIDA, EstadoExecucao.FALHOU])(
+  "abortar %s volta a ociosa",
+  (estado) => {
+    const abortando = proximo(bloqueada, {
+      tipo: TipoEventoAtualizacao.ABORTOU,
+    });
+    const e = proximo(abortando, {
+      tipo: TipoEventoAtualizacao.TERMINOU,
+      execucao: execucao(Operacao.ABORTAR, null, estado),
+    });
+    expect(e.fase).toBe(FaseAtualizacao.OCIOSA);
+  },
+);
 
 it("ocupado (409) em ociosa passa a acompanhar a execução", () => {
   expect(proximo(INICIAL, { tipo: TipoEventoAtualizacao.OCUPADO }).fase).toBe(
