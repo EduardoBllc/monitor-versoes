@@ -12,6 +12,7 @@ from motor.domain.reconcile import (
     FatosDoGit,
     atribuicoes_de,
     filtrar_excluidos,
+    incluir_julgados,
     reconciliar,
 )
 from motor.domain.referencia import Referencia
@@ -19,6 +20,7 @@ from motor.domain.types import (
     Atribuicao,
     CommitRef,
     ContextoAtribuicao,
+    JulgamentoOrfao,
     Presence,
     TargetSet,
     Verificacao,
@@ -32,6 +34,7 @@ from motor.progresso import Progresso
 from motor.services.base_resolver import BaseResolver
 from motor.services.catalogo import Catalogo
 from motor.services.presence_oracle import PresenceOracle
+from motor.services.reconstrutor import varrer
 from motor.services.target_resolver import TargetResolver
 
 logger = logging.getLogger(__name__)
@@ -261,14 +264,23 @@ def verificar_sem_fetch(
 
     exclusoes = deps.estado.exclusoes(deps.repo)
     sem_entrega = deps.estado.sem_entrega(deps.repo)
-    alvo = filtrar_excluidos(resultado.tasks, exclusoes, versao)
+    julgamentos = deps.estado.julgamentos_orfao(deps.repo)
+    ctx = ContextoDoAlvo(deps, PresenceOracle(git=deps.git), base_commit, ref_alvo)
+    # A exclusao roda depois e vence o julgamento.
+    alvo = filtrar_excluidos(
+        incluir_julgados(
+            resultado.tasks,
+            _orfaos_julgados(ctx, versao, julgamentos, resultado.tasks),
+        ),
+        exclusoes,
+        versao,
+    )
 
     # ANTES de sobrescrever: e o que detecta tarefa desmarcada no rastreador.
     anteriores = deps.estado.atribuicoes(deps.repo, versao)
 
     todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
 
-    ctx = ContextoDoAlvo(deps, PresenceOracle(git=deps.git), base_commit, ref_alvo)
     t = time.monotonic()
     presentes, suspeitos_conteudo = _presenca(ctx, todos_os_hashes, candidatos_conflito)
     tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
@@ -302,7 +314,10 @@ def verificar_sem_fetch(
             Verificacao(
                 tip=tip,
                 impressao=impressao_da_verificacao(
-                    exclusoes, sem_entrega, deps.identidade_das_entradas()
+                    exclusoes,
+                    sem_entrega,
+                    julgamentos,
+                    deps.identidade_das_entradas(),
                 ),
                 verificado_em=verificado_em,
                 status=status,
@@ -392,6 +407,40 @@ def _base_commit(
         ),
     )
     return resolvida.commit
+
+
+def _orfaos_julgados(
+    ctx: ContextoDoAlvo,
+    versao: str,
+    julgamentos: list[JulgamentoOrfao],
+    alvo: TargetSet,
+) -> dict[str, list[CommitRef]]:
+    """Orfaos atuais da versao julgados "pertence a chX", com chX no alvo,
+    agrupados por chamado: a outra fonte de commits das tarefas do alvo, ao
+    lado da fonte de commits.
+
+    So varre quando ha o que aplicar: sem julgamento aplicavel, o `verificar`
+    nao paga a varredura nem passa a exigir o padrao de referencia. Julgamento
+    de hash que nao e mais orfao (saiu da branch) nao tem efeito, senao viraria
+    um faltante que ninguem enxerga na lista de orfaos.
+    """
+    aplicaveis = {
+        j.hash_origem: j.chamado
+        for j in julgamentos
+        if j.versao_numero == versao and j.chamado is not None and j.chamado in alvo
+    }
+    if not aplicaveis:
+        return {}
+    ctx.deps.progresso(Progresso("varrendo órfãos julgados"))
+    _, orfaos = varrer(
+        ctx.deps.git, ctx.base_commit, ctx.ref_alvo, ctx.deps.referencia()
+    )
+    julgados: dict[str, list[CommitRef]] = {}
+    for o in orfaos:
+        chamado = aplicaveis.get(o.hash_origem)
+        if chamado is not None:
+            julgados.setdefault(chamado, []).append(replace(o, chamado=chamado))
+    return julgados
 
 
 def _target_resolver(deps: Deps) -> TargetResolver:

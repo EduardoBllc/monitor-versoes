@@ -7,6 +7,7 @@ from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import (
     Exclusion,
+    JulgamentoOrfao,
     RepoInfo,
     Verificacao,
     VersaoInfo,
@@ -54,7 +55,7 @@ def _montar(
         VERSAO,
         Verificacao(
             tip=tip,
-            impressao=impressao or impressao_da_verificacao([], {}, ENTRADAS),
+            impressao=impressao or impressao_da_verificacao([], {}, [], ENTRADAS),
             verificado_em=HORA,
             status=VersionStatus(),
         ),
@@ -71,30 +72,30 @@ def _montar(
 
 
 def test_impressao_muda_quando_exclusao_muda():
-    assert impressao_da_verificacao([A], {}, ENTRADAS) != impressao_da_verificacao(
-        [B], {}, ENTRADAS
+    assert impressao_da_verificacao([A], {}, [], ENTRADAS) != impressao_da_verificacao(
+        [B], {}, [], ENTRADAS
     )
 
 
 def test_impressao_muda_quando_sem_entrega_muda():
     assert impressao_da_verificacao(
-        [], {"1": "m"}, ENTRADAS
-    ) != impressao_da_verificacao([], {}, ENTRADAS)
+        [], {"1": "m"}, [], ENTRADAS
+    ) != impressao_da_verificacao([], {}, [], ENTRADAS)
 
 
 def test_impressao_independe_da_ordem():
-    assert impressao_da_verificacao([A, B], {}, ENTRADAS) == impressao_da_verificacao(
-        [B, A], {}, ENTRADAS
-    )
+    assert impressao_da_verificacao(
+        [A, B], {}, [], ENTRADAS
+    ) == impressao_da_verificacao([B, A], {}, [], ENTRADAS)
 
 
 def test_impressao_aceita_exclusao_com_e_sem_versao():
     assert impressao_da_verificacao(
-        [A, A_NA_VERSAO], {}, ENTRADAS
-    ) == impressao_da_verificacao([A_NA_VERSAO, A], {}, ENTRADAS)
+        [A, A_NA_VERSAO], {}, [], ENTRADAS
+    ) == impressao_da_verificacao([A_NA_VERSAO, A], {}, [], ENTRADAS)
     assert impressao_da_verificacao(
-        [A, A_NA_VERSAO], {}, ENTRADAS
-    ) != impressao_da_verificacao([A], {}, ENTRADAS)
+        [A, A_NA_VERSAO], {}, [], ENTRADAS
+    ) != impressao_da_verificacao([A], {}, [], ENTRADAS)
 
 
 def test_vigente_dentro_da_validade_inclusive_no_limite():
@@ -122,3 +123,15 @@ def test_impressao_diferente_nao_vale():
 def test_sem_carimbo_nao_vale():
     deps = _montar(agora=HORA)
     assert verificacao_vigente(deps, "14.0.0") is None
+
+
+def test_impressao_muda_quando_julgamento_muda():
+    pertence = JulgamentoOrfao("o1", VERSAO, "123", "m")
+    nenhum = JulgamentoOrfao("o1", VERSAO, None, "m")
+
+    assert impressao_da_verificacao([], {}, [pertence], ENTRADAS) != (
+        impressao_da_verificacao([], {}, [nenhum], ENTRADAS)
+    )
+    assert impressao_da_verificacao([], {}, [pertence], ENTRADAS) != (
+        impressao_da_verificacao([], {}, [], ENTRADAS)
+    )

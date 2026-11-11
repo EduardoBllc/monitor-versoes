@@ -38,6 +38,24 @@ def filtrar_excluidos(
     }
 
 
+def incluir_julgados(
+    alvo: TargetSet, julgados: dict[str, list[CommitRef]]
+) -> TargetSet:
+    """Soma aos commits de cada tarefa do alvo os seus orfaos julgados.
+
+    O julgamento acrescenta commit a tarefa que ja esta no alvo, nunca poe
+    tarefa nele: chamado fora do alvo e ignorado. Hash que a tarefa ja tinha
+    pela fonte de commits nao se repete.
+    """
+    novo: TargetSet = {}
+    for chamado, tt in alvo.items():
+        extras = julgados.get(chamado, [])
+        ja = {c.hash_origem for c in tt.commits}
+        somar = [c for c in extras if c.hash_origem not in ja]
+        novo[chamado] = replace(tt, commits=[*tt.commits, *somar]) if somar else tt
+    return novo
+
+
 def diff_tasks(
     alvo: TargetSet, anteriores: list[Atribuicao]
 ) -> tuple[list[str], list[str]]:

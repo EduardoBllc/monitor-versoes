@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from motor.domain.reconcile import (
     FatosDoGit,
     atribuicoes_de,
     diff_tasks,
     filtrar_excluidos,
+    incluir_julgados,
     reconciliar,
 )
 from motor.domain.types import (
@@ -207,3 +210,17 @@ def test_reconciliar_sem_culpados_deixa_o_dicionario_vazio():
     status = reconciliar(alvo, [], {}, FatosDoGit({"aaa": Presence.AUSENTE}, [], []))
 
     assert status.conflito_causado_por == {}
+
+
+def test_incluir_julgados_soma_sem_duplicar_e_nao_muta():
+    ja = CommitRef(hash_origem="a0", chamado="1")
+    alvo = {"1": TaskTarget(chamado="1", commits=[ja])}
+    copia = deepcopy(alvo)
+    novo = CommitRef(hash_origem="o1", chamado="1")
+
+    resultado = incluir_julgados(
+        alvo, {"1": [novo, ja], "2": [CommitRef(hash_origem="o2", chamado="2")]}
+    )
+
+    assert resultado == {"1": TaskTarget(chamado="1", commits=[ja, novo])}
+    assert alvo == copia
