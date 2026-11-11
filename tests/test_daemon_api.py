@@ -1,6 +1,8 @@
 import contextlib
 import json
+import os
 import threading
+import time
 from dataclasses import replace
 from http import HTTPStatus
 from pathlib import Path
@@ -134,11 +136,71 @@ def test_segunda_operacao_no_mesmo_repo_da_409(
 ) -> None:
     url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
     assert cliente.post(url, json={"auditar": False}).status_code == HTTPStatus.ACCEPTED
-    r = cliente.post(url, json={"auditar": True})
+    # Sem auditar: a auditoria não trava, então não seria recusada.
+    r = cliente.post(url, json={"auditar": False})
     assert r.status_code == HTTPStatus.CONFLICT
     assert r.json()["tipo"] == TipoErro.OCUPADO
     amb.soltar.set()
     _esperar(cliente)
+
+
+_ROTAS_COBERTAS = [
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", {"auditar": False}),
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/previa", None),
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao", None),
+    (
+        f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao/continuar",
+        {"allow_empty": False},
+    ),
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao/abortar", None),
+    (f"/api/repos/{REPO}/versoes", {"numero": "14.0.1"}),
+]
+
+
+@pytest.mark.parametrize(
+    ("url", "corpo"),
+    _ROTAS_COBERTAS,
+    ids=["verificar", "previa", "atualizar", "continuar", "abortar", "criar"],
+)
+def test_repo_travado_por_fora_da_409_sem_criar_execucao(
+    cliente: TestClient, url: str, corpo: dict[str, Any] | None
+) -> None:
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        r = cliente.post(url, json=corpo)
+    assert r.status_code == HTTPStatus.CONFLICT
+    assert r.json()["tipo"] == TipoErro.OCUPADO
+    assert f"pid {os.getpid()}" in r.json()["mensagem"]
+    assert cliente.get(f"/api/repos/{REPO}/execucao").json() is None
+
+
+def test_execucao_rodando_sem_lock_nao_recusa(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
+    assert cliente.post(url, json={"auditar": True}).status_code == HTTPStatus.ACCEPTED
+    assert amb.iniciou.wait(ESPERA_S)
+    assert cliente.post(url, json={"auditar": False}).status_code == HTTPStatus.ACCEPTED
+    amb.soltar.set()
+    _esperar(cliente)
+    prazo = time.monotonic() + ESPERA_S
+    while len(amb.chamadas) < 2 and time.monotonic() < prazo:
+        time.sleep(0.01)
+    assert sorted(c[2] for c in amb.chamadas) == [False, True]
+
+
+def test_leituras_rodam_com_repo_travado(cliente: TestClient, amb: Ambiente) -> None:
+    from motor.trava import travar
+
+    amb.soltar.set()
+    with travar(REPO, CLONE):
+        assert cliente.get(f"/api/repos/{REPO}/versoes").status_code == HTTPStatus.OK
+        r = cliente.post(
+            f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", json={"auditar": True}
+        )
+        assert r.status_code == HTTPStatus.ACCEPTED
+        _esperar(cliente)
 
 
 def test_eventos_de_execucao_ja_terminada_entrega_fim_na_hora(

@@ -33,6 +33,7 @@ from motor.operacoes import (
     VersionOption,
     avaliar_numero,
     runners_com_progresso,
+    travar_repo,
     versionamento_do_repo,
 )
 from motor.progresso import RelatorProgresso, silencioso
@@ -146,13 +147,21 @@ class _Contexto:
         versao: str,
         operacao: Operacao,
         usar: Callable[[Runners, RepoOption], VersionStatus | AtualizarResult | None],
+        *,
+        travar: bool = True,
     ) -> Execucao:
+        """Toma o lock do clone na thread do pedido e o entrega à execução.
+
+        Travar aqui, e não na thread, é o que faz o `RepoOcupado` sair como
+        `409` síncrono, sem criar execução (decisão 032).
+        """
         repo = self.achar(nome)
 
         def alvo(relatar: RelatorProgresso) -> VersionStatus | AtualizarResult | None:
             return usar(self.fabrica(relatar), repo)
 
-        return self.execucoes.iniciar(nome, versao, operacao, alvo)
+        trava = travar_repo(repo) if travar else None
+        return self.execucoes.iniciar(nome, versao, operacao, alvo, trava)
 
 
 def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
@@ -205,6 +214,9 @@ def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
             versao,
             Operacao.VERIFICAR,
             lambda r, o: r.executar(o, versao, corpo.auditar),
+            # A auditoria não toca worktree, checkpoint nem GC: roda com o repo
+            # ocupado (decisão 032).
+            travar=not corpo.auditar,
         )
 
     @app.post(f"{base}/previa", status_code=aceito)

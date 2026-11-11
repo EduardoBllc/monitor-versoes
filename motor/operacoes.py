@@ -30,6 +30,7 @@ from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
+from motor.trava import Trava, travar
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,16 @@ class RepoOption:
     @property
     def disponivel(self) -> bool:
         return self.caminho is not None
+
+
+def travar_repo(repo: RepoOption) -> Trava | None:
+    """Lock do clone do repo (decisão 032); `None` quando não há checkout.
+
+    Repo sem checkout não trava: falha como sempre, dentro do runner.
+    """
+    if repo.caminho is None:
+        return None
+    return travar(repo.nome, repo.caminho)
 
 
 @dataclass(frozen=True)
