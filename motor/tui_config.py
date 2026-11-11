@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import ClassVar
+from typing import ClassVar, Final
 
 from textual.app import ComposeResult
 from textual.binding import BindingType
@@ -44,6 +44,8 @@ MSG_SOMENTE_LEITURA = "somente leitura"
 ABA_REPOS = "aba-repos"
 TEXTO_TRUE = "true"
 TEXTO_FALSE = "false"
+TIPO_INPUT_INTEIRO: Final = "integer"
+TIPO_INPUT_TEXTO: Final = "text"
 
 
 def _chave_de(v: ValorLido) -> ChaveForm:
@@ -62,11 +64,7 @@ def alteracoes_do_formulario(
 ) -> list[Alteracao]:
     """Mesma regra de `alteracoesDe` na web; segredo: `None` apaga, `""` não toca."""
     lidos = {_chave_de(v): v for v in original.valores}
-    segredos = {
-        (c.escopo == Escopo.REPO, c.tabela, c.chave)
-        for c in original.campos
-        if c.segredo
-    }
+    segredos = {(c.tabela, c.chave) for c in original.campos if c.segredo}
     criar = [Alteracao(AcaoAlteracao.CRIAR_REPO, repo) for repo in repos_criados]
     chaves: list[Alteracao] = []
     for (repo, tabela, chave), novo in valores.items():
@@ -74,7 +72,7 @@ def alteracoes_do_formulario(
         if repo in repos_removidos or (lido and not lido.editavel):
             continue
         base = (repo, tabela, chave)
-        if (repo is not None, tabela, chave) in segredos:
+        if (tabela, chave) in segredos:
             if novo is None:
                 if lido and lido.definido:
                     chaves.append(Alteracao(AcaoAlteracao.REMOVER, *base))
@@ -83,7 +81,7 @@ def alteracoes_do_formulario(
         elif _vazio(novo):
             if lido and lido.definido:
                 chaves.append(Alteracao(AcaoAlteracao.REMOVER, *base))
-        elif lido is None or novo != lido.valor:
+        elif lido is None or str(novo) != str(lido.valor):
             chaves.append(Alteracao(AcaoAlteracao.DEFINIR, *base, novo))
     remover = [
         Alteracao(AcaoAlteracao.REMOVER_REPO, repo)
@@ -188,7 +186,7 @@ class ConfigModal(ModalScreen[bool]):
                 and (v.tabela, v.chave) not in conhecidos
                 and (v.tabela == TABELA_AMBIENTE) == (escopo == Escopo.AMBIENTE)
             ]
-        if motor and repo is not None:
+        if motor and repo is not None and escopo == Escopo.REPO:
             campos += [
                 self._campo_livre(v)
                 for v in self._config.valores
@@ -230,7 +228,9 @@ class ConfigModal(ModalScreen[bool]):
             entrada = Input(
                 "" if atual is None else str(atual),
                 placeholder=dica,
-                type="integer" if campo.tipo == TipoCampo.INTEIRO else "text",
+                type=TIPO_INPUT_INTEIRO
+                if campo.tipo == TipoCampo.INTEIRO
+                else TIPO_INPUT_TEXTO,
                 id=self.id_de(chave),
             )
         self._entradas[chave] = entrada
@@ -255,8 +255,10 @@ class ConfigModal(ModalScreen[bool]):
 
     def _container_do_repo(self, nome: str) -> Widget:
         campos = [
-            *self._campos_de(Escopo.REPO, nome, True),
-            *self._campos_de(Escopo.REPO, nome, False),
+            widget
+            for escopo in (Escopo.REPO, Escopo.GERAL)
+            for motor in (True, False)
+            for widget in self._campos_de(escopo, nome, motor)
         ]
         botao = Button("Remover repo", name=nome, classes="remover-repo")
         container = Vertical(Label(f"[b]{nome}[/b]"), *campos, botao)

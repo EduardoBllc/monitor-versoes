@@ -44,6 +44,10 @@ CHAVE_LIVRE = (None, Tabela.TAREFAS, "lista")
 NOME_REPO = "app"
 TEXTO_COMENTARIO = "# meu comentário"
 VALOR_NOVO = "develop"
+VALOR_TOPO = "main"
+PORTA = VarAmbiente.DATABASE_PORT
+PORTA_TEXTO = "5433"
+CHAVE_TOKEN = "token"
 
 
 def _escrever(texto: str) -> None:
@@ -242,7 +246,7 @@ def test_tui_config_cria_repo_e_atualiza_lista(tmp_path):
 
 
 def test_tui_config_repo_mostra_valor_do_topo_como_placeholder():
-    _escrever('[versao]\npiso = "1.0"\n[repos.app]\ncaminho = "/x"\n')
+    _escrever(f'[branches]\nprincipal = "{VALOR_TOPO}"\n[repos.app]\ncaminho = "/x"\n')
 
     async def fluxo() -> None:
         app = _app()
@@ -251,10 +255,35 @@ def test_tui_config_repo_mostra_valor_do_topo_como_placeholder():
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, ConfigModal)
-            piso = modal.query_one(
-                f"#{modal.id_de((NOME_REPO, Tabela.VERSAO, Chave.PISO))}", Input
+            principal = modal.query_one(
+                f"#{modal.id_de((NOME_REPO, Tabela.BRANCHES, Chave.PRINCIPAL))}", Input
             )
-            assert piso.placeholder == "1.0"
-            assert piso.value == ""
+            assert principal.placeholder == VALOR_TOPO
+            assert principal.value == ""
 
     asyncio.run(fluxo())
+
+
+def test_inteiro_gravado_como_texto_nao_tocado_nao_gera_alteracao():
+    campo = Campo(Escopo.AMBIENTE, TABELA_AMBIENTE, PORTA, TipoCampo.INTEIRO, "Porta")
+    lido = ValorLido(None, TABELA_AMBIENTE, PORTA, PORTA_TEXTO, True, True)
+    chave = (None, TABELA_AMBIENTE, PORTA)
+    novo = converter_texto(PORTA_TEXTO, lido, True)
+    assert (
+        alteracoes_do_formulario(_config([campo], [lido]), {chave: novo}, [], []) == []
+    )
+
+
+def test_segredo_geral_no_repo_nao_tocado_nao_gera_alteracao():
+    campo = Campo(
+        Escopo.GERAL,
+        Tabela.TAREFAS,
+        CHAVE_TOKEN,
+        TipoCampo.TEXTO,
+        "Token",
+        segredo=True,
+    )
+    lido = ValorLido(NOME_REPO, Tabela.TAREFAS, CHAVE_TOKEN, None, True, True)
+    original = _config([campo], [lido], [NOME_REPO])
+    chave = (NOME_REPO, Tabela.TAREFAS, CHAVE_TOKEN)
+    assert alteracoes_do_formulario(original, {chave: ""}, [], []) == []
