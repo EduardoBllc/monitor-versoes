@@ -282,6 +282,40 @@ As operações seguem rodando se a aba fechar. Um pick bloqueado por conflito se
 worktree, no seu editor; depois, **Continuar**. O porquê em
 [decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md).
 
+### Editar a configuração pela interface
+
+Na TUI, a tecla `g` abre a tela de configuração; na web, o botão **Configuração** da barra. As
+duas editam o `config.toml` central (geral, por repo e `[ambiente]`), preservam os comentários
+do arquivo e validam antes de gravar. Mudanças no `[ambiente]` valem sem reiniciar. Não há lock
+entre a TUI e o daemon: edite por um lugar de cada vez. O porquê:
+[032](docs/decisoes/032-config-editavel-pelas-interfaces.md).
+
+#### Para autores de plugin
+
+Para a tela mostrar as chaves do seu plugin (esquema, atribuição ou fonte de tarefas), declare
+`campos_config` na classe, uma tupla de `Campo`:
+
+```python
+from motor.config_edicao import Campo, Escopo, TipoCampo
+
+
+class MinhaFonte:
+    campos_config = (
+        Campo(Escopo.GERAL, "tarefas", "sistema", TipoCampo.INTEIRO, "Sistema"),
+        Campo(
+            Escopo.AMBIENTE,
+            None,
+            "MINHA_FONTE_TOKEN",
+            TipoCampo.TEXTO,
+            "Token",
+            segredo=True,
+        ),
+    )
+```
+
+`tabela` é `None` no `[ambiente]`; `segredo=True` esconde o valor na tela. O atributo é opcional
+e plugin que falha ao carregar é ignorado.
+
 ### Fontes de tasks e de commits
 
 - **Tasks:** a `[tarefas] fonte` da config por padrão. Sem ela, `--task-source manual --lista arquivo.txt` lê um
