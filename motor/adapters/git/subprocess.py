@@ -687,6 +687,12 @@ class GitSubprocess:
         return oids
 
     def estagios(self, caminho: str, /) -> Estagios:
+        if os.path.islink(
+            os.path.join(self._worktree_dir(self._current_branch), caminho)
+        ):
+            # Link vira OUTRO: listado e ignorado pela guarda, nunca resolvido pela web.
+            self._oids(caminho)
+            return Estagios(None, None, None, None, binario=True)
         completo = self._caminho_na_worktree(caminho)
         oids = self._oids(caminho)
         lados = [self._blob(oids[e]) if e in oids else None for e in _Estagio]

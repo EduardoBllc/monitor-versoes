@@ -12,13 +12,17 @@ from dataclasses import replace
 
 import pytest
 
+from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.subprocess import (
     GitSubprocess,
     _progresso_de_quadro,
     _quadros,
     new_git_subprocess,
 )
+from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.conflito import TipoArquivo, marcadores_restantes, tipo_do_arquivo
+from motor.engine.atualizar import _recusar_marcador_esquecido
+from motor.engine.deps import Deps
 from motor.errors import (
     BackendIndisponivel,
     ErroDeEntrada,
@@ -1382,6 +1386,49 @@ def test_pick_concluido_nao_tem_arquivos(tmp_path):
     assert g.arquivos_do_pick() == {}
     with pytest.raises(NaoEncontrado):
         g.estagios(_ARQUIVO)
+
+
+def _commitar_elo(dir_: str, alvo: str, msg: str) -> None:
+    caminho = os.path.join(dir_, _ELO)
+    if os.path.lexists(caminho):
+        os.remove(caminho)
+    os.symlink(alvo, caminho)
+    _run_git(dir_, "add", _ELO)
+    _run_git(dir_, "commit", "-m", msg)
+
+
+def _pick_de_elo_em_conflito(tmp_path) -> GitSubprocess:
+    """Link simbólico mudado dos dois lados: fica não mesclado e é link no disco."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    dir_ = str(repo)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    _commitar_elo(dir_, _BASE, "base")
+    base = _rev(dir_, "HEAD")
+    _commitar_elo(dir_, _THEIRS, "origem muda")
+    origem = _rev(dir_, "HEAD")
+
+    g = new_git_subprocess(dir_)
+    g.worktree_add("13.1.0", base)
+    _commitar_elo(g.worktree_atual(), _OURS, "alvo muda")
+    assert g.cherry_pick_x(origem) == CherryPickOutcome.CONFLITO
+    assert g.arquivos_do_pick() == {_ELO: False}
+    return g
+
+
+def test_estagios_de_elo_e_binario(tmp_path):
+    g = _pick_de_elo_em_conflito(tmp_path)
+
+    assert g.estagios(_ELO).binario
+
+
+def test_guarda_de_marcador_deixa_passar_elo(tmp_path):
+    g = _pick_de_elo_em_conflito(tmp_path)
+
+    _recusar_marcador_esquecido(
+        Deps(git=g, tasks=FakeTaskSource(), estado=FakeEstado())
+    )
 
 
 def _sem_marcadores(texto: str | None) -> list[str]:

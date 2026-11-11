@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from dataclasses import replace
 
 import pytest
 
@@ -113,11 +114,14 @@ def test_sem_pick_pendente():
 def test_resolver_recusa_disco_mudado():
     deps = _deps_em_conflito()
     lido = ler_arquivo(deps, VERSAO, CONTEUDO)
-    deps.git.resolver(CONTEUDO, MUDOU_FORA)
+    assert isinstance(deps.git, FakeGit)
+    # Edição fora da web num arquivo ainda pendente: muda só o disco do fake.
+    deps.git._arquivos_pick[CONTEUDO] = replace(ESTAGIOS[CONTEUDO], disco=MUDOU_FORA)
 
     with pytest.raises(VersaoDesatualizada):
         resolver_arquivo(deps, VERSAO, CONTEUDO, RESOLVIDO, lido.versao_disco)
     assert ler_arquivo(deps, VERSAO, CONTEUDO).disco == MUDOU_FORA
+    assert deps.git.arquivos_do_pick()[CONTEUDO] is False
 
 
 def test_resolver_recusa_marcador():
