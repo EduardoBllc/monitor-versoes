@@ -8,6 +8,7 @@ from textual.widgets import Input, OptionList, Select, TabbedContent
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
+    Backend,
     Chave,
     Tabela,
     VarAmbiente,
@@ -287,3 +288,26 @@ def test_segredo_geral_no_repo_nao_tocado_nao_gera_alteracao():
     original = _config([campo], [lido], [NOME_REPO])
     chave = (NOME_REPO, Tabela.TAREFAS, CHAVE_TOKEN)
     assert alteracoes_do_formulario(original, {chave: ""}, [], []) == []
+
+
+def test_tui_config_campos_de_banco_seguem_o_backend_escolhido():
+    _escrever("")
+    host = (None, TABELA_AMBIENTE, VarAmbiente.DATABASE_HOST)
+    sqlite = (None, TABELA_AMBIENTE, VarAmbiente.DATABASE_SQLITE_PATH)
+    backend = (None, TABELA_AMBIENTE, VarAmbiente.DATABASE_BACKEND)
+
+    async def fluxo() -> None:
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("g")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ConfigModal)
+            campo_host = modal.query_one(f"#{modal.id_de(host)}", Input)
+            campo_sqlite = modal.query_one(f"#{modal.id_de(sqlite)}", Input)
+            assert (campo_host.display, campo_sqlite.display) == (False, True)
+            modal.query_one(f"#{modal.id_de(backend)}", Select).value = Backend.POSTGRES
+            await pilot.pause()
+            assert (campo_host.display, campo_sqlite.display) == (True, False)
+
+    asyncio.run(fluxo())

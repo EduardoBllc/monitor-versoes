@@ -405,6 +405,11 @@ export interface components {
             /** Erro */
             erro: string;
         };
+        /**
+         * Backend
+         * @enum {string}
+         */
+        Backend: "sqlite" | "postgres";
         /** Campo */
         Campo: {
             escopo: components["schemas"]["Escopo"];
@@ -430,6 +435,19 @@ export interface components {
              * @default motor
              */
             origem: string;
+            /**
+             * Descricao
+             * @default
+             */
+            descricao: string;
+            /** Padrao */
+            padrao?: string | null;
+            /**
+             * Exemplo
+             * @default
+             */
+            exemplo: string;
+            backend?: components["schemas"]["Backend"] | null;
         };
         /** ChamadoConsultado */
         ChamadoConsultado: {
