@@ -44,7 +44,10 @@ def _ocorrencias(
         f"{caminho.relative_to(_RAIZ)}:{numero}: {linha.strip()}"
         for caminho in arquivos
         if not _excluido(caminho, excluidos)
-        for numero, linha in enumerate(caminho.read_text().splitlines(), start=1)
+        # replace: o build da web em motor/daemon/static traz binário (fonte do Monaco).
+        for numero, linha in enumerate(
+            caminho.read_text(errors="replace").splitlines(), start=1
+        )
         if padrao.search(linha)
     ]
 
