@@ -8,6 +8,11 @@ from importlib.metadata import entry_points
 from motor.errors import ErroDeEntrada
 
 
+def nomes_instalados(grupo: str) -> list[str]:
+    """Nomes dos entry points instalados no `grupo`, em ordem."""
+    return sorted(ep.name for ep in entry_points(group=grupo))
+
+
 def carregar_plugin(grupo: str, nome: str) -> type:
     """Resolve `nome` para uma classe.
 
