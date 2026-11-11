@@ -19,6 +19,7 @@ from motor.config import (
     repos_configurados,
 )
 from motor.config_edicao import (
+    MODO_ARQUIVO_NOVO,
     AcaoAlteracao,
     Alteracao,
     Campo,
@@ -151,7 +152,6 @@ def test_opcoes_incluem_os_instalados(chave):
 
 
 SQLITE, POSTGRES = BACKENDS
-MODO_NOVO = 0o600
 MODO_GRUPO = 0o640
 CHAVE_LISTA = "filtros"
 
@@ -217,6 +217,7 @@ def test_repo_com_ponto_no_nome(tmp_path):
     [
         _definir("abc", Chave.PISO, Tabela.VERSAO, "a"),
         _definir("cinco", VarAmbiente.DATABASE_PORT, TABELA_AMBIENTE),
+        _definir("²", VarAmbiente.DATABASE_PORT, TABELA_AMBIENTE),
         _definir("release", Chave.VERSAO, Tabela.BRANCHES),
     ],
 )
@@ -241,7 +242,7 @@ def test_gravar_cria_arquivo_e_diretorio():
         [_definir(SQLITE, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
         hashlib.sha256(b"").hexdigest(),
     )
-    assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_NOVO
+    assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_ARQUIVO_NOVO
 
 
 def test_gravar_mantem_permissao():
@@ -277,3 +278,49 @@ def test_gravar_reaplica_ambiente():
         definida.versao,
     )
     assert os.environ[VarAmbiente.DATABASE_BACKEND] == SQLITE
+
+
+def test_backend_como_o_leitor_aceita_nao_bloqueia_gravacao():
+    _escrever(f'[ambiente]\n{VarAmbiente.DATABASE_BACKEND} = "Postgres"\n')
+    gravar([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
+    assert 'a = "2"' in _bytes().decode()
+
+
+def test_gravar_segue_symlink(tmp_path):
+    alvo = tmp_path / "dotfiles" / "config.toml"
+    alvo.parent.mkdir()
+    alvo.write_text('[tarefas]\na = "1"\n')
+    link = caminho_config_global()
+    os.makedirs(os.path.dirname(link), exist_ok=True)
+    os.symlink(alvo, link)
+    gravar([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
+    assert os.path.islink(link)
+    assert 'a = "2"' in alvo.read_text()
+
+
+def test_remover_ausente_e_noop_e_tabela_vazia_some(tmp_path):
+    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n[repos.a.versao]\npiso = "1.0.0"\n')
+    antes = _bytes()
+    remover_ausente = Alteracao(AcaoAlteracao.REMOVER, "a", Tabela.TAREFAS, "x")
+    gravar([remover_ausente], ler_para_edicao().versao)
+    assert _bytes() == antes
+    gravar(
+        [Alteracao(AcaoAlteracao.REMOVER, "a", Tabela.VERSAO, Chave.PISO)],
+        ler_para_edicao().versao,
+    )
+    texto = _bytes().decode()
+    assert "[repos.a.versao]" not in texto and "[repos.a]" in texto
+
+
+@pytest.mark.parametrize(
+    "alteracao",
+    [
+        Alteracao(AcaoAlteracao.CRIAR_REPO, "a"),
+        Alteracao(AcaoAlteracao.CRIAR_REPO, "pasta/b"),
+        Alteracao(AcaoAlteracao.REMOVER_REPO, "ausente"),
+    ],
+)
+def test_operacao_de_repo_invalida(tmp_path, alteracao):
+    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    with pytest.raises(ErroDeEntrada):
+        gravar([alteracao], ler_para_edicao().versao)

@@ -324,10 +324,12 @@ def _aplicar(doc: Documento, alteracao: Alteracao) -> None:
 
 def _validar_tipo(campo: Campo, valor: object) -> None:
     if campo.tipo is TipoCampo.INTEIRO:
-        valido = (isinstance(valor, str) and valor.isdigit()) or (
+        valido = (isinstance(valor, str) and valor.isascii() and valor.isdigit()) or (
             isinstance(valor, int) and not isinstance(valor, bool) and valor >= 0
         )
     elif campo.tipo is TipoCampo.ESCOLHA and campo.origem == ORIGEM_MOTOR:
+        if campo.chave == VarAmbiente.DATABASE_BACKEND and isinstance(valor, str):
+            valor = valor.strip().lower()  # como config.backend() lê
         valido = valor in campo.opcoes or (isinstance(valor, str) and ":" in valor)
     else:
         return
@@ -357,6 +359,9 @@ def _validar(dados: Mapping[str, object], arquivo: str) -> None:
 
 
 def _gravar_atomico(arquivo: str, conteudo: bytes) -> None:
+    arquivo = os.path.realpath(
+        arquivo
+    )  # config.toml symlinkado (dotfiles) continua link
     diretorio = os.path.dirname(arquivo)
     try:
         os.makedirs(diretorio, exist_ok=True)
@@ -393,7 +398,11 @@ def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
     for alteracao in alteracoes:
         _aplicar(doc, alteracao)
     texto = tomlkit.dumps(doc)
-    _validar(tomllib.loads(texto), arquivo)
+    try:
+        candidato = tomllib.loads(texto)
+    except tomllib.TOMLDecodeError as e:
+        raise ErroDeEntrada(f"{arquivo}: alteração gera TOML inválido ({e})") from e
+    _validar(candidato, arquivo)
     _gravar_atomico(arquivo, texto.encode())
     aplicar_ambiente_central(ambiente_central())
     return ler_para_edicao()
