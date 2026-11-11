@@ -607,7 +607,10 @@ def test_conflito_traduz_erro_do_motor(
 @pytest.mark.parametrize(
     ("rota", "corpo"),
     [
-        ("resolucao", {"caminho": CAMINHO, "conteudo": "x", "versao_disco": "v1"}),
+        (
+            "resolucao",
+            {"caminho": CAMINHO, "conteudo": "x", "versao_disco": VERSAO_DISCO},
+        ),
         ("reabertura", {"caminho": CAMINHO}),
     ],
     ids=["resolucao", "reabertura"],

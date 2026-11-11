@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from contextlib import nullcontext
 from collections.abc import AsyncIterator, Callable
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from http import HTTPStatus
