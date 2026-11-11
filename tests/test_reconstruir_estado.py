@@ -6,7 +6,7 @@ from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
-from motor.domain.types import RepoInfo
+from motor.domain.types import JulgamentoOrfao, RepoInfo, VersaoInfo
 from motor.engine.deps import Deps
 from motor.engine.reconstruir_estado import ReconstructStatus, reconstruir_estado
 from tests.fontes_falsas import REFERENCIA_CH
@@ -114,3 +114,90 @@ def test_reconstruir_estado_busca_antes_de_resolver_a_base():
     gravada = estado.versao("r", "13.34.0")
     assert gravada is not None
     assert gravada.base_ref == "13.33.0"
+
+
+def _git_com_orfaos() -> FakeGit:
+    """13.34.0 tem dois orfaos (o1, o2) e um commit ch123456 (c1)."""
+    git = FakeGit(tags={"13.33.0": True})
+    git.add_commit("base", "", "raiz", D)
+    git.add_commit("o1", "base", "ajuste solto", D)
+    git.add_commit("o2", "o1", "outro ajuste", D)
+    git.add_commit("c1", "o2", "ch123456 alfa", D)
+    git.set_branch("13.33.0", "base")
+    git.set_branch("13.34.0", "c1")
+    return git
+
+
+def _estado_julgado(*julgamentos: JulgamentoOrfao) -> FakeEstado:
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
+    for numero in ("13.34.0", "13.35.0"):
+        estado.registrar_versao(
+            "r", VersaoInfo(numero=numero, base_ref="13.33.0", base_commit="base")
+        )
+    for j in julgamentos:
+        estado.julgar_orfao("r", j)
+    return estado
+
+
+def _commits_por_chamado(estado: FakeEstado) -> dict[str, list[str]]:
+    return {a.chamado: a.commits for a in estado.atribuicoes("r", "13.34.0")}
+
+
+def test_orfaos_julgados_nos_dois_sentidos_dao_done():
+    estado = _estado_julgado(
+        JulgamentoOrfao("o1", "13.34.0", "777", "m"),
+        JulgamentoOrfao("o2", "13.34.0", None, "m"),
+    )
+
+    resultado = reconstruir_estado(_deps(_git_com_orfaos(), estado), "13.34.0")
+
+    assert resultado.status == ReconstructStatus.DONE
+    assert _commits_por_chamado(estado) == {"123456": ["c1"], "777": ["o1"]}
+    assert {a.estado for a in estado.atribuicoes("r", "13.34.0")} == {"aplicado"}
+
+
+def test_so_o_orfao_sem_julgamento_fica_pendente():
+    estado = _estado_julgado(JulgamentoOrfao("o1", "13.34.0", None, "m"))
+
+    resultado = reconstruir_estado(_deps(_git_com_orfaos(), estado), "13.34.0")
+
+    assert resultado.status == ReconstructStatus.PENDING_JUDGMENT
+    assert resultado.orfaos == ["o2"]
+
+
+def test_reconstruir_duas_vezes_mantem_o_julgamento():
+    estado = _estado_julgado(
+        JulgamentoOrfao("o1", "13.34.0", "777", "m"),
+        JulgamentoOrfao("o2", "13.34.0", None, "m"),
+    )
+    deps = _deps(_git_com_orfaos(), estado)
+
+    primeiro = reconstruir_estado(deps, "13.34.0")
+    atribuicoes = estado.atribuicoes("r", "13.34.0")
+    segundo = reconstruir_estado(deps, "13.34.0")
+
+    assert segundo == primeiro
+    assert estado.atribuicoes("r", "13.34.0") == atribuicoes
+
+
+def test_orfao_julgado_soma_aos_commits_da_referencia():
+    estado = _estado_julgado(
+        JulgamentoOrfao("o1", "13.34.0", "123456", "m"),
+        JulgamentoOrfao("o2", "13.34.0", None, "m"),
+    )
+
+    reconstruir_estado(_deps(_git_com_orfaos(), estado), "13.34.0")
+
+    assert _commits_por_chamado(estado) == {"123456": ["c1", "o1"]}
+
+
+def test_julgamento_de_outra_versao_nao_vale():
+    estado = _estado_julgado(
+        JulgamentoOrfao("o1", "13.35.0", "777", "m"),
+        JulgamentoOrfao("o2", "13.34.0", None, "m"),
+    )
+
+    resultado = reconstruir_estado(_deps(_git_com_orfaos(), estado), "13.34.0")
+
+    assert resultado.orfaos == ["o1"]
+    assert _commits_por_chamado(estado) == {"123456": ["c1"]}

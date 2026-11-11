@@ -2,7 +2,10 @@
 
 Operacao de recuperacao, fora do fluxo principal. Nunca interativa:
 PENDING_JUDGMENT e valor de retorno, quem pergunta ao humano e o front-end.
-Nao recupera exclusoes nem sem_entrega — julgamento humano so vive no banco.
+Nao recupera exclusoes, sem_entrega nem julgamentos de orfao — julgamento
+humano so vive no banco. Os julgamentos de orfao da versao ele aplica: orfao
+julgado com chamado entra na atribuicao dele, julgado "nenhum" fica de fora, e
+so o que nao foi julgado volta em PENDING_JUDGMENT.
 
 Numa versao ja congelada (liberada_em preenchida) a trigger recusa a escrita.
 Recuperar o snapshot de uma versao liberada exige levantar o congelamento:
@@ -80,8 +83,13 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
         base_commit = info.base_commit
 
     deps.progresso(Progresso("reconstruindo atribui\u00e7\u00f5es a partir do git"))
+    julgamentos = {
+        j.hash_origem: j.chamado
+        for j in deps.estado.julgamentos_orfao(deps.repo)
+        if j.versao_numero == versao
+    }
     atribuicoes, orfaos = reconstruir_atribuicoes(
-        deps.git, base_commit, versionamento.branch(versao), referencia
+        deps.git, base_commit, versionamento.branch(versao), referencia, julgamentos
     )
     deps.estado.substituir_atribuicoes(deps.repo, versao, atribuicoes)
 
