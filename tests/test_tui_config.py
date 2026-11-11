@@ -2,7 +2,8 @@ import asyncio
 import os
 from pathlib import Path
 
-from textual.widgets import Input
+import pytest
+from textual.widgets import Input, OptionList, Select, TabbedContent
 
 from motor.config import (
     CHAVE_CAMINHO,
@@ -11,6 +12,7 @@ from motor.config import (
     Tabela,
     VarAmbiente,
     caminho_config_global,
+    repos_configurados,
 )
 from motor.config_edicao import (
     AcaoAlteracao,
@@ -22,13 +24,16 @@ from motor.config_edicao import (
     ValorLido,
 )
 from motor.domain.types import VersionStatus
+from motor.errors import ErroDeEntrada
 from motor.operacoes import RepoOption, Runners
 from motor.tui import MotorTUI
 from motor.tui_config import (
+    ABA_REPOS,
     ChaveForm,
     ConfigModal,
     Escalar,
     alteracoes_do_formulario,
+    converter_texto,
 )
 
 SEGREDO = "s3nha"
@@ -184,5 +189,72 @@ def test_tui_config_segredo_nao_aparece():
             assert entradas
             assert all(SEGREDO not in e.value for e in entradas)
             assert all(SEGREDO not in (e.placeholder or "") for e in entradas)
+
+    asyncio.run(fluxo())
+
+
+def test_converter_texto_preserva_tipo_toml():
+    lido_bool = ValorLido(None, Tabela.TAREFAS, "b", True, True, True)
+    lido_int = ValorLido(None, Tabela.TAREFAS, "n", 3, True, True)
+    assert converter_texto("FALSE", lido_bool, False) is False
+    assert converter_texto("7", lido_int, False) == 7
+    assert converter_texto("", lido_int, False) == ""
+    assert converter_texto("None", None, False) == "None"
+    with pytest.raises(ErroDeEntrada):
+        converter_texto("talvez", lido_bool, False)
+    with pytest.raises(ErroDeEntrada):
+        converter_texto("x", lido_int, False)
+
+
+def test_tui_config_cria_repo_e_atualiza_lista(tmp_path):
+    _escrever('[branches]\nprincipal = "main"\n')
+    novo = tmp_path / "novo"
+    novo.mkdir()
+
+    def repos() -> list[RepoOption]:
+        return [RepoOption(n, c) for n, c in repos_configurados().items()]
+
+    async def fluxo() -> None:
+        app = MotorTUI(Runners(repos, lambda opcao: [], _nunca_executa))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("g")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ConfigModal)
+            modal.query_one(TabbedContent).active = ABA_REPOS
+            await pilot.pause()
+            modal.query_one("#novo-repo", Input).value = NOME_REPO
+            await pilot.click("#criar-repo")
+            await pilot.pause()
+            caminho = (NOME_REPO, None, CHAVE_CAMINHO)
+            modal.query_one(f"#{modal.id_de(caminho)}", Input).value = str(novo)
+            await pilot.click("#salvar")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert [o.nome for o in repos()] == [NOME_REPO]
+            assert (
+                app.query_one("#repo", Select).query_one(OptionList).option_count == 2
+            )
+
+    asyncio.run(fluxo())
+
+
+def test_tui_config_repo_mostra_valor_do_topo_como_placeholder():
+    _escrever('[versao]\npiso = "1.0"\n[repos.app]\ncaminho = "/x"\n')
+
+    async def fluxo() -> None:
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("g")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ConfigModal)
+            piso = modal.query_one(
+                f"#{modal.id_de((NOME_REPO, Tabela.VERSAO, Chave.PISO))}", Input
+            )
+            assert piso.placeholder == "1.0"
+            assert piso.value == ""
 
     asyncio.run(fluxo())

@@ -916,7 +916,11 @@ class MotorTUI(App[None]):
         except ErroDeEntrada as erro:
             self.notify(formatar_com_notas(erro), severity="error")
             return
-        self.push_screen(ConfigModal(config))
+        self.push_screen(ConfigModal(config), self._config_salva)
+
+    def _config_salva(self, gravou: bool | None) -> None:
+        if gravou:
+            self.carregar_repos_worker()
 
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:

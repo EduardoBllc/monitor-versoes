@@ -41,6 +41,9 @@ ChaveForm = tuple[str | None, str | None, str]
 MSG_DEFINIDO = "definido"
 MSG_NAO_DEFINIDO = "não definido"
 MSG_SOMENTE_LEITURA = "somente leitura"
+ABA_REPOS = "aba-repos"
+TEXTO_TRUE = "true"
+TEXTO_FALSE = "false"
 
 
 def _chave_de(v: ValorLido) -> ChaveForm:
@@ -90,6 +93,24 @@ def alteracoes_do_formulario(
     return [*criar, *chaves, *remover]
 
 
+def converter_texto(texto: str, lido: ValorLido | None, inteiro: bool) -> Escalar:
+    """Texto do Input no tipo TOML do valor lido; texto inválido para o tipo é erro."""
+    if texto == "":
+        return texto
+    original = None if lido is None else lido.valor
+    try:
+        if isinstance(original, bool):
+            booleano = texto.lower()
+            if booleano not in (TEXTO_TRUE, TEXTO_FALSE):
+                raise ValueError(texto)
+            return booleano == TEXTO_TRUE
+        if inteiro or isinstance(original, int):
+            return int(texto)
+    except ValueError:
+        raise ErroDeEntrada(f"valor inválido: {texto!r}") from None
+    return texto
+
+
 class ConfigModal(ModalScreen[bool]):
     """Edita a config central; devolve `True` se gravou."""
 
@@ -104,7 +125,10 @@ class ConfigModal(ModalScreen[bool]):
         background: $surface;
     }
     ConfigModal TabbedContent { height: 1fr; }
-    ConfigModal TabPane { padding: 0 1; }
+    ConfigModal TabPane { padding: 0 1; height: 1fr; }
+    ConfigModal .novo-repo { height: auto; }
+    ConfigModal #novo-repo { width: 1fr; }
+    ConfigModal #criar-repo { width: 18; }
     ConfigModal .repo { height: auto; border: round $primary-darken-2; padding: 0 1; }
     ConfigModal #config-botoes { height: auto; align-horizontal: right; padding-top: 1; }
     ConfigModal #config-botoes Button { margin-left: 1; }
@@ -130,7 +154,7 @@ class ConfigModal(ModalScreen[bool]):
             with TabbedContent():
                 with TabPane("Geral"):
                     yield VerticalScroll(*self._campos_de(Escopo.GERAL, None, True))
-                with TabPane("Repos"):
+                with TabPane("Repos", id=ABA_REPOS):
                     with VerticalScroll(id="repos-lista"):
                         for nome in cfg.repos:
                             yield self._container_do_repo(nome)
@@ -189,6 +213,8 @@ class ConfigModal(ModalScreen[bool]):
         if campo.segredo:
             return self._widgets_do_segredo(chave, campo, lido, rotulo)
         atual = None if lido is None or lido.valor is None else lido.valor
+        herdado = self._lidos.get((None, campo.tabela, campo.chave)) if repo else None
+        dica = "" if herdado is None or herdado.valor is None else str(herdado.valor)
         entrada: Input | Select[str]
         if campo.tipo == TipoCampo.ESCOLHA:
             opcoes = list(campo.opcoes)
@@ -197,11 +223,13 @@ class ConfigModal(ModalScreen[bool]):
             entrada = Select(
                 [(o, o) for o in opcoes],
                 value=atual if isinstance(atual, str) else Select.NULL,
+                prompt=dica or "Select",
                 id=self.id_de(chave),
             )
         else:
             entrada = Input(
                 "" if atual is None else str(atual),
+                placeholder=dica,
                 type="integer" if campo.tipo == TipoCampo.INTEIRO else "text",
                 id=self.id_de(chave),
             )
@@ -227,19 +255,16 @@ class ConfigModal(ModalScreen[bool]):
 
     def _container_do_repo(self, nome: str) -> Widget:
         campos = [
-            w
-            for c in self._config.campos
-            if c.escopo == Escopo.REPO
-            for w in self._widgets_do_campo(nome, c)
+            *self._campos_de(Escopo.REPO, nome, True),
+            *self._campos_de(Escopo.REPO, nome, False),
         ]
-        livres = self._campos_de(Escopo.REPO, nome, True)
         botao = Button("Remover repo", name=nome, classes="remover-repo")
-        container = Vertical(Label(f"[b]{nome}[/b]"), *campos, *livres, botao)
+        container = Vertical(Label(f"[b]{nome}[/b]"), *campos, botao)
         container.add_class("repo")
         self._containers[nome] = container
         return container
 
-    def on_button_pressed(self, evento: Button.Pressed) -> None:
+    async def on_button_pressed(self, evento: Button.Pressed) -> None:
         evento.stop()
         botao = evento.button
         if botao.id == "salvar":
@@ -247,32 +272,36 @@ class ConfigModal(ModalScreen[bool]):
         elif botao.id == "cancelar":
             self.dismiss(False)
         elif botao.id == "criar-repo":
-            self._criar_repo()
+            await self._criar_repo()
         elif botao.name:
-            self._remover_repo(botao.name)
+            await self._remover_repo(botao.name)
 
     def action_cancelar(self) -> None:
         self.dismiss(False)
 
-    def _criar_repo(self) -> None:
+    async def _criar_repo(self) -> None:
         campo = self.query_one("#novo-repo", Input)
         nome = campo.value.strip()
-        existentes = {*self._config.repos, *self._criados}
+        existentes = {*self._config.repos, *self._criados} - set(self._removidos)
         if not nome or nome in existentes:
             self.app.notify("informe um nome novo para o repo", severity="error")
             return
-        self._criados.append(nome)
         campo.value = ""
-        self.query_one("#repos-lista", VerticalScroll).mount(
+        if nome in self._removidos:  # volta o repo que ainda existe no arquivo
+            self._removidos.remove(nome)
+            self._containers[nome].display = True
+            return
+        self._criados.append(nome)
+        await self.query_one("#repos-lista", VerticalScroll).mount(
             self._container_do_repo(nome)
         )
 
-    def _remover_repo(self, nome: str) -> None:
+    async def _remover_repo(self, nome: str) -> None:
         if nome in self._criados:
             self._criados.remove(nome)
-            self._containers.pop(nome).remove()
             for chave in [k for k in self._entradas if k[0] == nome]:
                 del self._entradas[chave]
+            await self._containers.pop(nome).remove()
             return
         self._removidos.append(nome)
         self._containers[nome].display = False
@@ -292,21 +321,20 @@ class ConfigModal(ModalScreen[bool]):
         return valores
 
     def _converter(self, chave: ChaveForm, texto: str) -> Escalar:
-        """Preserva o tipo do valor lido (inteiro ou booleano) quando o texto não mudou."""
-        lido = self._lidos.get(chave)
-        if lido is not None and str(lido.valor) == texto:
-            return lido.valor
         campo_int = any(
             c.tipo == TipoCampo.INTEIRO and (c.tabela, c.chave) == chave[1:]
             for c in self._config.campos
         )
-        return int(texto) if campo_int and texto else texto
+        return converter_texto(texto, self._lidos.get(chave), campo_int)
 
     def _salvar(self) -> None:
-        alteracoes = alteracoes_do_formulario(
-            self._config, self._valores_do_formulario(), self._criados, self._removidos
-        )
         try:
+            alteracoes = alteracoes_do_formulario(
+                self._config,
+                self._valores_do_formulario(),
+                self._criados,
+                self._removidos,
+            )
             gravar(alteracoes, self._config.versao)
         except (ErroDeEntrada, RecusaDeInvariante) as erro:
             self.app.notify(formatar_com_notas(erro), severity="error")
