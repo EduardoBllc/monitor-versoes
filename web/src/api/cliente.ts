@@ -13,6 +13,7 @@ export class ErroApi extends Error {
 export enum Metodo {
   GET = "GET",
   POST = "POST",
+  PUT = "PUT",
   DELETE = "DELETE",
 }
 

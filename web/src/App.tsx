@@ -33,6 +33,7 @@ import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
 import { ModalAbortar } from "./componentes/ModalAbortar";
 import { ModalConfirmarLote } from "./componentes/ModalConfirmarLote";
+import { ModalConfig } from "./componentes/ModalConfig";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
 import { ModalResultado } from "./componentes/ModalResultado";
@@ -90,6 +91,7 @@ function Tela() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [criando, setCriando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
+  const [configurando, setConfigurando] = useState(false);
   const [atualizacoes, setAtualizacoes] = useState<
     Readonly<Record<string, EstadoAtualizacao>>
   >({});
@@ -373,6 +375,7 @@ function Tela() {
           }
           aoCriar={() => setCriando(true)}
           aoInscricoes={() => setInscricoes(true)}
+          aoConfigurar={() => setConfigurando(true)}
         />
       </AppShell.Header>
       <AppShell.Main>
@@ -444,6 +447,10 @@ function Tela() {
           aoCriar={(numero) => void disparar(base, { numero })}
         />
       )}
+      <ModalConfig
+        aberto={configurando}
+        aoFechar={() => setConfigurando(false)}
+      />
       <ModalInscricoes
         aberto={inscricoes}
         aoFechar={() => setInscricoes(false)}
