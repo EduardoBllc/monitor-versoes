@@ -22,6 +22,7 @@ import {
   FaseAtualizacao,
   INICIAL,
   TipoEventoAtualizacao,
+  acompanhaOcupado,
   proximo,
   type EstadoAtualizacao,
   type Evento,
@@ -242,8 +243,18 @@ function Tela() {
     try {
       await api<Execucao>(Metodo.POST, caminho, corpo);
     } catch (erro) {
-      // 409: já há operação rodando neste repo (outra aba); passa a acompanhá-la.
-      if (!(erro instanceof ErroApi && erro.tipo === TipoErro.OCUPADO)) {
+      // 409: o repo está travado. Se for uma execução do daemon (outra aba), passa a
+      // acompanhá-la; se for um processo de fora (CLI, TUI, inscrição), mostra a recusa.
+      const ocupadoAqui =
+        erro instanceof ErroApi &&
+        erro.tipo === TipoErro.OCUPADO &&
+        acompanhaOcupado(
+          await api<Execucao | null>(
+            Metodo.GET,
+            `/api/repos/${encodeURIComponent(repo)}/execucao`,
+          ).catch(() => null),
+        );
+      if (!ocupadoAqui) {
         notificarErro(erro);
         despachar(k, {
           tipo: TipoEventoAtualizacao.RECONECTOU,
