@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Lado, aceitar, blocos, temMarcadores } from "./conflito";
+import { Lado, aceitar, blocoEm, blocos, temMarcadores } from "./conflito";
 
 const BLOCO_2_VIAS = "antes\n<<<<<<< ours\nA\n=======\nB\n>>>>>>> theirs\n";
 const BLOCO_3_VIAS =
@@ -26,6 +26,13 @@ describe("blocos", () => {
       { inicio: 2, fim: 6, ours: "A1\r\n", base: null, theirs: "B1\r\n" },
       { inicio: 8, fim: 14, ours: "A2\r\n", base: "O2\r\n", theirs: "B2\r\n" },
     ]);
+  });
+});
+
+describe("blocoEm", () => {
+  it("acha o bloco pela linha do <<<<<<< e nada se ela não abre bloco", () => {
+    expect(blocoEm(DOIS_BLOCOS, 8)).toEqual(blocos(DOIS_BLOCOS)[1]);
+    expect(blocoEm(DOIS_BLOCOS, 7)).toBeUndefined();
   });
 });
 

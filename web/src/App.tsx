@@ -309,6 +309,10 @@ function Tela() {
       ? [k.slice(repo.length + 1)]
       : [],
   );
+  // Bloqueio encerrado (continuou, abortou): o próximo passa de novo pelo painel.
+  useEffect(() => {
+    if (!pendente) setResolvendo(null);
+  }, [pendente]);
   const naTelaConflito =
     resolvendo === chaveAtual &&
     pendente &&
@@ -349,7 +353,6 @@ function Tela() {
   };
   const abortar = () => {
     setAbortando(false);
-    setResolvendo(null);
     evento(TipoEventoAtualizacao.ABORTOU);
     void disparar(`${acaoAtualizacao}/abortar`, undefined);
   };

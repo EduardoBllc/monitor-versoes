@@ -31,6 +31,7 @@ import {
   AVISO_DESCARTE,
   Lado,
   aceitar,
+  blocoEm,
   blocos,
   temMarcadores,
 } from "../conflito";
@@ -51,6 +52,21 @@ const COLUNA_CONTEUDO = 9;
 enum Tema {
   CLARO = "light",
   ESCURO = "vs-dark",
+}
+
+enum RotaConflito {
+  RESOLUCAO = "resolucao",
+  REABERTURA = "reabertura",
+}
+
+// Cada painel tem o próprio modelo no Monaco; o commit no caminho impede reuso entre picks.
+enum Painel {
+  THEIRS = "theirs",
+  OURS = "ours",
+  RESULTADO = "resultado",
+  BASE = "base",
+  MODIFICADO = "modificado",
+  VER_BASE = "ver-base",
 }
 
 enum EsquemaCor {
@@ -84,13 +100,13 @@ function rotuloTipo(tipo: TipoArquivo): string {
 }
 
 function Resultado({
-  caminho,
+  modelo,
   texto,
   somenteLeitura,
   tema,
   aoMudar,
 }: {
-  caminho: string;
+  modelo: string;
   texto: string;
   somenteLeitura: boolean;
   tema: Tema;
@@ -104,9 +120,10 @@ function Resultado({
     registros.current.push(
       m.editor.addCommand({
         id: COMANDO_ACEITAR,
-        run: (_acesso: unknown, indice: number, lado: Lado) => {
+        run: (_acesso: unknown, inicio: number, lado: Lado) => {
           const modelo = editor.getModel();
-          const bloco = modelo && blocos(modelo.getValue())[indice];
+          // Pela linha, não pelo índice: lente atrasada não reescreve outro bloco.
+          const bloco = modelo && blocoEm(modelo.getValue(), inicio);
           if (!modelo || !bloco) return;
           editor.pushUndoStop();
           editor.executeEdits(COMANDO_ACEITAR, [
@@ -123,7 +140,7 @@ function Resultado({
           lenses:
             modelo !== editor.getModel()
               ? []
-              : blocos(modelo.getValue()).flatMap((b, i) =>
+              : blocos(modelo.getValue()).flatMap((b) =>
                   ACOES.filter(
                     ([lado]) => lado !== Lado.BASE || b.base !== null,
                   ).map(([lado, titulo]) => ({
@@ -131,7 +148,7 @@ function Resultado({
                     command: {
                       id: COMANDO_ACEITAR,
                       title: titulo,
-                      arguments: [i, lado],
+                      arguments: [b.inicio, lado],
                     },
                   })),
                 ),
@@ -144,7 +161,7 @@ function Resultado({
     <Editor
       height={ALTURA}
       language={LINGUAGEM}
-      path={`resultado/${caminho}`}
+      path={modelo}
       value={texto}
       theme={tema}
       options={{ readOnly: somenteLeitura, minimap: { enabled: false } }}
@@ -187,7 +204,8 @@ export default function EditorConflito({
     arquivos.find((a) => !a.resolvido) ??
     arquivos[0];
   const conteudo = useQuery({
-    queryKey: [...chave, atual?.caminho],
+    // O commit na chave: novo pick no mesmo caminho é outra leitura.
+    queryKey: [...chave, conflito.data?.commit, atual?.caminho],
     queryFn: () =>
       api<ConteudoDoConflito>(
         Metodo.GET,
@@ -248,10 +266,10 @@ export default function EditorConflito({
     else descartando(acao)();
   };
 
-  const enviar = async (caminho: string, corpo: unknown) => {
+  const enviar = async (rota: RotaConflito, corpo: unknown) => {
     setEnviando(true);
     try {
-      await api<void>(Metodo.POST, `${url}/${caminho}`, corpo);
+      await api<void>(Metodo.POST, `${url}/${rota}`, corpo);
       return true;
     } catch (erro) {
       tratar(erro);
@@ -269,7 +287,7 @@ export default function EditorConflito({
       conteudo: novo,
       versao_disco: edicao?.versao ?? dados.versao_disco,
     };
-    if (await enviar("resolucao", corpo)) {
+    if (await enviar(RotaConflito.RESOLUCAO, corpo)) {
       setEdicao(null);
       notificarOk(`${atual.caminho} resolvido`);
     }
@@ -278,7 +296,7 @@ export default function EditorConflito({
   const reabrir = async () => {
     const caminho = reabrindo;
     setReabrindo(null);
-    if (caminho !== null) await enviar("reabertura", { caminho });
+    if (caminho !== null) await enviar(RotaConflito.REABERTURA, { caminho });
   };
 
   const editar = (novo: string) => {
@@ -292,6 +310,8 @@ export default function EditorConflito({
     if (!atual || !dados) return null;
     // O esquema gerado tipa como união de strings; o cast alinha ao enum do switch.
     const tipo = dados.tipo as TipoArquivo;
+    const id = `${conflito.data?.commit ?? ""}/${atual.caminho}`;
+    const modelo = (painel: Painel) => `${painel}/${id}`;
     const botaoReabrir = (
       <Button
         variant="light"
@@ -310,25 +330,27 @@ export default function EditorConflito({
               <Text fw={700}>resultado</Text>
               <Text fw={700}>ours — alvo</Text>
               <Editor
+                key={id}
                 height={ALTURA}
                 language={LINGUAGEM}
-                path={`theirs/${atual.caminho}`}
+                path={modelo(Painel.THEIRS)}
                 value={dados.theirs ?? ""}
                 theme={tema}
                 options={SO_LEITURA}
               />
               <Resultado
-                key={atual.caminho}
-                caminho={atual.caminho}
+                key={id}
+                modelo={modelo(Painel.RESULTADO)}
                 texto={texto}
                 somenteLeitura={atual.resolvido}
                 tema={tema}
                 aoMudar={editar}
               />
               <Editor
+                key={id}
                 height={ALTURA}
                 language={LINGUAGEM}
-                path={`ours/${atual.caminho}`}
+                path={modelo(Painel.OURS)}
                 value={dados.ours ?? ""}
                 theme={tema}
                 options={SO_LEITURA}
@@ -370,7 +392,7 @@ export default function EditorConflito({
             </Text>
             {/* A lib descarta os modelos antes do editor e o Monaco lança erro; aqui é depois. */}
             <DiffEditor
-              key={atual.caminho}
+              key={id}
               keepCurrentOriginalModel
               keepCurrentModifiedModel
               onMount={(editor) => {
@@ -384,8 +406,8 @@ export default function EditorConflito({
               language={LINGUAGEM}
               original={dados.base ?? ""}
               modified={existente ?? ""}
-              originalModelPath={`base/${atual.caminho}`}
-              modifiedModelPath={`modificado/${atual.caminho}`}
+              originalModelPath={modelo(Painel.BASE)}
+              modifiedModelPath={modelo(Painel.MODIFICADO)}
               theme={tema}
               options={SO_LEITURA}
             />
@@ -455,7 +477,11 @@ export default function EditorConflito({
             </CopyButton>
           </Group>
         </Stack>
-        <Button variant="default" onClick={() => guardar(aoSair)}>
+        <Button
+          variant="default"
+          disabled={enviando}
+          onClick={() => guardar(aoSair)}
+        >
           Voltar
         </Button>
       </Group>
@@ -484,6 +510,8 @@ export default function EditorConflito({
             <NavLink
               key={a.caminho}
               active={a.caminho === atual?.caminho}
+              // Resolução em voo limparia a edição de outro arquivo ao terminar.
+              disabled={enviando}
               label={a.caminho}
               leftSection={a.resolvido ? "✓" : "●"}
               rightSection={
@@ -541,7 +569,7 @@ export default function EditorConflito({
         <Editor
           height={ALTURA}
           language={LINGUAGEM}
-          path={`ver-base/${atual?.caminho ?? ""}`}
+          path={`${Painel.VER_BASE}/${conflito.data?.commit ?? ""}/${atual?.caminho ?? ""}`}
           value={dados?.base ?? ""}
           theme={tema}
           options={SO_LEITURA}

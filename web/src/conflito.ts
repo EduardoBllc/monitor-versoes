@@ -89,6 +89,9 @@ export function blocos(texto: string): Bloco[] {
   return achados;
 }
 
+export const blocoEm = (texto: string, inicio: number): Bloco | undefined =>
+  blocos(texto).find((b) => b.inicio === inicio);
+
 function trecho(bloco: Bloco, lado: Lado): string {
   switch (lado) {
     case Lado.OURS:
