@@ -1100,36 +1100,8 @@ def test_diagnostico_mostra_o_central_invalido_e_as_demais_linhas(
     linhas = capsys.readouterr().out.splitlines()
     assert linhas[0].startswith("FALHA  Ambiente:")
     assert str(central) in linhas[0]
-    for peca in ("Variáveis", "Postgres", "Tarefas", "Bitbucket"):
+    for peca in ("Variáveis", "SQLite", "Tarefas", "Bitbucket"):
         assert any(f"  {peca}" in linha for linha in linhas), peca
-
-
-@pytest.mark.integracao
-def test_diagnostico_com_postgres_so_no_ambiente_central(
-    _postgres_efemero, sessao_postgres, monkeypatch, tmp_path
-):
-    container = {
-        "DATABASE_HOST": _postgres_efemero.get_container_host_ip(),
-        "DATABASE_PORT": str(_postgres_efemero.get_exposed_port(5432)),
-        "DATABASE_NAME": _postgres_efemero.dbname,
-        "DATABASE_USER": _postgres_efemero.username,
-        "DATABASE_PASSWORD": _postgres_efemero.password,
-    }
-    for chave in (*container, "DATABASE_BACKEND", "BITBUCKET_TOKEN", "BITBUCKET_EMAIL"):
-        monkeypatch.setenv(chave, "")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    central = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
-    central.parent.mkdir(parents=True)
-    central.write_text(
-        '[ambiente]\nDATABASE_BACKEND = "postgres"\n'
-        + "".join(f'{k} = "{v}"\n' for k, v in container.items())
-    )
-    cwd = tmp_path / "sem-env"
-    cwd.mkdir()
-    monkeypatch.chdir(cwd)
-    monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
-
-    main(["diagnostico"])  # SystemExit(1) se alguma linha falhar
 
 
 # -- migrar-estado ------------------------------------------------------------

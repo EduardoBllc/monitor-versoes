@@ -18,7 +18,6 @@ dependencies = [
 dev = [
     "pytest",
     "mypy",
-    "testcontainers[postgres]",
     "ruff>=0.17.1",
     "pre-commit>=4.7.0",
     "tomlkit>=0.13",
@@ -47,9 +46,6 @@ motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*", "da
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-    "integracao: sobe um Postgres efemero via testcontainers (pulado sem Docker)",
-]
 
 # O type checker e o que faz "adapter nao cumpre a porta" virar erro em vez de
 # surpresa em runtime: Protocol e estrutural, e a conformidade e verificada nos

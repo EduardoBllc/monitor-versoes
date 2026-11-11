@@ -1,9 +1,8 @@
 """Traducao de erro do banco no PostgresEstado, sem banco de verdade.
 
-Separado de test_estado_postgres.py, que e todo @integracao: estes casos sao
-sobre qual excecao o adapter captura, e a garantia "MotorError e mensagem
-limpa, qualquer outra excecao e bug com traceback" tem de valer na suite que
-roda sem container.
+Estes casos sao sobre qual excecao o adapter captura, sem banco nenhum: a
+garantia "MotorError e mensagem limpa, qualquer outra excecao e bug com
+traceback" vale independente do que o banco devolve.
 """
 
 from __future__ import annotations

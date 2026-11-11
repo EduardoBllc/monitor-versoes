@@ -110,25 +110,6 @@ def test_aviso_nao_sai_com_avisar_falso_nem_com_partes_incompletas(
     assert capsys.readouterr().err == ""
 
 
-@pytest.mark.integracao
-def test_sessao_postgres_ignora_o_ambiente(monkeypatch, request):
-    """A fixture trunca sete tabelas — a URL dela nao pode sair do ambiente.
-
-    Enquanto saia, um `.env` apontado para producao truncava producao, e o que
-    segurava isso era a guarda `_exigir_banco_development`. Hoje a URL vem do
-    container efemero; este teste falha se alguem reintroduzir o
-    `create_engine(database_url())`.
-    """
-    # O container primeiro: ele povoa DATABASE_* no ambiente ao subir, entao
-    # apontar para producao antes disso so seria sobrescrito e o teste passaria
-    # sem testar nada.
-    container = request.getfixturevalue("_postgres_efemero")
-    _ambiente(monkeypatch, {**POSTGRES, **COMPLETO})
-    sessao = request.getfixturevalue("sessao_postgres")
-    url = sessao.get_bind().url.render_as_string(hide_password=False)
-    assert url == container.get_connection_url()
-
-
 # -- worktrees mantidas -------------------------------------------------------
 #
 # setenv("") em vez de delenv: e o que um `.env` com a linha vazia produz, e a

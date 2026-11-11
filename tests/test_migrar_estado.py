@@ -185,39 +185,6 @@ def test_sqlite_para_sqlite(tmp_path: Path) -> None:
     _verificar(origem, f"sqlite:///{tmp_path / 'b.db'}")
 
 
-@pytest.mark.integracao
-def test_sqlite_para_postgres(
-    tmp_path: Path, sessao_postgres: Any, _postgres_efemero: Any
-) -> None:
-    origem = f"sqlite:///{tmp_path / 'a.db'}"
-    _povoar(origem)
-
-    _verificar(origem, _postgres_efemero.get_connection_url())
-
-
-@pytest.mark.integracao
-def test_postgres_para_sqlite(
-    tmp_path: Path, sessao_postgres: Any, _postgres_efemero: Any
-) -> None:
-    origem = _postgres_efemero.get_connection_url()
-    _povoar(origem)
-
-    _verificar(origem, f"sqlite:///{tmp_path / 'b.db'}")
-
-
-@pytest.mark.integracao
-def test_url_postgresql_sem_driver_e_normalizada(
-    tmp_path: Path, sessao_postgres: Any, _postgres_efemero: Any
-) -> None:
-    destino = _postgres_efemero.get_connection_url().replace(
-        "postgresql+psycopg://", "postgresql://"
-    )
-    origem = f"sqlite:///{tmp_path / 'a.db'}"
-    _povoar(origem)
-
-    assert migrar_estado(origem, destino).total > 0
-
-
 def test_destino_com_linha_e_recusado_sem_escrita(tmp_path: Path) -> None:
     origem = f"sqlite:///{tmp_path / 'a.db'}"
     destino = f"sqlite:///{tmp_path / 'b.db'}"

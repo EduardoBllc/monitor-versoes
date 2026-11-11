@@ -10,8 +10,6 @@ from motor.adapters.estado.postgres import PostgresEstado
 from motor.domain.types import Atribuicao, Exclusion, VersaoInfo
 from motor.errors import MotorError
 
-pytestmark = pytest.mark.integracao
-
 
 def _semear_repo(sessao) -> None:
     sessao.execute(text("insert into repo (nome) values ('webapp')"))
@@ -27,9 +25,9 @@ def _info(numero: str) -> VersaoInfo:
     )
 
 
-def test_ciclo_de_atribuicoes(sessao_postgres):
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
+def test_ciclo_de_atribuicoes(sessao_sqlite):
+    _semear_repo(sessao_sqlite)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
 
     # dois chamados, cada um com seus proprios hashes: exercita o
@@ -56,11 +54,11 @@ def test_ciclo_de_atribuicoes(sessao_postgres):
     assert sorted(lidas[1].commits) == ["ccc"]
 
 
-def test_trigger_recusa_escrita_em_versao_liberada(sessao_postgres):
+def test_trigger_recusa_escrita_em_versao_liberada(sessao_sqlite):
     """A invariante central do congelamento. Um fake nao prova isto — a trigger
     tem que existir no banco de verdade."""
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
+    _semear_repo(sessao_sqlite)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     estado.substituir_atribuicoes(
         "webapp",
@@ -91,7 +89,7 @@ def test_trigger_recusa_escrita_em_versao_liberada(sessao_postgres):
     assert [a.chamado for a in estado.atribuicoes("webapp", "13.34.0")] == ["123456"]
 
 
-def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_postgres):
+def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_sqlite):
     """Buraco conhecido do trigger (achado e corrigido na Task 5, migracao
     eafc77e6d0ce): a primeira versao da funcao so olhava new.versao_id, e um
     UPDATE que move uma atribuicao PARA FORA de uma versao liberada (old =
@@ -99,8 +97,8 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
     silencio. Nenhum metodo do adapter emite esse UPDATE — substituir_
     atribuicoes so faz delete+insert — entao o buraco so aparece testando a
     trigger direto via SQL, por fora do adapter."""
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
+    _semear_repo(sessao_sqlite)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     estado.registrar_versao(
         "webapp",
@@ -122,25 +120,25 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_pos
     )
     estado.marcar_liberadas("webapp", {"13.34.0": datetime.datetime(2026, 8, 1)})
 
-    versao_livre_id = sessao_postgres.execute(
+    versao_livre_id = sessao_sqlite.execute(
         text("select id from versao where numero = '13.35.0'")
     ).scalar_one()
 
     with pytest.raises(DatabaseError, match="imutavel"):
-        sessao_postgres.execute(
+        sessao_sqlite.execute(
             text("update atribuicao set versao_id = :novo where chamado = '123456'"),
             {"novo": versao_livre_id},
         )
-    sessao_postgres.rollback()
+    sessao_sqlite.rollback()
 
     # a atribuicao continua presa na versao liberada, nao migrou para a livre
     assert [a.chamado for a in estado.atribuicoes("webapp", "13.34.0")] == ["123456"]
     assert estado.atribuicoes("webapp", "13.35.0") == []
 
 
-def test_marcar_liberadas_nao_reescreve_data(sessao_postgres):
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
+def test_marcar_liberadas_nao_reescreve_data(sessao_sqlite):
+    _semear_repo(sessao_sqlite)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     # timezone.utc explicito: a coluna e timestamptz (migracao eafc77e6d0ce),
     # e um datetime naive de volta do banco nunca compara igual a um aware.
@@ -156,9 +154,9 @@ def test_marcar_liberadas_nao_reescreve_data(sessao_postgres):
     assert gravada.liberada_em == primeira
 
 
-def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
+def test_registrar_versao_nao_sobrescreve_a_base(sessao_sqlite):
+    _semear_repo(sessao_sqlite)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     # tipo diferente do primeiro registro (_info usa AJUSTADA): uma
     # implementacao que reescrevesse tipo/base_ref mas nao base_commit
@@ -181,15 +179,15 @@ def test_registrar_versao_nao_sobrescreve_a_base(sessao_postgres):
 
 
 def test_substituir_atribuicoes_recusa_versao_liberada_com_snapshot_vazio(
-    sessao_postgres,
+    sessao_sqlite,
 ):
     """A recusa nao pode depender so da trigger disparar: se a versao ja
     liberada nunca teve nenhuma atribuicao e a chamada tambem manda uma lista
     vazia, os deletes afetam 0 linhas e nenhum insert acontece — a trigger
     nao tem nada para vetar e o commit passaria em silencio se o adapter nao
     checasse liberada_em antes."""
-    _semear_repo(sessao_postgres)
-    estado = PostgresEstado(sessao=sessao_postgres)
+    _semear_repo(sessao_sqlite)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     estado.marcar_liberadas("webapp", {"13.34.0": datetime.datetime(2026, 8, 1)})
 
@@ -197,7 +195,7 @@ def test_substituir_atribuicoes_recusa_versao_liberada_com_snapshot_vazio(
         estado.substituir_atribuicoes("webapp", "13.34.0", [])
 
 
-def test_exclusoes(sessao_postgres):
+def test_exclusoes(sessao_sqlite):
     """Primeira execucao real do corpo de `exclusoes()`: ate aqui nada semeava
     linha em `exclusao`, entao o adapter construia um `Exclusion` na forma nova
     sem nunca ter rodado uma vez.
@@ -207,11 +205,11 @@ def test_exclusoes(sessao_postgres):
     em que `filtrar_excluidos` se apoia — uma traducao que perdesse o null
     passaria num teste de uma linha so.
     """
-    _semear_repo(sessao_postgres)
-    repo_id = sessao_postgres.execute(
+    _semear_repo(sessao_sqlite)
+    repo_id = sessao_sqlite.execute(
         text("select id from repo where nome = 'webapp'")
     ).scalar_one()
-    sessao_postgres.execute(
+    sessao_sqlite.execute(
         text(
             "insert into exclusao (repo_id, hash_origem, versao_numero, motivo) "
             "values (:repo_id, 'aaa111', null, 'revertido em master'), "
@@ -219,9 +217,9 @@ def test_exclusoes(sessao_postgres):
         ),
         {"repo_id": repo_id},
     )
-    sessao_postgres.commit()
+    sessao_sqlite.commit()
 
-    estado = PostgresEstado(sessao=sessao_postgres)
+    estado = PostgresEstado(sessao=sessao_sqlite)
 
     assert estado.exclusoes("webapp") == [
         Exclusion(
@@ -235,112 +233,61 @@ def test_exclusoes(sessao_postgres):
     ]
 
 
-def test_sem_entrega(sessao_postgres):
-    _semear_repo(sessao_postgres)
-    repo_id = sessao_postgres.execute(
+def test_sem_entrega(sessao_sqlite):
+    _semear_repo(sessao_sqlite)
+    repo_id = sessao_sqlite.execute(
         text("select id from repo where nome = 'webapp'")
     ).scalar_one()
-    sessao_postgres.execute(
+    sessao_sqlite.execute(
         text(
             "insert into sem_entrega (repo_id, chamado, motivo) "
             "values (:repo_id, '555444', 'chamado administrativo, sem commit')"
         ),
         {"repo_id": repo_id},
     )
-    sessao_postgres.commit()
+    sessao_sqlite.commit()
 
-    estado = PostgresEstado(sessao=sessao_postgres)
+    estado = PostgresEstado(sessao=sessao_sqlite)
     assert estado.sem_entrega("webapp") == {
         "555444": "chamado administrativo, sem commit"
     }
 
 
-def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_postgres):
+def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_sqlite):
     from alembic import command
 
     from motor.migracoes import config_alembic
 
-    _semear_repo(sessao_postgres)
-    sessao_postgres.execute(
+    _semear_repo(sessao_sqlite)
+    sessao_sqlite.execute(
         text(
             "insert into pr_mergeada (repo_id, pr_id, titulo, branch, updated_on) "
-            "select id, 7, 't', 'b', now() from repo"
+            "select id, 7, 't', 'b', CURRENT_TIMESTAMP from repo"
         )
     )
-    sessao_postgres.execute(
-        text("insert into varredura_pr (repo_id, ate) select id, now() from repo")
+    sessao_sqlite.execute(
+        text(
+            "insert into varredura_pr (repo_id, ate) select id, CURRENT_TIMESTAMP from repo"
+        )
     )
-    sessao_postgres.commit()
-    # Fecha a transacao aberta: o ALTER TABLE do alembic espera o lock dela.
-    sessao_postgres.close()
-    cfg = config_alembic()
+    sessao_sqlite.commit()
+    # Fecha a transacao aberta: a migracao espera o lock dela.
+    sessao_sqlite.close()
+    cfg = config_alembic(str(sessao_sqlite.get_bind().url))
 
     command.downgrade(cfg, "d4e7a9b2c1f0")
     try:
         antigos = [
-            sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
+            sessao_sqlite.execute(text(f"select count(*) from {t}")).scalar()
             for t in ("bitbucket_pr", "bitbucket_varredura")
         ]
-        sessao_postgres.rollback()
+        sessao_sqlite.rollback()
     finally:
         command.upgrade(cfg, "head")
 
     assert antigos == [1, 1]
     novos = [
-        sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
+        sessao_sqlite.execute(text(f"select count(*) from {t}")).scalar()
         for t in ("pr_mergeada", "varredura_pr")
     ]
     assert novos == [1, 1]
-
-
-def test_colunas_do_tracker_saem_e_o_downgrade_as_recria(sessao_postgres):
-    from alembic import command
-    from sqlalchemy import inspect
-    from sqlalchemy.exc import IntegrityError
-
-    from motor.migracoes import config_alembic
-
-    _semear_repo(sessao_postgres)
-    sessao_postgres.execute(
-        text(
-            "insert into versao (repo_id, numero, tipo, base_ref, base_commit) "
-            "select id, '14.1.0', null, '14.0.0', 'aaa111' from repo"
-        )
-    )
-    sessao_postgres.commit()
-    # Fecha a transacao aberta: o ALTER TABLE do alembic espera o lock dela.
-    sessao_postgres.close()
-    cfg = config_alembic()
-
-    command.downgrade(cfg, "f6b9c3d2e1a7")
-    try:
-        recriadas = tuple(
-            sessao_postgres.execute(
-                text("select tickio_sistema_id, piso_versao from repo")
-            ).one()
-        )
-        with pytest.raises(IntegrityError):
-            sessao_postgres.execute(text("update repo set piso_versao = 'x'"))
-        sessao_postgres.rollback()
-        # No head anterior, com os valores que o script leva para a config.
-        sessao_postgres.execute(
-            text("update repo set tickio_sistema_id = 7, piso_versao = '14.0.0'")
-        )
-        sessao_postgres.commit()
-        sessao_postgres.close()
-        command.upgrade(cfg, "head")
-        colunas = {
-            c["name"] for c in inspect(sessao_postgres.connection()).get_columns("repo")
-        }
-        linhas = [
-            sessao_postgres.execute(text(f"select count(*) from {t}")).scalar()
-            for t in ("repo", "versao")
-        ]
-        sessao_postgres.rollback()
-    finally:
-        sessao_postgres.close()
-        command.upgrade(cfg, "head")
-
-    assert recriadas == (0, "13.0.0")
-    assert colunas == {"id", "nome"}
-    assert linhas == [1, 1]

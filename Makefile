@@ -56,7 +56,7 @@ lint:
 typecheck:
 	$(DEV) mypy
 
-# -rs lista o motivo de cada skip: integração pulada aparece no log.
+# -rs lista o motivo de cada skip no log.
 test:
 	$(DEV) pytest -rs
 
