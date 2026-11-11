@@ -1350,11 +1350,38 @@ def test_resolver_apagando(tmp_path):
     assert g.arquivos_do_pick() == {_ARQUIVO: True}
 
 
-def test_resolver_recusa_caminho_fora_da_worktree(tmp_path):
+_ELO = "elo.txt"
+
+
+@pytest.mark.parametrize("caminho", [os.path.join(os.pardir, _ARQUIVO), _ELO])
+def test_resolver_recusa_caminho_fora_da_worktree(tmp_path, caminho):
     g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+    os.symlink(_ARQUIVO, os.path.join(g.worktree_atual(), _ELO))
 
     with pytest.raises(ErroDeEntrada):
-        g.resolver(os.path.join(os.pardir, _ARQUIVO), _OURS)
+        g.resolver(caminho, _OURS)
+
+
+def test_estagios_fora_de_utf8_e_binario(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+    with open(os.path.join(g.worktree_atual(), _ARQUIVO), "wb") as f:
+        f.write("ação\n".encode("latin-1"))
+
+    e = g.estagios(_ARQUIVO)
+
+    assert e.binario
+    assert (e.base, e.ours, e.theirs, e.disco) == (None, None, None, None)
+
+
+def test_pick_concluido_nao_tem_arquivos(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+    g.resolver(_ARQUIVO, _THEIRS)
+
+    g.continue_cherry_pick()
+
+    assert g.arquivos_do_pick() == {}
+    with pytest.raises(NaoEncontrado):
+        g.estagios(_ARQUIVO)
 
 
 def _sem_marcadores(texto: str | None) -> list[str]:

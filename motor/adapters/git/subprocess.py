@@ -17,7 +17,7 @@ import subprocess
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Any
 
 from motor.domain.conflito import Estagios
@@ -74,6 +74,11 @@ class _Estagio(IntEnum):
     BASE = 1
     OURS = 2
     THEIRS = 3
+
+
+class _ListaDoIndice(StrEnum):
+    ABERTOS = "--unmerged"
+    RESOLVIDOS = "--resolve-undo"
 
 
 #: Quadro de progresso do git: "remote: Counting objects:  25% (1/4)". A parte
@@ -626,6 +631,8 @@ class GitSubprocess:
 
     def _caminho_na_worktree(self, caminho: str) -> str:
         raiz = os.path.realpath(self._worktree_dir(self._current_branch))
+        if os.path.islink(os.path.join(raiz, caminho)):
+            raise ErroDeEntrada(f"caminho e link simbolico: {caminho}")
         completo = os.path.realpath(os.path.join(raiz, caminho))
         if os.path.commonpath([raiz, completo]) != raiz or completo == raiz:
             raise ErroDeEntrada(f"caminho fora da worktree: {caminho}")
@@ -636,11 +643,13 @@ class GitSubprocess:
         dir_ = self._worktree_dir(self._current_branch)
         return self._output(dir_, "--literal-pathspecs", *args)
 
-    def _entradas(self, opcao: str, *caminho: str) -> dict[str, dict[int, str]]:
+    def _entradas(
+        self, lista: _ListaDoIndice, *caminho: str
+    ) -> dict[str, dict[int, str]]:
         """`ls-files <opcao> -z`: caminho -> estágio -> oid."""
         entradas: dict[str, dict[int, str]] = {}
         for registro in self._git_literal(
-            "ls-files", opcao, "-z", "--", *caminho
+            "ls-files", lista, "-z", "--", *caminho
         ).split("\0"):
             if registro:
                 info, nome = registro.split("\t", 1)
@@ -649,8 +658,11 @@ class GitSubprocess:
         return entradas
 
     def arquivos_do_pick(self) -> dict[str, bool]:
-        abertos = self._entradas("--unmerged")
-        resolvidos = self._entradas("--resolve-undo")
+        # O resolve-undo sobrevive ao commit do pick; sem pick aberto, não vale.
+        if not self.pending_cherry_pick()[1]:
+            return {}
+        abertos = self._entradas(_ListaDoIndice.ABERTOS)
+        resolvidos = self._entradas(_ListaDoIndice.RESOLVIDOS)
         return {**{c: True for c in resolvidos}, **{c: False for c in abertos}}
 
     def _blob(self, oid: str) -> bytes:
@@ -664,9 +676,12 @@ class GitSubprocess:
         return proc.stdout
 
     def _oids(self, caminho: str) -> dict[int, str]:
-        oids = self._entradas("--unmerged", caminho).get(caminho) or self._entradas(
-            "--resolve-undo", caminho
-        ).get(caminho)
+        oids = (
+            self._entradas(_ListaDoIndice.ABERTOS, caminho).get(caminho)
+            or self._entradas(_ListaDoIndice.RESOLVIDOS, caminho).get(caminho)
+            if self.pending_cherry_pick()[1]
+            else None
+        )
         if not oids:
             raise NaoEncontrado(f"{caminho} nao esta no conflito do pick")
         return oids
