@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 from typing import cast
 
 import pytest
@@ -48,26 +47,6 @@ def test_erro_nao_motor_vira_interno_sem_vazar_texto() -> None:
     assert (http, corpo.tipo) == (500, TipoErro.INTERNO)
     assert "segredo" not in corpo.mensagem
     assert isinstance(corpo, ErroApi)
-
-
-def test_registro_nao_recusa_execucao_simultanea_no_mesmo_repo() -> None:
-    """ "Ocupado" é só o lock do clone (decisão 032), não o registro."""
-    liberar = threading.Event()
-
-    def alvo(_: RelatorProgresso) -> None:
-        liberar.wait(ESPERA_S)
-
-    execucoes = Execucoes()
-    try:
-        execucoes.iniciar("a", "1.0.0", Operacao.VERIFICAR, alvo)
-        primeira = execucoes._threads["a"]
-        execucoes.iniciar("a", "1.0.0", Operacao.PREVIA, alvo)
-        segunda = execucoes._threads["a"]
-    finally:
-        liberar.set()
-    primeira.join(ESPERA_S)
-    segunda.join(ESPERA_S)
-    assert not primeira.is_alive() and not segunda.is_alive()
 
 
 def _conclui(_: RelatorProgresso) -> None:

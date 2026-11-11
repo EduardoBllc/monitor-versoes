@@ -3,7 +3,8 @@
 Duas familias, por eixo. As quatro primeiras subclasses sao o vocabulario das
 **portas**: e o que um adapter — inclusive um de terceiro — pode levantar, e o
 que a suite de contrato assere por tipo em vez de casar substring de mensagem em
-portugues. A ultima e do eixo do **operador**, e nao sai de porta nenhuma.
+portugues. `ErroDeEntrada` e sua subclasse `RepoOcupado` sao do eixo do
+**operador**, e nao saem de porta nenhuma.
 
 Todas herdam de MotorError: `except MotorError` continua pegando tudo, entao
 reclassificar um raise nunca muda o comportamento de quem captura generico.
