@@ -2377,3 +2377,152 @@ def test_inscricoes_arquivo_corrompido_avisa_sem_cair(tmp_path, monkeypatch):
             assert str(arquivo) in avisos[0]
 
     asyncio.run(executar_fluxo())
+
+
+# -- lock do repo (decisão 032) ---------------------------------------------
+
+_OCUPADO = "ocupado por outra operação"
+
+
+def _app_com_lock(chamadas: list[str], bloqueia: bool = False) -> MotorTUI:
+    """App em que cada runner só registra a chamada.
+
+    Com `bloqueia`, o atualizar devolve BLOCKED: continuar e abortar ficam na mesa.
+    """
+    commit = CommitRef(hash_origem="deadbeefcafe", chamado="255514", msg="Primeiro")
+    status = VersionStatus(verde=False, estado_integro=True, faltantes=[commit])
+
+    def registra(nome, resultado):
+        def runner(*args, **kwargs):
+            chamadas.append(nome)
+            return resultado
+
+        return runner
+
+    atualizado = (
+        AtualizarResult(
+            status=AtualizarStatus.BLOCKED,
+            blocked_commit="deadbeefcafe",
+            arquivos_conflito=["motor/tui.py"],
+        )
+        if bloqueia
+        else AtualizarResult(status=AtualizarStatus.DONE)
+    )
+    return MotorTUI(
+        Runners(
+            carregar_repos=lambda: [_REPO_PREVIA],
+            carregar_versoes=lambda opcao: [_VERSAO_PREVIA],
+            executar=registra("executar", status),
+            atualizar_repo=registra("atualizar", atualizado),
+            previa_atualizacao=registra("previa", status),
+            continuar_repo=registra(
+                "continuar", AtualizarResult(status=AtualizarStatus.DONE)
+            ),
+            abortar_repo=registra("abortar", None),
+            criar_repo=registra("criar", AtualizarResult(status=AtualizarStatus.DONE)),
+            versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
+        )
+    )
+
+
+def _travar_previa():
+    from motor.trava import travar
+
+    assert _REPO_PREVIA.caminho is not None
+    return travar(_REPO_PREVIA.nome, _REPO_PREVIA.caminho)
+
+
+async def _clicar_e_esperar(app, pilot, *seletores: str) -> None:
+    for seletor in seletores:
+        await pilot.click(seletor)
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+
+async def _ate_bloquear(app, pilot) -> None:
+    await _selecionar_previa(app, pilot)
+    await _clicar_e_esperar(app, pilot, "#atualizar", "#confirmar-sim")
+
+
+@pytest.mark.parametrize(
+    "acao", ["verificar", "previa", "continuar", "abortar", "criar"]
+)
+def test_app_com_repo_ocupado_mostra_a_recusa_sem_chamar_o_runner(acao):
+    chamadas: list[str] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_com_lock(chamadas, bloqueia=acao in {"continuar", "abortar"})
+        async with app.run_test(size=(120, 36)) as pilot:
+            if acao in {"continuar", "abortar"}:
+                await _ate_bloquear(app, pilot)
+            else:
+                await _selecionar_previa(app, pilot)
+            antes = list(chamadas)
+            with _travar_previa():
+                if acao == "verificar":
+                    await _clicar_e_esperar(app, pilot, "#verificar")
+                elif acao in {"previa", "continuar"}:
+                    await _clicar_e_esperar(app, pilot, "#atualizar")
+                elif acao == "abortar":
+                    await _clicar_e_esperar(app, pilot, "#abortar", "#abortar-sim")
+                else:
+                    await pilot.press("c")
+                    await pilot.pause()
+                    await pilot.click("#criar-sugestao-1")
+                    await pilot.pause()
+                    await _clicar_e_esperar(app, pilot, "#criar-ok")
+                tela = _texto(app.query_one("#resultado", Static).content)
+            assert _OCUPADO in tela
+            assert chamadas == antes
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_atualizar_confirmado_com_repo_ocupado_e_recusado():
+    """Prévia e atualizar são duas operações: o lock é solto entre elas."""
+    chamadas: list[str] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_com_lock(chamadas)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+            await _clicar_e_esperar(app, pilot, "#atualizar")
+            assert chamadas == ["previa"]
+            with _travar_previa():
+                await _clicar_e_esperar(app, pilot, "#confirmar-sim")
+                tela = _texto(app.query_one("#resultado", Static).content)
+            assert _OCUPADO in tela
+            assert chamadas == ["previa"]
+
+    asyncio.run(executar_fluxo())
+
+
+def test_app_auditoria_roda_com_repo_ocupado():
+    auditorias: list[bool] = []
+
+    def executar(repo, numero, auditar) -> VersionStatus:
+        auditorias.append(auditar)
+        return VersionStatus(verde=True, estado_integro=True)
+
+    liberada = VersionOption(numero="14.0.0", liberada=True)
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(
+            Runners(
+                carregar_repos=lambda: [_REPO_PREVIA],
+                carregar_versoes=lambda opcao: [liberada],
+                executar=executar,
+            )
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            with _travar_previa():
+                await _selecionar_previa(app, pilot, liberada)
+                app.query_one("#auditar", Checkbox).value = True
+                await pilot.pause()
+                await _clicar_e_esperar(app, pilot, "#verificar")
+                tela = _texto(app.query_one("#resultado", Static).content)
+            assert auditorias == [True]
+            assert _OCUPADO not in tela
+
+    asyncio.run(executar_fluxo())

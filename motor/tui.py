@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -59,6 +60,7 @@ from motor.operacoes import (
     VersionOption,
     avaliar_numero,
     runners_com_progresso,
+    travar_repo,
     versionamento_do_repo,
 )
 from motor.progresso import Progresso, SlotProgresso
@@ -933,7 +935,8 @@ class MotorTUI(App[None]):
         self, executar: CriarRunner, repo: RepoOption, numero: str
     ) -> None:
         try:
-            resultado = executar(repo, numero)
+            with _travado(repo):
+                resultado = executar(repo, numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1098,10 +1101,13 @@ class MotorTUI(App[None]):
         `_falha` e nao pergunta nada — sem lote na tela nao ha o que confirmar.
         """
         try:
-            if confirmar and self._previa is not None:
-                status = self._previa(repo, versao.numero)
-            else:
-                status = self._executar(repo, versao.numero, auditar)
+            # A auditoria só lê: roda com o repo ocupado (decisão 032).
+            trava = _travado(repo) if confirmar or not auditar else _sem_trava()
+            with trava:
+                if confirmar and self._previa is not None:
+                    status = self._previa(repo, versao.numero)
+                else:
+                    status = self._executar(repo, versao.numero, auditar)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1134,7 +1140,8 @@ class MotorTUI(App[None]):
         self, executar: AbortRunner, repo: RepoOption, versao: VersionOption
     ) -> None:
         try:
-            executar(repo, versao.numero)
+            with _travado(repo):
+                executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1147,13 +1154,24 @@ class MotorTUI(App[None]):
         self, executar: UpdateRunner, repo: RepoOption, versao: VersionOption
     ) -> None:
         try:
-            resultado = executar(repo, versao.numero)
+            with _travado(repo):
+                resultado = executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
             self.call_from_thread(self._mostrar_atualizacao, resultado)
         finally:
             self.call_from_thread(self._bloquear, False)
+
+
+def _sem_trava() -> contextlib.AbstractContextManager[object]:
+    return contextlib.nullcontext()
+
+
+def _travado(repo: RepoOption) -> contextlib.AbstractContextManager[object]:
+    """Lock do clone durante a operação; a recusa cai no `_falha` do worker."""
+    trava = travar_repo(repo)
+    return _sem_trava() if trava is None else trava
 
 
 def run_tui() -> None:
