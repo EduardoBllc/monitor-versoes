@@ -17,8 +17,15 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
 from motor.config import SECAO_REPOS
+from motor.config_edicao import Alteracao, ConfigEditavel, gravar, ler_para_edicao
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
-from motor.daemon.erros import MENSAGEM_INTERNA, ErroApi, TipoErro, erro_api
+from motor.daemon.erros import (
+    MENSAGEM_INTERNA,
+    ConfigOcupada,
+    ErroApi,
+    TipoErro,
+    erro_api,
+)
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
@@ -84,6 +91,12 @@ class PedidoInscrever:
 @dataclass(frozen=True)
 class PedidoRemover:
     repo: str
+    versao: str
+
+
+@dataclass(frozen=True)
+class PedidoConfig:
+    alteracoes: list[Alteracao]
     versao: str
 
 
@@ -304,6 +317,18 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
         arquivo.remover(ctx.inscricoes_em, corpo.repo, corpo.versao)
 
 
+def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
+    @app.get("/api/config")
+    def ler_config() -> ConfigEditavel:
+        return ler_para_edicao()
+
+    @app.put("/api/config")
+    def gravar_config(corpo: PedidoConfig) -> ConfigEditavel:
+        if ctx.execucoes.rodando():
+            raise ConfigOcupada
+        return gravar(corpo.alteracoes, corpo.versao)
+
+
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:
     raiz = estaticos.resolve()
 
@@ -355,6 +380,7 @@ def criar_app(
     _rotas_operacoes(app, ctx)
     _rotas_execucao(app, ctx)
     _rotas_inscricoes(app, ctx)
+    _rotas_config(app, ctx)
     _rotas_estaticos(app, estaticos)
     return app
 

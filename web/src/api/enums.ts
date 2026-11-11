@@ -52,3 +52,22 @@ export function assertNever(valor: never): never {
 export enum EstadoChamado {
   APLICADO = "aplicado",
 }
+
+export enum Escopo {
+  GERAL = "geral",
+  REPO = "repo",
+  AMBIENTE = "ambiente",
+}
+
+export enum TipoCampo {
+  TEXTO = "texto",
+  INTEIRO = "inteiro",
+  ESCOLHA = "escolha",
+}
+
+export enum AcaoAlteracao {
+  DEFINIR = "definir",
+  REMOVER = "remover",
+  CRIAR_REPO = "criar_repo",
+  REMOVER_REPO = "remover_repo",
+}

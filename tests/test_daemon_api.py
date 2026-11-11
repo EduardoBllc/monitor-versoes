@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import motor.operacoes as operacoes
+from motor.config_edicao import AcaoAlteracao
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
@@ -359,3 +360,74 @@ def test_estatico_nao_sai_da_pasta(cliente: TestClient, tmp_path: Path) -> None:
     resposta = c.get("/%2e%2e/segredo.txt")
     assert "segredo" not in resposta.text
     assert resposta.text == "<p>spa</p>"
+
+
+def _definir(chave: str, valor: object, tabela: str, versao: str) -> dict[str, Any]:
+    alteracao = {
+        "acao": AcaoAlteracao.DEFINIR,
+        "tabela": tabela,
+        "chave": chave,
+        "valor": valor,
+    }
+    return {"alteracoes": [alteracao], "versao": versao}
+
+
+@pytest.fixture
+def config_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    # `gravar` aplica o [ambiente] em os.environ; o monkeypatch desfaz o vazamento.
+    monkeypatch.setenv("DATABASE_PASSWORD", "")
+
+
+def _valor(corpo: dict[str, Any], chave: str) -> Any:
+    return next(v["valor"] for v in corpo["valores"] if v["chave"] == chave)
+
+
+@pytest.mark.usefixtures("config_tmp")
+def test_config_get_put_ida_e_volta(cliente: TestClient) -> None:
+    lida = cliente.get("/api/config").json()
+    r = cliente.put(
+        "/api/config", json=_definir("principal", "trunk", "branches", lida["versao"])
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert _valor(cliente.get("/api/config").json(), "principal") == "trunk"
+
+
+@pytest.mark.usefixtures("config_tmp")
+def test_put_config_nao_devolve_segredo(cliente: TestClient) -> None:
+    segredo = "s3nha"
+    versao = cliente.get("/api/config").json()["versao"]
+    r = cliente.put(
+        "/api/config",
+        json=_definir("DATABASE_PASSWORD", segredo, "ambiente", versao),
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert segredo not in r.text
+    assert segredo not in cliente.get("/api/config").text
+
+
+@pytest.mark.usefixtures("config_tmp")
+@pytest.mark.parametrize(
+    ("caso", "status", "tipo"),
+    [
+        ("invalido", HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+        ("velha", HTTPStatus.CONFLICT, TipoErro.RECUSA),
+        ("ocupado", HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+    ],
+)
+def test_put_config_erros(
+    cliente: TestClient, amb: Ambiente, caso: str, status: int, tipo: TipoErro
+) -> None:
+    versao = cliente.get("/api/config").json()["versao"]
+    corpo = _definir("DATABASE_PORT", "abc", "ambiente", versao)
+    if caso == "velha":
+        corpo["versao"] = "0" * 64
+    if caso == "ocupado":
+        corpo = _definir("principal", "trunk", "branches", versao)
+        url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
+        cliente.post(url, json={"auditar": False})
+    r = cliente.put("/api/config", json=corpo)
+    assert (r.status_code, r.json()["tipo"]) == (status, tipo)
+    amb.soltar.set()
+    if caso == "ocupado":
+        _esperar(cliente)
