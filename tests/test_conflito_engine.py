@@ -33,6 +33,7 @@ MENSAGEM = "ch255514 corrige logs"
 CONTEUDO = "conteudo.txt"
 APAGADO = "apagado.txt"
 COM_MARCADOR = "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> a0\n"
+LINHAS_DO_MARCADOR = "2, 4, 6"
 RESOLVIDO = "a\nc\n"
 MUDOU_FORA = "editado fora da web\n"
 ESTAGIOS = {
@@ -128,7 +129,7 @@ def test_resolver_recusa_marcador():
     deps = _deps_em_conflito()
     lido = ler_arquivo(deps, VERSAO, CONTEUDO)
 
-    with pytest.raises(ErroDeEntrada):
+    with pytest.raises(ErroDeEntrada, match=LINHAS_DO_MARCADOR):
         resolver_arquivo(deps, VERSAO, CONTEUDO, COM_MARCADOR, lido.versao_disco)
 
 

@@ -186,6 +186,10 @@ class GitRepo(Protocol):
         """Base, ours, theirs e disco de um arquivo do pick, byte a byte."""
         ...
 
+    def disco_bytes(self, caminho: str, /) -> bytes | None:
+        """Bytes do arquivo na worktree; `None` se ausente, link ou não regular."""
+        ...
+
     def resolver(self, caminho: str, conteudo: str | None, /) -> None:
         """Grava o conteúdo e marca resolvido; `None` resolve apagando."""
         ...

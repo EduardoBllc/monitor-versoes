@@ -40,6 +40,9 @@ from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 OUTRAS_ENTRADAS = "lista|grep"
+ARQUIVO_DO_PICK = "a.txt"
+VERSAO_DO_PICK = "13.7.0"
+CHAMADO_DO_PICK = "255514"
 COM_MARCADOR = "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> a0\n"
 D1 = D + datetime.timedelta(minutes=1)
 
@@ -375,24 +378,28 @@ def test_continuar_recusa_marcador_esquecido():
     g = _git()
     g.conflict_on["a0"] = True
     g.estagios_on["a0"] = {
-        "a.txt": Estagios("a\n", "a\nb\n", "a\nc\n", COM_MARCADOR, binario=False)
+        ARQUIVO_DO_PICK: Estagios(
+            "a\n", "a\nb\n", "a\nc\n", COM_MARCADOR, binario=False
+        )
     }
-    deps = _deps(g, _estado(), ["255514"], UM)
-    atualizar(deps, "13.7.0")
+    deps = _deps(g, _estado(), [CHAMADO_DO_PICK], UM)
+    atualizar(deps, VERSAO_DO_PICK)
 
     with pytest.raises(ErroDeEntrada):
-        atualizar_continue(deps, "13.7.0")
+        atualizar_continue(deps, VERSAO_DO_PICK)
     assert g.pending_cherry_pick() == ("a0", True), "o pick tem de continuar aberto"
 
 
 def test_continuar_aceita_modify_delete_sem_marcador():
     g = _git()
     g.conflict_on["a0"] = True
-    g.estagios_on["a0"] = {"a.txt": Estagios("x\n", None, "y\n", "y\n", binario=False)}
-    deps = _deps(g, _estado(), ["255514"], UM)
-    atualizar(deps, "13.7.0")
+    g.estagios_on["a0"] = {
+        ARQUIVO_DO_PICK: Estagios("x\n", None, "y\n", "y\n", binario=False)
+    }
+    deps = _deps(g, _estado(), [CHAMADO_DO_PICK], UM)
+    atualizar(deps, VERSAO_DO_PICK)
 
-    assert atualizar_continue(deps, "13.7.0").status == AtualizarStatus.DONE
+    assert atualizar_continue(deps, VERSAO_DO_PICK).status == AtualizarStatus.DONE
 
 
 def test_atualizar_continue_conclui_o_lote():

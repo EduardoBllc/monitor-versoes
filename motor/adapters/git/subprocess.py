@@ -18,7 +18,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
 from motor.domain.conflito import Estagios
 from motor.domain.types import CommitRef
@@ -74,6 +74,15 @@ class _Estagio(IntEnum):
     BASE = 1
     OURS = 2
     THEIRS = 3
+
+
+#: Modo de entrada do índice para submódulo: o oid é commit, não blob.
+_MODO_GITLINK = "160000"
+
+
+class _Entrada(NamedTuple):
+    modo: str
+    oid: str
 
 
 class _ListaDoIndice(StrEnum):
@@ -645,16 +654,16 @@ class GitSubprocess:
 
     def _entradas(
         self, lista: _ListaDoIndice, *caminho: str
-    ) -> dict[str, dict[int, str]]:
-        """`ls-files <opcao> -z`: caminho -> estágio -> oid."""
-        entradas: dict[str, dict[int, str]] = {}
+    ) -> dict[str, dict[int, _Entrada]]:
+        """`ls-files <opcao> -z`: caminho -> estágio -> (modo, oid)."""
+        entradas: dict[str, dict[int, _Entrada]] = {}
         for registro in self._git_literal(
             "ls-files", lista, "-z", "--", *caminho
         ).split("\0"):
             if registro:
                 info, nome = registro.split("\t", 1)
-                _, oid, estagio = info.split(" ")
-                entradas.setdefault(nome, {})[int(estagio)] = oid
+                modo, oid, estagio = info.split(" ")
+                entradas.setdefault(nome, {})[int(estagio)] = _Entrada(modo, oid)
         return entradas
 
     def arquivos_do_pick(self) -> dict[str, bool]:
@@ -675,7 +684,7 @@ class GitSubprocess:
             )
         return proc.stdout
 
-    def _oids(self, caminho: str) -> dict[int, str]:
+    def _oids(self, caminho: str) -> dict[int, _Entrada]:
         oids = (
             self._entradas(_ListaDoIndice.ABERTOS, caminho).get(caminho)
             or self._entradas(_ListaDoIndice.RESOLVIDOS, caminho).get(caminho)
@@ -686,28 +695,34 @@ class GitSubprocess:
             raise NaoEncontrado(f"{caminho} nao esta no conflito do pick")
         return oids
 
-    def estagios(self, caminho: str, /) -> Estagios:
+    def disco_bytes(self, caminho: str, /) -> bytes | None:
         if os.path.islink(
             os.path.join(self._worktree_dir(self._current_branch), caminho)
         ):
-            # Link vira OUTRO: listado e ignorado pela guarda, nunca resolvido pela web.
-            self._oids(caminho)
-            return Estagios(None, None, None, None, binario=True)
+            return None
         completo = self._caminho_na_worktree(caminho)
+        if not os.path.isfile(completo):
+            return None
+        with open(completo, "rb") as f:
+            return f.read()
+
+    def estagios(self, caminho: str, /) -> Estagios:
         oids = self._oids(caminho)
-        lados = [self._blob(oids[e]) if e in oids else None for e in _Estagio]
+        disco = self.disco_bytes(caminho)
+        no_disco = os.path.join(self._worktree_dir(self._current_branch), caminho)
+        # Submódulo, link e diretório viram OUTRO: listados e nunca resolvidos pela web.
+        if (disco is None and os.path.lexists(no_disco)) or any(
+            e.modo == _MODO_GITLINK for e in oids.values()
+        ):
+            return Estagios(None, None, None, None, binario=True)
+        lados = [self._blob(oids[e].oid) if e in oids else None for e in _Estagio]
         try:
-            with open(completo, "rb") as f:
-                lados.append(f.read())
-        except FileNotFoundError:
-            lados.append(None)
-        try:
-            base, ours, theirs, disco = (
-                None if b is None else b.decode("utf-8") for b in lados
+            base, ours, theirs, texto = (
+                None if b is None else b.decode("utf-8") for b in [*lados, disco]
             )
         except UnicodeDecodeError:
             return Estagios(None, None, None, None, binario=True)
-        return Estagios(base, ours, theirs, disco, binario=False)
+        return Estagios(base, ours, theirs, texto, binario=False)
 
     def resolver(self, caminho: str, conteudo: str | None, /) -> None:
         completo = self._caminho_na_worktree(caminho)
@@ -732,7 +747,7 @@ class GitSubprocess:
         presente = oids.get(_Estagio.OURS) or oids[_Estagio.THEIRS]
         os.makedirs(os.path.dirname(completo), exist_ok=True)
         with open(completo, "wb") as f:
-            f.write(self._blob(presente))
+            f.write(self._blob(presente.oid))
 
     def continue_cherry_pick(self) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)

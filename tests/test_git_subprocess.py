@@ -1274,13 +1274,15 @@ def test_git_subprocess_continue_cherry_pick_vazio_quando_a_resolucao_zera_o_dif
 # --- arquivos do pick: ler, resolver e reabrir (#132) ---
 
 _ARQUIVO = "a.txt"
+_VERSAO_A = "13.1.0"
+_VERSAO_B = "13.2.0"
 _BASE = "l1\nbase\nl3\n"
 _OURS = "l1\nalvo\nl3\n"
 _THEIRS = "l1\norigem\nl3\n"
 
 
 def _pick_em_conflito(
-    tmp_path, tipo: TipoArquivo, versoes: tuple[str, ...] = ("13.1.0",)
+    tmp_path, tipo: TipoArquivo, versoes: tuple[str, ...] = (_VERSAO_A,)
 ) -> tuple[GitSubprocess, str]:
     """Alvo muda `_ARQUIVO`; a origem muda (CONTEUDO) ou apaga (MODIFICADO_APAGADO)."""
     repo = tmp_path / "repo"
@@ -1410,7 +1412,7 @@ def _pick_de_elo_em_conflito(tmp_path) -> GitSubprocess:
     origem = _rev(dir_, "HEAD")
 
     g = new_git_subprocess(dir_)
-    g.worktree_add("13.1.0", base)
+    g.worktree_add(_VERSAO_A, base)
     _commitar_elo(g.worktree_atual(), _OURS, "alvo muda")
     assert g.cherry_pick_x(origem) == CherryPickOutcome.CONFLITO
     assert g.arquivos_do_pick() == {_ELO: False}
@@ -1454,13 +1456,80 @@ def test_reabrir_volta_o_conflito(tmp_path, tipo):
 
 def test_rerere_autoupdate_aparece_resolvido(tmp_path):
     g, origem = _pick_em_conflito(
-        tmp_path, TipoArquivo.CONTEUDO, versoes=("13.1.0", "13.2.0")
+        tmp_path, TipoArquivo.CONTEUDO, versoes=(_VERSAO_A, _VERSAO_B)
     )
     g.resolver(_ARQUIVO, _THEIRS)
     g.continue_cherry_pick()
-    g.use_worktree("13.1.0")
+    g.use_worktree(_VERSAO_A)
 
     assert g.cherry_pick_x(origem) == CherryPickOutcome.CONFLITO
 
     assert g.arquivos_do_pick() == {_ARQUIVO: True}
     assert g.estagios(_ARQUIVO).disco == _THEIRS
+
+
+_SUBMODULO = "sub"
+_MODO_GITLINK = "160000"
+
+
+def _commitar_gitlink(dir_: str, oid: str, msg: str) -> None:
+    _run_git(
+        dir_,
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        f"{_MODO_GITLINK},{oid},{_SUBMODULO}",
+    )
+    _run_git(dir_, "commit", "-m", msg)
+
+
+def _pick_de_submodulo_em_conflito(tmp_path) -> GitSubprocess:
+    """Gitlink mudado dos dois lados: não mesclado, sem blob a ler."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    dir_ = str(repo)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (repo / _ARQUIVO).write_text(_BASE)
+    _run_git(dir_, "add", _ARQUIVO)
+    _run_git(dir_, "commit", "-m", "inicial")
+    marcos = [_rev(dir_, "HEAD")]
+    for msg in ("um", "dois"):
+        _run_git(dir_, "commit", "--allow-empty", "-m", msg)
+        marcos.append(_rev(dir_, "HEAD"))
+    _commitar_gitlink(dir_, marcos[0], "base")
+    base = _rev(dir_, "HEAD")
+    _commitar_gitlink(dir_, marcos[1], "origem muda")
+    origem = _rev(dir_, "HEAD")
+
+    g = new_git_subprocess(dir_)
+    g.worktree_add(_VERSAO_A, base)
+    _commitar_gitlink(g.worktree_atual(), marcos[2], "alvo muda")
+    assert g.cherry_pick_x(origem) == CherryPickOutcome.CONFLITO
+    assert g.arquivos_do_pick() == {_SUBMODULO: False}
+    return g
+
+
+def test_estagios_de_submodulo_e_binario(tmp_path):
+    g = _pick_de_submodulo_em_conflito(tmp_path)
+
+    assert tipo_do_arquivo(g.estagios(_SUBMODULO)) == TipoArquivo.OUTRO
+
+
+def test_guarda_de_marcador_deixa_passar_submodulo(tmp_path):
+    g = _pick_de_submodulo_em_conflito(tmp_path)
+
+    _recusar_marcador_esquecido(
+        Deps(git=g, tasks=FakeTaskSource(), estado=FakeEstado())
+    )
+
+
+def test_guarda_de_marcador_ve_texto_fora_de_utf8(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+    with open(os.path.join(g.worktree_atual(), _ARQUIVO), "ab") as f:
+        f.write("ação\n".encode("latin-1"))
+
+    with pytest.raises(ErroDeEntrada, match=f"{_ARQUIVO}:"):
+        _recusar_marcador_esquecido(
+            Deps(git=g, tasks=FakeTaskSource(), estado=FakeEstado())
+        )

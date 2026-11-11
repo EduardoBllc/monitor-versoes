@@ -310,6 +310,10 @@ class FakeGit:
     def estagios(self, caminho: str, /) -> Estagios:
         return self._arquivo_do_pick(caminho)
 
+    def disco_bytes(self, caminho: str, /) -> bytes | None:
+        disco = self._arquivo_do_pick(caminho).disco
+        return None if disco is None else disco.encode()
+
     def resolver(self, caminho: str, conteudo: str | None, /) -> None:
         e = self._arquivo_do_pick(caminho)
         self._arquivos_pick[caminho] = replace(e, disco=conteudo)

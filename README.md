@@ -288,8 +288,8 @@ Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
   Cada bloco de conflito tem "Aceitar theirs", "Aceitar ours", "Ambos" e, quando o bloco
   traz a base, "Base"; o resultado também se edita à mão. A edição só vai para o disco em
   **Marcar resolvido**, que fica desabilitado enquanto restar marcador. Modify/delete se
-  resolve com "Manter arquivo" ou "Apagar arquivo"; binário, rename e add/add ficam para o
-  editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
+  resolve com "Manter arquivo" ou "Apagar arquivo"; binário, rename, add/add sem texto e
+  submódulo ficam para o editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
 - **No seu editor**, na worktree que o painel mostra.
 
 Depois, **Continuar**. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum

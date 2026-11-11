@@ -330,7 +330,7 @@ export default function EditorConflito({
               <Text fw={700}>resultado</Text>
               <Text fw={700}>ours — alvo</Text>
               <Editor
-                key={id}
+                key={modelo(Painel.THEIRS)}
                 height={ALTURA}
                 language={LINGUAGEM}
                 path={modelo(Painel.THEIRS)}
@@ -339,7 +339,7 @@ export default function EditorConflito({
                 options={SO_LEITURA}
               />
               <Resultado
-                key={id}
+                key={modelo(Painel.RESULTADO)}
                 modelo={modelo(Painel.RESULTADO)}
                 texto={texto}
                 somenteLeitura={atual.resolvido}
@@ -347,7 +347,7 @@ export default function EditorConflito({
                 aoMudar={editar}
               />
               <Editor
-                key={id}
+                key={modelo(Painel.OURS)}
                 height={ALTURA}
                 language={LINGUAGEM}
                 path={modelo(Painel.OURS)}
@@ -438,8 +438,8 @@ export default function EditorConflito({
       case TipoArquivo.OUTRO:
         return (
           <Alert color="yellow">
-            Este arquivo não se resolve pela web (binário, renomeado ou
-            adicionado nos dois lados). Resolva no editor local, na worktree{" "}
+            Este arquivo não se resolve pela web (binário, rename, add/add sem
+            texto ou submódulo). Resolva no editor local, na worktree{" "}
             <Code>{resultado.worktree}</Code>, e depois clique em Continuar.
           </Alert>
         );

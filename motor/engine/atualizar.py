@@ -250,9 +250,11 @@ def _recusar_marcador_esquecido(deps: Deps) -> None:
     for caminho, resolvido in deps.git.arquivos_do_pick().items():
         if resolvido:
             continue
-        e = deps.git.estagios(caminho)
-        if e.disco is not None and not e.binario:
-            linhas += [f"{caminho}:{n}" for n in marcadores_restantes(e.disco)]
+        dados = deps.git.disco_bytes(caminho)
+        if dados is not None:
+            # Latin-1 decodifica qualquer byte; os marcadores são ASCII.
+            texto = dados.decode("latin-1")
+            linhas += [f"{caminho}:{n}" for n in marcadores_restantes(texto)]
     if linhas:
         raise ErroDeEntrada("marcador de conflito ainda no disco: " + ", ".join(linhas))
 

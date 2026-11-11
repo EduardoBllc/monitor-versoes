@@ -47,10 +47,11 @@ REPO = "meu-repo"
 VERSAO = "14.0.0"
 CLONE = "/tmp/clones/meu-repo"
 CAMINHO = "src/app/main.py"
+VERSAO_DISCO = "v1"
 CONFLITO = ConflitoAberto(
     "abc123", "msg", None, [ArquivoDoConflito(CAMINHO, TipoArquivo.CONTEUDO, False)]
 )
-CONTEUDO = ConteudoDoConflito(TipoArquivo.CONTEUDO, "b", "o", "t", "d", "v1")
+CONTEUDO = ConteudoDoConflito(TipoArquivo.CONTEUDO, "b", "o", "t", "d", VERSAO_DISCO)
 BASE_CONFLITO = f"/api/repos/{REPO}/versoes/{VERSAO}/conflito"
 REPOS = [RepoOption(REPO, CLONE), RepoOption("sem-clone", None)]
 
@@ -566,17 +567,17 @@ def test_conflito_le_lista_e_arquivo_com_caminho_na_query(
     assert lista.json()["arquivos"][0]["caminho"] == CAMINHO
     r = cliente.get(f"{BASE_CONFLITO}/arquivo", params={"caminho": CAMINHO})
     assert r.status_code == HTTPStatus.OK
-    assert r.json()["versao_disco"] == "v1"
+    assert r.json()["versao_disco"] == VERSAO_DISCO
     assert amb.chamadas == [(REPO, VERSAO, CAMINHO)]
 
 
 def test_conflito_resolve_e_reabre_com_204(cliente: TestClient, amb: Ambiente) -> None:
-    corpo = {"caminho": CAMINHO, "conteudo": None, "versao_disco": "v1"}
+    corpo = {"caminho": CAMINHO, "conteudo": None, "versao_disco": VERSAO_DISCO}
     r = cliente.post(f"{BASE_CONFLITO}/resolucao", json=corpo)
     assert (r.status_code, r.content) == (HTTPStatus.NO_CONTENT, b"")
     r = cliente.post(f"{BASE_CONFLITO}/reabertura", json={"caminho": CAMINHO})
     assert r.status_code == HTTPStatus.NO_CONTENT
-    assert amb.chamadas == [(CAMINHO, None, "v1"), (CAMINHO,)]
+    assert amb.chamadas == [(CAMINHO, None, VERSAO_DISCO), (CAMINHO,)]
 
 
 @pytest.mark.parametrize(
@@ -597,7 +598,7 @@ def test_conflito_traduz_erro_do_motor(
     amb.erro_conflito = erro
     r = cliente.post(
         f"{BASE_CONFLITO}/resolucao",
-        json={"caminho": CAMINHO, "conteudo": "x", "versao_disco": "v1"},
+        json={"caminho": CAMINHO, "conteudo": "x", "versao_disco": VERSAO_DISCO},
     )
     assert r.status_code == status
     assert r.json()["tipo"] == tipo
