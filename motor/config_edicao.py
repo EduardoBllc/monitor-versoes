@@ -18,10 +18,10 @@ from tomlkit.exceptions import TOMLKitError
 
 from motor import plugins
 from motor.config import (
-    BACKENDS,
     CHAVE_CAMINHO,
     SECAO_REPOS,
     TABELA_AMBIENTE,
+    Backend,
     Chave,
     Tabela,
     VarAmbiente,
@@ -110,7 +110,9 @@ _CAMPOS_MOTOR = (
     Campo(_G, Tabela.TAREFAS, Chave.FONTE, _ES, "Fonte de tarefas"),
     Campo(_R, None, CHAVE_CAMINHO, _TX, "Caminho"),
     Campo(_R, Tabela.VERSAO, Chave.PISO, _TX, "Piso de versão"),
-    Campo(_A, _AMB, _V.DATABASE_BACKEND, _ES, "Backend do banco", opcoes=BACKENDS),
+    Campo(
+        _A, _AMB, _V.DATABASE_BACKEND, _ES, "Backend do banco", opcoes=tuple(Backend)
+    ),
     Campo(_A, _AMB, _V.DATABASE_HOST, _TX, "Host do banco"),
     Campo(_A, _AMB, _V.DATABASE_NAME, _TX, "Nome do banco"),
     Campo(_A, _AMB, _V.DATABASE_USER, _TX, "Usuário do banco"),
@@ -135,7 +137,7 @@ def _em_uso(dados: Mapping[str, object], tabela: str, chave: str) -> set[str]:
     """Valores `modulo:Classe` da chave, no topo e em cada seção de repo."""
     camadas = [dados, *_secoes(dados).values()]
     valores = {_mapa(c.get(tabela)).get(chave) for c in camadas}
-    return {v for v in valores if isinstance(v, str) and ":" in v}
+    return {v for v in valores if isinstance(v, str) and plugins.MARCADOR_IMPORT in v}
 
 
 def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
@@ -147,7 +149,15 @@ def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
         isinstance(c, Campo) for c in declarados
     ):
         return ()
-    return tuple(replace(c, origem=nome) for c in declarados)
+    # O `[ambiente]` só tem uma tabela; aceitar outra deixaria o segredo sem máscara.
+    return tuple(
+        replace(
+            c,
+            origem=nome,
+            tabela=TABELA_AMBIENTE if c.escopo is Escopo.AMBIENTE else c.tabela,
+        )
+        for c in declarados
+    )
 
 
 def catalogo_campos(dados: Mapping[str, object]) -> list[Campo]:
@@ -330,12 +340,15 @@ def _validar_tipo(campo: Campo, valor: object) -> None:
     elif campo.tipo is TipoCampo.ESCOLHA and campo.origem == ORIGEM_MOTOR:
         if campo.chave == VarAmbiente.DATABASE_BACKEND and isinstance(valor, str):
             valor = valor.strip().lower()  # como config.backend() lê
-        valido = valor in campo.opcoes or (isinstance(valor, str) and ":" in valor)
+        valido = valor in campo.opcoes or (
+            isinstance(valor, str) and plugins.MARCADOR_IMPORT in valor
+        )
     else:
         return
     if not valido:
+        exibido = "" if campo.segredo else f" {valor!r}"
         raise ErroDeEntrada(
-            f"[{campo.tabela}] {campo.chave}: valor inválido {valor!r} "
+            f"[{campo.tabela}] {campo.chave}: valor inválido{exibido} "
             f"(esperado {campo.tipo})"
         )
 
@@ -359,9 +372,8 @@ def _validar(dados: Mapping[str, object], arquivo: str) -> None:
 
 
 def _gravar_atomico(arquivo: str, conteudo: bytes) -> None:
-    arquivo = os.path.realpath(
-        arquivo
-    )  # config.toml symlinkado (dotfiles) continua link
+    # config.toml symlinkado (dotfiles) continua link
+    arquivo = os.path.realpath(arquivo)
     diretorio = os.path.dirname(arquivo)
     try:
         os.makedirs(diretorio, exist_ok=True)

@@ -3,15 +3,15 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from importlib.metadata import EntryPoint
+from importlib.metadata import EntryPoint, entry_points
 
 import pytest
 
 from motor import plugins
 from motor.config import (
-    BACKENDS,
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
+    Backend,
     Chave,
     Tabela,
     VarAmbiente,
@@ -39,13 +39,35 @@ NOME_QUEBRADO = "quebrado"
 
 class FonteFalsa:
     campos_config = (
-        Campo(Escopo.GERAL, "tarefas", "projeto", TipoCampo.TEXTO, "Projeto"),
+        Campo(Escopo.GERAL, Tabela.TAREFAS, "projeto", TipoCampo.TEXTO, "Projeto"),
         Campo(
             Escopo.AMBIENTE,
-            "ambiente",
+            TABELA_AMBIENTE,
             "FAKE_TOKEN",
             TipoCampo.TEXTO,
             "Token",
+            segredo=True,
+        ),
+    )
+
+
+CHAVE_TOKEN = "MINHA_FONTE_TOKEN"
+CHAVE_PIN = "MINHA_FONTE_PIN"
+
+
+class FonteComSegredo:
+    """Declara o `[ambiente]` com `tabela=None`, como o README já ensinou."""
+
+    campos_config = (
+        Campo(
+            Escopo.AMBIENTE, None, CHAVE_TOKEN, TipoCampo.TEXTO, "Token", segredo=True
+        ),
+        Campo(
+            Escopo.AMBIENTE,
+            TABELA_AMBIENTE,
+            CHAVE_PIN,
+            TipoCampo.INTEIRO,
+            "PIN",
             segredo=True,
         ),
     )
@@ -62,7 +84,9 @@ def _instalar(monkeypatch, *pontos: EntryPoint) -> None:
     monkeypatch.setattr(
         plugins,
         "entry_points",
-        lambda group: list(pontos) if group == GRUPO_TAREFAS else [],
+        lambda group: (
+            list(pontos) if group == GRUPO_TAREFAS else entry_points(group=group)
+        ),
     )
 
 
@@ -71,11 +95,29 @@ def _ep(nome: str, valor: str) -> EntryPoint:
 
 
 def test_segredo_nunca_sai_na_leitura():
-    _escrever(f'[ambiente]\nDATABASE_PASSWORD = "{SEGREDO}"\n')
+    _escrever(f'[ambiente]\n{VarAmbiente.DATABASE_PASSWORD} = "{SEGREDO}"\n')
     lido = ler_para_edicao()
-    [v] = [v for v in lido.valores if v.chave == "DATABASE_PASSWORD"]
+    [v] = [v for v in lido.valores if v.chave == VarAmbiente.DATABASE_PASSWORD]
     assert v.valor is None and v.definido is True
     assert SEGREDO not in repr(lido)
+
+
+def test_segredo_de_plugin_no_ambiente_sai_mascarado(monkeypatch):
+    _instalar(monkeypatch, _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteComSegredo"))
+    _escrever(f'[ambiente]\n{CHAVE_TOKEN} = "{SEGREDO}"\n')
+    lido = ler_para_edicao()
+    [v] = [v for v in lido.valores if v.chave == CHAVE_TOKEN]
+    assert v.valor is None and v.definido is True
+    assert SEGREDO not in repr(lido)
+
+
+def test_inteiro_secreto_invalido_nao_ecoa_o_valor(monkeypatch):
+    _instalar(monkeypatch, _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteComSegredo"))
+    with pytest.raises(ErroDeEntrada) as erro:
+        gravar(
+            [_definir(SEGREDO, CHAVE_PIN, TABELA_AMBIENTE)], ler_para_edicao().versao
+        )
+    assert SEGREDO not in str(erro.value)
 
 
 def test_plugin_instalado_declara_campos(monkeypatch):
@@ -126,14 +168,14 @@ def test_subtabela_e_so_leitura_e_secao_de_repo_lista_caminho():
     lido = ler_para_edicao()
     sub = next(v for v in lido.valores if v.chave == "algo")
     assert sub.editavel is False and sub.valor is None
-    caminho = next(v for v in lido.valores if v.chave == "caminho")
+    caminho = next(v for v in lido.valores if v.chave == CHAVE_CAMINHO)
     assert (caminho.repo, caminho.tabela, caminho.valor) == ("app", None, "/a")
     assert lido.repos == ["app"]
 
 
 def test_modulo_classe_em_uso_vira_opcao_do_campo():
     _escrever('[tarefas]\nfonte = "tests.test_config_edicao:FonteFalsa"\n')
-    campo = next(c for c in ler_para_edicao().campos if c.chave == "fonte")
+    campo = next(c for c in ler_para_edicao().campos if c.chave == Chave.FONTE)
     assert "tests.test_config_edicao:FonteFalsa" in campo.opcoes
 
 
@@ -145,13 +187,12 @@ def test_versao_e_hash_do_arquivo():
     assert ler_para_edicao().versao != antes
 
 
-@pytest.mark.parametrize("chave", ["esquema", "atribuicao"])
+@pytest.mark.parametrize("chave", [Chave.ESQUEMA, Chave.ATRIBUICAO])
 def test_opcoes_incluem_os_instalados(chave):
     campo = next(c for c in ler_para_edicao().campos if c.chave == chave)
     assert campo.opcoes
 
 
-SQLITE, POSTGRES = BACKENDS
 MODO_GRUPO = 0o640
 CHAVE_LISTA = "filtros"
 
@@ -159,7 +200,7 @@ CHAVE_LISTA = "filtros"
 @pytest.fixture(autouse=True)
 def _backend_base(monkeypatch):
     """Gravar reaplica o `[ambiente]` no processo; o monkeypatch o desfaz no fim."""
-    monkeypatch.setenv(VarAmbiente.DATABASE_BACKEND, SQLITE)
+    monkeypatch.setenv(VarAmbiente.DATABASE_BACKEND, Backend.SQLITE)
 
 
 def _bytes() -> bytes:
@@ -239,7 +280,7 @@ def test_versao_velha_recusada():
 
 def test_gravar_cria_arquivo_e_diretorio():
     gravar(
-        [_definir(SQLITE, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
+        [_definir(Backend.SQLITE, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
         hashlib.sha256(b"").hexdigest(),
     )
     assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_ARQUIVO_NOVO
@@ -263,10 +304,10 @@ def test_chave_nao_editavel_sobrevive():
 
 def test_gravar_reaplica_ambiente():
     definida = gravar(
-        [_definir(POSTGRES, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
+        [_definir(Backend.POSTGRES, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
         ler_para_edicao().versao,
     )
-    assert os.environ[VarAmbiente.DATABASE_BACKEND] == POSTGRES
+    assert os.environ[VarAmbiente.DATABASE_BACKEND] == Backend.POSTGRES
     gravar(
         [
             Alteracao(
@@ -277,7 +318,7 @@ def test_gravar_reaplica_ambiente():
         ],
         definida.versao,
     )
-    assert os.environ[VarAmbiente.DATABASE_BACKEND] == SQLITE
+    assert os.environ[VarAmbiente.DATABASE_BACKEND] == Backend.SQLITE
 
 
 def test_backend_como_o_leitor_aceita_nao_bloqueia_gravacao():

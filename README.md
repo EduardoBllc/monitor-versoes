@@ -296,6 +296,7 @@ Para a tela mostrar as chaves do seu plugin (esquema, atribuição ou fonte de t
 `campos_config` na classe, uma tupla de `Campo`:
 
 ```python
+from motor.config import TABELA_AMBIENTE
 from motor.config_edicao import Campo, Escopo, TipoCampo
 
 
@@ -304,7 +305,7 @@ class MinhaFonte:
         Campo(Escopo.GERAL, "tarefas", "sistema", TipoCampo.INTEIRO, "Sistema"),
         Campo(
             Escopo.AMBIENTE,
-            None,
+            TABELA_AMBIENTE,
             "MINHA_FONTE_TOKEN",
             TipoCampo.TEXTO,
             "Token",
@@ -313,7 +314,7 @@ class MinhaFonte:
     )
 ```
 
-`tabela` é `None` no `[ambiente]`; `segredo=True` esconde o valor na tela. O atributo é opcional
+No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor na tela. O atributo é opcional
 e plugin que falha ao carregar é ignorado.
 
 ### Fontes de tasks e de commits

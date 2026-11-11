@@ -31,6 +31,7 @@ from motor.agendador import (
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
+    VAR_XDG_CONFIG_HOME,
     ambiente_central,
     aplicar_ambiente_central,
     caminho_config_global,
@@ -146,7 +147,7 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     if (comando, acao) == ("inscricao", AcaoInscricao.RODAR):
         return None
     filho = (comando, acao) == ("inscricao", AcaoInscricao.EXECUTAR)
-    xdg = os.environ.get("XDG_CONFIG_HOME")
+    xdg = os.environ.get(VAR_XDG_CONFIG_HOME)
     erro: MotorError | None = None
     try:
         central = ambiente_central()
@@ -160,9 +161,9 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
         load_dotenv(Path.cwd() / _ARQUIVOS_AMBIENTE[ambiente], override=True)
     aplicar_ambiente_central(central)
     if xdg is None:
-        os.environ.pop("XDG_CONFIG_HOME", None)
+        os.environ.pop(VAR_XDG_CONFIG_HOME, None)
     else:
-        os.environ["XDG_CONFIG_HOME"] = xdg
+        os.environ[VAR_XDG_CONFIG_HOME] = xdg
     return erro
 
 

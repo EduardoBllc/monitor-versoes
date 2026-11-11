@@ -11,7 +11,8 @@ configurar a instalação. A TUI e a web passam a editá-lo, sem que o motor apr
 de cada plugin.
 
 - **Os plugins declaram o que se edita.** Uma classe de plugin pode ter o atributo opcional
-  `campos_config`, uma tupla de `Campo` (escopo, tabela, chave, tipo, rótulo, segredo). O
+  `campos_config`, uma tupla de `Campo` (escopo, tabela, chave, tipo, rótulo, segredo); no
+  `[ambiente]` a tabela é sempre `TABELA_AMBIENTE`, para o segredo ser reconhecido. O
   motor varre os grupos `monitor_versoes.tarefas`, `.esquemas` e `.atribuicoes` e também o
   `modulo:Classe` em uso na config. Plugin sem o atributo, ou que falha ao carregar, não
   aparece: a tela não pode quebrar por causa de código de terceiro. Chave presente no arquivo
@@ -30,4 +31,4 @@ de cada plugin.
   409 `ocupado`.
 - **Limite: não há lock entre processos.** A TUI e o daemon são processos separados, e a
   checagem de "arquivo mudou" só cobre a janela entre ler e gravar. Duas escritas simultâneas
-  podem se perder; para um operador por máquina o risco é aceito. Pendência: #148.
+  podem se perder; para um operador por máquina o risco é aceito; ver #148.

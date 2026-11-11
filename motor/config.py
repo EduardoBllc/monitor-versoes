@@ -19,7 +19,13 @@ _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 _WORKTREES_MANTIDAS_PADRAO = 3
 
 
-BACKENDS = ("sqlite", "postgres")
+class Backend(StrEnum):
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
+
+
+#: Variável que localiza a config central; nunca vem do `[ambiente]`.
+VAR_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
 
 
 class Tabela(StrEnum):
@@ -111,16 +117,16 @@ def _url_postgres() -> str:
     )
 
 
-def backend() -> str:
+def backend() -> Backend:
     """`sqlite` (padrao) ou `postgres`, conforme `DATABASE_BACKEND`."""
     valor = os.environ.get(VarAmbiente.DATABASE_BACKEND, "").strip().lower()
     if not valor:
-        return "sqlite"
-    if valor not in BACKENDS:
+        return Backend.SQLITE
+    if valor not in Backend:
         raise ErroDeEntrada(
-            f"DATABASE_BACKEND inválido: {valor!r} (aceitos: {', '.join(BACKENDS)})"
+            f"DATABASE_BACKEND inválido: {valor!r} (aceitos: {', '.join(Backend)})"
         )
-    return valor
+    return Backend(valor)
 
 
 def database_url(avisar: bool = True) -> str:
@@ -131,7 +137,7 @@ def database_url(avisar: bool = True) -> str:
     SQLite vale e `avisar` escreve uma linha em stderr, uma vez por execucao.
     """
     escolhido = backend()
-    if escolhido == "postgres":
+    if escolhido is Backend.POSTGRES:
         return _url_postgres()
     if (
         avisar
@@ -229,7 +235,7 @@ def validar_nome_repo(valor: str) -> str:
 
 def caminho_config_global() -> str:
     """`$XDG_CONFIG_HOME/monitor-versoes/config.toml`, ou `~/.config/...`."""
-    base = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    base = os.environ.get(VAR_XDG_CONFIG_HOME, "").strip()
     if not base:
         base = os.path.join(os.path.expanduser("~"), ".config")
     return os.path.join(base, "monitor-versoes", "config.toml")
@@ -403,7 +409,7 @@ def aplicar_ambiente_central(central: Mapping[str, str]) -> None:
     mudar sob quem o acabou de ler.
     """
     base = _estado_ambiente.setdefault(_BASE, dict(os.environ))
-    novo = {k: v for k, v in central.items() if k != "XDG_CONFIG_HOME"}
+    novo = {k: v for k, v in central.items() if k != VAR_XDG_CONFIG_HOME}
     for chave in _chaves_aplicadas - novo.keys():
         if chave in base:
             os.environ[chave] = base[chave]

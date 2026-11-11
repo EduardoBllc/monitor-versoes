@@ -2,6 +2,7 @@ import contextlib
 import json
 import threading
 from dataclasses import replace
+from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
@@ -11,6 +12,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import motor.operacoes as operacoes
+from motor.config import (
+    TABELA_AMBIENTE,
+    VAR_XDG_CONFIG_HOME,
+    Chave,
+    Tabela,
+    VarAmbiente,
+)
 from motor.config_edicao import AcaoAlteracao
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
@@ -362,6 +370,18 @@ def test_estatico_nao_sai_da_pasta(cliente: TestClient, tmp_path: Path) -> None:
     assert resposta.text == "<p>spa</p>"
 
 
+class CasoErro(StrEnum):
+    INVALIDO = "invalido"
+    VELHA = "velha"
+    OCUPADO = "ocupado"
+
+
+SEGREDO = "s3nha"
+PRINCIPAL_NOVO = "trunk"
+PORTA_INVALIDA = "abc"
+VERSAO_INEXISTENTE = "0" * 64
+
+
 def _definir(chave: str, valor: object, tabela: str, versao: str) -> dict[str, Any]:
     alteracao = {
         "acao": AcaoAlteracao.DEFINIR,
@@ -372,9 +392,13 @@ def _definir(chave: str, valor: object, tabela: str, versao: str) -> dict[str, A
     return {"alteracoes": [alteracao], "versao": versao}
 
 
+def _definir_principal(versao: str) -> dict[str, Any]:
+    return _definir(Chave.PRINCIPAL, PRINCIPAL_NOVO, Tabela.BRANCHES, versao)
+
+
 @pytest.fixture
 def config_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv(VAR_XDG_CONFIG_HOME, str(tmp_path / "xdg"))
 
 
 def _valor(corpo: dict[str, Any], chave: str) -> Any:
@@ -384,44 +408,42 @@ def _valor(corpo: dict[str, Any], chave: str) -> Any:
 @pytest.mark.usefixtures("config_tmp")
 def test_config_get_put_ida_e_volta(cliente: TestClient) -> None:
     lida = cliente.get("/api/config").json()
-    r = cliente.put(
-        "/api/config", json=_definir("principal", "trunk", "branches", lida["versao"])
-    )
+    r = cliente.put("/api/config", json=_definir_principal(lida["versao"]))
     assert r.status_code == HTTPStatus.OK
-    assert _valor(cliente.get("/api/config").json(), "principal") == "trunk"
+    corpo = cliente.get("/api/config").json()
+    assert _valor(corpo, Chave.PRINCIPAL) == PRINCIPAL_NOVO
 
 
 @pytest.mark.usefixtures("config_tmp")
 def test_put_config_nao_devolve_segredo(cliente: TestClient) -> None:
-    segredo = "s3nha"
     versao = cliente.get("/api/config").json()["versao"]
     r = cliente.put(
         "/api/config",
-        json=_definir("DATABASE_PASSWORD", segredo, "ambiente", versao),
+        json=_definir(VarAmbiente.DATABASE_PASSWORD, SEGREDO, TABELA_AMBIENTE, versao),
     )
     assert r.status_code == HTTPStatus.OK
-    assert segredo not in r.text
-    assert segredo not in cliente.get("/api/config").text
+    assert SEGREDO not in r.text
+    assert SEGREDO not in cliente.get("/api/config").text
 
 
 @pytest.mark.usefixtures("config_tmp")
 @pytest.mark.parametrize(
     ("caso", "status", "tipo"),
     [
-        ("invalido", HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
-        ("velha", HTTPStatus.CONFLICT, TipoErro.RECUSA),
-        ("ocupado", HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+        (CasoErro.INVALIDO, HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+        (CasoErro.VELHA, HTTPStatus.CONFLICT, TipoErro.RECUSA),
+        (CasoErro.OCUPADO, HTTPStatus.CONFLICT, TipoErro.OCUPADO),
     ],
 )
 def test_put_config_erros(
-    cliente: TestClient, amb: Ambiente, caso: str, status: int, tipo: TipoErro
+    cliente: TestClient, amb: Ambiente, caso: CasoErro, status: int, tipo: TipoErro
 ) -> None:
     versao = cliente.get("/api/config").json()["versao"]
-    corpo = _definir("DATABASE_PORT", "abc", "ambiente", versao)
-    if caso == "velha":
-        corpo["versao"] = "0" * 64
-    if caso == "ocupado":
-        corpo = _definir("principal", "trunk", "branches", versao)
+    corpo = _definir(VarAmbiente.DATABASE_PORT, PORTA_INVALIDA, TABELA_AMBIENTE, versao)
+    if caso is CasoErro.VELHA:
+        corpo["versao"] = VERSAO_INEXISTENTE
+    if caso is CasoErro.OCUPADO:
+        corpo = _definir_principal(versao)
         url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
         cliente.post(url, json={"auditar": False})
     try:
@@ -429,5 +451,5 @@ def test_put_config_erros(
         assert (r.status_code, r.json()["tipo"]) == (status, tipo)
     finally:
         amb.soltar.set()
-    if caso == "ocupado":
+    if caso is CasoErro.OCUPADO:
         _esperar(cliente)

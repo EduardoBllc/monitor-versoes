@@ -7,6 +7,9 @@ from importlib.metadata import entry_points
 
 from motor.errors import ErroDeEntrada
 
+#: Separa `modulo:Classe`; sem ele, o nome é de um entry point.
+MARCADOR_IMPORT = ":"
+
 
 def nomes_instalados(grupo: str) -> list[str]:
     """Nomes dos entry points instalados no `grupo`, em ordem."""
@@ -19,7 +22,7 @@ def carregar_plugin(grupo: str, nome: str) -> type:
     Sem `:`, e o nome de um entry point do `grupo`. Com `:` (`modulo:Classe`), e
     import direto.
     """
-    if ":" in nome:
+    if MARCADOR_IMPORT in nome:
         return _importar(nome)
     pontos = {ep.name: ep for ep in entry_points(group=grupo)}
     if nome not in pontos:
@@ -35,7 +38,7 @@ def carregar_plugin(grupo: str, nome: str) -> type:
 
 
 def _importar(caminho: str) -> type:
-    modulo, _, classe = caminho.partition(":")
+    modulo, _, classe = caminho.partition(MARCADOR_IMPORT)
     if not modulo or not classe:
         raise ErroDeEntrada(f"plugin {caminho!r}: esperado modulo:Classe")
     try:
