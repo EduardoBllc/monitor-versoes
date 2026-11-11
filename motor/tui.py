@@ -1101,7 +1101,8 @@ class MotorTUI(App[None]):
         `_falha` e nao pergunta nada — sem lote na tela nao ha o que confirmar.
         """
         try:
-            # A auditoria só lê: roda com o repo ocupado (decisão 032).
+            # A auditoria não toca worktree, checkpoint nem GC: roda com o repo
+            # ocupado (decisão 032).
             trava = _travado(repo) if confirmar or not auditar else _sem_trava()
             with trava:
                 if confirmar and self._previa is not None:

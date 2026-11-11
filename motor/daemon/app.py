@@ -214,7 +214,8 @@ def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
             versao,
             Operacao.VERIFICAR,
             lambda r, o: r.executar(o, versao, corpo.auditar),
-            # A auditoria só lê: roda com o repo ocupado.
+            # A auditoria não toca worktree, checkpoint nem GC: roda com o repo
+            # ocupado (decisão 032).
             travar=not corpo.auditar,
         )
 
