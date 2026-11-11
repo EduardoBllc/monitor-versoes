@@ -87,6 +87,13 @@ def _povoar(url: str) -> None:
                  "updated_on": LIBERADA},
             )  # fmt: skip
             con.execute(insert(T["varredura_pr"]), {"repo_id": 5, "ate": LIBERADA})
+            con.execute(
+                insert(T["julgamento_orfao"]),
+                [
+                    {"versao_id": 11, "hash_origem": "o1", "chamado": "100", "motivo": "m1"},
+                    {"versao_id": 12, "hash_origem": "o2", "chamado": None, "motivo": "m2"},
+                ],
+            )  # fmt: skip
     finally:
         engine.dispose()
 
@@ -104,7 +111,8 @@ def _dump(url: str) -> dict[str, list[tuple[Any, ...]]]:
 
 
 def _leitura(url: str) -> tuple[Any, ...]:
-    """O que o `consultar` le: versoes, atribuicoes, exclusoes e sem entrega."""
+    """O que o `consultar` le (versoes, atribuicoes, exclusoes e sem entrega) e
+    os julgamentos de orfao."""
     engine = criar_engine(url)
     try:
         with Session(engine) as sessao:
@@ -115,6 +123,7 @@ def _leitura(url: str) -> tuple[Any, ...]:
                 estado.atribuicoes(REPO, "13.34.0"),
                 estado.exclusoes(REPO),
                 estado.sem_entrega(REPO),
+                estado.julgamentos_orfao(REPO),
             )
     finally:
         engine.dispose()
