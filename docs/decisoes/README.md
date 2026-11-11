@@ -42,3 +42,4 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 29. [029](029-repos-na-config-central.md) — repos são seções `[repos.<nome>]` do `config.toml` central, com `caminho`; saem `.monitor-versoes.toml`, aliases e `PROJECTS_DIR`; a linha `repo` nasce no primeiro uso.
 30. [030](030-front-end-web-spa-com-dist-versionado.md) — `motor serve`: daemon local em `127.0.0.1` e SPA React/TS com build versionado (instalar não exige Node) e contrato tipado pelo OpenAPI.
 31. [031](031-ambiente-na-config-central.md) — banco e credenciais na tabela `[ambiente]` do `config.toml` central, só no topo; precedência central > `.env` > shell; inscrição sem diretório e `motor init` sem `.env`.
+32. [032](032-julgamento-de-orfao.md) — o julgamento de órfão tem registro próprio, por versão; o `reconstruir-estado` e o `verificar` o aplicam como commit da tarefa do alvo, sem pôr tarefa no alvo, e a exclusão vence.

@@ -4,7 +4,8 @@
 origem. O motor não pergunta ao humano
 (docs/decisoes/021-motor-nao-interativo.md): estas duas operações são o que o
 front-end usa para mostrar os órfãos e gravar a resposta, que o
-`reconstruir-estado` aplica depois.
+`reconstruir-estado` e o `verificar` aplicam depois
+(docs/decisoes/032-julgamento-de-orfao.md).
 
 Nenhuma das duas regrava atribuições nem registra a versão: a listagem é
 leitura, e o julgamento só escreve o próprio registro.

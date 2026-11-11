@@ -8,9 +8,9 @@
   [023](023-onde-nao-se-abstrai.md)
 
 `verificar` grava um carimbo (tabela `verificacao`): tip da branch depois do pull,
-impressão das exclusões e do "sem entrega", hora e o `VersionStatus` inteiro. `atualizar` e
-a prévia reaproveitam esse resultado em vez de simular o lote de novo. O carimbo **vale só
-se as quatro condições** se cumprem:
+impressão das exclusões, do "sem entrega" e dos julgamentos de órfão, hora e o
+`VersionStatus` inteiro. `atualizar` e a prévia reaproveitam esse resultado em vez de simular
+o lote de novo. O carimbo **vale só se as quatro condições** se cumprem:
 
 - **existe**: sem carimbo, nada a reaproveitar;
 - **tem até 5 minutos** (`VALIDADE_VERIFICACAO`, constante): o Tickio e as demais branches
@@ -19,8 +19,9 @@ se as quatro condições** se cumprem:
   futuro (relógio adiantado em outra máquina) não vale;
 - **o tip é o mesmo**: outro commit na branch (inclusive picks de um `atualizar` anterior,
   [015](015-estado-regravado-ao-final-do-lote.md)) muda o que falta aplicar;
-- **a impressão é a mesma**: exclusão ou "sem entrega" novos mudam o julgamento sem mexer
-  no tip. A impressão também leva as entradas da resolução (fonte de tasks e conteúdo da
+- **a impressão é a mesma**: exclusão, "sem entrega" ou julgamento de órfão
+  ([032](032-julgamento-de-orfao.md)) novos mudam o julgamento sem mexer no tip. Entram os
+  de todas as versões do repo. A impressão também leva as entradas da resolução (fonte de tasks e conteúdo da
   lista manual, `[tarefas]` da config, fonte de commits, padrão de referência e piso):
   trocá-las é o operador pedindo outro lote, não mudança externa, e por isso nunca
   reaproveita.
