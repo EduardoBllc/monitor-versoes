@@ -17,12 +17,15 @@ import subprocess
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import Any
 
+from motor.domain.conflito import Estagios
 from motor.domain.types import CommitRef
 from motor.domain.worktrees import worktrees_a_remover
 from motor.errors import (
     BackendIndisponivel,
+    ErroDeEntrada,
     MotorError,
     NaoEncontrado,
     RespostaInvalida,
@@ -65,6 +68,12 @@ _CREDENCIAL_EM_URL = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
 #: contrario do estado no Postgres, que e compartilhado: uso registrado la
 #: faria uma maquina evictar worktree de outra.
 _ARQUIVO_MRU = ".motor-mru"
+
+
+class _Estagio(IntEnum):
+    BASE = 1
+    OURS = 2
+    THEIRS = 3
 
 
 #: Quadro de progresso do git: "remote: Counting objects:  25% (1/4)". A parte
@@ -614,6 +623,95 @@ class GitSubprocess:
         except MotorError:
             return "", False
         return hash_, True
+
+    def _caminho_na_worktree(self, caminho: str) -> str:
+        raiz = os.path.realpath(self._worktree_dir(self._current_branch))
+        completo = os.path.realpath(os.path.join(raiz, caminho))
+        if os.path.commonpath([raiz, completo]) != raiz or completo == raiz:
+            raise ErroDeEntrada(f"caminho fora da worktree: {caminho}")
+        return completo
+
+    def _git_literal(self, *args: str) -> str:
+        # Sem pathspec mágico: o caminho é sempre um arquivo, nunca um glob.
+        dir_ = self._worktree_dir(self._current_branch)
+        return self._output(dir_, "--literal-pathspecs", *args)
+
+    def _entradas(self, opcao: str, *caminho: str) -> dict[str, dict[int, str]]:
+        """`ls-files <opcao> -z`: caminho -> estágio -> oid."""
+        entradas: dict[str, dict[int, str]] = {}
+        for registro in self._git_literal(
+            "ls-files", opcao, "-z", "--", *caminho
+        ).split("\0"):
+            if registro:
+                info, nome = registro.split("\t", 1)
+                _, oid, estagio = info.split(" ")
+                entradas.setdefault(nome, {})[int(estagio)] = oid
+        return entradas
+
+    def arquivos_do_pick(self) -> dict[str, bool]:
+        abertos = self._entradas("--unmerged")
+        resolvidos = self._entradas("--resolve-undo")
+        return {**{c: True for c in resolvidos}, **{c: False for c in abertos}}
+
+    def _blob(self, oid: str) -> bytes:
+        dir_ = self._worktree_dir(self._current_branch)
+        proc = _rodar_git_bytes(["git", "cat-file", "blob", oid], cwd=dir_)
+        if proc.returncode != 0:
+            raise MotorError(
+                f"git cat-file blob {oid}: exit status {proc.returncode}: "
+                f"{_saida_git_publica(proc.stderr.decode(errors='replace'))}"
+            )
+        return proc.stdout
+
+    def _oids(self, caminho: str) -> dict[int, str]:
+        oids = self._entradas("--unmerged", caminho).get(caminho) or self._entradas(
+            "--resolve-undo", caminho
+        ).get(caminho)
+        if not oids:
+            raise NaoEncontrado(f"{caminho} nao esta no conflito do pick")
+        return oids
+
+    def estagios(self, caminho: str, /) -> Estagios:
+        completo = self._caminho_na_worktree(caminho)
+        oids = self._oids(caminho)
+        lados = [self._blob(oids[e]) if e in oids else None for e in _Estagio]
+        try:
+            with open(completo, "rb") as f:
+                lados.append(f.read())
+        except FileNotFoundError:
+            lados.append(None)
+        try:
+            base, ours, theirs, disco = (
+                None if b is None else b.decode("utf-8") for b in lados
+            )
+        except UnicodeDecodeError:
+            return Estagios(None, None, None, None, binario=True)
+        return Estagios(base, ours, theirs, disco, binario=False)
+
+    def resolver(self, caminho: str, conteudo: str | None, /) -> None:
+        completo = self._caminho_na_worktree(caminho)
+        if conteudo is None:
+            self._git_literal("rm", "-q", "--cached", "--", caminho)
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(completo)
+            return
+        os.makedirs(os.path.dirname(completo), exist_ok=True)
+        with open(completo, "wb") as f:
+            f.write(conteudo.encode())
+        self._git_literal("add", "--", caminho)
+
+    def reabrir(self, caminho: str, /) -> None:
+        completo = self._caminho_na_worktree(caminho)
+        oids = self._oids(caminho)
+        self._git_literal("update-index", "--unresolve", "--", caminho)
+        if _Estagio.OURS in oids and _Estagio.THEIRS in oids:
+            self._git_literal("checkout", "-m", "--", caminho)
+            return
+        # checkout -m recusa modify/delete; o pick deixou no disco o lado que restou.
+        presente = oids.get(_Estagio.OURS) or oids[_Estagio.THEIRS]
+        os.makedirs(os.path.dirname(completo), exist_ok=True)
+        with open(completo, "wb") as f:
+            f.write(self._blob(presente))
 
     def continue_cherry_pick(self) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)

@@ -11,6 +11,7 @@ import datetime
 import re
 from dataclasses import dataclass, field, replace
 
+from motor.domain.conflito import Estagios
 from motor.domain.types import CommitRef
 from motor.domain.worktrees import worktrees_a_remover
 from motor.errors import MotorError, NaoEncontrado, RecusaDeInvariante
@@ -21,6 +22,8 @@ _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
 
 
 FAKE_WORKTREES = "/fake-worktrees"
+ARQUIVO_CONFLITO_PADRAO = "arquivo-conflito.txt"
+_ESTAGIOS_PADRAO = Estagios(None, None, None, None, binario=False)
 
 
 @dataclass
@@ -51,6 +54,9 @@ class FakeGit:
     files: dict[str, dict[str, bytes]] = field(default_factory=dict)
 
     conflict_on: dict[str, bool] = field(default_factory=dict)
+    # fixture: hash do commit -> arquivos do conflito; sem entrada, o conflito
+    # é só ARQUIVO_CONFLITO_PADRAO.
+    estagios_on: dict[str, dict[str, Estagios]] = field(default_factory=dict)
     # fixture: commit cujo pick nao deixa alteracao. Combinado com conflict_on
     # no mesmo hash, reproduz o caso real de "resolvi o conflito e nao sobrou
     # diff": o pick da CONFLITO e o --continue devolve VAZIO.
@@ -89,6 +95,7 @@ class FakeGit:
     _current_branch: str = ""
     _pending_pick: str = ""
     _conflicted: list[str] = field(default_factory=list)
+    _arquivos_pick: dict[str, Estagios] = field(default_factory=dict)
 
     def add_commit(
         self, hash: str, parent: str, msg: str, date: datetime.datetime
@@ -259,7 +266,8 @@ class FakeGit:
             raise NaoEncontrado(f"commit {hash} nao encontrado")
         if self.conflict_on.get(hash):
             self._pending_pick = hash
-            self._conflicted = ["arquivo-conflito.txt"]
+            self._arquivos_pick = dict(self._estagios_originais())
+            self._conflicted = list(self._arquivos_pick)
             return CherryPickOutcome.CONFLITO
         if self.vazio_on.get(hash):
             # Espelha o git: o pick vazio fica pendente esperando decisao
@@ -285,6 +293,35 @@ class FakeGit:
     def conflicted_paths(self) -> list[str]:
         return self._conflicted
 
+    def _estagios_originais(self) -> dict[str, Estagios]:
+        return self.estagios_on.get(
+            self._pending_pick, {ARQUIVO_CONFLITO_PADRAO: _ESTAGIOS_PADRAO}
+        )
+
+    def _arquivo_do_pick(self, caminho: str) -> Estagios:
+        e = self._arquivos_pick.get(caminho)
+        if e is None:
+            raise NaoEncontrado(f"{caminho} nao esta no conflito do pick")
+        return e
+
+    def arquivos_do_pick(self) -> dict[str, bool]:
+        return {c: c not in self._conflicted for c in self._arquivos_pick}
+
+    def estagios(self, caminho: str, /) -> Estagios:
+        return self._arquivo_do_pick(caminho)
+
+    def resolver(self, caminho: str, conteudo: str | None, /) -> None:
+        e = self._arquivo_do_pick(caminho)
+        self._arquivos_pick[caminho] = replace(e, disco=conteudo)
+        if caminho in self._conflicted:
+            self._conflicted.remove(caminho)
+
+    def reabrir(self, caminho: str, /) -> None:
+        self._arquivo_do_pick(caminho)
+        self._arquivos_pick[caminho] = self._estagios_originais()[caminho]
+        if caminho not in self._conflicted:
+            self._conflicted.append(caminho)
+
     def pending_cherry_pick(self) -> tuple[str, bool]:
         if self._pending_pick == "":
             return "", False
@@ -301,6 +338,7 @@ class FakeGit:
         self._aplicar_pick(origem)
         self._pending_pick = ""
         self._conflicted = []
+        self._arquivos_pick = {}
         return CherryPickOutcome.APLICADO
 
     def commit_pick_vazio(self) -> None:
@@ -313,10 +351,12 @@ class FakeGit:
         self._aplicar_pick(origem)
         self._pending_pick = ""
         self._conflicted = []
+        self._arquivos_pick = {}
 
     def abort_cherry_pick(self) -> None:
         self._pending_pick = ""
         self._conflicted = []
+        self._arquivos_pick = {}
 
     def predict_merge(
         self, parent: str, branch_tip: str, commit: str, /

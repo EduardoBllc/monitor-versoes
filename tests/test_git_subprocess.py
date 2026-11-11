@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from dataclasses import replace
 
 import pytest
 
@@ -17,7 +18,13 @@ from motor.adapters.git.subprocess import (
     _quadros,
     new_git_subprocess,
 )
-from motor.errors import BackendIndisponivel, MotorError, NaoEncontrado
+from motor.domain.conflito import TipoArquivo, marcadores_restantes, tipo_do_arquivo
+from motor.errors import (
+    BackendIndisponivel,
+    ErroDeEntrada,
+    MotorError,
+    NaoEncontrado,
+)
 from motor.ports import CherryPickOutcome
 from motor.progresso import Progresso
 from motor.services.catalogo import Catalogo
@@ -1258,3 +1265,128 @@ def test_git_subprocess_continue_cherry_pick_vazio_quando_a_resolucao_zera_o_dif
         "o git deixa as linhas '# Conflicts:' na mensagem preparada; sem "
         "--cleanup=strip elas viram parte do commit"
     )
+
+
+# --- arquivos do pick: ler, resolver e reabrir (#132) ---
+
+_ARQUIVO = "a.txt"
+_BASE = "l1\nbase\nl3\n"
+_OURS = "l1\nalvo\nl3\n"
+_THEIRS = "l1\norigem\nl3\n"
+
+
+def _pick_em_conflito(
+    tmp_path, tipo: TipoArquivo, versoes: tuple[str, ...] = ("13.1.0",)
+) -> tuple[GitSubprocess, str]:
+    """Alvo muda `_ARQUIVO`; a origem muda (CONTEUDO) ou apaga (MODIFICADO_APAGADO)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    dir_ = str(repo)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (repo / _ARQUIVO).write_text(_BASE)
+    _run_git(dir_, "add", _ARQUIVO)
+    _run_git(dir_, "commit", "-m", "base")
+    base = _rev(dir_, "HEAD")
+    if tipo == TipoArquivo.CONTEUDO:
+        (repo / _ARQUIVO).write_text(_THEIRS)
+        _run_git(dir_, "commit", "-am", "origem muda")
+    else:
+        _run_git(dir_, "rm", "-q", _ARQUIVO)
+        _run_git(dir_, "commit", "-m", "origem apaga")
+    origem = _rev(dir_, "HEAD")
+
+    g = new_git_subprocess(dir_)
+    for versao in versoes:
+        g.worktree_add(versao, base)
+        g.write_file(versao, _ARQUIVO, _OURS.encode(), "alvo muda")
+    assert g.cherry_pick_x(origem) == CherryPickOutcome.CONFLITO
+    return g, origem
+
+
+def _disco(g: GitSubprocess) -> bytes:
+    with open(os.path.join(g.worktree_atual(), _ARQUIVO), "rb") as f:
+        return f.read()
+
+
+def test_estagios_de_conflito_de_conteudo(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+
+    e = g.estagios(_ARQUIVO)
+
+    assert g.arquivos_do_pick() == {_ARQUIVO: False}
+    assert (e.base, e.ours, e.theirs, e.binario) == (_BASE, _OURS, _THEIRS, False)
+    assert e.disco is not None
+    assert marcadores_restantes(e.disco) != []
+
+
+def test_estagios_modify_delete(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.MODIFICADO_APAGADO)
+
+    e = g.estagios(_ARQUIVO)
+
+    assert (e.base, e.ours, e.theirs) == (_BASE, _OURS, None)
+    assert tipo_do_arquivo(e) == TipoArquivo.MODIFICADO_APAGADO
+
+
+def test_resolver_grava_e_marca(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+    conteudo = "resolvido\r\nsem fim de linha"
+
+    g.resolver(_ARQUIVO, conteudo)
+
+    assert _disco(g) == conteudo.encode()
+    assert g.arquivos_do_pick() == {_ARQUIVO: True}
+    assert g.estagios(_ARQUIVO).disco == conteudo
+
+
+def test_resolver_apagando(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.MODIFICADO_APAGADO)
+
+    g.resolver(_ARQUIVO, None)
+
+    assert not os.path.exists(os.path.join(g.worktree_atual(), _ARQUIVO))
+    assert g.conflicted_paths() == []
+    assert g.arquivos_do_pick() == {_ARQUIVO: True}
+
+
+def test_resolver_recusa_caminho_fora_da_worktree(tmp_path):
+    g, _ = _pick_em_conflito(tmp_path, TipoArquivo.CONTEUDO)
+
+    with pytest.raises(ErroDeEntrada):
+        g.resolver(os.path.join(os.pardir, _ARQUIVO), _OURS)
+
+
+def _sem_marcadores(texto: str | None) -> list[str]:
+    assert texto is not None
+    marcadas = set(marcadores_restantes(texto))
+    return [linha for n, linha in enumerate(texto.split("\n"), 1) if n not in marcadas]
+
+
+@pytest.mark.parametrize("tipo", [TipoArquivo.CONTEUDO, TipoArquivo.MODIFICADO_APAGADO])
+def test_reabrir_volta_o_conflito(tmp_path, tipo):
+    g, _ = _pick_em_conflito(tmp_path, tipo)
+    antes = g.estagios(_ARQUIVO)
+    g.resolver(_ARQUIVO, "outra coisa\n")
+
+    g.reabrir(_ARQUIVO)
+
+    depois = g.estagios(_ARQUIVO)
+    assert g.arquivos_do_pick() == {_ARQUIVO: False}
+    assert replace(depois, disco=None) == replace(antes, disco=None)
+    # O checkout -m rotula os marcadores com ours/theirs, não com HEAD e o commit.
+    assert _sem_marcadores(depois.disco) == _sem_marcadores(antes.disco)
+
+
+def test_rerere_autoupdate_aparece_resolvido(tmp_path):
+    g, origem = _pick_em_conflito(
+        tmp_path, TipoArquivo.CONTEUDO, versoes=("13.1.0", "13.2.0")
+    )
+    g.resolver(_ARQUIVO, _THEIRS)
+    g.continue_cherry_pick()
+    g.use_worktree("13.1.0")
+
+    assert g.cherry_pick_x(origem) == CherryPickOutcome.CONFLITO
+
+    assert g.arquivos_do_pick() == {_ARQUIVO: True}
+    assert g.estagios(_ARQUIVO).disco == _THEIRS
