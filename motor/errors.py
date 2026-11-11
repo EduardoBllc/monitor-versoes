@@ -3,7 +3,8 @@
 Duas familias, por eixo. As quatro primeiras subclasses sao o vocabulario das
 **portas**: e o que um adapter — inclusive um de terceiro — pode levantar, e o
 que a suite de contrato assere por tipo em vez de casar substring de mensagem em
-portugues. A ultima e do eixo do **operador**, e nao sai de porta nenhuma.
+portugues. `ErroDeEntrada` e sua subclasse `RepoOcupado` sao do eixo do
+**operador**, e nao saem de porta nenhuma.
 
 Todas herdam de MotorError: `except MotorError` continua pegando tudo, entao
 reclassificar um raise nunca muda o comportamento de quem captura generico.
@@ -72,6 +73,20 @@ class ErroDeEntrada(MotorError):
     Variavel faltando no .env, flag incompativel, numero de versao malformado,
     campo de formulario invalido na TUI. Nao sai de porta nenhuma.
     """
+
+
+class RepoOcupado(ErroDeEntrada):
+    """Outra operação do motor segura o lock do clone (decisão 032).
+
+    Tem classe própria porque dois chamadores ramificam nela: o daemon responde
+    `409 ocupado` em vez do `422` de entrada, e a inscrição sai `PULADA` em vez
+    de `ERRO`. `pid` é de quem segura, ou `None` se não deu para ler.
+    """
+
+    def __init__(self, nome: str, pid: int | None) -> None:
+        detalhe = f" (pid {pid})" if pid is not None else ""
+        super().__init__(f"repo {nome} ocupado por outra operação{detalhe}")
+        self.pid = pid
 
 
 def formatar_com_notas(e: MotorError) -> str:

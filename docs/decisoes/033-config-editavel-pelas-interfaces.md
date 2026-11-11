@@ -4,7 +4,8 @@
 - **Data:** 2026-11-10
 - **Depende de:** [020](020-contrato-de-erro-por-tipo.md),
   [026](026-esquema-e-atribuicao-plugaveis.md), [027](027-fonte-de-tarefas-plugavel.md),
-  [029](029-repos-na-config-central.md), [031](031-ambiente-na-config-central.md)
+  [029](029-repos-na-config-central.md), [031](031-ambiente-na-config-central.md),
+  [032](032-lock-por-repo-entre-processos.md)
 
 Com repos e ambiente no `config.toml` central, editar o arquivo à mão era a única forma de
 configurar a instalação. A TUI e a web passam a editá-lo, sem que o motor aprenda as chaves
@@ -29,6 +30,8 @@ de cada plugin.
 - **Os erros seguem o contrato por tipo** ([020](020-contrato-de-erro-por-tipo.md)): entrada
   inválida é 422, recusa de invariante e arquivo alterado são 409, e operação em andamento é
   409 `ocupado`.
-- **Limite: não há lock entre processos.** A TUI e o daemon são processos separados, e a
-  checagem de "arquivo mudou" só cobre a janela entre ler e gravar. Duas escritas simultâneas
-  podem se perder; para um operador por máquina o risco é aceito; ver #148.
+- **Salvar não consulta o lock do clone** ([032](032-lock-por-repo-entre-processos.md)).
+  O lock protege a operação num clone, não o `config.toml`; a recusa `ocupado` ao salvar só
+  enxerga execuções do próprio processo. Entre a TUI e o daemon, a única proteção é a checagem
+  de "arquivo mudou", que deixa uma janela entre ler e gravar; para um operador por máquina o
+  risco é aceito.

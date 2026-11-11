@@ -286,9 +286,9 @@ worktree, no seu editor; depois, **Continuar**. O porquê em
 
 Na TUI, a tecla `g` abre a tela de configuração; na web, o botão **Configuração** da barra. As
 duas editam o `config.toml` central (geral, por repo e `[ambiente]`), preservam os comentários
-do arquivo e validam antes de gravar. Mudanças no `[ambiente]` valem sem reiniciar. Não há lock
-entre a TUI e o daemon: edite por um lugar de cada vez. O porquê:
-[032](docs/decisoes/032-config-editavel-pelas-interfaces.md).
+do arquivo e validam antes de gravar. Mudanças no `[ambiente]` valem sem reiniciar. Salvar não
+consulta o lock do clone: edite por um lugar de cada vez. O porquê:
+[033](docs/decisoes/033-config-editavel-pelas-interfaces.md).
 
 #### Para autores de plugin
 
@@ -362,7 +362,7 @@ outras. O desfecho da última execução aparece no `listar`:
 | `aplicou` | commits aplicados e push feito |
 | `nada` | nada a aplicar |
 | `bloqueada` | conflito: checkpoint aberto, sem push |
-| `pulada` | cherry-pick pendente na versão; nada roda até `atualizar --continue` ou `--abort` |
+| `pulada` | cherry-pick pendente na versão (nada roda até `atualizar --continue` ou `--abort`), ou repo ocupado por outra operação do motor (roda de novo na próxima vez que vencer) |
 | `encerrada` | versão liberada; a inscrição é removida |
 | `erro` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
 
@@ -393,6 +393,7 @@ desfecho):
 | `ERROR: .../config.toml: repo 'meu-repo' sem seção [repos.meu-repo] (existentes: ...)` | `--repo` não é o nome de uma seção. Crie `[repos.meu-repo]` no `config.toml` central ou use um nome da lista (`(nenhuma)` se o arquivo não existe). |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho é obrigatório` | A seção não tem `caminho`. Aponte para o clone. |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `motor diagnostico` checa todas as seções. |
+| `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `motor serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
 | `error: argument --repo: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
 
 ## Próximos passos

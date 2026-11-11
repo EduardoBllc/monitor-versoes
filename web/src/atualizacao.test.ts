@@ -6,6 +6,7 @@ import {
   FaseAtualizacao,
   INICIAL,
   TipoEventoAtualizacao,
+  acompanhaOcupado,
   proximo,
   type EstadoAtualizacao,
 } from "./atualizacao";
@@ -115,6 +116,20 @@ it("ocupado (409) em ociosa passa a acompanhar a execução", () => {
   expect(proximo(INICIAL, { tipo: TipoEventoAtualizacao.OCUPADO }).fase).toBe(
     FaseAtualizacao.APLICANDO,
   );
+});
+
+it.each([
+  [EstadoExecucao.RODANDO, true],
+  [EstadoExecucao.CONCLUIDA, false],
+  [EstadoExecucao.FALHOU, false],
+])("ocupado (409) com execução %s acompanha: %s", (estado, esperado) => {
+  expect(acompanhaOcupado(execucao(Operacao.ATUALIZAR, null, estado))).toBe(
+    esperado,
+  );
+});
+
+it("ocupado (409) sem execução do daemon não acompanha", () => {
+  expect(acompanhaOcupado(null)).toBe(false);
 });
 
 it("reconectou reconstitui a fase", () => {

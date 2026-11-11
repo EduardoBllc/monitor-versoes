@@ -1,6 +1,7 @@
 # Front-end web: daemon local e SPA com build versionado
 
-- **Status:** aceita
+- **Status:** aceita; o ponto "uma operação longa por repo, dentro do processo do daemon"
+  foi substituído pela [032](032-lock-por-repo-entre-processos.md)
 - **Data:** 2026-11-06
 - **Depende de:** [019](019-montagem-no-front-end.md), [021](021-motor-nao-interativo.md)
 

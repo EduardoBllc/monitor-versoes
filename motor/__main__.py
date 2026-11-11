@@ -7,6 +7,7 @@ dominio aqui.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
@@ -60,7 +61,7 @@ from motor.engine.inscricao import executar_inscricao
 from motor.engine.migrar_estado import migrar_estado
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
+from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, formatar_com_notas
 from motor.init import iniciar
 from motor.inscricoes import (
     INTERVALO_PADRAO,
@@ -84,6 +85,7 @@ from motor.montagem import (
     montar_notificador,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
+from motor.trava import Trava, travar
 
 # Anotado Optional na declaracao: sem isso o `= None` do fallback conflita com
 # o tipo da funcao importada, e `if load_dotenv:` passa a ser lido como
@@ -274,8 +276,11 @@ def _inscricao_executar(args: argparse.Namespace) -> None:
         )
         return
     try:
-        with abrir_sessao() as sessao:
+        with _travar(args.repo), abrir_sessao() as sessao:
             resultado = executar_inscricao(montar_deps(args.repo, sessao), args.versao)
+    except RepoOcupado as e:
+        # Sem notificação: tenta de novo na próxima vez que vencer (decisão 032).
+        resultado = Resultado(Desfecho.PULADA, mensagem=str(e))
     except MotorError as e:
         resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
     except Exception as e:
@@ -703,6 +708,27 @@ def _limpar_progresso(relator: RelatorProgresso, saida: TextIO | None = None) ->
     saida.flush()
 
 
+def _travar(nome: str) -> Trava:
+    caminho = carregar_config_repo(nome).caminho
+    assert caminho is not None  # carregar_config_repo sempre o preenche
+    return travar(nome, caminho)
+
+
+def _trava_do_comando(
+    args: argparse.Namespace,
+) -> contextlib.AbstractContextManager[object]:
+    """Lock do clone para os comandos que tocam worktree, checkpoint ou GC.
+
+    As leituras (`consulta`, `verificar --auditar`, `reconstruir-estado`)
+    rodam com o repo ocupado: decisão 032.
+    """
+    if args.comando in {"criar", "atualizar"} or (
+        args.comando == "verificar" and not args.auditar
+    ):
+        return _travar(args.repo)
+    return contextlib.nullcontext()
+
+
 def _despachar(args: argparse.Namespace, deps: Deps) -> None:
     inicio = time.monotonic()
     if args.comando == "verificar":
@@ -784,7 +810,9 @@ def main(argv: list[str] | None = None) -> None:
             _migrar_estado(args)
             return
 
-        with abrir_sessao() as sessao:
+        # A trava antes da sessão e do montar_deps (que já roda git no clone):
+        # a recusa sai antes de tocar no clone e no banco.
+        with _trava_do_comando(args), abrir_sessao() as sessao:
             relator = _relator_do_cli(desligado=getattr(args, "sem_progresso", False))
             deps = montar_deps(
                 args.repo,

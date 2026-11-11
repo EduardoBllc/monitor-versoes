@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from motor.daemon.erros import ConfigOcupada, ErroApi, RepoOcupado, TipoErro, erro_api
+from motor.daemon.erros import ConfigOcupada, ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucoes, Operacao
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.errors import (
@@ -14,6 +14,7 @@ from motor.errors import (
     MotorError,
     NaoEncontrado,
     RecusaDeInvariante,
+    RepoOcupado,
     RespostaInvalida,
 )
 from motor.progresso import Progresso, RelatorProgresso
@@ -30,7 +31,7 @@ ESPERA_S = 5.0
         (BackendIndisponivel("x"), 503, TipoErro.BACKEND),
         (RespostaInvalida("x"), 502, TipoErro.RESPOSTA),
         (MotorError("x"), 500, TipoErro.MOTOR),
-        (RepoOcupado("r"), 409, TipoErro.OCUPADO),
+        (RepoOcupado("r", 1), 409, TipoErro.OCUPADO),
         (ConfigOcupada(), 409, TipoErro.OCUPADO),
     ],
 )
@@ -43,12 +44,6 @@ def test_erro_api_mapeia_cada_tipo(
     assert "ctx" in corpo.mensagem
 
 
-def test_repo_ocupado_nomeia_o_repo() -> None:
-    assert erro_api(RepoOcupado("meu-repo"))[1].mensagem == (
-        "repo meu-repo já tem uma operação em andamento"
-    )
-
-
 def test_erro_nao_motor_vira_interno_sem_vazar_texto() -> None:
     http, corpo = erro_api(RuntimeError("segredo"))
     assert (http, corpo.tipo) == (500, TipoErro.INTERNO)
@@ -56,22 +51,24 @@ def test_erro_nao_motor_vira_interno_sem_vazar_texto() -> None:
     assert isinstance(corpo, ErroApi)
 
 
-def test_segunda_operacao_no_mesmo_repo_e_recusada_e_outro_repo_roda() -> None:
-    liberar = threading.Event()
+def _conclui(_: RelatorProgresso) -> None:
+    return None
 
-    def alvo(_: RelatorProgresso) -> None:
-        liberar.wait(ESPERA_S)
 
+def _levanta(_: RelatorProgresso) -> None:
+    raise NaoEncontrado("sumiu")
+
+
+@pytest.mark.parametrize("alvo", [_conclui, _levanta], ids=["conclui", "levanta"])
+def test_execucao_solta_a_trava_ao_terminar(tmp_path, alvo) -> None:
+    from motor.trava import travar
+
+    clone = str(tmp_path)
     execucoes = Execucoes()
-    try:
-        execucoes.iniciar("a", "1.0.0", Operacao.VERIFICAR, alvo)
-        with pytest.raises(RepoOcupado):
-            execucoes.iniciar("a", "1.0.0", Operacao.PREVIA, alvo)
-        execucoes.iniciar("b", "1.0.0", Operacao.VERIFICAR, alvo)
-    finally:
-        liberar.set()
+    execucoes.iniciar("a", "1.0.0", Operacao.VERIFICAR, alvo, travar("a", clone))
     assert execucoes.aguardar("a", ESPERA_S)
-    assert execucoes.aguardar("b", ESPERA_S)
+    with travar("a", clone):
+        pass
 
 
 def test_execucao_conclui_com_resultado_e_progresso() -> None:
