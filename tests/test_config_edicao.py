@@ -2,19 +2,33 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 from importlib.metadata import EntryPoint
 
 import pytest
 
 from motor import plugins
-from motor.config import caminho_config_global
+from motor.config import (
+    BACKENDS,
+    CHAVE_CAMINHO,
+    TABELA_AMBIENTE,
+    Chave,
+    Tabela,
+    VarAmbiente,
+    caminho_config_global,
+    repos_configurados,
+)
 from motor.config_edicao import (
+    AcaoAlteracao,
+    Alteracao,
     Campo,
     Escopo,
     TipoCampo,
     catalogo_campos,
+    gravar,
     ler_para_edicao,
 )
+from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.montagem import GRUPO_TAREFAS
 
 SEGREDO = "s3nha"
@@ -134,3 +148,132 @@ def test_versao_e_hash_do_arquivo():
 def test_opcoes_incluem_os_instalados(chave):
     campo = next(c for c in ler_para_edicao().campos if c.chave == chave)
     assert campo.opcoes
+
+
+SQLITE, POSTGRES = BACKENDS
+MODO_NOVO = 0o600
+MODO_GRUPO = 0o640
+CHAVE_LISTA = "filtros"
+
+
+@pytest.fixture(autouse=True)
+def _backend_base(monkeypatch):
+    """Gravar reaplica o `[ambiente]` no processo; o monkeypatch o desfaz no fim."""
+    monkeypatch.setenv(VarAmbiente.DATABASE_BACKEND, SQLITE)
+
+
+def _bytes() -> bytes:
+    with open(caminho_config_global(), "rb") as f:
+        return f.read()
+
+
+def _definir(valor, chave, tabela=None, repo=None) -> Alteracao:
+    return Alteracao(AcaoAlteracao.DEFINIR, repo, tabela, chave, valor)
+
+
+def test_gravar_preserva_comentarios_e_ordem(tmp_path):
+    _escrever(
+        "# topo\n"
+        '[branches]\nversao = "v/{versao}"\n'
+        f'[repos.a]\n# do repo\ncaminho = "{tmp_path}"\n'
+    )
+    gravar(
+        [_definir("1.2.0", Chave.PISO, Tabela.VERSAO, "a")], ler_para_edicao().versao
+    )
+    texto = _bytes().decode()
+    assert "# topo" in texto and "# do repo" in texto
+    assert texto.index("[branches]") < texto.index("[repos.a]")
+    assert 'piso = "1.2.0"' in texto
+
+
+def test_criar_e_remover_repo(tmp_path):
+    criado = gravar(
+        [
+            Alteracao(AcaoAlteracao.CRIAR_REPO, "b"),
+            _definir(str(tmp_path), CHAVE_CAMINHO, repo="b"),
+        ],
+        ler_para_edicao().versao,
+    )
+    assert "b" in repos_configurados()
+    gravar([Alteracao(AcaoAlteracao.REMOVER_REPO, "b")], criado.versao)
+    assert "b" not in repos_configurados()
+
+
+def test_repo_com_ponto_no_nome(tmp_path):
+    nome = "app.web"
+    gravar(
+        [
+            Alteracao(AcaoAlteracao.CRIAR_REPO, nome),
+            _definir(str(tmp_path), CHAVE_CAMINHO, repo=nome),
+        ],
+        ler_para_edicao().versao,
+    )
+    assert '[repos."app.web"]' in _bytes().decode()
+    assert nome in repos_configurados()
+
+
+@pytest.mark.parametrize(
+    "alteracao",
+    [
+        _definir("abc", Chave.PISO, Tabela.VERSAO, "a"),
+        _definir("cinco", VarAmbiente.DATABASE_PORT, TABELA_AMBIENTE),
+        _definir("release", Chave.VERSAO, Tabela.BRANCHES),
+    ],
+)
+def test_valor_invalido_nao_muda_o_arquivo(tmp_path, alteracao):
+    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    antes = _bytes()
+    with pytest.raises(ErroDeEntrada):
+        gravar([alteracao], ler_para_edicao().versao)
+    assert _bytes() == antes
+
+
+def test_versao_velha_recusada():
+    _escrever('[tarefas]\na = "1"\n')
+    versao = ler_para_edicao().versao
+    _escrever('[tarefas]\na = "2"\n')
+    with pytest.raises(RecusaDeInvariante, match="recarregue"):
+        gravar([_definir("3", "a", Tabela.TAREFAS)], versao)
+
+
+def test_gravar_cria_arquivo_e_diretorio():
+    gravar(
+        [_definir(SQLITE, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
+        hashlib.sha256(b"").hexdigest(),
+    )
+    assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_NOVO
+
+
+def test_gravar_mantem_permissao():
+    _escrever('[tarefas]\na = "1"\n')
+    os.chmod(caminho_config_global(), MODO_GRUPO)
+    gravar([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
+    assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_GRUPO
+
+
+def test_chave_nao_editavel_sobrevive():
+    lista = f'{CHAVE_LISTA} = ["a", "b"]'
+    _escrever(f'[tarefas]\n{lista}\na = "1"\n')
+    versao = gravar([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
+    assert lista in _bytes().decode()
+    with pytest.raises(ErroDeEntrada):
+        gravar([_definir("x", CHAVE_LISTA, Tabela.TAREFAS)], versao.versao)
+
+
+def test_gravar_reaplica_ambiente():
+    definida = gravar(
+        [_definir(POSTGRES, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
+        ler_para_edicao().versao,
+    )
+    assert os.environ[VarAmbiente.DATABASE_BACKEND] == POSTGRES
+    gravar(
+        [
+            Alteracao(
+                AcaoAlteracao.REMOVER,
+                tabela=TABELA_AMBIENTE,
+                chave=VarAmbiente.DATABASE_BACKEND,
+            )
+        ],
+        definida.versao,
+    )
+    assert os.environ[VarAmbiente.DATABASE_BACKEND] == SQLITE
