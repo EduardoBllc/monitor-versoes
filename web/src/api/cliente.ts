@@ -17,6 +17,8 @@ export enum Metodo {
   DELETE = "DELETE",
 }
 
+export const CHAVE_REPOS = ["repos"];
+
 const STATUS_ERRO_MIN = 400;
 const STATUS_SEM_CORPO = 204;
 

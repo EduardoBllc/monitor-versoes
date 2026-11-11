@@ -8,6 +8,9 @@ import {
   alteracoesDe,
   chaveDe,
   estadoSegredo,
+  linhasDe,
+  opcoesDe,
+  textoDe,
   type Formulario,
 } from "./config";
 
@@ -19,6 +22,9 @@ const REPO_NOVO = "novo";
 const REPO_VELHO = "velho";
 
 const TABELA_TAREFAS = "tarefas";
+const TABELA_BRANCHES = "branches";
+const CHAVE_PRINCIPAL = "principal";
+const PRINCIPAL_REPO = "trunk";
 const original: ConfigEditavel = {
   versao: "v1",
   repos: [REPO_VELHO],
@@ -151,5 +157,55 @@ describe("estadoSegredo", () => {
     expect(estadoSegredo(undefined, true)).toBe(EstadoSegredo.DEFINIDO);
     expect(estadoSegredo("", false)).toBe(EstadoSegredo.NAO_DEFINIDO);
     expect(estadoSegredo(null, true)).toBe(EstadoSegredo.APAGAR);
+  });
+});
+
+describe("repo sobrescreve chave do topo", () => {
+  it("repo mostra os campos gerais declarados, mesmo sem override no arquivo", () => {
+    const linhas = linhasDe(original, REPO_VELHO);
+    expect(linhas).toContainEqual(
+      expect.objectContaining({ repo: REPO_VELHO, tabela: TABELA_VERSAO, chave: CHAVE_ESQUEMA }),
+    );
+    expect(linhas.some((l) => l.tabela === TABELA_AMBIENTE)).toBe(false);
+  });
+
+  it("repo novo com override de [branches]: CRIAR_REPO e depois DEFINIR no repo", () => {
+    const f = formulario({
+      reposCriados: [REPO_NOVO],
+      valores: { [chaveDe(REPO_NOVO, TABELA_BRANCHES, CHAVE_PRINCIPAL)]: PRINCIPAL_REPO },
+    });
+    expect(alteracoesDe(original, f)).toEqual([
+      { acao: AcaoAlteracao.CRIAR_REPO, repo: REPO_NOVO },
+      {
+        acao: AcaoAlteracao.DEFINIR,
+        repo: REPO_NOVO,
+        tabela: TABELA_BRANCHES,
+        chave: CHAVE_PRINCIPAL,
+        valor: PRINCIPAL_REPO,
+      },
+    ]);
+  });
+});
+
+describe("opcoesDe", () => {
+  const campo = original.campos[0]!;
+  const OPCAO = "semver";
+  const FORA = "pacote:Classe";
+
+  it("inclui o valor atual que não está nas opções", () => {
+    const comOpcao = { ...campo, opcoes: [OPCAO] };
+    expect(opcoesDe(comOpcao, FORA)).toEqual([OPCAO, FORA]);
+    expect(opcoesDe(comOpcao, OPCAO)).toEqual([OPCAO]);
+    expect(opcoesDe(comOpcao, null)).toEqual([OPCAO]);
+  });
+});
+
+describe("textoDe", () => {
+  const PORTA = "5433";
+
+  it("inteiro gravado como texto aparece como está", () => {
+    expect(textoDe(PORTA)).toBe(PORTA);
+    expect(textoDe(Number(PORTA))).toBe(PORTA);
+    expect(textoDe(null)).toBe("");
   });
 });

@@ -16,7 +16,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Metodo, api, ErroApi } from "./api/cliente";
+import { CHAVE_REPOS, Metodo, api, ErroApi } from "./api/cliente";
 import { EstadoExecucao, Operacao, TipoErro } from "./api/enums";
 import {
   FaseAtualizacao,
@@ -110,7 +110,7 @@ function Tela() {
   }, []);
 
   const repos = useQuery({
-    queryKey: ["repos"],
+    queryKey: CHAVE_REPOS,
     queryFn: () => api<RepoOption[]>(Metodo.GET, "/api/repos"),
   });
   const versoes = useQuery({

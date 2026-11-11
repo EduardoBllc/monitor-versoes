@@ -1,5 +1,5 @@
 import { AcaoAlteracao, Escopo } from "./api/enums";
-import type { Alteracao, Campo, ConfigEditavel } from "./api/tipos";
+import type { Alteracao, Campo, ConfigEditavel, ValorLido } from "./api/tipos";
 
 export const ORIGEM_MOTOR = "motor";
 export const TABELA_AMBIENTE = "ambiente";
@@ -41,19 +41,54 @@ function lerChave(k: string): [string | null, string | null, string] {
   return JSON.parse(k) as [string | null, string | null, string];
 }
 
+// No repo: os campos dele e os gerais que ele sobrescreve; no topo: tudo menos os do repo.
+const cabeNo = (c: Campo, repo: string | null): boolean =>
+  repo === null ? c.escopo !== Escopo.REPO : c.escopo !== Escopo.AMBIENTE;
+
 export function achaCampo(
   campos: Campo[],
   repo: string | null,
   tabela: string | null,
   chave: string,
 ): Campo | undefined {
-  return campos.find(
-    (c) =>
-      c.tabela === tabela &&
-      c.chave === chave &&
-      (c.escopo === Escopo.REPO) === (repo !== null),
-  );
+  return campos.find((c) => c.tabela === tabela && c.chave === chave && cabeNo(c, repo));
 }
+
+export interface Linha {
+  repo: string | null;
+  tabela: string | null;
+  chave: string;
+  campo?: Campo;
+  lido?: ValorLido;
+}
+
+export function linhasDe(config: ConfigEditavel, repo: string | null): Linha[] {
+  const declaradas = config.campos
+    .filter((c) => cabeNo(c, repo))
+    .map((campo) => ({
+      repo,
+      tabela: campo.tabela,
+      chave: campo.chave,
+      campo,
+      lido: config.valores.find(
+        (v) => v.repo === repo && v.tabela === campo.tabela && v.chave === campo.chave,
+      ),
+    }));
+  const livres = config.valores
+    .filter(
+      (v) => v.repo === repo && achaCampo(config.campos, v.repo, v.tabela, v.chave) === undefined,
+    )
+    .map((lido) => ({ repo, tabela: lido.tabela, chave: lido.chave, lido }));
+  return [...declaradas, ...livres];
+}
+
+// O valor em uso pode não estar entre as opções (ex.: `modulo:Classe` digitado à mão).
+export const opcoesDe = (campo: Campo, atual: Escalar): string[] =>
+  typeof atual === "string" && atual !== "" && !campo.opcoes.includes(atual)
+    ? [...campo.opcoes, atual]
+    : campo.opcoes;
+
+export const textoDe = (valor: Escalar): string => (valor === null ? "" : String(valor));
 
 const vazio = (v: Escalar | undefined): boolean => v === null || v === "" || v === undefined;
 

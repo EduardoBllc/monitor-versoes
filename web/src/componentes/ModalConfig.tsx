@@ -15,9 +15,9 @@ import {
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Metodo, ErroApi, api } from "../api/cliente";
+import { CHAVE_REPOS, Metodo, ErroApi, api } from "../api/cliente";
 import { Escopo, TipoCampo, TipoErro } from "../api/enums";
-import type { Campo, ConfigEditavel, ValorLido } from "../api/tipos";
+import type { ConfigEditavel } from "../api/tipos";
 import {
   ORIGEM_MOTOR,
   EstadoSegredo,
@@ -27,8 +27,12 @@ import {
   alteracoesDe,
   chaveDe,
   estadoSegredo,
+  linhasDe,
+  opcoesDe,
+  textoDe,
   type Escalar,
   type Formulario,
+  type Linha,
 } from "../config";
 import { notificarErro, notificarOk } from "./notificar";
 
@@ -43,36 +47,8 @@ enum Aba {
 
 type Valores = Formulario["valores"];
 
-interface Linha {
-  repo: string | null;
-  tabela: string | null;
-  chave: string;
-  campo?: Campo;
-  lido?: ValorLido;
-}
-
 const rotuloDe = (l: Linha): string =>
   l.campo?.rotulo ?? [l.tabela, l.chave].filter(Boolean).join(".");
-
-function linhasDe(config: ConfigEditavel, repo: string | null): Linha[] {
-  const declaradas = config.campos
-    .filter((c) => (c.escopo === Escopo.REPO) === (repo !== null))
-    .map((campo) => ({
-      repo,
-      tabela: campo.tabela,
-      chave: campo.chave,
-      campo,
-      lido: config.valores.find(
-        (v) => v.repo === repo && v.tabela === campo.tabela && v.chave === campo.chave,
-      ),
-    }));
-  const livres = config.valores
-    .filter(
-      (v) => v.repo === repo && achaCampo(config.campos, v.repo, v.tabela, v.chave) === undefined,
-    )
-    .map((lido) => ({ repo, tabela: lido.tabela, chave: lido.chave, lido }));
-  return [...declaradas, ...livres];
-}
 
 function Entrada({
   linha,
@@ -124,7 +100,7 @@ function Entrada({
     return (
       <Select
         label={label}
-        data={campo.opcoes}
+        data={opcoesDe(campo, atual)}
         disabled={somenteLeitura}
         clearable
         placeholder={placeholder}
@@ -139,7 +115,7 @@ function Entrada({
         label={label}
         readOnly={somenteLeitura}
         placeholder={placeholder}
-        value={typeof atual === "number" ? atual : ""}
+        value={textoDe(atual)}
         onChange={(v) => mudar(k, typeof v === "number" ? v : null)}
       />
     );
@@ -370,7 +346,7 @@ export function ModalConfig({
     onSuccess: (nova) => {
       setRecusada(false);
       cliente.setQueryData(CHAVE, nova);
-      void cliente.invalidateQueries({ queryKey: ["repos"] });
+      void cliente.invalidateQueries({ queryKey: CHAVE_REPOS });
       notificarOk("Configuração salva");
     },
     onError: (erro) => {
