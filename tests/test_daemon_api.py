@@ -25,11 +25,19 @@ from motor.config_edicao import AcaoAlteracao
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
+from motor.domain.conflito import TipoArquivo
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
-from motor.errors import BackendIndisponivel, MotorError
+from motor.engine.conflito import ArquivoDoConflito, ConflitoAberto, ConteudoDoConflito
+from motor.errors import (
+    BackendIndisponivel,
+    ErroDeEntrada,
+    MotorError,
+    NaoEncontrado,
+    VersaoDesatualizada,
+)
 from motor.inscricoes import INTERVALO_PADRAO
-from motor.operacoes import RepoOption, Runners, VersionOption
+from motor.operacoes import RepoOption, Resolucao, Runners, VersionOption
 from motor.progresso import Progresso, RelatorProgresso
 from tests.versionamento import ESCALONADO_COMPOSTA
 
@@ -38,6 +46,13 @@ ESPERA_S = 5.0
 REPO = "meu-repo"
 VERSAO = "14.0.0"
 CLONE = "/tmp/clones/meu-repo"
+CAMINHO = "src/app/main.py"
+VERSAO_DISCO = "v1"
+CONFLITO = ConflitoAberto(
+    "abc123", "msg", None, [ArquivoDoConflito(CAMINHO, TipoArquivo.CONTEUDO, False)]
+)
+CONTEUDO = ConteudoDoConflito(TipoArquivo.CONTEUDO, "b", "o", "t", "d", VERSAO_DISCO)
+BASE_CONFLITO = f"/api/repos/{REPO}/versoes/{VERSAO}/conflito"
 REPOS = [RepoOption(REPO, CLONE), RepoOption("sem-clone", None)]
 
 
@@ -50,6 +65,7 @@ class Ambiente:
         self.versoes = [VersionOption("14.0.0", True), VersionOption("13.0.0", True)]
         self.resultado: VersionStatus | AtualizarResult = VersionStatus(verde=True)
         self.inscricoes = tmp_path / "inscricoes.json"
+        self.erro_conflito: MotorError | None = None
 
     def fabrica(self, relatar: RelatorProgresso) -> Runners:
         def executar(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -59,10 +75,36 @@ class Ambiente:
             self.soltar.wait(ESPERA_S)
             return cast(VersionStatus, self.resultado)
 
+        def falhar_ou(valor: Any) -> Any:
+            if self.erro_conflito is not None:
+                raise self.erro_conflito
+            return valor
+
+        def ler_conflito(repo: RepoOption, versao: str) -> ConflitoAberto:
+            return cast(ConflitoAberto, falhar_ou(CONFLITO))
+
+        def ler_arquivo(repo: RepoOption, versao: str, caminho: str) -> Any:
+            self.chamadas.append((repo.nome, versao, caminho))
+            return falhar_ou(CONTEUDO)
+
+        def resolver(repo: RepoOption, versao: str, resolucao: Resolucao) -> None:
+            self.chamadas.append(
+                (resolucao.caminho, resolucao.conteudo, resolucao.versao_disco)
+            )
+            falhar_ou(None)
+
+        def reabrir(repo: RepoOption, versao: str, caminho: str) -> None:
+            self.chamadas.append((caminho,))
+            falhar_ou(None)
+
         return Runners(
             lambda: REPOS,
             lambda repo: self.versoes,
             executar,
+            ler_conflito=ler_conflito,
+            ler_arquivo_conflito=ler_arquivo,
+            resolver_arquivo_conflito=resolver,
+            reabrir_arquivo_conflito=reabrir,
             versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
         )
 
@@ -515,3 +557,90 @@ def test_put_config_erros(
         amb.soltar.set()
     if caso is CasoErro.OCUPADO:
         _esperar(cliente)
+
+
+def test_conflito_le_lista_e_arquivo_com_caminho_na_query(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    lista = cliente.get(BASE_CONFLITO)
+    assert lista.status_code == HTTPStatus.OK
+    assert lista.json()["arquivos"][0]["caminho"] == CAMINHO
+    r = cliente.get(f"{BASE_CONFLITO}/arquivo", params={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["versao_disco"] == VERSAO_DISCO
+    assert amb.chamadas == [(REPO, VERSAO, CAMINHO)]
+
+
+def test_conflito_resolve_e_reabre_com_204(cliente: TestClient, amb: Ambiente) -> None:
+    corpo = {"caminho": CAMINHO, "conteudo": None, "versao_disco": VERSAO_DISCO}
+    r = cliente.post(f"{BASE_CONFLITO}/resolucao", json=corpo)
+    assert (r.status_code, r.content) == (HTTPStatus.NO_CONTENT, b"")
+    r = cliente.post(f"{BASE_CONFLITO}/reabertura", json={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.NO_CONTENT
+    assert amb.chamadas == [(CAMINHO, None, VERSAO_DISCO), (CAMINHO,)]
+
+
+@pytest.mark.parametrize(
+    ("erro", "status", "tipo"),
+    [
+        (NaoEncontrado("x"), HTTPStatus.NOT_FOUND, TipoErro.NAO_ENCONTRADO),
+        (VersaoDesatualizada("x"), HTTPStatus.CONFLICT, TipoErro.DESATUALIZADO),
+        (ErroDeEntrada("x"), HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+    ],
+)
+def test_conflito_traduz_erro_do_motor(
+    cliente: TestClient,
+    amb: Ambiente,
+    erro: MotorError,
+    status: HTTPStatus,
+    tipo: TipoErro,
+) -> None:
+    amb.erro_conflito = erro
+    r = cliente.post(
+        f"{BASE_CONFLITO}/resolucao",
+        json={"caminho": CAMINHO, "conteudo": "x", "versao_disco": VERSAO_DISCO},
+    )
+    assert r.status_code == status
+    assert r.json()["tipo"] == tipo
+
+
+@pytest.mark.parametrize(
+    ("rota", "corpo"),
+    [
+        (
+            "resolucao",
+            {"caminho": CAMINHO, "conteudo": "x", "versao_disco": VERSAO_DISCO},
+        ),
+        ("reabertura", {"caminho": CAMINHO}),
+    ],
+    ids=["resolucao", "reabertura"],
+)
+def test_escrita_de_conflito_com_repo_travado_da_409(
+    cliente: TestClient, rota: str, corpo: dict[str, Any]
+) -> None:
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        r = cliente.post(f"{BASE_CONFLITO}/{rota}", json=corpo)
+    assert r.status_code == HTTPStatus.CONFLICT
+    assert r.json()["tipo"] == TipoErro.OCUPADO
+
+
+def test_leitura_de_conflito_roda_com_repo_travado(cliente: TestClient) -> None:
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        assert cliente.get(BASE_CONFLITO).status_code == HTTPStatus.OK
+
+
+def test_escrita_de_conflito_solta_o_repo_depois_de_erro_do_runner(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    url = f"{BASE_CONFLITO}/reabertura"
+    amb.erro_conflito = NaoEncontrado("x")
+    assert (
+        cliente.post(url, json={"caminho": CAMINHO}).status_code == HTTPStatus.NOT_FOUND
+    )
+    amb.erro_conflito = None
+    r = cliente.post(url, json={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.NO_CONTENT

@@ -3,8 +3,8 @@
 Duas familias, por eixo. As quatro primeiras subclasses sao o vocabulario das
 **portas**: e o que um adapter — inclusive um de terceiro — pode levantar, e o
 que a suite de contrato assere por tipo em vez de casar substring de mensagem em
-portugues. `ErroDeEntrada` e sua subclasse `RepoOcupado` sao do eixo do
-**operador**, e nao saem de porta nenhuma.
+portugues. `ErroDeEntrada` (com a subclasse `RepoOcupado`) e `VersaoDesatualizada`
+sao do eixo do **operador**, e nao saem de porta nenhuma.
 
 Todas herdam de MotorError: `except MotorError` continua pegando tudo, entao
 reclassificar um raise nunca muda o comportamento de quem captura generico.
@@ -87,6 +87,13 @@ class RepoOcupado(ErroDeEntrada):
         detalhe = f" (pid {pid})" if pid is not None else ""
         super().__init__(f"repo {nome} ocupado por outra operação{detalhe}")
         self.pid = pid
+
+
+class VersaoDesatualizada(MotorError):
+    """O arquivo mudou fora da web depois da leitura; recarregue.
+
+    A web ramifica nela para oferecer o recarregar em vez de sobrescrever.
+    """
 
 
 def formatar_com_notas(e: MotorError) -> str:

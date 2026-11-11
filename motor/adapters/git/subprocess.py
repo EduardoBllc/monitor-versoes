@@ -17,12 +17,15 @@ import subprocess
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from enum import IntEnum, StrEnum
+from typing import Any, NamedTuple
 
+from motor.domain.conflito import Estagios
 from motor.domain.types import CommitRef
 from motor.domain.worktrees import worktrees_a_remover
 from motor.errors import (
     BackendIndisponivel,
+    ErroDeEntrada,
     MotorError,
     NaoEncontrado,
     RespostaInvalida,
@@ -65,6 +68,26 @@ _CREDENCIAL_EM_URL = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
 #: contrario do estado no Postgres, que e compartilhado: uso registrado la
 #: faria uma maquina evictar worktree de outra.
 _ARQUIVO_MRU = ".motor-mru"
+
+
+class _Estagio(IntEnum):
+    BASE = 1
+    OURS = 2
+    THEIRS = 3
+
+
+#: Modo de entrada do índice para submódulo: o oid é commit, não blob.
+_MODO_GITLINK = "160000"
+
+
+class _Entrada(NamedTuple):
+    modo: str
+    oid: str
+
+
+class _ListaDoIndice(StrEnum):
+    ABERTOS = "--unmerged"
+    RESOLVIDOS = "--resolve-undo"
 
 
 #: Quadro de progresso do git: "remote: Counting objects:  25% (1/4)". A parte
@@ -614,6 +637,117 @@ class GitSubprocess:
         except MotorError:
             return "", False
         return hash_, True
+
+    def _caminho_na_worktree(self, caminho: str) -> str:
+        raiz = os.path.realpath(self._worktree_dir(self._current_branch))
+        if os.path.islink(os.path.join(raiz, caminho)):
+            raise ErroDeEntrada(f"caminho e link simbolico: {caminho}")
+        completo = os.path.realpath(os.path.join(raiz, caminho))
+        if os.path.commonpath([raiz, completo]) != raiz or completo == raiz:
+            raise ErroDeEntrada(f"caminho fora da worktree: {caminho}")
+        return completo
+
+    def _git_literal(self, *args: str) -> str:
+        # Sem pathspec mágico: o caminho é sempre um arquivo, nunca um glob.
+        dir_ = self._worktree_dir(self._current_branch)
+        return self._output(dir_, "--literal-pathspecs", *args)
+
+    def _entradas(
+        self, lista: _ListaDoIndice, *caminho: str
+    ) -> dict[str, dict[int, _Entrada]]:
+        """`ls-files <opcao> -z`: caminho -> estágio -> (modo, oid)."""
+        entradas: dict[str, dict[int, _Entrada]] = {}
+        for registro in self._git_literal(
+            "ls-files", lista, "-z", "--", *caminho
+        ).split("\0"):
+            if registro:
+                info, nome = registro.split("\t", 1)
+                modo, oid, estagio = info.split(" ")
+                entradas.setdefault(nome, {})[int(estagio)] = _Entrada(modo, oid)
+        return entradas
+
+    def arquivos_do_pick(self) -> dict[str, bool]:
+        # O resolve-undo sobrevive ao commit do pick; sem pick aberto, não vale.
+        if not self.pending_cherry_pick()[1]:
+            return {}
+        abertos = self._entradas(_ListaDoIndice.ABERTOS)
+        resolvidos = self._entradas(_ListaDoIndice.RESOLVIDOS)
+        return {**{c: True for c in resolvidos}, **{c: False for c in abertos}}
+
+    def _blob(self, oid: str) -> bytes:
+        dir_ = self._worktree_dir(self._current_branch)
+        proc = _rodar_git_bytes(["git", "cat-file", "blob", oid], cwd=dir_)
+        if proc.returncode != 0:
+            raise MotorError(
+                f"git cat-file blob {oid}: exit status {proc.returncode}: "
+                f"{_saida_git_publica(proc.stderr.decode(errors='replace'))}"
+            )
+        return proc.stdout
+
+    def _oids(self, caminho: str) -> dict[int, _Entrada]:
+        oids = (
+            self._entradas(_ListaDoIndice.ABERTOS, caminho).get(caminho)
+            or self._entradas(_ListaDoIndice.RESOLVIDOS, caminho).get(caminho)
+            if self.pending_cherry_pick()[1]
+            else None
+        )
+        if not oids:
+            raise NaoEncontrado(f"{caminho} nao esta no conflito do pick")
+        return oids
+
+    def disco_bytes(self, caminho: str, /) -> bytes | None:
+        if os.path.islink(
+            os.path.join(self._worktree_dir(self._current_branch), caminho)
+        ):
+            return None
+        completo = self._caminho_na_worktree(caminho)
+        if not os.path.isfile(completo):
+            return None
+        with open(completo, "rb") as f:
+            return f.read()
+
+    def estagios(self, caminho: str, /) -> Estagios:
+        oids = self._oids(caminho)
+        disco = self.disco_bytes(caminho)
+        no_disco = os.path.join(self._worktree_dir(self._current_branch), caminho)
+        # Submódulo, link e diretório viram OUTRO: listados e nunca resolvidos pela web.
+        if (disco is None and os.path.lexists(no_disco)) or any(
+            e.modo == _MODO_GITLINK for e in oids.values()
+        ):
+            return Estagios(None, None, None, None, binario=True)
+        lados = [self._blob(oids[e].oid) if e in oids else None for e in _Estagio]
+        try:
+            base, ours, theirs, texto = (
+                None if b is None else b.decode("utf-8") for b in [*lados, disco]
+            )
+        except UnicodeDecodeError:
+            return Estagios(None, None, None, None, binario=True)
+        return Estagios(base, ours, theirs, texto, binario=False)
+
+    def resolver(self, caminho: str, conteudo: str | None, /) -> None:
+        completo = self._caminho_na_worktree(caminho)
+        if conteudo is None:
+            self._git_literal("rm", "-q", "--cached", "--", caminho)
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(completo)
+            return
+        os.makedirs(os.path.dirname(completo), exist_ok=True)
+        with open(completo, "wb") as f:
+            f.write(conteudo.encode())
+        self._git_literal("add", "--", caminho)
+
+    def reabrir(self, caminho: str, /) -> None:
+        completo = self._caminho_na_worktree(caminho)
+        oids = self._oids(caminho)
+        self._git_literal("update-index", "--unresolve", "--", caminho)
+        if _Estagio.OURS in oids and _Estagio.THEIRS in oids:
+            self._git_literal("checkout", "-m", "--", caminho)
+            return
+        # checkout -m recusa modify/delete; o pick deixou no disco o lado que restou.
+        presente = oids.get(_Estagio.OURS) or oids[_Estagio.THEIRS]
+        os.makedirs(os.path.dirname(completo), exist_ok=True)
+        with open(completo, "wb") as f:
+            f.write(self._blob(presente.oid))
 
     def continue_cherry_pick(self) -> CherryPickOutcome:
         dir_ = self._worktree_dir(self._current_branch)

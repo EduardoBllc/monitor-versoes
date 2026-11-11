@@ -13,6 +13,9 @@
    (`WORKTREES_MANTIDAS`, ver README) nunca a descarta: cherry-pick pendente e alteração
    não commitada são guardas de remoção.
 4. **Worktree isolada** — a árvore de trabalho principal nunca é tocada.
+5. **Marcador esquecido trava o `continuar`** — o `continuar` recusa arquivo não mesclado
+   com marcador de conflito no disco, em todos os front-ends; modify/delete sem marcador
+   passa.
 
 A predição de conflito não toca a working tree:
 `git merge-tree --write-tree --merge-base=<parent(c)> <branch-tip> <c>` (Git ≥ 2.38) reporta

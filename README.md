@@ -278,9 +278,23 @@ o resto.
 `motor serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
 (padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
 
-As operações seguem rodando se a aba fechar. Um pick bloqueado por conflito se resolve na
-worktree, no seu editor; depois, **Continuar**. O porquê em
+As operações seguem rodando se a aba fechar. O porquê em
 [decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md).
+
+Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
+
+- **Resolver na web**, no painel do bloqueio: para cada arquivo, o editor de 3 vias mostra
+  theirs (o commit aplicado), o resultado (que parte do que está em disco) e ours (o alvo).
+  Cada bloco de conflito tem "Aceitar theirs", "Aceitar ours", "Ambos" e, quando o bloco
+  traz a base, "Base"; o resultado também se edita à mão. A edição só vai para o disco em
+  **Marcar resolvido**, que fica desabilitado enquanto restar marcador. Modify/delete se
+  resolve com "Manter arquivo" ou "Apagar arquivo"; binário, rename, add/add sem texto e
+  submódulo ficam para o editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
+- **No seu editor**, na worktree que o painel mostra.
+
+Depois, **Continuar**. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum
+arquivo ainda não mesclado tiver marcador de conflito no disco, e aponta arquivo e linha. As
+regras do conflito estão na [decisão 013](docs/decisoes/013-conflito-e-checkpoint.md).
 
 ### Editar a configuração pela interface
 
