@@ -13,6 +13,7 @@ from motor.errors import (
     MotorError,
     NaoEncontrado,
     RecusaDeInvariante,
+    RepoOcupado,
     RespostaInvalida,
     formatar_com_notas,
 )
@@ -37,11 +38,6 @@ class TipoErro(StrEnum):
 class ErroApi:
     tipo: TipoErro
     mensagem: str
-
-
-class RepoOcupado(MotorError):
-    def __init__(self, repo: str) -> None:
-        super().__init__(f"repo {repo} já tem uma operação em andamento")
 
 
 # Ordem irrelevante: a resolução anda pela MRO do erro, do mais específico ao MotorError.
