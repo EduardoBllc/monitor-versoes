@@ -28,7 +28,14 @@ export enum TipoErro {
   RESPOSTA = "resposta",
   MOTOR = "motor",
   OCUPADO = "ocupado",
+  DESATUALIZADO = "desatualizado",
   INTERNO = "interno",
+}
+
+export enum TipoArquivo {
+  CONTEUDO = "conteudo",
+  MODIFICADO_APAGADO = "modificado_apagado",
+  OUTRO = "outro",
 }
 
 export enum Desfecho {

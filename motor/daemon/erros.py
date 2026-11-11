@@ -15,6 +15,7 @@ from motor.errors import (
     RecusaDeInvariante,
     RepoOcupado,
     RespostaInvalida,
+    VersaoDesatualizada,
     formatar_com_notas,
 )
 
@@ -31,6 +32,7 @@ class TipoErro(StrEnum):
     RESPOSTA = "resposta"
     MOTOR = "motor"
     OCUPADO = "ocupado"
+    DESATUALIZADO = "desatualizado"
     INTERNO = "interno"
 
 
@@ -54,6 +56,7 @@ _TABELA: dict[type[MotorError], tuple[HTTPStatus, TipoErro]] = {
     RespostaInvalida: (HTTPStatus.BAD_GATEWAY, TipoErro.RESPOSTA),
     RepoOcupado: (HTTPStatus.CONFLICT, TipoErro.OCUPADO),
     ConfigOcupada: (HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+    VersaoDesatualizada: (HTTPStatus.CONFLICT, TipoErro.DESATUALIZADO),
     MotorError: (HTTPStatus.INTERNAL_SERVER_ERROR, TipoErro.MOTOR),
 }
 

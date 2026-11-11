@@ -531,6 +531,213 @@
         }
       }
     },
+    "/api/repos/{repo}/versoes/{versao}/conflito": {
+      "get": {
+        "summary": "Ler Conflito",
+        "operationId": "ler_conflito_api_repos__repo__versoes__versao__conflito_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflitoAberto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/conflito/arquivo": {
+      "get": {
+        "summary": "Ler Arquivo",
+        "operationId": "ler_arquivo_api_repos__repo__versoes__versao__conflito_arquivo_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          },
+          {
+            "name": "caminho",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Caminho"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConteudoDoConflito"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/conflito/resolucao": {
+      "post": {
+        "summary": "Resolver",
+        "operationId": "resolver_api_repos__repo__versoes__versao__conflito_resolucao_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolucao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/conflito/reabertura": {
+      "post": {
+        "summary": "Reabrir",
+        "operationId": "reabrir_api_repos__repo__versoes__versao__conflito_reabertura_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoReabertura"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/repos/{repo}/execucao": {
       "get": {
         "summary": "Execucao Atual",
@@ -868,6 +1075,28 @@
         "title": "Alteracao",
         "description": "`repo=None` é o topo; `tabela=None` é chave direta do topo ou da seção."
       },
+      "ArquivoDoConflito": {
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "title": "Caminho"
+          },
+          "tipo": {
+            "$ref": "#/components/schemas/TipoArquivo"
+          },
+          "resolvido": {
+            "type": "boolean",
+            "title": "Resolvido"
+          }
+        },
+        "type": "object",
+        "required": [
+          "caminho",
+          "tipo",
+          "resolvido"
+        ],
+        "title": "ArquivoDoConflito"
+      },
       "AtualizarResult": {
         "properties": {
           "status": {
@@ -1122,6 +1351,109 @@
           "versao"
         ],
         "title": "ConfigEditavel"
+      },
+      "ConflitoAberto": {
+        "properties": {
+          "commit": {
+            "type": "string",
+            "title": "Commit"
+          },
+          "mensagem": {
+            "type": "string",
+            "title": "Mensagem"
+          },
+          "chamado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chamado"
+          },
+          "arquivos": {
+            "items": {
+              "$ref": "#/components/schemas/ArquivoDoConflito"
+            },
+            "type": "array",
+            "title": "Arquivos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit",
+          "mensagem",
+          "chamado",
+          "arquivos"
+        ],
+        "title": "ConflitoAberto"
+      },
+      "ConteudoDoConflito": {
+        "properties": {
+          "tipo": {
+            "$ref": "#/components/schemas/TipoArquivo"
+          },
+          "base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base"
+          },
+          "ours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ours"
+          },
+          "theirs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theirs"
+          },
+          "disco": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disco"
+          },
+          "versao_disco": {
+            "type": "string",
+            "title": "Versao Disco"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tipo",
+          "base",
+          "ours",
+          "theirs",
+          "disco",
+          "versao_disco"
+        ],
+        "title": "ConteudoDoConflito"
       },
       "Desfecho": {
         "type": "string",
@@ -1380,6 +1712,19 @@
         ],
         "title": "PedidoInscrever"
       },
+      "PedidoReabertura": {
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "title": "Caminho"
+          }
+        },
+        "type": "object",
+        "required": [
+          "caminho"
+        ],
+        "title": "PedidoReabertura"
+      },
       "PedidoRemover": {
         "properties": {
           "repo": {
@@ -1487,6 +1832,36 @@
         ],
         "title": "RepoOption"
       },
+      "Resolucao": {
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "title": "Caminho"
+          },
+          "conteudo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conteudo"
+          },
+          "versao_disco": {
+            "type": "string",
+            "title": "Versao Disco"
+          }
+        },
+        "type": "object",
+        "required": [
+          "caminho",
+          "conteudo",
+          "versao_disco"
+        ],
+        "title": "Resolucao"
+      },
       "Sugestao": {
         "properties": {
           "numero": {
@@ -1512,6 +1887,15 @@
         ],
         "title": "Sugestao"
       },
+      "TipoArquivo": {
+        "type": "string",
+        "enum": [
+          "conteudo",
+          "modificado_apagado",
+          "outro"
+        ],
+        "title": "TipoArquivo"
+      },
       "TipoCampo": {
         "type": "string",
         "enum": [
@@ -1531,6 +1915,7 @@
           "resposta",
           "motor",
           "ocupado",
+          "desatualizado",
           "interno"
         ],
         "title": "TipoErro"

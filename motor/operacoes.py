@@ -20,6 +20,14 @@ from motor.engine.atualizar import (
     atualizar_continue,
     previa_atualizacao,
 )
+from motor.engine.conflito import (
+    ConflitoAberto,
+    ConteudoDoConflito,
+    ler_arquivo,
+    ler_conflito,
+    reabrir_arquivo,
+    resolver_arquivo,
+)
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
@@ -56,6 +64,13 @@ def travar_repo(repo: RepoOption) -> Trava | None:
 
 
 @dataclass(frozen=True)
+class Resolucao:
+    caminho: str
+    conteudo: str | None
+    versao_disco: str
+
+
+@dataclass(frozen=True)
 class VersionOption:
     numero: str
     liberada: bool
@@ -69,6 +84,10 @@ PreviewRunner = Callable[[RepoOption, str], VersionStatus]
 AbortRunner = Callable[[RepoOption, str], None]
 CriarRunner = Callable[[RepoOption, str], AtualizarResult]
 VersionamentoLoader = Callable[[RepoOption], Versionamento]
+LerConflitoRunner = Callable[[RepoOption, str], ConflitoAberto]
+LerArquivoConflitoRunner = Callable[[RepoOption, str, str], ConteudoDoConflito]
+ResolverArquivoRunner = Callable[[RepoOption, str, "Resolucao"], None]
+ReabrirArquivoRunner = Callable[[RepoOption, str, str], None]
 
 
 class ContinueRunner(Protocol):
@@ -100,6 +119,10 @@ class Runners:
     previa_atualizacao: PreviewRunner | None = None
     # Sem ele, o versionamento sai da config do repo (`versionamento_do_repo`).
     versionamento_repo: VersionamentoLoader | None = None
+    ler_conflito: LerConflitoRunner | None = None
+    ler_arquivo_conflito: LerArquivoConflitoRunner | None = None
+    resolver_arquivo_conflito: ResolverArquivoRunner | None = None
+    reabrir_arquivo_conflito: ReabrirArquivoRunner | None = None
 
 
 def descobrir_repos(
@@ -223,6 +246,52 @@ def abortar_repo(
         atualizar_abort(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def ler_conflito_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> ConflitoAberto:
+    with abrir_sessao() as sessao:
+        return ler_conflito(_deps_do_repo(repo, sessao, progresso), versao)
+
+
+def ler_arquivo_conflito_repo(
+    repo: RepoOption,
+    versao: str,
+    caminho: str,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> ConteudoDoConflito:
+    with abrir_sessao() as sessao:
+        return ler_arquivo(_deps_do_repo(repo, sessao, progresso), versao, caminho)
+
+
+def resolver_arquivo_conflito_repo(
+    repo: RepoOption,
+    versao: str,
+    resolucao: Resolucao,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> None:
+    with abrir_sessao() as sessao:
+        resolver_arquivo(
+            _deps_do_repo(repo, sessao, progresso),
+            versao,
+            resolucao.caminho,
+            resolucao.conteudo,
+            resolucao.versao_disco,
+        )
+
+
+def reabrir_arquivo_conflito_repo(
+    repo: RepoOption,
+    versao: str,
+    caminho: str,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> None:
+    with abrir_sessao() as sessao:
+        reabrir_arquivo(_deps_do_repo(repo, sessao, progresso), versao, caminho)
+
+
 def criar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> AtualizarResult:
@@ -276,4 +345,12 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         partial(consultar_repo, progresso=relatar),
         partial(criar_repo, progresso=relatar),
         previa_atualizacao=partial(previa_repo, progresso=relatar),
+        ler_conflito=partial(ler_conflito_repo, progresso=relatar),
+        ler_arquivo_conflito=partial(ler_arquivo_conflito_repo, progresso=relatar),
+        resolver_arquivo_conflito=partial(
+            resolver_arquivo_conflito_repo, progresso=relatar
+        ),
+        reabrir_arquivo_conflito=partial(
+            reabrir_arquivo_conflito_repo, progresso=relatar
+        ),
     )

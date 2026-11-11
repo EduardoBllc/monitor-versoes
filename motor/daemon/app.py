@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import nullcontext
 from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -31,10 +32,12 @@ from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult
+from motor.engine.conflito import ConflitoAberto, ConteudoDoConflito
 from motor.engine.consultar import ChamadoConsultado
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.operacoes import (
     RepoOption,
+    Resolucao,
     Runners,
     VersionamentoLoader,
     VersionOption,
@@ -99,6 +102,11 @@ class PedidoRemover:
 class PedidoConfig:
     alteracoes: list[Alteracao]
     versao: str
+
+
+@dataclass(frozen=True)
+class PedidoReabertura:
+    caminho: str
 
 
 @dataclass(frozen=True)
@@ -271,6 +279,39 @@ def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
         )
 
 
+def _rotas_conflito(app: FastAPI, ctx: _Contexto) -> None:
+    base = "/api/repos/{repo}/versoes/{versao}/conflito"
+    sem_corpo = HTTPStatus.NO_CONTENT
+
+    @app.get(base)
+    def ler_conflito(repo: str, versao: str) -> ConflitoAberto:
+        # Leitura não trava, como a consulta (decisão 032): a tela dispara as
+        # duas leituras juntas, e o flock recusaria a segunda.
+        return _exigir(ctx.leitura().ler_conflito)(ctx.achar(repo), versao)
+
+    @app.get(f"{base}/arquivo")
+    def ler_arquivo(
+        repo: str, versao: str, caminho: str = Query()
+    ) -> ConteudoDoConflito:
+        return _exigir(ctx.leitura().ler_arquivo_conflito)(
+            ctx.achar(repo), versao, caminho
+        )
+
+    @app.post(f"{base}/resolucao", status_code=sem_corpo)
+    def resolver(repo: str, versao: str, corpo: Resolucao) -> None:
+        runner = _exigir(ctx.leitura().resolver_arquivo_conflito)
+        opcao = ctx.achar(repo)
+        with travar_repo(opcao) or nullcontext():
+            runner(opcao, versao, corpo)
+
+    @app.post(f"{base}/reabertura", status_code=sem_corpo)
+    def reabrir(repo: str, versao: str, corpo: PedidoReabertura) -> None:
+        runner = _exigir(ctx.leitura().reabrir_arquivo_conflito)
+        opcao = ctx.achar(repo)
+        with travar_repo(opcao) or nullcontext():
+            runner(opcao, versao, corpo.caminho)
+
+
 def _rotas_execucao(app: FastAPI, ctx: _Contexto) -> None:
     @app.get("/api/repos/{repo}/execucao")
     def execucao_atual(repo: str) -> Execucao | None:
@@ -390,6 +431,7 @@ def criar_app(
 
     _rotas_repos(app, ctx)
     _rotas_operacoes(app, ctx)
+    _rotas_conflito(app, ctx)
     _rotas_execucao(app, ctx)
     _rotas_inscricoes(app, ctx)
     _rotas_config(app, ctx)
