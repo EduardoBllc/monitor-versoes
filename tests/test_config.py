@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from motor import config
@@ -502,3 +504,19 @@ def test_postgres_incompleto_aponta_o_ambiente_central(central, monkeypatch):
     assert "[ambiente]" in str(e.value)
     assert str(central) in str(e.value)
     assert ".env" in str(e.value)
+
+
+def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):
+    monkeypatch.setenv("DATABASE_HOST", "shell")
+    monkeypatch.delenv("DATABASE_NAME", raising=False)
+    config.aplicar_ambiente_central({"DATABASE_HOST": "central", "DATABASE_NAME": "x"})
+    assert os.environ["DATABASE_HOST"] == "central"
+    config.aplicar_ambiente_central({})
+    assert os.environ["DATABASE_HOST"] == "shell"
+    assert "DATABASE_NAME" not in os.environ
+
+
+def test_aplicar_ambiente_ignora_xdg():
+    antes = os.environ.get("XDG_CONFIG_HOME")
+    config.aplicar_ambiente_central({"XDG_CONFIG_HOME": "/outro"})
+    assert os.environ.get("XDG_CONFIG_HOME") == antes

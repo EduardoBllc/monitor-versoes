@@ -347,16 +347,49 @@ def repos_configurados() -> dict[str, str | None]:
     }
 
 
+#: `base` é o ambiente antes do primeiro `[ambiente]`; `aplicadas`, o que ele pôs.
+_estado_ambiente: dict[str, dict[str, str]] = {}
+_chaves_aplicadas: set[str] = set()
+_BASE = "base"
+
+
+def _reiniciar_ambiente_base() -> None:
+    _estado_ambiente.clear()
+    _chaves_aplicadas.clear()
+
+
+def aplicar_ambiente_central(central: Mapping[str, str]) -> None:
+    """Aplica o `[ambiente]` sobre a base (shell + .env), desfazendo o que saiu.
+
+    `XDG_CONFIG_HOME` nunca vem do `[ambiente]`: o caminho do central não pode
+    mudar sob quem o acabou de ler.
+    """
+    base = _estado_ambiente.setdefault(_BASE, dict(os.environ))
+    novo = {k: v for k, v in central.items() if k != "XDG_CONFIG_HOME"}
+    for chave in _chaves_aplicadas - novo.keys():
+        if chave in base:
+            os.environ[chave] = base[chave]
+        else:
+            os.environ.pop(chave, None)
+    os.environ.update(novo)
+    _chaves_aplicadas.clear()
+    _chaves_aplicadas.update(novo)
+
+
 def ambiente_central() -> dict[str, str]:
-    """`[ambiente]` do topo da config central, como variaveis de ambiente.
+    """`[ambiente]` do topo da config central, como variaveis de ambiente."""
+    arquivo = caminho_config_global()
+    return ambiente_do_documento(_ler_toml(arquivo), arquivo)
+
+
+def ambiente_do_documento(dados: Mapping[str, object], arquivo: str) -> dict[str, str]:
+    """`[ambiente]` de um documento já lido, como variaveis de ambiente.
 
     Os nomes sao os das variaveis (os mesmos do .env), para que adapters e
     plugins leiam do ambiente sem saber de onde veio. Inteiro vira texto porque
     `DATABASE_PORT = 5433` e o natural em TOML; booleano, data e lista nao tem
     uma forma textual unica, e adivinhar uma seria configurar outra coisa.
     """
-    arquivo = caminho_config_global()
-    dados = _ler_toml(arquivo)
     bruto = _tabela(dados, TABELA_AMBIENTE, arquivo)
     _secoes(dados, arquivo)
     ambiente: dict[str, str] = {}
@@ -376,13 +409,24 @@ def ambiente_central() -> dict[str, str]:
 def carregar_config_global() -> ConfigProjeto:
     """So o topo da config central."""
     arquivo = caminho_config_global()
-    return _mesclar([(_topo(_ler_toml(arquivo), arquivo), arquivo)])
+    return config_global_do_documento(_ler_toml(arquivo), arquivo)
+
+
+def config_global_do_documento(
+    dados: Mapping[str, object], arquivo: str
+) -> ConfigProjeto:
+    return _mesclar([(_topo(dados, arquivo), arquivo)])
 
 
 def carregar_config_repo(nome: str) -> ConfigProjeto:
     """Topo mesclado com `[repos.<nome>]`, a seção vencendo; valida o `caminho`."""
     arquivo = caminho_config_global()
-    dados = _ler_toml(arquivo)
+    return config_repo_do_documento(_ler_toml(arquivo), arquivo, nome)
+
+
+def config_repo_do_documento(
+    dados: Mapping[str, object], arquivo: str, nome: str
+) -> ConfigProjeto:
     secoes = _secoes(dados, arquivo)
     if nome not in secoes:
         existentes = ", ".join(sorted(secoes)) or "(nenhuma)"

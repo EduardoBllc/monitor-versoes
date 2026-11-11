@@ -42,6 +42,16 @@ def _config_central_isolado(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-isolado"))
 
 
+@pytest.fixture(autouse=True)
+def _ambiente_central_reiniciado():
+    """Cada teste começa sem base nem chaves aplicadas do `[ambiente]`."""
+    from motor.config import _reiniciar_ambiente_base
+
+    _reiniciar_ambiente_base()
+    yield
+    _reiniciar_ambiente_base()
+
+
 _TRUNCATE_TUDO = (
     "truncate atribuicao_commit, atribuicao, versao, exclusao, "
     "sem_entrega, pr_commit_cache, pr_mergeada, varredura_pr, "

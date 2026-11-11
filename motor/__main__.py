@@ -32,6 +32,7 @@ from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
     ambiente_central,
+    aplicar_ambiente_central,
     caminho_config_global,
     carregar_config_global,
     carregar_config_repo,
@@ -157,7 +158,7 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
         central, erro = {}, e
     if load_dotenv and not filho:
         load_dotenv(Path.cwd() / _ARQUIVOS_AMBIENTE[ambiente], override=True)
-    os.environ.update(central)
+    aplicar_ambiente_central(central)
     if xdg is None:
         os.environ.pop("XDG_CONFIG_HOME", None)
     else:
