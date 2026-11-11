@@ -3,6 +3,7 @@ import type { Alteracao, Campo, ConfigEditavel } from "./api/tipos";
 
 export const ORIGEM_MOTOR = "motor";
 export const TABELA_AMBIENTE = "ambiente";
+export const SEM_ORIGEM = "";
 
 export type Escalar = string | number | boolean | null;
 
@@ -57,6 +58,8 @@ export function alteracoesDe(
     const [repo, tabela, chave] = lerChave(k);
     if (repo !== null && formulario.reposRemovidos.includes(repo)) continue;
     const lido = lidos.get(k);
+    // Valor não escalar (lista, tabela): o servidor devolve null; mexer apagaria.
+    if (lido && !lido.editavel) continue;
     const segredo = achaCampo(original.campos, repo, tabela, chave)?.segredo === true;
     const base = { repo, tabela, chave };
     if (segredo) {

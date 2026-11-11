@@ -20,6 +20,7 @@ import { Escopo, TipoCampo, TipoErro } from "../api/enums";
 import type { Campo, ConfigEditavel, ValorLido } from "../api/tipos";
 import {
   ORIGEM_MOTOR,
+  SEM_ORIGEM,
   TABELA_AMBIENTE,
   achaCampo,
   alteracoesDe,
@@ -94,17 +95,23 @@ function Entrada({
           label={label}
           style={{ flex: 1 }}
           autoComplete="new-password"
-          placeholder={lido?.definido ? "definido" : "não definido"}
+          placeholder={
+            atual === null
+              ? "será apagado"
+              : lido?.definido
+                ? "definido"
+                : "não definido"
+          }
           value={typeof atual === "string" ? atual : ""}
           onChange={(e) => mudar(k, e.currentTarget.value)}
         />
         <Button
           variant="light"
           color="red"
-          disabled={!lido?.definido || atual === null}
-          onClick={() => mudar(k, null)}
+          disabled={!lido?.definido}
+          onClick={() => mudar(k, atual === null ? "" : null)}
         >
-          Apagar
+          {atual === null ? "Desfazer" : "Apagar"}
         </Button>
       </Group>
     );
@@ -195,7 +202,9 @@ function Editor({
     Object.fromEntries(
       config.valores
         .filter(
-          (v) => achaCampo(config.campos, v.repo, v.tabela, v.chave)?.segredo !== true,
+          (v) =>
+            v.editavel &&
+            achaCampo(config.campos, v.repo, v.tabela, v.chave)?.segredo !== true,
         )
         .map((v) => [chaveDe(v.repo, v.tabela, v.chave), v.valor]),
     ),
@@ -227,9 +236,11 @@ function Editor({
 
   const topo = (l: Linha) => (l.tabela === null ? undefined : valores[chaveDe(null, l.tabela, l.chave)]);
   const geral = linhasDe(config, null);
+  const ehAmbiente = (l: Linha): boolean =>
+    l.campo ? l.campo.escopo === Escopo.AMBIENTE : l.tabela === TABELA_AMBIENTE;
   const doMotor = geral.filter((l) => (l.campo?.origem ?? ORIGEM_MOTOR) === ORIGEM_MOTOR);
   const plugins = geral.filter((l) => (l.campo?.origem ?? ORIGEM_MOTOR) !== ORIGEM_MOTOR);
-  const origens = [...new Set(plugins.map((l) => l.campo?.origem ?? ""))];
+  const origens = [...new Set(plugins.map((l) => l.campo?.origem ?? SEM_ORIGEM))];
 
   return (
     <Stack>
@@ -249,7 +260,7 @@ function Editor({
         </Tabs.List>
         <Tabs.Panel value={Aba.GERAL} pt="md">
           <Lista
-            linhas={doMotor.filter((l) => l.tabela !== TABELA_AMBIENTE)}
+            linhas={doMotor.filter((l) => !ehAmbiente(l))}
             valores={valores}
             mudar={mudar}
           />
@@ -299,7 +310,7 @@ function Editor({
         </Tabs.Panel>
         <Tabs.Panel value={Aba.AMBIENTE} pt="md">
           <Lista
-            linhas={doMotor.filter((l) => l.tabela === TABELA_AMBIENTE)}
+            linhas={doMotor.filter(ehAmbiente)}
             valores={valores}
             mudar={mudar}
           />
@@ -311,7 +322,7 @@ function Editor({
               <Stack key={origem} gap="xs">
                 <Title order={5}>{origem}</Title>
                 <Lista
-                  linhas={plugins.filter((l) => (l.campo?.origem ?? "") === origem)}
+                  linhas={plugins.filter((l) => (l.campo?.origem ?? SEM_ORIGEM) === origem)}
                   valores={valores}
                   mudar={mudar}
                 />

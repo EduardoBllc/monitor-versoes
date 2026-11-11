@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { AcaoAlteracao, Escopo, TipoCampo } from "./api/enums";
 import type { ConfigEditavel } from "./api/tipos";
-import { alteracoesDe, chaveDe, type Formulario } from "./config";
+import {
+  ORIGEM_MOTOR,
+  TABELA_AMBIENTE,
+  alteracoesDe,
+  chaveDe,
+  type Formulario,
+} from "./config";
 
 const TABELA_VERSAO = "versao";
-const TABELA_AMBIENTE = "ambiente";
 const CHAVE_ESQUEMA = "esquema";
 const CHAVE_CAMINHO = "caminho";
 const CHAVE_SENHA = "DATABASE_PASSWORD";
 const REPO_NOVO = "novo";
 const REPO_VELHO = "velho";
 
+const TABELA_TAREFAS = "tarefas";
 const original: ConfigEditavel = {
   versao: "v1",
   repos: [REPO_VELHO],
@@ -23,7 +29,7 @@ const original: ConfigEditavel = {
       rotulo: "Esquema",
       segredo: false,
       opcoes: [],
-      origem: "motor",
+      origem: ORIGEM_MOTOR,
     },
     {
       escopo: Escopo.AMBIENTE,
@@ -33,7 +39,7 @@ const original: ConfigEditavel = {
       rotulo: "Senha",
       segredo: true,
       opcoes: [],
-      origem: "motor",
+      origem: ORIGEM_MOTOR,
     },
   ],
   valores: [
@@ -100,5 +106,40 @@ describe("alteracoesDe", () => {
     expect(definir[0]?.acao).toBe(AcaoAlteracao.DEFINIR);
     const apagar = alteracoesDe(original, formulario({ valores: { [senha]: null } }));
     expect(apagar[0]?.acao).toBe(AcaoAlteracao.REMOVER);
+  });
+
+  it("valor não editável (lista) nunca vira REMOVER", () => {
+    const lista = chaveDe(null, TABELA_TAREFAS, "lista");
+    const o: ConfigEditavel = {
+      ...original,
+      valores: [
+        ...original.valores,
+        { repo: null, tabela: TABELA_TAREFAS, chave: "lista", valor: null, definido: true, editavel: false },
+      ],
+    };
+    expect(alteracoesDe(o, formulario({ valores: { [lista]: null } }))).toEqual([]);
+  });
+
+  it("apagar segredo não definido não gera nada", () => {
+    const o: ConfigEditavel = {
+      ...original,
+      valores: original.valores.map((v) => (v.chave === CHAVE_SENHA ? { ...v, definido: false } : v)),
+    };
+    expect(alteracoesDe(o, formulario({ valores: { [senha]: null } }))).toEqual([]);
+  });
+
+  it("chave livre booleana e inteira mantêm o tipo", () => {
+    const flag = chaveDe(null, TABELA_TAREFAS, "flag");
+    const n = chaveDe(null, TABELA_TAREFAS, "n");
+    const o: ConfigEditavel = {
+      ...original,
+      valores: [
+        ...original.valores,
+        { repo: null, tabela: TABELA_TAREFAS, chave: "flag", valor: false, definido: true, editavel: true },
+        { repo: null, tabela: TABELA_TAREFAS, chave: "n", valor: 1, definido: true, editavel: true },
+      ],
+    };
+    const r = alteracoesDe(o, formulario({ valores: { [flag]: true, [n]: 2 } }));
+    expect(r.map((a) => a.valor)).toEqual([true, 2]);
   });
 });
