@@ -16,6 +16,7 @@ export interface PropsBarra {
   aoVerificar: (auditar: boolean) => void;
   aoCriar: () => void;
   aoInscricoes: () => void;
+  aoOrfaos: () => void;
   // Espaço dos botões Atualizar/Abortar, preenchido pela tarefa do fluxo de atualização.
   slotAtualizar?: ReactNode;
 }
@@ -83,6 +84,9 @@ export function Barra(p: PropsBarra) {
             </Button>
           )}
           {p.slotAtualizar}
+          <Button variant="light" disabled={semAcao} onClick={p.aoOrfaos}>
+            Órfãos
+          </Button>
           <Button
             variant="light"
             color="orange"

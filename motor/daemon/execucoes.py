@@ -66,13 +66,25 @@ class Execucoes:
             target=self._rodar, args=(execucao, alvo), daemon=True
         )
         with self._lock:
-            atual = self._por_repo.get(repo)
-            if atual is not None and atual.estado is EstadoExecucao.RODANDO:
-                raise RepoOcupado(repo)
+            self._exigir_livre(repo)
             self._por_repo[repo] = execucao
             self._threads[repo] = thread
         thread.start()
         return execucao
+
+    def exigir_livre(self, repo: str) -> None:
+        """Recusa com `RepoOcupado` se o repo tem uma execução rodando.
+
+        Para as rotas síncronas que fazem fetch: elas não viram execução, mas
+        não devem disputar o checkout com uma operação longa em andamento.
+        """
+        with self._lock:
+            self._exigir_livre(repo)
+
+    def _exigir_livre(self, repo: str) -> None:
+        atual = self._por_repo.get(repo)
+        if atual is not None and atual.estado is EstadoExecucao.RODANDO:
+            raise RepoOcupado(repo)
 
     def atual(self, repo: str) -> Execucao | None:
         return self._por_repo.get(repo)

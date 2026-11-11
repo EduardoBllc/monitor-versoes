@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import json
 import threading
 from dataclasses import replace
@@ -14,9 +15,10 @@ import motor.operacoes as operacoes
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
-from motor.domain.types import VersionStatus
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
-from motor.errors import BackendIndisponivel, MotorError
+from motor.engine.orfaos import OrfaoDaVersao
+from motor.errors import BackendIndisponivel, ErroDeEntrada, MotorError
 from motor.inscricoes import INTERVALO_PADRAO
 from motor.operacoes import RepoOption, Runners, VersionOption
 from motor.progresso import Progresso, RelatorProgresso
@@ -28,6 +30,8 @@ REPO = "meu-repo"
 VERSAO = "14.0.0"
 CLONE = "/tmp/clones/meu-repo"
 REPOS = [RepoOption(REPO, CLONE), RepoOption("sem-clone", None)]
+ORFAOS = ["aaaa1111", "bbbb2222"]
+DATA_ORFAO = datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC)
 
 
 class Ambiente:
@@ -39,6 +43,8 @@ class Ambiente:
         self.versoes = [VersionOption("14.0.0", True), VersionOption("13.0.0", True)]
         self.resultado: VersionStatus | AtualizarResult = VersionStatus(verde=True)
         self.inscricoes = tmp_path / "inscricoes.json"
+        self.julgamentos: dict[str, JulgamentoOrfao] = {}
+        self.erro_julgar: MotorError | None = None
 
     def fabrica(self, relatar: RelatorProgresso) -> Runners:
         def executar(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -48,11 +54,28 @@ class Ambiente:
             self.soltar.wait(ESPERA_S)
             return cast(VersionStatus, self.resultado)
 
+        def listar_orfaos(repo: RepoOption, versao: str) -> list[OrfaoDaVersao]:
+            return [
+                OrfaoDaVersao(h, f"assunto {h}", DATA_ORFAO, self.julgamentos.get(h))
+                for h in ORFAOS
+            ]
+
+        def julgar_orfao(
+            repo: RepoOption, versao: str, hash_: str, chamado: str | None, motivo: str
+        ) -> JulgamentoOrfao:
+            if self.erro_julgar is not None:
+                raise self.erro_julgar
+            j = JulgamentoOrfao(hash_, versao, chamado, motivo)
+            self.julgamentos[hash_] = j
+            return j
+
         return Runners(
             lambda: REPOS,
             lambda repo: self.versoes,
             executar,
             versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
+            listar_orfaos=listar_orfaos,
+            julgar_orfao=julgar_orfao,
         )
 
 
@@ -359,3 +382,73 @@ def test_estatico_nao_sai_da_pasta(cliente: TestClient, tmp_path: Path) -> None:
     resposta = c.get("/%2e%2e/segredo.txt")
     assert "segredo" not in resposta.text
     assert resposta.text == "<p>spa</p>"
+
+
+_ORFAOS_URL = f"/api/repos/{REPO}/versoes/{VERSAO}/orfaos"
+
+
+def _julgamento_url(hash_: str) -> str:
+    return f"{_ORFAOS_URL}/{hash_}/julgamento"
+
+
+def test_orfaos_lista_e_julga(cliente: TestClient) -> None:
+    lista = cliente.get(_ORFAOS_URL).json()
+    assert [o["hash_origem"] for o in lista] == ORFAOS
+    assert all(o["julgamento"] is None for o in lista)
+
+    r = cliente.post(_julgamento_url(ORFAOS[0]), json={"chamado": "123", "motivo": "a"})
+    assert r.status_code == HTTPStatus.OK
+    assert r.json() == {
+        "hash_origem": ORFAOS[0],
+        "versao_numero": VERSAO,
+        "chamado": "123",
+        "motivo": "a",
+    }
+    r = cliente.post(_julgamento_url(ORFAOS[1]), json={"chamado": None, "motivo": "b"})
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["chamado"] is None
+
+    julgados = [o["julgamento"] for o in cliente.get(_ORFAOS_URL).json()]
+    assert [(j["chamado"], j["motivo"]) for j in julgados] == [
+        ("123", "a"),
+        (None, "b"),
+    ]
+
+
+@pytest.mark.parametrize("rota", ["listar", "julgar"])
+def test_rotas_de_orfaos_recusam_repo_ocupado(
+    cliente: TestClient, amb: Ambiente, rota: str
+) -> None:
+    url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
+    assert cliente.post(url, json={"auditar": False}).status_code == HTTPStatus.ACCEPTED
+    try:
+        if rota == "listar":
+            r = cliente.get(_ORFAOS_URL)
+        else:
+            r = cliente.post(
+                _julgamento_url(ORFAOS[0]), json={"chamado": None, "motivo": "m"}
+            )
+        assert r.status_code == HTTPStatus.CONFLICT
+        assert r.json()["tipo"] == TipoErro.OCUPADO
+    finally:
+        amb.soltar.set()
+    _esperar(cliente)
+    assert amb.julgamentos == {}
+
+
+def test_julgamento_com_erro_de_entrada_da_422(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    amb.erro_julgar = ErroDeEntrada("o motivo do julgamento é obrigatório")
+    r = cliente.post(_julgamento_url(ORFAOS[0]), json={"chamado": None, "motivo": ""})
+    assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert r.json() == {
+        "tipo": TipoErro.ENTRADA,
+        "mensagem": "o motivo do julgamento é obrigatório",
+    }
+
+
+def test_rotas_de_orfaos_no_openapi(cliente: TestClient) -> None:
+    caminhos = cast(FastAPI, cliente.app).openapi()["paths"]
+    assert "/api/repos/{repo}/versoes/{versao}/orfaos" in caminhos
+    assert "/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento" in caminhos

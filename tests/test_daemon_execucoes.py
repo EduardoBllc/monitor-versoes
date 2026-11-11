@@ -73,6 +73,25 @@ def test_segunda_operacao_no_mesmo_repo_e_recusada_e_outro_repo_roda() -> None:
     assert execucoes.aguardar("b", ESPERA_S)
 
 
+def test_exigir_livre_recusa_so_com_execucao_rodando() -> None:
+    liberar = threading.Event()
+
+    def alvo(_: RelatorProgresso) -> None:
+        liberar.wait(ESPERA_S)
+
+    execucoes = Execucoes()
+    execucoes.exigir_livre("a")
+    try:
+        execucoes.iniciar("a", "1.0.0", Operacao.VERIFICAR, alvo)
+        with pytest.raises(RepoOcupado):
+            execucoes.exigir_livre("a")
+        execucoes.exigir_livre("b")
+    finally:
+        liberar.set()
+    assert execucoes.aguardar("a", ESPERA_S)
+    execucoes.exigir_livre("a")
+
+
 def test_execucao_conclui_com_resultado_e_progresso() -> None:
     resultado = AtualizarResult(AtualizarStatus.DONE)
     relatado = Progresso("x")

@@ -22,9 +22,10 @@ from motor.daemon.erros import MENSAGEM_INTERNA, ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
-from motor.domain.types import VersionStatus
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult
 from motor.engine.consultar import ChamadoConsultado
+from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.operacoes import (
     RepoOption,
@@ -85,6 +86,13 @@ class PedidoInscrever:
 class PedidoRemover:
     repo: str
     versao: str
+
+
+@dataclass(frozen=True)
+class PedidoJulgamento:
+    # None = "não pertence a chamado nenhum"
+    chamado: str | None
+    motivo: str
 
 
 @dataclass(frozen=True)
@@ -183,6 +191,24 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
     @app.get("/api/repos/{repo}/versoes/{versao}/chamados")
     def consultar(repo: str, versao: str) -> list[ChamadoConsultado]:
         return _exigir(ctx.leitura().consultar_versao)(ctx.achar(repo), versao)
+
+    # Síncronas, mas fazem fetch: recusam como repo ocupado se uma operação
+    # longa roda no repo, igual a uma operação nova.
+    @app.get("/api/repos/{repo}/versoes/{versao}/orfaos")
+    def listar_orfaos(repo: str, versao: str) -> list[OrfaoDaVersao]:
+        listar = _exigir(ctx.leitura().listar_orfaos)
+        opcao = ctx.achar(repo)
+        ctx.execucoes.exigir_livre(repo)
+        return listar(opcao, versao)
+
+    @app.post("/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento")
+    def julgar_orfao(
+        repo: str, versao: str, hash: str, corpo: PedidoJulgamento
+    ) -> JulgamentoOrfao:
+        julgar = _exigir(ctx.leitura().julgar_orfao)
+        opcao = ctx.achar(repo)
+        ctx.execucoes.exigir_livre(repo)
+        return julgar(opcao, versao, hash, corpo.chamado, corpo.motivo)
 
 
 def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
