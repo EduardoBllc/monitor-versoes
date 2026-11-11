@@ -74,6 +74,20 @@ class ErroDeEntrada(MotorError):
     """
 
 
+class RepoOcupado(ErroDeEntrada):
+    """Outra operação do motor segura o lock do clone (decisão 032).
+
+    Tem classe própria porque dois chamadores ramificam nela: o daemon responde
+    `409 ocupado` em vez do `422` de entrada, e a inscrição sai `PULADA` em vez
+    de `ERRO`. `pid` é de quem segura, ou `None` se não deu para ler.
+    """
+
+    def __init__(self, nome: str, pid: int | None) -> None:
+        detalhe = f" (pid {pid})" if pid is not None else ""
+        super().__init__(f"repo {nome} ocupado por outra operação{detalhe}")
+        self.pid = pid
+
+
 def formatar_com_notas(e: MotorError) -> str:
     """Linha para o operador: contexto (add_note, se houver) antes da causa.
 
