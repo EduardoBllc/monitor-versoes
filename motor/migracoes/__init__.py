@@ -37,8 +37,8 @@ def migrar() -> None:
         command.upgrade(config_alembic(), "head")
     except OperationalError as erro:
         raise BackendIndisponivel(
-            "não foi possível conectar ao Postgres para migrar; "
-            "suba o banco com `docker compose up -d`"
+            f"não foi possível abrir o estado para migrar: {erro.orig}; "
+            "confira DATABASE_SQLITE_PATH e as permissões do arquivo"
         ) from erro
 
 

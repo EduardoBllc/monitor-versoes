@@ -1041,7 +1041,9 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     monkeypatch.setattr(
         cli,
         "diagnosticar",
-        lambda *a, **k: [Resultado(Peca.POSTGRES, estado, "x", "docker compose up -d")],
+        lambda *a, **k: [
+            Resultado(Peca.SQLITE, estado, "x", "conferir DATABASE_SQLITE_PATH")
+        ],
     )
     monkeypatch.setattr(
         cli, "abrir_sessao", lambda: pytest.fail("não abre sessão por conta própria")
@@ -1412,3 +1414,99 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
     monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
     daemon_app.servir(porta)
     assert rodou == [porta]
+
+
+# -- configuração antiga do Postgres ------------------------------------------
+
+_BACKEND_POSTGRES = '[ambiente]\nDATABASE_BACKEND = "postgres"\n'
+_CINCO_POSTGRES = "[ambiente]\n" + "".join(
+    f'DATABASE_{c} = "x"\n' for c in ("HOST", "PORT", "NAME", "USER", "PASSWORD")
+)
+
+
+def _central_com(monkeypatch, tmp_path, conteudo: str):
+    """Central em tmp_path com `conteudo`; devolve o SQLite que a suíte aponta."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-antigo"))
+    central = tmp_path / "xdg-antigo" / "monitor-versoes" / "config.toml"
+    central.parent.mkdir(parents=True)
+    central.write_text(conteudo)
+    return tmp_path / "estado.db"
+
+
+def _sai_com_o_erro_da_config_antiga(argv, caplog):
+    from motor.config import ULTIMO_COMMIT_COM_POSTGRES
+
+    with pytest.raises(SystemExit) as saida:
+        main(argv)
+    assert saida.value.code == 1
+    # O formato do log no terminal é `ERROR: <mensagem>`; aqui, o nível.
+    (registro,) = caplog.records
+    assert registro.levelname == "ERROR"
+    assert "migrar-estado" in registro.message
+    assert ULTIMO_COMMIT_COM_POSTGRES in registro.message
+
+
+@pytest.mark.parametrize("conteudo", [_BACKEND_POSTGRES, _CINCO_POSTGRES])
+@pytest.mark.parametrize(
+    "argv", [["migrar"], ["verificar", "1.0.0", "--repo", "webapp"]]
+)
+def test_config_antiga_do_postgres_para_sem_criar_o_sqlite(
+    monkeypatch, tmp_path, caplog, conteudo, argv
+):
+    sqlite = _central_com(monkeypatch, tmp_path, conteudo)
+
+    _sai_com_o_erro_da_config_antiga(argv, caplog)
+
+    assert not sqlite.exists()
+
+
+def test_so_o_host_do_postgres_no_central_usa_o_sqlite(monkeypatch, tmp_path):
+    sqlite = _central_com(
+        monkeypatch, tmp_path, '[ambiente]\nDATABASE_HOST = "localhost"\n'
+    )
+
+    main(["migrar"])
+
+    assert sqlite.exists()
+
+
+def test_tui_com_config_antiga_nao_monta_a_tela(monkeypatch, tmp_path, caplog):
+    import motor.tui
+
+    _central_com(monkeypatch, tmp_path, _BACKEND_POSTGRES)
+    monkeypatch.setattr(motor.tui, "run_tui", lambda: pytest.fail("montou a tela"))
+
+    _sai_com_o_erro_da_config_antiga(["tui"], caplog)
+
+
+def test_serve_com_config_antiga_nao_abre_a_porta(monkeypatch, tmp_path, caplog):
+    import motor.daemon.app as daemon_app
+
+    _central_com(monkeypatch, tmp_path, _BACKEND_POSTGRES)
+    monkeypatch.setattr(daemon_app, "servir", lambda porta: pytest.fail("subiu"))
+
+    _sai_com_o_erro_da_config_antiga(["serve"], caplog)
+
+
+def test_inscricao_executar_com_config_antiga_grava_o_erro(
+    inscricoes_env, monkeypatch, tmp_path
+):
+    from motor.domain.inscricao import Desfecho
+    from motor.inscricoes import carregar
+
+    arquivo, _ = inscricoes_env
+    nome = _repo_dir(tmp_path)
+    _inscrever(nome)
+    with open(_central(), "a", encoding="utf-8") as f:
+        f.write(_BACKEND_POSTGRES)
+    monkeypatch.setattr(
+        cli, "executar_inscricao", lambda deps, versao: pytest.fail("executou")
+    )
+
+    main(["inscricao", "executar", _Inscr.VERSAO, "--repo", nome])
+
+    ultima = carregar(arquivo)[0].ultima
+    assert ultima is not None
+    assert ultima.desfecho == Desfecho.ERRO
+    assert "migrar-estado" in ultima.mensagem
+    assert not (tmp_path / "estado.db").exists()

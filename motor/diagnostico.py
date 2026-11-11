@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from motor.adapters.commitsource.bitbucket import verificar_credenciais
 from motor.adapters.estado.postgres import PostgresEstado
-from motor.config import SECAO_REPOS, ConfigProjeto
-from motor.errors import MotorError, formatar_com_notas
+from motor.config import SECAO_REPOS, ConfigProjeto, checar_backend
+from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
 from motor.montagem import instanciar_fonte_tarefas
 
 
@@ -27,7 +27,6 @@ class Peca(enum.StrEnum):
     AMBIENTE = "Ambiente"
     VARIAVEIS = "Variáveis"
     SQLITE = "SQLite"
-    POSTGRES = "Postgres"
     MIGRACAO = "Migração"
     REPOS = "Repos"
     TAREFAS = "Tarefas"
@@ -55,38 +54,17 @@ def falhou(resultados: list[Resultado]) -> bool:
     return any(r.estado is Estado.FALHA for r in resultados)
 
 
-_VARIAVEIS_BANCO = (
-    "DATABASE_HOST",
-    "DATABASE_PORT",
-    "DATABASE_NAME",
-    "DATABASE_USER",
-    "DATABASE_PASSWORD",
-)
-
-
 def _falha(peca: Peca, erro: MotorError, correcao: str) -> Resultado:
     return Resultado(peca, Estado.FALHA, formatar_com_notas(erro), correcao)
 
 
-def _variaveis_ausentes(env: Mapping[str, str], nomes: tuple[str, ...]) -> list[str]:
-    return [n for n in nomes if not env.get(n, "").strip()]
-
-
-def _backend(env: Mapping[str, str]) -> str:
-    return env.get("DATABASE_BACKEND", "").strip().lower() or "sqlite"
-
-
 def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
-    backend = _backend(env)
-    if backend == "sqlite":
-        return []
-    if backend != "postgres":
-        return [f"DATABASE_BACKEND (aceitos: sqlite, postgres; veio {backend!r})"]
-    problemas = _variaveis_ausentes(env, _VARIAVEIS_BANCO)
-    porta = env.get("DATABASE_PORT", "")
-    if porta and not porta.isdigit():
-        problemas.append("DATABASE_PORT (esperado número)")
-    return problemas
+    """A config de backend recusada, como o motor a recusaria; sem conectar."""
+    try:
+        checar_backend(env)
+    except ErroDeEntrada as e:
+        return [str(e)]
+    return []
 
 
 # Nove parâmetros, oito nomeados: cada um é uma peça injetada para o teste
@@ -106,7 +84,11 @@ def diagnosticar(  # noqa: PLR0913
     """`config_em` é o caminho do config central; `erro_ambiente`, o erro ao ler
     o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
     arquivo = ".env.development" if ambiente == "development" else ".env"
-    migrar = "make migrate-dev" if ambiente == "development" else "make migrate"
+    migrar = (
+        "motor --env development migrar"
+        if ambiente == "development"
+        else "motor migrar"
+    )
     onde = f"[ambiente] de {config_em} (ou no {arquivo})"
 
     problemas = _problemas_do_banco(env)
@@ -118,19 +100,15 @@ def diagnosticar(  # noqa: PLR0913
         Resultado(
             Peca.VARIAVEIS,
             Estado.FALHA,
-            "ausentes ou inválidas: " + ", ".join(problemas),
-            f"preencher em {onde}",
+            "; ".join(problemas),
+            f"corrigir em {onde}",
         )
         if problemas
         else Resultado(Peca.VARIAVEIS, Estado.OK, "todas preenchidas")
     )
-    resultados += _banco(
-        abrir_sessao, problemas, head, migrar, _backend(env) == "sqlite"
-    )
+    resultados += _banco(abrir_sessao, problemas, head, migrar)
     banco_ok = [
-        r.estado
-        for r in resultados
-        if r.peca in (Peca.POSTGRES, Peca.SQLITE, Peca.MIGRACAO)
+        r.estado for r in resultados if r.peca in (Peca.SQLITE, Peca.MIGRACAO)
     ] == [
         Estado.OK,
         Estado.OK,
@@ -154,22 +132,20 @@ def _banco(
     problemas_banco: list[str],
     head: str,
     migrar: str,
-    sqlite: bool = False,
 ) -> list[Resultado]:
-    peca = Peca.SQLITE if sqlite else Peca.POSTGRES
+    peca = Peca.SQLITE
     if problemas_banco:
         motivo = "variáveis do banco inválidas"
         return [
             Resultado(peca, Estado.NAO_VERIFICADA, motivo),
             Resultado(Peca.MIGRACAO, Estado.NAO_VERIFICADA, motivo),
         ]
-    if sqlite:
-        dica_banco = "conferir DATABASE_SQLITE_PATH e as permissões do arquivo"
-        migrar = (
-            "rodar qualquer comando do motor (aplica as migrations no primeiro uso)"
-        )
-    else:
-        dica_banco = "docker compose up -d e conferir DATABASE_*"
+    dica_banco = "conferir DATABASE_SQLITE_PATH e as permissões do arquivo"
+    # Banco vazio: o primeiro uso migra. Banco já migrado numa revisão antiga: o
+    # garantir_esquema não o toca, só o `migrar` leva ao head.
+    primeiro_uso = (
+        "rodar qualquer comando do motor (aplica as migrations no primeiro uso)"
+    )
     try:
         # garantir=False: o diagnóstico só olha, não cria arquivo nem esquema.
         with abrir_sessao(garantir=False) as sessao:
@@ -178,16 +154,16 @@ def _banco(
                 estado.verificar_conexao()
             except MotorError as e:
                 return _banco_fora(peca, e, dica_banco)
-            postgres = Resultado(peca, Estado.OK, "conexão funciona")
+            conexao = Resultado(peca, Estado.OK, "conexão funciona")
             try:
                 revisao = estado.revisao_migracao()
             except MotorError as e:
-                return [postgres, _falha(Peca.MIGRACAO, e, dica_banco)]
+                return [conexao, _falha(Peca.MIGRACAO, e, dica_banco)]
     except MotorError as e:
         return _banco_fora(peca, e, dica_banco)
     if revisao is None:
         migracao = Resultado(
-            Peca.MIGRACAO, Estado.FALHA, "banco sem migração aplicada", migrar
+            Peca.MIGRACAO, Estado.FALHA, "banco sem migração aplicada", primeiro_uso
         )
     elif revisao != head:
         migracao = Resultado(
@@ -198,7 +174,7 @@ def _banco(
         )
     else:
         migracao = Resultado(Peca.MIGRACAO, Estado.OK, f"revisão {head}")
-    return [postgres, migracao]
+    return [conexao, migracao]
 
 
 def _estado_sem_secao(

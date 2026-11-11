@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 
 from motor import config
-from motor.config import CHAVE_CAMINHO, SECAO_REPOS, database_url, worktrees_mantidas
+from motor.config import (
+    CHAVE_CAMINHO,
+    SECAO_REPOS,
+    ULTIMO_COMMIT_COM_POSTGRES,
+    checar_backend,
+    database_url,
+    worktrees_mantidas,
+)
 from motor.errors import ErroDeEntrada
 from tests.config_repos import rotulo_secao, secao_repo
 
@@ -18,51 +25,11 @@ COMPLETO = {
 }
 
 
-POSTGRES = {"DATABASE_BACKEND": "postgres"}
-
-
-@pytest.fixture(autouse=True)
-def _aviso_reiniciavel():
-    config._avisos_emitidos.clear()
-
-
 def _ambiente(monkeypatch, valores):
     for chave in (*COMPLETO, "DATABASE_BACKEND", "DATABASE_SQLITE_PATH"):
         monkeypatch.delenv(chave, raising=False)
     for chave, valor in valores.items():
         monkeypatch.setenv(chave, valor)
-
-
-def test_database_url_monta_a_partir_das_partes(monkeypatch):
-    _ambiente(monkeypatch, {**POSTGRES, **COMPLETO})
-    assert database_url() == (
-        "postgresql+psycopg://motor:motor@localhost:5433/monitor_versoes"
-    )
-
-
-def test_database_url_escapa_caractere_que_quebraria_a_url(monkeypatch):
-    # Sem quote, "s@nha" faria a URL apontar para o host "nha" e o erro
-    # observado seria "conexao recusada", nao "senha invalida".
-    _ambiente(monkeypatch, {**POSTGRES, **COMPLETO, "DATABASE_PASSWORD": "s@nha//#"})
-    assert "@localhost:5433/" in database_url()
-    assert "s%40nha%2F%2F%23" in database_url()
-
-
-def test_database_url_lista_todas_as_variaveis_faltando(monkeypatch):
-    _ambiente(monkeypatch, {**POSTGRES, "DATABASE_HOST": "localhost"})
-    with pytest.raises(ErroDeEntrada) as erro:
-        database_url()
-    assert "DATABASE_PORT" in str(erro.value)
-    assert "DATABASE_PASSWORD" in str(erro.value)
-
-
-def test_database_url_recusa_porta_nao_numerica(monkeypatch):
-    # create_engine converte a porta na hora e levanta ValueError, que cairia no
-    # ramo de bug do CLI (traceback) em vez de virar mensagem para o operador.
-    _ambiente(monkeypatch, {**POSTGRES, **COMPLETO, "DATABASE_PORT": "5433a"})
-    with pytest.raises(ErroDeEntrada) as erro:
-        database_url()
-    assert "DATABASE_PORT" in str(erro.value)
 
 
 def test_sem_configuracao_usa_sqlite_no_caminho_padrao(monkeypatch, tmp_path, capsys):
@@ -81,33 +48,70 @@ def test_sqlite_path_sobrescreve_o_padrao(monkeypatch, tmp_path):
     assert destino.parent.is_dir()
 
 
-def test_backend_desconhecido_lista_os_aceitos(monkeypatch):
-    _ambiente(monkeypatch, {"DATABASE_BACKEND": "mysql"})
+# -- configuração antiga do Postgres ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"DATABASE_BACKEND": ""},
+        {"DATABASE_BACKEND": "sqlite"},
+        {"DATABASE_BACKEND": " SQLite "},
+        {"DATABASE_HOST": "localhost"},
+        {k: v for k, v in COMPLETO.items() if k != "DATABASE_PASSWORD"},
+        {**COMPLETO, "DATABASE_PASSWORD": "  "},
+    ],
+    ids=[
+        "ausente",
+        "vazio",
+        "sqlite",
+        "sqlite-com-espaco",
+        "so-host",
+        "quatro",
+        "branco",
+    ],
+)
+def test_checar_backend_aceita_sqlite_e_partes_soltas(env):
+    checar_backend(env)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"DATABASE_BACKEND": "postgres"}, {"DATABASE_BACKEND": " Postgres "}, COMPLETO],
+    ids=["postgres", "postgres-com-espaco", "cinco-partes"],
+)
+def test_checar_backend_recusa_a_config_do_postgres_com_a_saida(env):
     with pytest.raises(ErroDeEntrada) as erro:
+        checar_backend(env)
+    mensagem = str(erro.value)
+    assert "foi removido" in mensagem
+    assert "migrar-estado" in mensagem
+    assert ULTIMO_COMMIT_COM_POSTGRES in mensagem
+
+
+def test_checar_backend_desconhecido_aceita_so_sqlite():
+    with pytest.raises(ErroDeEntrada) as erro:
+        checar_backend({"DATABASE_BACKEND": "mysql"})
+    assert "aceito: sqlite" in str(erro.value)
+    assert "postgres" not in str(erro.value).lower()
+
+
+def test_checar_backend_le_o_ambiente_sem_argumento(monkeypatch):
+    _ambiente(monkeypatch, {"DATABASE_BACKEND": "postgres"})
+    with pytest.raises(ErroDeEntrada):
+        checar_backend()
+
+
+def test_database_url_recusa_postgres_antes_de_criar_o_diretorio(monkeypatch, tmp_path):
+    destino = tmp_path / "novo" / "estado.db"
+    _ambiente(
+        monkeypatch,
+        {"DATABASE_BACKEND": "postgres", "DATABASE_SQLITE_PATH": str(destino)},
+    )
+    with pytest.raises(ErroDeEntrada):
         database_url()
-    assert "sqlite, postgres" in str(erro.value)
-
-
-def test_sem_backend_e_com_partes_completas_usa_sqlite_e_avisa(
-    monkeypatch, tmp_path, capsys
-):
-    _ambiente(monkeypatch, {**COMPLETO, "DATABASE_SQLITE_PATH": str(tmp_path / "e.db")})
-    assert database_url().startswith("sqlite:///")
-    assert database_url().startswith("sqlite:///")
-    err = capsys.readouterr().err
-    assert "DATABASE_BACKEND=postgres" in err
-    assert err.count("\n") == 1  # uma vez por execucao
-
-
-def test_aviso_nao_sai_com_avisar_falso_nem_com_partes_incompletas(
-    monkeypatch, tmp_path, capsys
-):
-    base = {"DATABASE_SQLITE_PATH": str(tmp_path / "e.db")}
-    _ambiente(monkeypatch, {**COMPLETO, **base})
-    database_url(avisar=False)
-    _ambiente(monkeypatch, {"DATABASE_HOST": "h", **base})
-    database_url()
-    assert capsys.readouterr().err == ""
+    assert not destino.parent.exists()
 
 
 # -- worktrees mantidas -------------------------------------------------------
@@ -474,12 +478,3 @@ def test_ambiente_por_repo_e_erro(central, tmp_path, ler):
         ler()
     assert str(central) in str(e.value)
     assert f"[{SECAO_REPOS}.{NOME}.ambiente]" in str(e.value)
-
-
-def test_postgres_incompleto_aponta_o_ambiente_central(central, monkeypatch):
-    _ambiente(monkeypatch, POSTGRES)
-    with pytest.raises(ErroDeEntrada) as e:
-        database_url()
-    assert "[ambiente]" in str(e.value)
-    assert str(central) in str(e.value)
-    assert ".env" in str(e.value)

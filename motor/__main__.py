@@ -35,6 +35,7 @@ from motor.config import (
     caminho_config_global,
     carregar_config_global,
     carregar_config_repo,
+    checar_backend,
     repos_configurados,
     validar_nome_repo,
 )
@@ -766,6 +767,11 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
+        if args.comando in ("serve", "tui"):
+            # Os dois abrem o estado só depois de subir; a config antiga tem de
+            # parar antes de abrir a porta ou montar a tela.
+            checar_backend()
+
         if args.comando == "serve":
             _iniciar_serve(args.porta)
             return

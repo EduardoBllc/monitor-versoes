@@ -16,3 +16,4 @@ def test_migrar_com_banco_fora_do_ar_e_erro_do_motor(monkeypatch, tmp_path, capl
 
     assert saida.value.code == 1
     assert "Erro interno fatal" not in caplog.text
+    assert "DATABASE_SQLITE_PATH" in caplog.text
