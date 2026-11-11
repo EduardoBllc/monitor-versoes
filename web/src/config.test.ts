@@ -3,9 +3,11 @@ import { AcaoAlteracao, Escopo, TipoCampo } from "./api/enums";
 import type { ConfigEditavel } from "./api/tipos";
 import {
   ORIGEM_MOTOR,
+  EstadoSegredo,
   TABELA_AMBIENTE,
   alteracoesDe,
   chaveDe,
+  estadoSegredo,
   type Formulario,
 } from "./config";
 
@@ -141,5 +143,13 @@ describe("alteracoesDe", () => {
     };
     const r = alteracoesDe(o, formulario({ valores: { [flag]: true, [n]: 2 } }));
     expect(r.map((a) => a.valor)).toEqual([true, 2]);
+  });
+});
+
+describe("estadoSegredo", () => {
+  it("não tocado mostra definido ou não definido; null marca apagar", () => {
+    expect(estadoSegredo(undefined, true)).toBe(EstadoSegredo.DEFINIDO);
+    expect(estadoSegredo("", false)).toBe(EstadoSegredo.NAO_DEFINIDO);
+    expect(estadoSegredo(null, true)).toBe(EstadoSegredo.APAGAR);
   });
 });

@@ -20,11 +20,13 @@ import { Escopo, TipoCampo, TipoErro } from "../api/enums";
 import type { Campo, ConfigEditavel, ValorLido } from "../api/tipos";
 import {
   ORIGEM_MOTOR,
+  EstadoSegredo,
   SEM_ORIGEM,
   TABELA_AMBIENTE,
   achaCampo,
   alteracoesDe,
   chaveDe,
+  estadoSegredo,
   type Escalar,
   type Formulario,
 } from "../config";
@@ -86,32 +88,34 @@ function Entrada({
   const k = chaveDe(linha.repo, linha.tabela, linha.chave);
   const { campo, lido } = linha;
   const label = rotuloDe(linha);
-  const somenteLeitura = campo === undefined && lido?.editavel !== true;
+  const somenteLeitura = lido?.editavel === false;
   const atual = valores[k] ?? null;
   if (campo?.segredo) {
+    const estado = estadoSegredo(valores[k], lido?.definido === true);
+    const apagar = estado === EstadoSegredo.APAGAR;
+    const marcas = {
+      [EstadoSegredo.APAGAR]: "será apagado",
+      [EstadoSegredo.DEFINIDO]: "definido",
+      [EstadoSegredo.NAO_DEFINIDO]: "não definido",
+    };
     return (
       <Group align="end">
         <PasswordInput
           label={label}
           style={{ flex: 1 }}
           autoComplete="new-password"
-          placeholder={
-            atual === null
-              ? "será apagado"
-              : lido?.definido
-                ? "definido"
-                : "não definido"
-          }
+          placeholder={marcas[estado]}
+          disabled={somenteLeitura}
           value={typeof atual === "string" ? atual : ""}
           onChange={(e) => mudar(k, e.currentTarget.value)}
         />
         <Button
           variant="light"
           color="red"
-          disabled={!lido?.definido}
-          onClick={() => mudar(k, atual === null ? "" : null)}
+          disabled={somenteLeitura || !lido?.definido}
+          onClick={() => mudar(k, apagar ? "" : null)}
         >
-          {atual === null ? "Desfazer" : "Apagar"}
+          {apagar ? "Desfazer" : "Apagar"}
         </Button>
       </Group>
     );
@@ -121,6 +125,7 @@ function Entrada({
       <Select
         label={label}
         data={campo.opcoes}
+        disabled={somenteLeitura}
         clearable
         placeholder={placeholder}
         value={typeof atual === "string" ? atual : null}

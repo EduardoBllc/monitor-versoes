@@ -5,6 +5,21 @@ export const ORIGEM_MOTOR = "motor";
 export const TABELA_AMBIENTE = "ambiente";
 export const SEM_ORIGEM = "";
 
+export enum EstadoSegredo {
+  DEFINIDO = "definido",
+  NAO_DEFINIDO = "nao_definido",
+  APAGAR = "apagar",
+}
+
+// null no formulário = marcado para apagar; ausente ou "" = não tocado.
+export function estadoSegredo(
+  valor: Escalar | undefined,
+  definido: boolean,
+): EstadoSegredo {
+  if (valor === null) return EstadoSegredo.APAGAR;
+  return definido ? EstadoSegredo.DEFINIDO : EstadoSegredo.NAO_DEFINIDO;
+}
+
 export type Escalar = string | number | boolean | null;
 
 // valores: chave de `chaveDe`. Segredo ausente ou "" = não tocado; null = apagar.
