@@ -559,6 +559,58 @@ def test_reconstruir_estado_ponta_a_ponta(bordas, tmp_path, capsys):
     assert "p1" in saida and "sem referencia de tarefa na mensagem" in saida
 
 
+def test_reconstruir_estado_pendente_indica_julgar_orfao(bordas, tmp_path, capsys):
+    git, _estado = bordas
+    git.add_commit("p1", "m0", "ajuste sem numero", D)
+    git.set_branch("13.34.0", "p1")
+
+    main(["reconstruir-estado", "13.34.0", "--repo", _repo_dir(tmp_path)])
+
+    assert "motor julgar-orfao 13.34.0" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param(["--nenhum"], id="sem-motivo"),
+        pytest.param(["--motivo", "m"], id="sem-chamado-nem-nenhum"),
+        pytest.param(
+            ["--chamado", "1", "--nenhum", "--motivo", "m"], id="chamado-e-nenhum"
+        ),
+    ],
+)
+def test_julgar_orfao_erro_de_uso(monkeypatch, extra):
+    def proibido():
+        raise AssertionError("abriu o banco antes de validar as flags")
+
+    monkeypatch.setattr(cli, "abrir_sessao", proibido)
+
+    with pytest.raises(SystemExit) as saida:
+        main(["julgar-orfao", "13.34.0", "p1", "--repo", "webapp", *extra])
+
+    assert saida.value.code == 2
+
+
+def test_orfaos_e_julgar_orfao_pelo_main(bordas, tmp_path, capsys):
+    git, estado = bordas
+    git.add_commit("p1", "m0", "ajuste sem numero", D)
+    git.set_branch("13.34.0", "p1")
+    estado.registrar_versao(
+        "webapp",
+        VersaoInfo(
+            numero="13.34.0", tipo="ajustada", base_ref="13.33.0", base_commit="m0"
+        ),
+    )
+    repo = _repo_dir(tmp_path)
+
+    main(["julgar-orfao", "13.34.0", "p1", "--repo", repo, "--nenhum", "--motivo", "m"])
+    main(["orfaos", "13.34.0", "--repo", repo])
+
+    saida = capsys.readouterr().out
+    assert "julgado: p1 -> nenhum" in saida
+    assert "p1 2026-01-01 ajuste sem numero [nenhum: m]" in saida
+
+
 def test_consulta_ponta_a_ponta_le_snapshot_sem_recalcular(bordas, tmp_path, capsys):
     git, estado = bordas
     git.add_commit(

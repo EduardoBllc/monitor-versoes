@@ -32,6 +32,22 @@ class OrfaoDaVersao:
     julgamento: JulgamentoOrfao | None  # None = pendente
 
 
+def rotulo_do_julgamento(j: JulgamentoOrfao | None) -> str:
+    """O julgamento como a CLI e a TUI o mostram."""
+    if j is None:
+        return "pendente"
+    destino = "nenhum" if j.chamado is None else f"pertence a {j.chamado}"
+    return f"{destino}: {j.motivo}"
+
+
+def linha_do_orfao(o: OrfaoDaVersao) -> str:
+    """Hash curto, data, assunto e julgamento: uma linha da CLI e da TUI."""
+    return (
+        f"{o.hash_origem[:8]} {o.data:%Y-%m-%d} {o.assunto} "
+        f"[{rotulo_do_julgamento(o.julgamento)}]"
+    )
+
+
 def listar_orfaos(deps: Deps, versao: str) -> list[OrfaoDaVersao]:
     referencia = deps.referencia()
     versionamento = deps.versionamento()

@@ -264,6 +264,8 @@ motor atualizar 13.35.0 --repo meu-repo             # aplica os commits faltante
 motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
 motor atualizar 13.35.0 --repo meu-repo --abort
 motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
+motor orfaos    13.35.0 --repo meu-repo             # commits sem referência de tarefa e o julgamento
+motor julgar-orfao 13.35.0 <hash> --repo meu-repo --chamado 123 --motivo "..."  # ou --nenhum
 motor tui                                           # interface interativa
 motor serve                                         # interface web local (ver Interface web)
 motor inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
