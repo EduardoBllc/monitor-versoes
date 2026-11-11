@@ -7,6 +7,7 @@ import sys
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from urllib.parse import quote
 
 from motor.domain.referencia import validar_padrao
@@ -18,7 +19,44 @@ _CAMPOS_BANCO = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 _WORKTREES_MANTIDAS_PADRAO = 3
 
 
-_BACKENDS = ("sqlite", "postgres")
+BACKENDS = ("sqlite", "postgres")
+
+
+class Tabela(StrEnum):
+    """Tabelas do TOML com chaves que o motor conhece."""
+
+    VERSAO = "versao"
+    LIBERACAO = "liberacao"
+    BRANCHES = "branches"
+    REFERENCIA = "referencia"
+    TAREFAS = "tarefas"
+
+
+class Chave(StrEnum):
+    ESQUEMA = "esquema"
+    ATRIBUICAO = "atribuicao"
+    TAG = "tag"
+    VERSAO = "versao"
+    PRINCIPAL = "principal"
+    PADRAO = "padrao"
+    FONTE = "fonte"
+    PISO = "piso"
+
+
+class VarAmbiente(StrEnum):
+    """Chaves do `[ambiente]`: os nomes das variáveis que o motor lê."""
+
+    DATABASE_BACKEND = "DATABASE_BACKEND"
+    DATABASE_HOST = "DATABASE_HOST"
+    DATABASE_PORT = "DATABASE_PORT"
+    DATABASE_NAME = "DATABASE_NAME"
+    DATABASE_USER = "DATABASE_USER"
+    DATABASE_PASSWORD = "DATABASE_PASSWORD"
+    DATABASE_SQLITE_PATH = "DATABASE_SQLITE_PATH"
+    WORKTREES_MANTIDAS = "WORKTREES_MANTIDAS"
+    BITBUCKET_EMAIL = "BITBUCKET_EMAIL"
+    BITBUCKET_TOKEN = "BITBUCKET_TOKEN"
+
 
 #: O aviso de backend padrao sai uma vez por execucao.
 _avisos_emitidos: set[str] = set()
@@ -31,7 +69,7 @@ def diretorio_dados() -> str:
 
 def _caminho_sqlite() -> str:
     """Arquivo do SQLite: `DATABASE_SQLITE_PATH` ou o padrao do usuario."""
-    configurado = os.environ.get("DATABASE_SQLITE_PATH", "").strip()
+    configurado = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
     if configurado:
         return os.path.expanduser(configurado)
     return os.path.join(diretorio_dados(), "estado.db")
@@ -75,12 +113,12 @@ def _url_postgres() -> str:
 
 def backend() -> str:
     """`sqlite` (padrao) ou `postgres`, conforme `DATABASE_BACKEND`."""
-    valor = os.environ.get("DATABASE_BACKEND", "").strip().lower()
+    valor = os.environ.get(VarAmbiente.DATABASE_BACKEND, "").strip().lower()
     if not valor:
         return "sqlite"
-    if valor not in _BACKENDS:
+    if valor not in BACKENDS:
         raise ErroDeEntrada(
-            f"DATABASE_BACKEND inválido: {valor!r} (aceitos: {', '.join(_BACKENDS)})"
+            f"DATABASE_BACKEND inválido: {valor!r} (aceitos: {', '.join(BACKENDS)})"
         )
     return valor
 
@@ -98,7 +136,7 @@ def database_url(avisar: bool = True) -> str:
     if (
         avisar
         and "backend_padrao" not in _avisos_emitidos
-        and not os.environ.get("DATABASE_BACKEND", "").strip()
+        and not os.environ.get(VarAmbiente.DATABASE_BACKEND, "").strip()
         and all(_partes_postgres().values())
     ):
         _avisos_emitidos.add("backend_padrao")
@@ -122,7 +160,7 @@ def worktrees_mantidas() -> int:
     numerico e erro do operador, nao default calado: `WORKTREES_MANTIDAS=tres`
     cairia em 3 e a pessoa nunca saberia que nao configurou nada.
     """
-    valor = os.environ.get("WORKTREES_MANTIDAS", "").strip()
+    valor = os.environ.get(VarAmbiente.WORKTREES_MANTIDAS, "").strip()
     if not valor:
         return _WORKTREES_MANTIDAS_PADRAO
     # isdigit recusa "-1", "1.5" e "3 worktrees" de uma vez; int() sozinho
@@ -247,17 +285,17 @@ def _template(
 
 #: (atributo do ConfigProjeto, tabela, chave, e se e template com `{versao}`)
 _ESCOLHAS = (
-    ("esquema", "versao", "esquema", False),
-    ("atribuicao", "versao", "atribuicao", False),
-    ("tag_liberacao", "liberacao", "tag", True),
-    ("branch_versao", "branches", "versao", True),
-    ("branch_principal", "branches", "principal", False),
-    ("fonte_tarefas", "tarefas", "fonte", False),
+    ("esquema", Tabela.VERSAO, Chave.ESQUEMA, False),
+    ("atribuicao", Tabela.VERSAO, Chave.ATRIBUICAO, False),
+    ("tag_liberacao", Tabela.LIBERACAO, Chave.TAG, True),
+    ("branch_versao", Tabela.BRANCHES, Chave.VERSAO, True),
+    ("branch_principal", Tabela.BRANCHES, Chave.PRINCIPAL, False),
+    ("fonte_tarefas", Tabela.TAREFAS, Chave.FONTE, False),
 )
 
 
 def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
-    bruto = _tabela(dados, "referencia", caminho).get("padrao")
+    bruto = _tabela(dados, Tabela.REFERENCIA, caminho).get(Chave.PADRAO)
     return None if bruto is None else validar_padrao(bruto, caminho)
 
 
@@ -271,11 +309,11 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
     tarefas: dict[str, object] = {}
     escolhas: dict[str, Escolhido] = {}
     for dados, arquivo in camadas:
-        if (p := _texto(dados, "versao", "piso", arquivo)) is not None:
+        if (p := _texto(dados, Tabela.VERSAO, Chave.PISO, arquivo)) is not None:
             piso = Escolhido(p, arquivo)
         if (r := _padrao_referencia(dados, arquivo)) is not None:
             padrao = r
-        tarefas.update(_tabela(dados, "tarefas", arquivo))
+        tarefas.update(_tabela(dados, Tabela.TAREFAS, arquivo))
         for atributo, tabela, chave, template in _ESCOLHAS:
             ler = _template if template else _texto
             if (valor := ler(dados, tabela, chave, arquivo)) is not None:
@@ -298,7 +336,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
 
 def _topo(dados: Mapping[str, object], caminho: str) -> dict[str, object]:
     """O topo da config central, sem `[repos]`; `piso` aqui e erro."""
-    if _texto(dados, "versao", "piso", caminho) is not None:
+    if _texto(dados, Tabela.VERSAO, Chave.PISO, caminho) is not None:
         raise ErroDeEntrada(f"{caminho}: piso só vale em [{SECAO_REPOS}.<nome>.versao]")
     return {k: v for k, v in dados.items() if k != SECAO_REPOS}
 

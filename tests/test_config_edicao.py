@@ -69,8 +69,20 @@ def test_plugin_instalado_declara_campos(monkeypatch):
     assert {c.chave for c in campos} == {"projeto", "FAKE_TOKEN"}
 
 
-def test_plugin_quebrado_fica_fora_do_catalogo(monkeypatch):
-    _instalar(monkeypatch, _ep(NOME_QUEBRADO, "modulo_que_nao_existe:X"))
+class EntryPointQuebrado(EntryPoint):
+    def load(self):
+        raise RuntimeError("quebrou")
+
+
+@pytest.mark.parametrize(
+    "ponto",
+    [
+        _ep(NOME_QUEBRADO, "modulo_que_nao_existe:X"),
+        EntryPointQuebrado(NOME_QUEBRADO, "x:Y", GRUPO_TAREFAS),
+    ],
+)
+def test_plugin_quebrado_fica_fora_do_catalogo(monkeypatch, ponto):
+    _instalar(monkeypatch, ponto)
     lido = ler_para_edicao()
     assert all(c.origem != NOME_QUEBRADO for c in lido.campos)
 

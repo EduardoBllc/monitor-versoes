@@ -10,13 +10,16 @@ from enum import StrEnum
 
 from motor import plugins
 from motor.config import (
-    _BACKENDS,
+    BACKENDS,
     CHAVE_CAMINHO,
     SECAO_REPOS,
     TABELA_AMBIENTE,
+    Chave,
+    Tabela,
+    VarAmbiente,
     caminho_config_global,
 )
-from motor.errors import ErroDeEntrada, MotorError
+from motor.errors import ErroDeEntrada
 from motor.montagem import GRUPO_ATRIBUICOES, GRUPO_ESQUEMAS, GRUPO_TAREFAS
 
 ORIGEM_MOTOR = "motor"
@@ -65,59 +68,39 @@ class ConfigEditavel:
     versao: str
 
 
-def _c(
-    escopo: Escopo,
-    tabela: str | None,
-    chave: str,
-    tipo: TipoCampo,
-    rotulo: str,
-    **extra: object,
-) -> Campo:
-    return Campo(escopo, tabela, chave, tipo, rotulo, **extra)  # type: ignore[arg-type]
-
-
 _G, _R, _A = Escopo.GERAL, Escopo.REPO, Escopo.AMBIENTE
 _TX, _IN, _ES = TipoCampo.TEXTO, TipoCampo.INTEIRO, TipoCampo.ESCOLHA
 
 #: Campo -> grupo cujos entry points e valores `modulo:Classe` em uso são as opções.
-_GRUPO_DO_CAMPO = {
-    ("versao", "esquema"): GRUPO_ESQUEMAS,
-    ("versao", "atribuicao"): GRUPO_ATRIBUICOES,
-    ("tarefas", "fonte"): GRUPO_TAREFAS,
+_GRUPO_DO_CAMPO: dict[tuple[str, str], str] = {
+    (Tabela.VERSAO, Chave.ESQUEMA): GRUPO_ESQUEMAS,
+    (Tabela.VERSAO, Chave.ATRIBUICAO): GRUPO_ATRIBUICOES,
+    (Tabela.TAREFAS, Chave.FONTE): GRUPO_TAREFAS,
 }
 
+_V = VarAmbiente
+_AMB = TABELA_AMBIENTE
+
 _CAMPOS_MOTOR = (
-    _c(_G, "versao", "esquema", _ES, "Esquema de versão"),
-    _c(_G, "versao", "atribuicao", _ES, "Atribuição"),
-    _c(_G, "liberacao", "tag", _TX, "Tag de liberação"),
-    _c(_G, "branches", "versao", _TX, "Branch de versão"),
-    _c(_G, "branches", "principal", _TX, "Branch principal"),
-    _c(_G, "referencia", "padrao", _TX, "Padrão de referência"),
-    _c(_G, "tarefas", "fonte", _ES, "Fonte de tarefas"),
-    _c(_R, None, CHAVE_CAMINHO, _TX, "Caminho"),
-    _c(_R, "versao", "piso", _TX, "Piso de versão"),
-    _c(
-        _A,
-        TABELA_AMBIENTE,
-        "DATABASE_BACKEND",
-        _ES,
-        "Backend do banco",
-        opcoes=_BACKENDS,
-    ),
-    *(
-        _c(_A, TABELA_AMBIENTE, k, _TX, r)
-        for k, r in (
-            ("DATABASE_HOST", "Host do banco"),
-            ("DATABASE_NAME", "Nome do banco"),
-            ("DATABASE_USER", "Usuário do banco"),
-            ("DATABASE_SQLITE_PATH", "Arquivo do SQLite"),
-            ("BITBUCKET_EMAIL", "E-mail do Bitbucket"),
-        )
-    ),
-    _c(_A, TABELA_AMBIENTE, "DATABASE_PORT", _IN, "Porta do banco"),
-    _c(_A, TABELA_AMBIENTE, "WORKTREES_MANTIDAS", _IN, "Worktrees mantidas"),
-    _c(_A, TABELA_AMBIENTE, "DATABASE_PASSWORD", _TX, "Senha do banco", segredo=True),
-    _c(_A, TABELA_AMBIENTE, "BITBUCKET_TOKEN", _TX, "Token do Bitbucket", segredo=True),
+    Campo(_G, Tabela.VERSAO, Chave.ESQUEMA, _ES, "Esquema de versão"),
+    Campo(_G, Tabela.VERSAO, Chave.ATRIBUICAO, _ES, "Atribuição"),
+    Campo(_G, Tabela.LIBERACAO, Chave.TAG, _TX, "Tag de liberação"),
+    Campo(_G, Tabela.BRANCHES, Chave.VERSAO, _TX, "Branch de versão"),
+    Campo(_G, Tabela.BRANCHES, Chave.PRINCIPAL, _TX, "Branch principal"),
+    Campo(_G, Tabela.REFERENCIA, Chave.PADRAO, _TX, "Padrão de referência"),
+    Campo(_G, Tabela.TAREFAS, Chave.FONTE, _ES, "Fonte de tarefas"),
+    Campo(_R, None, CHAVE_CAMINHO, _TX, "Caminho"),
+    Campo(_R, Tabela.VERSAO, Chave.PISO, _TX, "Piso de versão"),
+    Campo(_A, _AMB, _V.DATABASE_BACKEND, _ES, "Backend do banco", opcoes=BACKENDS),
+    Campo(_A, _AMB, _V.DATABASE_HOST, _TX, "Host do banco"),
+    Campo(_A, _AMB, _V.DATABASE_NAME, _TX, "Nome do banco"),
+    Campo(_A, _AMB, _V.DATABASE_USER, _TX, "Usuário do banco"),
+    Campo(_A, _AMB, _V.DATABASE_SQLITE_PATH, _TX, "Arquivo do SQLite"),
+    Campo(_A, _AMB, _V.BITBUCKET_EMAIL, _TX, "E-mail do Bitbucket"),
+    Campo(_A, _AMB, _V.DATABASE_PORT, _IN, "Porta do banco"),
+    Campo(_A, _AMB, _V.WORKTREES_MANTIDAS, _IN, "Worktrees mantidas"),
+    Campo(_A, _AMB, _V.DATABASE_PASSWORD, _TX, "Senha do banco", segredo=True),
+    Campo(_A, _AMB, _V.BITBUCKET_TOKEN, _TX, "Token do Bitbucket", segredo=True),
 )
 
 
@@ -139,7 +122,7 @@ def _em_uso(dados: Mapping[str, object], tabela: str, chave: str) -> set[str]:
 def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
     try:
         declarados = getattr(plugins.carregar_plugin(grupo, nome), "campos_config", ())
-    except MotorError:
+    except Exception:  # plugin de terceiro pode quebrar no import de qualquer jeito
         return ()
     if not isinstance(declarados, tuple) or not all(
         isinstance(c, Campo) for c in declarados
