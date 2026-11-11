@@ -12,6 +12,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.atribuicoes import Exata
+from motor.domain.conflito import Estagios
 from motor.domain.types import (
     CommitRef,
     Exclusion,
@@ -30,7 +31,7 @@ from motor.engine.atualizar import (
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_da_verificacao
-from motor.errors import MotorError, RecusaDeInvariante
+from motor.errors import ErroDeEntrada, MotorError, RecusaDeInvariante
 from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
 from motor.services.versionamento import Versionamento
@@ -39,6 +40,7 @@ from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 OUTRAS_ENTRADAS = "lista|grep"
+COM_MARCADOR = "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> a0\n"
 D1 = D + datetime.timedelta(minutes=1)
 
 UM = {
@@ -367,6 +369,30 @@ def test_atualizar_abort_remove_worktree():
     assert "13.7.0" in g.branches, (
         "worktree_remove nao pode apagar a branch, so o checkout local"
     )
+
+
+def test_continuar_recusa_marcador_esquecido():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.estagios_on["a0"] = {
+        "a.txt": Estagios("a\n", "a\nb\n", "a\nc\n", COM_MARCADOR, binario=False)
+    }
+    deps = _deps(g, _estado(), ["255514"], UM)
+    atualizar(deps, "13.7.0")
+
+    with pytest.raises(ErroDeEntrada):
+        atualizar_continue(deps, "13.7.0")
+    assert g.pending_cherry_pick() == ("a0", True), "o pick tem de continuar aberto"
+
+
+def test_continuar_aceita_modify_delete_sem_marcador():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.estagios_on["a0"] = {"a.txt": Estagios("x\n", None, "y\n", "y\n", binario=False)}
+    deps = _deps(g, _estado(), ["255514"], UM)
+    atualizar(deps, "13.7.0")
+
+    assert atualizar_continue(deps, "13.7.0").status == AtualizarStatus.DONE
 
 
 def test_atualizar_continue_conclui_o_lote():
