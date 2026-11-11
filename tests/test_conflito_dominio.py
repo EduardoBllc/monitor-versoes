@@ -19,6 +19,8 @@ BLOCO_3_VIAS = "<<<<<<< ours\nA\n||||||| base\nB\n=======\nC\n>>>>>>> theirs\n"
         (BLOCO_3_VIAS, [1, 3, 5, 7]),
         ("========\n", []),
         ("a <<<<<<< b\n", []),
+        ("a\r\n=======\r\nb\r\n", [2]),
+        (BLOCO_2_VIAS.replace("\n", "\r\n"), [2, 4, 6]),
     ],
 )
 def test_marcadores_restantes(texto: str, esperado: list[int]) -> None:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 # 7 caracteres exatos, depois fim de linha ou espaço (como o git emite).
-_MARCADOR = re.compile(r"(<{7}|\|{7}|={7}|>{7})( |$)")
+_MARCADOR = re.compile(r"(<{7}|\|{7}|={7}|>{7})( |\r?$)")
 
 
 class TipoArquivo(StrEnum):
