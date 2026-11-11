@@ -375,8 +375,6 @@ def _definir(chave: str, valor: object, tabela: str, versao: str) -> dict[str, A
 @pytest.fixture
 def config_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    # `gravar` aplica o [ambiente] em os.environ; o monkeypatch desfaz o vazamento.
-    monkeypatch.setenv("DATABASE_PASSWORD", "")
 
 
 def _valor(corpo: dict[str, Any], chave: str) -> Any:
@@ -426,8 +424,10 @@ def test_put_config_erros(
         corpo = _definir("principal", "trunk", "branches", versao)
         url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
         cliente.post(url, json={"auditar": False})
-    r = cliente.put("/api/config", json=corpo)
-    assert (r.status_code, r.json()["tipo"]) == (status, tipo)
-    amb.soltar.set()
+    try:
+        r = cliente.put("/api/config", json=corpo)
+        assert (r.status_code, r.json()["tipo"]) == (status, tipo)
+    finally:
+        amb.soltar.set()
     if caso == "ocupado":
         _esperar(cliente)

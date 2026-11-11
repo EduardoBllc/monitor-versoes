@@ -52,6 +52,15 @@ def _ambiente_central_reiniciado():
     _reiniciar_ambiente_base()
 
 
+@pytest.fixture(autouse=True)
+def _os_environ_restaurado():
+    """`gravar` aplica o `[ambiente]` em `os.environ`; nada vaza entre testes."""
+    antes = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(antes)
+
+
 _TRUNCATE_TUDO = (
     "truncate atribuicao_commit, atribuicao, versao, exclusao, "
     "sem_entrega, pr_commit_cache, pr_mergeada, varredura_pr, "
