@@ -627,3 +627,16 @@ def test_leitura_de_conflito_roda_com_repo_travado(cliente: TestClient) -> None:
 
     with travar(REPO, CLONE):
         assert cliente.get(BASE_CONFLITO).status_code == HTTPStatus.OK
+
+
+def test_escrita_de_conflito_solta_o_repo_depois_de_erro_do_runner(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    url = f"{BASE_CONFLITO}/reabertura"
+    amb.erro_conflito = NaoEncontrado("x")
+    assert (
+        cliente.post(url, json={"caminho": CAMINHO}).status_code == HTTPStatus.NOT_FOUND
+    )
+    amb.erro_conflito = None
+    r = cliente.post(url, json={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.NO_CONTENT

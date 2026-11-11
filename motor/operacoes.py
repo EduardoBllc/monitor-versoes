@@ -86,7 +86,7 @@ CriarRunner = Callable[[RepoOption, str], AtualizarResult]
 VersionamentoLoader = Callable[[RepoOption], Versionamento]
 LerConflitoRunner = Callable[[RepoOption, str], ConflitoAberto]
 LerArquivoConflitoRunner = Callable[[RepoOption, str, str], ConteudoDoConflito]
-ResolverArquivoRunner = Callable[[RepoOption, str, "Resolucao"], None]
+ResolverArquivoRunner = Callable[[RepoOption, str, Resolucao], None]
 ReabrirArquivoRunner = Callable[[RepoOption, str, str], None]
 
 
