@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import threading
 from typing import cast
 
 import pytest
 
-from motor.daemon.erros import ErroApi, TipoErro, erro_api
+from motor.daemon.erros import ConfigOcupada, ErroApi, TipoErro, erro_api
 from motor.daemon.execucoes import EstadoExecucao, Execucoes, Operacao
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.errors import (
@@ -31,6 +32,7 @@ ESPERA_S = 5.0
         (RespostaInvalida("x"), 502, TipoErro.RESPOSTA),
         (MotorError("x"), 500, TipoErro.MOTOR),
         (RepoOcupado("r", 1), 409, TipoErro.OCUPADO),
+        (ConfigOcupada(), 409, TipoErro.OCUPADO),
     ],
 )
 def test_erro_api_mapeia_cada_tipo(
@@ -164,3 +166,18 @@ def test_continuar_concluido_ou_abortar_limpa_o_bloqueio(
     execucoes.iniciar("a", "1.0.0", operacao, lambda _: resultado)
     assert execucoes.aguardar("a", ESPERA_S)
     assert _pendentes(execucoes) == []
+
+
+def test_rodando_so_enquanto_ha_execucao_em_andamento() -> None:
+    execucoes = Execucoes()
+    soltar = threading.Event()
+
+    def alvo(_: RelatorProgresso) -> None:
+        soltar.wait(ESPERA_S)
+
+    assert not execucoes.rodando()
+    execucoes.iniciar("r", "1", Operacao.VERIFICAR, alvo)
+    assert execucoes.rodando()
+    soltar.set()
+    assert execucoes.aguardar("r", ESPERA_S)
+    assert not execucoes.rodando()

@@ -43,6 +43,25 @@ def _config_central_isolado(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _ambiente_central_reiniciado():
+    """Cada teste começa sem base nem chaves aplicadas do `[ambiente]`."""
+    from motor.config import _reiniciar_ambiente_base
+
+    _reiniciar_ambiente_base()
+    yield
+    _reiniciar_ambiente_base()
+
+
+@pytest.fixture(autouse=True)
+def _os_environ_restaurado():
+    """`gravar` aplica o `[ambiente]` em `os.environ`; nada vaza entre testes."""
+    antes = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(antes)
+
+
+@pytest.fixture(autouse=True)
 def _travas_isoladas(monkeypatch, tmp_path):
     """Os locks de repo da suíte ficam no `tmp_path`, não em `~/.local/share`.
 

@@ -33,6 +33,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from motor.config import SECAO_REPOS
+from motor.config_edicao import ler_para_edicao
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -65,6 +66,7 @@ from motor.operacoes import (
 )
 from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import Versionamento
+from motor.tui_config import ConfigModal
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -447,6 +449,7 @@ class MotorTUI(App[None]):
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
         ("i", "inscricoes", "Inscrições"),
+        ("g", "configurar", "Config"),
     ]
     CSS = """
     #barra { height: auto; padding: 1; align-vertical: middle; }
@@ -905,6 +908,21 @@ class MotorTUI(App[None]):
 
     def action_inscricoes(self) -> None:
         self.push_screen(InscricoesModal(self._inscricoes_em, self._repo, self._versao))
+
+    def action_configurar(self) -> None:
+        if self._ocupado:
+            self.notify("há uma execução em andamento", severity="warning")
+            return
+        try:
+            config = ler_para_edicao()
+        except ErroDeEntrada as erro:
+            self.notify(formatar_com_notas(erro), severity="error")
+            return
+        self.push_screen(ConfigModal(config), self._config_salva)
+
+    def _config_salva(self, gravou: bool | None) -> None:
+        if gravou:
+            self.carregar_repos_worker()
 
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:

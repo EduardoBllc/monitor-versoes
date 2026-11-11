@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from motor import config
-from motor.config import CHAVE_CAMINHO, SECAO_REPOS, database_url, worktrees_mantidas
+from motor.config import (
+    CHAVE_CAMINHO,
+    SECAO_REPOS,
+    VAR_XDG_CONFIG_HOME,
+    VarAmbiente,
+    database_url,
+    worktrees_mantidas,
+)
 from motor.errors import ErroDeEntrada
 from tests.config_repos import rotulo_secao, secao_repo
 
@@ -502,3 +511,20 @@ def test_postgres_incompleto_aponta_o_ambiente_central(central, monkeypatch):
     assert "[ambiente]" in str(e.value)
     assert str(central) in str(e.value)
     assert ".env" in str(e.value)
+
+
+def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):
+    host, nome = VarAmbiente.DATABASE_HOST, VarAmbiente.DATABASE_NAME
+    monkeypatch.setenv(host, "shell")
+    monkeypatch.delenv(nome, raising=False)
+    config.aplicar_ambiente_central({host: "central", nome: "x"})
+    assert os.environ[host] == "central"
+    config.aplicar_ambiente_central({})
+    assert os.environ[host] == "shell"
+    assert nome not in os.environ
+
+
+def test_aplicar_ambiente_ignora_xdg():
+    antes = os.environ.get(VAR_XDG_CONFIG_HOME)
+    config.aplicar_ambiente_central({VAR_XDG_CONFIG_HOME: "/outro"})
+    assert os.environ.get(VAR_XDG_CONFIG_HOME) == antes

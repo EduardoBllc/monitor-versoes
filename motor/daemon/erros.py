@@ -40,6 +40,11 @@ class ErroApi:
     mensagem: str
 
 
+class ConfigOcupada(MotorError):
+    def __init__(self) -> None:
+        super().__init__("há uma execução em andamento; tente depois de ela terminar")
+
+
 # Ordem irrelevante: a resolução anda pela MRO do erro, do mais específico ao MotorError.
 _TABELA: dict[type[MotorError], tuple[HTTPStatus, TipoErro]] = {
     ErroDeEntrada: (HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
@@ -48,6 +53,7 @@ _TABELA: dict[type[MotorError], tuple[HTTPStatus, TipoErro]] = {
     BackendIndisponivel: (HTTPStatus.SERVICE_UNAVAILABLE, TipoErro.BACKEND),
     RespostaInvalida: (HTTPStatus.BAD_GATEWAY, TipoErro.RESPOSTA),
     RepoOcupado: (HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+    ConfigOcupada: (HTTPStatus.CONFLICT, TipoErro.OCUPADO),
     MotorError: (HTTPStatus.INTERNAL_SERVER_ERROR, TipoErro.MOTOR),
 }
 

@@ -16,7 +16,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Metodo, api, ErroApi } from "./api/cliente";
+import { CHAVE_REPOS, Metodo, api, ErroApi } from "./api/cliente";
 import { EstadoExecucao, Operacao, TipoErro } from "./api/enums";
 import {
   FaseAtualizacao,
@@ -34,6 +34,7 @@ import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
 import { ModalAbortar } from "./componentes/ModalAbortar";
 import { ModalConfirmarLote } from "./componentes/ModalConfirmarLote";
+import { ModalConfig } from "./componentes/ModalConfig";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
 import { ModalResultado } from "./componentes/ModalResultado";
@@ -91,6 +92,7 @@ function Tela() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [criando, setCriando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
+  const [configurando, setConfigurando] = useState(false);
   const [atualizacoes, setAtualizacoes] = useState<
     Readonly<Record<string, EstadoAtualizacao>>
   >({});
@@ -109,7 +111,7 @@ function Tela() {
   }, []);
 
   const repos = useQuery({
-    queryKey: ["repos"],
+    queryKey: CHAVE_REPOS,
     queryFn: () => api<RepoOption[]>(Metodo.GET, "/api/repos"),
   });
   const versoes = useQuery({
@@ -384,6 +386,7 @@ function Tela() {
           }
           aoCriar={() => setCriando(true)}
           aoInscricoes={() => setInscricoes(true)}
+          aoConfigurar={() => setConfigurando(true)}
         />
       </AppShell.Header>
       <AppShell.Main>
@@ -455,6 +458,10 @@ function Tela() {
           aoCriar={(numero) => void disparar(base, { numero })}
         />
       )}
+      <ModalConfig
+        aberto={configurando}
+        aoFechar={() => setConfigurando(false)}
+      />
       <ModalInscricoes
         aberto={inscricoes}
         aoFechar={() => setInscricoes(false)}

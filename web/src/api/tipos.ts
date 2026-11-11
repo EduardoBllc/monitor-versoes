@@ -10,3 +10,7 @@ export type Sugestao = Esquemas["Sugestao"];
 export type Avaliacao = Esquemas["Avaliacao"];
 export type InscricaoVista = Esquemas["InscricaoVista"];
 export type AtualizarResult = Esquemas["AtualizarResult"];
+export type ConfigEditavel = Esquemas["ConfigEditavel"];
+export type Campo = Esquemas["Campo"];
+export type ValorLido = Esquemas["ValorLido"];
+export type Alteracao = Esquemas["Alteracao"];

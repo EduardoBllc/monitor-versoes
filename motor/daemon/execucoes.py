@@ -90,6 +90,12 @@ class Execucoes:
     def atual(self, repo: str) -> Execucao | None:
         return self._por_repo.get(repo)
 
+    def rodando(self) -> bool:
+        with self._lock:
+            return any(
+                e.estado is EstadoExecucao.RODANDO for e in self._por_repo.values()
+            )
+
     def pendencias(self, repo: str) -> list[Execucao]:
         with self._lock:
             return [e for (r, _), e in self._pendentes.items() if r == repo]

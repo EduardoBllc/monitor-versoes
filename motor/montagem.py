@@ -90,6 +90,8 @@ _DA_CONFIG = FonteTasks()
 
 #: Grupo de entry points das fontes de tarefas. O nucleo nao registra nenhuma.
 GRUPO_TAREFAS = "monitor_versoes.tarefas"
+GRUPO_ESQUEMAS = "monitor_versoes.esquemas"
+GRUPO_ATRIBUICOES = "monitor_versoes.atribuicoes"
 
 
 @contextmanager
@@ -252,11 +254,9 @@ def resolver_versionamento(config: ConfigProjeto) -> Versionamento:
     O piso e validado aqui, pelo esquema em uso, e nao na leitura da config: um
     piso que o esquema nao reconhece falha so em quem usa o versionamento.
     """
-    esquema: EsquemaVersao = _plugin(
-        "monitor_versoes.esquemas", config.esquema, "semver"
-    )()
+    esquema: EsquemaVersao = _plugin(GRUPO_ESQUEMAS, config.esquema, "semver")()
     politica: PoliticaAtribuicao = _plugin(
-        "monitor_versoes.atribuicoes", config.atribuicao, "exata"
+        GRUPO_ATRIBUICOES, config.atribuicao, "exata"
     )()
     piso = config.piso
     if piso is not None:
