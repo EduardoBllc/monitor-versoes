@@ -30,6 +30,7 @@ import type {
 import { AVISO_DESCARTE, Lado, temMarcadores } from "../conflito";
 import { linguagemDe } from "../linguagem";
 import { MergeConteudo } from "./MergeConteudo";
+import { SO_LEITURA } from "./monacoConflito";
 import { ModalReabrir } from "./ModalReabrir";
 import { notificarErro, notificarOk } from "./notificar";
 import { TAMANHO_HASH } from "./PainelBloqueio";
@@ -71,7 +72,6 @@ enum EsquemaCor {
   ESCURO = "dark",
 }
 
-const SO_LEITURA = { readOnly: true, minimap: { enabled: false } };
 
 export type EstadoConflitoWeb = { pendente: boolean; sujo: boolean };
 
@@ -251,7 +251,7 @@ export default function EditorConflito({
             <MergeConteudo
               // Nova leitura do disco (resolver, reabrir, recarregar) recomeça a tela.
               key={`${id}/${dados.versao_disco}/${atual.resolvido}`}
-              caminho={atual.caminho}
+              linguagem={linguagem}
               modelos={{
                 [Lado.THEIRS]: modelo(Painel.THEIRS),
                 [Lado.OURS]: modelo(Painel.OURS),

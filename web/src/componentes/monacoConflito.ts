@@ -10,6 +10,8 @@ export enum Classe {
   DECIDIDO = "cf-decidido",
 }
 
+export const SO_LEITURA = { readOnly: true, minimap: { enabled: false } };
+
 // Classes da margem (barra de estado); as outras pintam a linha inteira.
 const NA_MARGEM: readonly Classe[] = [Classe.ABERTO, Classe.DECIDIDO];
 const ALTURA_AVISO = 1;

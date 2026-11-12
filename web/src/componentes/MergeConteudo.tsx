@@ -19,10 +19,10 @@ import {
   temMarcadores,
   trecho,
 } from "../conflito";
-import { linguagemDe } from "../linguagem";
 import "./EditorConflito.css";
 import {
   Classe,
+  SO_LEITURA,
   colorir,
   decoracoes,
   recolherNoEditor,
@@ -33,7 +33,6 @@ const ALTURA_RESULTADO = "45vh";
 const COMANDO_ACEITAR = "monitor-versoes.aceitar";
 // Lente sem id vira texto sem clique.
 const SEM_ACAO = "";
-const SO_LEITURA = { readOnly: true, minimap: { enabled: false } };
 // O bloco não cresce quando se digita na borda dele: a borda é a linha vizinha.
 const RASTRO: monaco.editor.IModelDecorationOptions = {
   stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
@@ -70,8 +69,19 @@ function linhasDa(f: monaco.Range): Faixa {
   return { inicio: f.startLineNumber, fim };
 }
 
+// O texto como o Monaco o guarda: ele também quebra linha em \r solto e
+// normaliza o EOL. Linha de `blocos` e linha do modelo precisam ser a mesma.
+function comoMonaco(texto: string): string {
+  const modelo = monaco.editor.createModel(texto);
+  try {
+    return modelo.getValue();
+  } finally {
+    modelo.dispose();
+  }
+}
+
 export function MergeConteudo({
-  caminho,
+  linguagem,
   modelos,
   dados,
   texto,
@@ -79,7 +89,7 @@ export function MergeConteudo({
   tema,
   aoMudar,
 }: {
-  caminho: string;
+  linguagem: string;
   modelos: Record<Lado.OURS | Lado.THEIRS | "resultado", string>;
   dados: ConteudoDoConflito;
   texto: string;
@@ -87,10 +97,10 @@ export function MergeConteudo({
   tema: string;
   aoMudar: (texto: string) => void;
 }) {
-  const linguagem = linguagemDe(caminho, monaco.languages.getLanguages());
   // Os blocos de quando a tela montou; a chave do componente troca a cada leitura.
-  const [originais] = useState(() => (resolvido ? [] : blocos(texto)));
-  const [linhasIniciais] = useState(() => texto.split("\n"));
+  const [inicial] = useState(() => comoMonaco(texto));
+  const [originais] = useState(() => (resolvido ? [] : blocos(inicial)));
+  const [linhasIniciais] = useState(() => inicial.split("\n"));
   const registro = useRef<Registro[]>([]);
   const resultado = useRef<monaco.editor.ITextModel | null>(null);
   const [mudou] = useState(() => new monaco.Emitter<void>());
@@ -143,12 +153,12 @@ export function MergeConteudo({
   };
 
   const montarLado =
-    (lado: Lateral, conteudo: string): OnMount =>
+    (lado: Lateral): OnMount =>
     (editor) => {
       const modelo = editor.getModel();
       if (!modelo) return;
       const faixas = localizar(
-        conteudo,
+        modelo.getValue(),
         originais.map((b) => (lado === Lado.OURS ? b.ours : b.theirs)),
         originais.map((b) => {
           // Até CONTEXTO linhas antes do bloco, sem entrar no bloco anterior.
@@ -344,7 +354,7 @@ export function MergeConteudo({
           value={dados.theirs ?? ""}
           theme={tema}
           options={SO_LEITURA}
-          onMount={montarLado(Lado.THEIRS, dados.theirs ?? "")}
+          onMount={montarLado(Lado.THEIRS)}
         />
         <Editor
           height={ALTURA_LADO}
@@ -353,7 +363,7 @@ export function MergeConteudo({
           value={dados.ours ?? ""}
           theme={tema}
           options={SO_LEITURA}
-          onMount={montarLado(Lado.OURS, dados.ours ?? "")}
+          onMount={montarLado(Lado.OURS)}
         />
       </SimpleGrid>
       <Text fw={700}>resultado</Text>
