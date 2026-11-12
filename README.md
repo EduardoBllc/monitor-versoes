@@ -244,7 +244,7 @@ começando por letra ou dígito.
    $ motor diagnostico
    OK  Variáveis: todas preenchidas
    OK  SQLite: conexão funciona
-   OK  Migração: revisão a7c3e9d1f2b4
+   OK  Migração: revisão b8d4f0a2c3e5
    OK  Repos: 1 repo(s) configurado(s)
    OK  Tarefas: credenciais aceitas
    não configurado  Bitbucket: sem BITBUCKET_TOKEN
@@ -297,6 +297,10 @@ Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
 Depois, **Continuar**. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum
 arquivo ainda não mesclado tiver marcador de conflito no disco, e aponta arquivo e linha. As
 regras do conflito estão na [decisão 013](docs/decisoes/013-conflito-e-checkpoint.md).
+
+Se a resolução não deixou alteração nenhuma no alvo, o continuar para e pede confirmação:
+**Registrar vazio** (na CLI, `atualizar --continue --allow-empty`) entra com um commit vazio,
+com o trailer `-x`, e o commit conta como aplicado; **Abortar** (`--abort`) o descarta.
 
 ### Editar a configuração pela interface
 
@@ -368,7 +372,7 @@ motor inscricao rodar                                             # o que o agen
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
 A execução agendada não depende de diretório: não lê `.env` e usa o `[ambiente]` do config
 central ou o ambiente do agendador.
-Também dá para gerenciar na TUI (tecla `i`).
+Também dá para gerenciar na TUI (tecla `i`) e na web (botão **Inscrições** da barra).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
 outras. O desfecho da última execução aparece no `listar`:
