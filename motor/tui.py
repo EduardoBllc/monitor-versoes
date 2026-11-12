@@ -1052,7 +1052,10 @@ class MotorTUI(App[None]):
                 "Selecione um repo disponível e uma versão.", severity="warning"
             )
             return
-        if self._ocupado or self._listar_orfaos is None or self._julgar_orfao is None:
+        # Sem `_ocupado`: listar e julgar só fazem fetch e gravam no estado, num
+        # worker próprio do modal, e rodam ao lado de outra operação
+        # (docs/decisoes/034-julgamento-de-orfao.md).
+        if self._listar_orfaos is None or self._julgar_orfao is None:
             return
         self.push_screen(
             OrfaosModal(

@@ -2590,6 +2590,21 @@ def test_orfaos_sem_repo_e_versao_avisa_e_nao_abre(monkeypatch):
     assert severidades == ["warning"]
 
 
+def test_orfaos_abre_com_execucao_da_tui_em_andamento():
+    """Listar e julgar rodam ao lado de outra operação (decisão 034)."""
+
+    async def executar_fluxo() -> None:
+        app = _app_orfaos({}, [])
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+            app._ocupado = True
+            await pilot.press("o")
+            await pilot.pause()
+            assert isinstance(app.screen, OrfaosModal)
+
+    asyncio.run(executar_fluxo())
+
+
 def test_orfaos_lista_e_julga_nos_dois_sentidos():
     julgamentos: dict[str, JulgamentoOrfao] = {}
     chamadas: list[_Julgada] = []

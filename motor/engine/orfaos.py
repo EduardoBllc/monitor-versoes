@@ -52,7 +52,7 @@ def linha_do_orfao(o: OrfaoDaVersao) -> str:
 def listar_orfaos(deps: Deps, versao: str) -> list[OrfaoDaVersao]:
     referencia = deps.referencia()
     versionamento = deps.versionamento()
-    versionamento.esquema.validar(versao)
+    versao = versionamento.esquema.validar(versao)
     orfaos = _orfaos_atuais(deps, versionamento, referencia, versao)
     julgados = {
         j.hash_origem: j
@@ -91,7 +91,7 @@ def julgar_orfao(
     if not prefixo:
         raise ErroDeEntrada("informe o hash do órfão")
     versionamento = deps.versionamento()
-    versionamento.esquema.validar(versao)
+    versao = versionamento.esquema.validar(versao)
 
     orfaos = _orfaos_atuais(deps, versionamento, referencia, versao)
     # O prefixo é procurado só entre os órfãos: um commit com referência que

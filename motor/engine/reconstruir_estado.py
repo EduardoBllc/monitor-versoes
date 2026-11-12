@@ -49,7 +49,7 @@ def reconstruir_estado(deps: Deps, versao: str) -> ReconstructResult:
     # depois de buscar e registrar a versao seria I/O a toa.
     referencia = deps.referencia()
     versionamento = deps.versionamento()
-    versionamento.esquema.validar(versao)
+    versao = versionamento.esquema.validar(versao)
     # Antes de ler qualquer ref, nao depois: a base de uma versao nunca
     # registrada sai do ref store local (o `Catalogo` do
     # BaseResolver) e o commits_in_range abaixo le o tip local da branch alvo.

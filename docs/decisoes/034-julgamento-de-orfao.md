@@ -40,8 +40,9 @@ atribuição é recalculada.
   tira de qualquer tarefa.
 - **Não passa pelo congelamento** ([011](011-congelamento-no-banco.md)). O julgamento não é
   atribuição: gravá-lo numa versão liberada não muda o snapshot, que só o `verificar
-  --auditar` ou a recuperação do `reconstruir-estado` recalculam. Recusá-lo tornaria a
-  recuperação de uma versão liberada impossível de concluir.
+  --auditar` ou a recuperação do `reconstruir-estado` recalculam. Aceitá-lo deixa o
+  operador gravar o julgamento antes de levantar o congelamento, e o `verificar --auditar`
+  da versão liberada já o considera sem tocar no snapshot.
 - **Varre só quando há o que aplicar.** O `verificar` só procura órfãos quando a versão tem
   julgamento "pertence a chX" com chX no alvo. Assim uma versão sem julgamento não paga a
   varredura nem passa a exigir o padrão de referência.

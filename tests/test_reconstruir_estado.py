@@ -201,3 +201,13 @@ def test_julgamento_de_outra_versao_nao_vale():
 
     assert resultado.orfaos == ["o1"]
     assert _commits_por_chamado(estado) == {"123456": ["c1"]}
+
+
+def test_reconstruir_estado_registra_o_numero_aparado():
+    git = _git_com_pick("ch123456 alfa")
+    estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
+
+    reconstruir_estado(_deps(git, estado), " 13.34.0 ")
+
+    assert estado.versao("r", "13.34.0") is not None
+    assert [a.chamado for a in estado.atribuicoes("r", "13.34.0")] == ["123456"]

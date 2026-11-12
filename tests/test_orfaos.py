@@ -175,3 +175,27 @@ def test_busca_antes_de_ler_a_branch(achou):
 
     assert achou(_deps(git, _estado()))
     assert git.fetched == ["origin"]
+
+
+@pytest.mark.parametrize(
+    "achou",
+    [
+        pytest.param(
+            lambda d: (
+                [o.hash_origem for o in listar_orfaos(d, f" {VERSAO} ")]
+                == ["a1bbbb", "d1aaaa"]
+            ),
+            id="listar",
+        ),
+        pytest.param(
+            lambda d: (
+                julgar_orfao(d, f" {VERSAO} ", "d1", None, "m").versao_numero == VERSAO
+            ),
+            id="julgar",
+        ),
+    ],
+)
+def test_numero_da_versao_chega_aparado(achou):
+    """O número com espaço passa no esquema e segue aparado: sem isso, a versão
+    registrada não seria achada."""
+    assert achou(_deps(_git(), _estado()))

@@ -158,8 +158,9 @@ class JulgamentoOrfao(Base):
     """Julgamento humano de um commit órfão da versão: o git não o recupera,
     e nenhum recálculo o apaga (docs/decisoes/004-estado-descartavel.md).
 
-    Sem trigger de congelamento: não é atribuição, e gravá-lo numa versão
-    liberada é o que permite a recuperação descrita no `reconstruir-estado`.
+    Sem trigger de congelamento: não é atribuição. Numa versão liberada ele
+    pode ser gravado antes de levantar o congelamento e vale no
+    `verificar --auditar` (docs/decisoes/034-julgamento-de-orfao.md).
     """
 
     __tablename__ = "julgamento_orfao"

@@ -5,7 +5,7 @@
 - **Depende de:** [004](004-estado-descartavel.md), [005](005-alvo-distribuicao-entre-versoes.md),
   [013](013-conflito-e-checkpoint.md), [014](014-ordem-de-aplicacao-pelo-grafo.md),
   [015](015-estado-regravado-ao-final-do-lote.md), [022](022-fetch-origin-em-todo-entry-point.md),
-  [023](023-onde-nao-se-abstrai.md)
+  [023](023-onde-nao-se-abstrai.md), [034](034-julgamento-de-orfao.md)
 
 `verificar` grava um carimbo (tabela `verificacao`): tip da branch depois do pull,
 impressão das exclusões, do "sem entrega" e dos julgamentos de órfão, hora e o
