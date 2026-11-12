@@ -24,8 +24,7 @@ próprio processo.
   inclusive por `kill -9` ou pelo tempo-limite da inscrição; o arquivo que sobra não trava
   nada, e não há o que o operador apagar. Fora do clone, ele não aparece no `git status` nem
   depende do layout do `.git`. O arquivo guarda o pid de quem segura, só para a mensagem. É um
-  lock local: o estado pode ser um Postgres compartilhado, e escrita concorrente vinda de
-  outra máquina continua como era.
+  lock local, como o estado ([035](035-estado-local-em-sqlite.md)).
 - **Cobre o que toca a worktree, o checkpoint ou o GC, pela operação inteira.** São `criar`,
   `atualizar` (inclusive continuar e abortar), a prévia, o `verificar` sem `--auditar` e a
   execução de uma inscrição. Ficam de fora `consulta`, `verificar --auditar`,

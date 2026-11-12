@@ -9,7 +9,7 @@ comparar hashes não responde nada. O `motor` cruza três fontes:
 | Fonte | Representa |
 | --- | --- |
 | **rastreador de tasks** (plugin da config, ou lista manual) | o que _deveria_ estar na versão |
-| **estado** (SQLite ou Postgres) | o que a ferramenta _declarou_ ter colocado |
+| **estado** (SQLite) | o que a ferramenta _declarou_ ter colocado |
 | **git** (trailer do `cherry-pick -x`) | o que está _de fato_ aplicado |
 
 A versão só fica verde quando as três concordam. O porquê de cada decisão está em
@@ -35,7 +35,6 @@ sem adaptação:
 | Ferramenta | Para quê | Instalação |
 | --- | --- | --- |
 | [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| [Docker](https://docs.docker.com/engine/install/) com Compose | só se for usar Postgres no estado (opcional; o padrão é SQLite) | Linux: `curl -fsSL https://get.docker.com \| sh`; macOS: [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) |
 | git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install` |
 
 ## Instalação
@@ -44,45 +43,12 @@ Em um diretório de trabalho qualquer (não precisa clonar o repositório):
 
 ```bash
 uv tool install git+https://github.com/EduardoBllc/monitor-versoes
-motor init                      # escreve compose.yml no diretório atual
 ```
 
-O estado fica num arquivo SQLite (`~/.local/share/monitor-versoes/estado.db`), criado com as
-tabelas no primeiro uso: não há Docker nem migração a rodar. O `compose.yml` só serve ao Postgres
-opcional (veja "Estado: SQLite (padrão) ou Postgres").
+O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração a rodar (veja
+"Estado").
 
 Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
-
-`motor init` não sobrescreve arquivo existente. Se preferir, copie o arquivo abaixo.
-
-`compose.yml`:
-
-<!-- modelo: compose.yml -->
-```yaml
-# Postgres do estado, opt-in: o padrao do motor e SQLite (sem Docker). Suba este
-# servico so com DATABASE_BACKEND=postgres.
-services:
-  db:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DATABASE_NAME:-monitor_versoes}
-      POSTGRES_USER: ${DATABASE_USER:-motor}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-motor}
-    ports: ["${DATABASE_PORT:-5433}:5432"]
-    # /var/lib/postgresql, nao /var/lib/postgresql/data: no postgres:18-alpine o
-    # PGDATA e /var/lib/postgresql/18/docker, entao montar em /data criaria um
-    # diretorio vazio irmao do PGDATA e os dados sumiriam na recriacao do volume.
-    volumes: [pgdata:/var/lib/postgresql]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-volumes:
-  pgdata:
-```
 
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -95,17 +61,8 @@ variável de ambiente, e o motor a exporta no início de todo comando:
 
 ```toml
 [ambiente]
-# Backend do estado: sqlite (padrão, arquivo local, sem Docker) ou postgres.
-DATABASE_BACKEND = "sqlite"
-# DATABASE_SQLITE_PATH = "..."   # opcional; padrão ~/.local/share/monitor-versoes/estado.db
-
-# Postgres (opt-in): só lidas com DATABASE_BACKEND = "postgres". Os valores abaixo são os
-# padrões do compose.yml.
-DATABASE_HOST = "localhost"
-DATABASE_PORT = 5433
-DATABASE_NAME = "monitor_versoes"
-DATABASE_USER = "motor"
-DATABASE_PASSWORD = "motor"
+# Arquivo do estado (opcional; padrão ~/.local/share/monitor-versoes/estado.db)
+# DATABASE_SQLITE_PATH = "..."
 
 # Bitbucket (opcional — ativa descoberta de commits por PR)
 # BITBUCKET_TOKEN = "..."
@@ -124,7 +81,7 @@ Chave presente com valor vazio também conta como definida e vence as outras fon
 comentada a chave que você define no `.env` ou no shell. A
 tabela só vale no topo: `[repos.<nome>.ambiente]` é erro.
 
-Um `.env` no diretório atual, com os mesmos nomes (`DATABASE_BACKEND=postgres`), continua
+Um `.env` no diretório atual, com os mesmos nomes (`WORKTREES_MANTIDAS=3`), continua
 valendo como alternativa. Para cada variável vence a primeira fonte que a define:
 
 | Ordem | Fonte |
@@ -137,28 +94,12 @@ O `[ambiente]` vence também o `.env.development`: com ele definido, `--env deve
 leva a outro banco. Flags explícitas (`--bitbucket-token`, `--bitbucket-email`) vencem o
 `[ambiente]`.
 
-### Estado: SQLite (padrão) ou Postgres
+### Estado
 
-`DATABASE_BACKEND` escolhe onde o estado mora: `sqlite` (padrão, sem configuração) ou
-`postgres`. O arquivo SQLite é `~/.local/share/monitor-versoes/estado.db`, ou o caminho de
-`DATABASE_SQLITE_PATH`. Valor desconhecido é erro. No SQLite não há Docker nem migração a rodar:
-o primeiro uso cria as tabelas.
-
-Para usar Postgres: suba o banco (`docker compose up -d --wait`, com o `compose.yml` do
-`motor init`), defina `DATABASE_BACKEND=postgres` e as cinco
-`DATABASE_HOST/PORT/NAME/USER/PASSWORD` no `[ambiente]` (ou no `.env`; só são lidas nesse caso) e rode
-`motor migrar` (ou deixe o primeiro comando aplicar as migrações). Se as cinco partes estiverem
-preenchidas e `DATABASE_BACKEND` não, o motor usa SQLite e avisa em stderr.
-
-Trocar de backend não leva o estado junto. Copie-o com o comando explícito, que preserva
-tudo (inclusive exclusões e registros de "não houve entrega") e só funciona com destino vazio:
-
-```bash
-motor migrar-estado --de sqlite:///$HOME/.local/share/monitor-versoes/estado.db \
-    --para postgresql://motor:motor@localhost:5433/monitor_versoes
-```
-
-Depois, troque `DATABASE_BACKEND` no `[ambiente]` (ou no `.env`): o comando não altera a configuração.
+O estado mora num arquivo SQLite local, `~/.local/share/monitor-versoes/estado.db`, ou no
+caminho de `DATABASE_SQLITE_PATH`. O primeiro uso cria o arquivo e as tabelas. Depois de
+atualizar o motor, `motor migrar` leva um estado já existente à revisão nova; o
+`motor diagnostico` avisa quando falta.
 
 ### Configurar por projeto
 
@@ -409,8 +350,8 @@ desfecho):
 
 | Sintoma | Causa e saída |
 | --- | --- |
-| `ERROR: banco inacessivel: connection failed: ... Suba com: docker compose up -d` | Só com `DATABASE_BACKEND=postgres`: o Postgres não está no ar. `docker compose up -d --wait`. No SQLite, confira `DATABASE_SQLITE_PATH` e as permissões do arquivo. |
-| `ERROR: erro do banco: relation "repo" does not exist` | Banco no ar, mas sem migração (Postgres). `motor migrar`; no SQLite o primeiro uso migra sozinho. |
+| `ERROR: banco inacessivel: unable to open database file. Confira DATABASE_SQLITE_PATH ...` | O motor não abre o arquivo do estado. Confira o caminho de `DATABASE_SQLITE_PATH` e as permissões do arquivo e do diretório. |
+| `ERROR: o suporte a Postgres no estado foi removido ...` | A configuração ainda tem `DATABASE_BACKEND=postgres` ou as cinco `DATABASE_HOST/PORT/NAME/USER/PASSWORD` ([decisão 035](docs/decisoes/035-estado-local-em-sqlite.md)). Antes de tirá-las, leve o estado para o SQLite com a última versão que tinha Postgres: `uvx --from git+https://github.com/EduardoBllc/monitor-versoes@7e95ad4abcf7ae99013a025ee434bbd28ea06616 motor migrar-estado --de postgresql://<usuario>:<senha>@<host>:<porta>/<banco> --para sqlite:///$HOME/.local/share/monitor-versoes/estado.db`. Depois, tire `DATABASE_BACKEND` e as `DATABASE_*` do `[ambiente]` (ou do `.env`). |
 | `ERROR: faltando [tarefas] fonte em ...; ou use --task-source manual --lista <arquivo>` | Nenhuma fonte de tarefas na config. Defina `[tarefas] fonte` no `config.toml` central, ou use a lista manual. |
 | `ERROR: .../config.toml: repo 'meu-repo' sem seção [repos.meu-repo] (existentes: ...)` | `--repo` não é o nome de uma seção. Crie `[repos.meu-repo]` no `config.toml` central ou use um nome da lista (`(nenhuma)` se o arquivo não existe). |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho é obrigatório` | A seção não tem `caminho`. Aponte para o clone. |

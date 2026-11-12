@@ -1,6 +1,6 @@
 # Ambiente na config central
 
-- **Status:** aceita
+- **Status:** aceita; o `motor init` saiu com a [035](035-estado-local-em-sqlite.md)
 - **Data:** 2026-11-10
 - **Depende de:** [024](024-config-por-projeto.md), [028](028-inscricoes-fora-do-estado.md),
   [029](029-repos-na-config-central.md)
@@ -30,5 +30,3 @@ diretório para a execução agendada achá-lo. Com os repos já no `config.toml
   de onde a inscrição foi criada. Um central inválido vira desfecho de erro da inscrição, e não
   uma execução com meia configuração, que poderia cair noutro banco. Inscrições antigas com os
   dois campos continuam sendo lidas, e os campos são ignorados.
-- **O `motor init` não escreve `.env`.** O `compose.yml` do Postgres tem valores padrão iguais
-  aos do exemplo de `[ambiente]` e sobe sem `.env`.

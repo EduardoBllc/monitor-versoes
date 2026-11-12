@@ -2,14 +2,15 @@
 
 - **Status:** aceita; o ponto "cada inscrição roda com o diretório e o `--env` dela" foi
   revisto pela [031](031-ambiente-na-config-central.md); o parágrafo "Sem lock contra um
-  `atualizar` manual" foi substituído pela [032](032-lock-por-repo-entre-processos.md)
+  `atualizar` manual" foi substituído pela [032](032-lock-por-repo-entre-processos.md); o
+  estado compartilhado entre máquinas deixou de existir com a
+  [035](035-estado-local-em-sqlite.md)
 - **Data:** 2026-11-05
 - **Depende de:** [004](004-estado-descartavel.md), [021](021-motor-nao-interativo.md)
 
 As inscrições (rodar `atualizar` periodicamente numa versão) ficam num **arquivo JSON local**
 em `~/.local/share/monitor-versoes/`, não no estado. O caminho do clone e o `.env` são da
-máquina, e o estado pode ser um Postgres compartilhado entre máquinas: uma inscrição gravada
-lá apareceria em máquinas onde o clone não existe. O estado é projeção recuperável
+máquina, e a inscrição é deles, não da versão. O estado é projeção recuperável
 ([004](004-estado-descartavel.md)); a inscrição é configuração do operador e não se recupera
 do git. Guarda só a última execução, sem histórico, e grava de forma atômica para que uma
 execução interrompida não corrompa o arquivo.
