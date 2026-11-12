@@ -104,7 +104,7 @@ def diagnosticar(  # noqa: PLR0913
             f"corrigir em {onde}",
         )
         if problemas
-        else Resultado(Peca.VARIAVEIS, Estado.OK, "todas preenchidas")
+        else Resultado(Peca.VARIAVEIS, Estado.OK, "configuração do estado aceita")
     )
     resultados += _banco(abrir_sessao, problemas, head, migrar)
     banco_ok = [

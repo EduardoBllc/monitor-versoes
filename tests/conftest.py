@@ -38,13 +38,13 @@ def _estado_isolado(monkeypatch, tmp_path):
     """Nenhum teste lê ou grava estado fora de `tmp_path`.
 
     A suíte não depende do `.env.development` nem do shell de quem a roda: o
-    SQLite é o mesmo arquivo da `sessao_sqlite`, as variáveis de backend antigas
-    saem (um `.env.development` com Postgres não muda resultado nenhum) e as
-    credenciais ficam vazias, para nenhum teste sair para a rede por acaso.
+    SQLite é o mesmo arquivo da `sessao_sqlite`; as variáveis de backend antigas
+    ficam vazias (um `.env.development` com Postgres não muda resultado nenhum),
+    e as credenciais também, para nenhum teste sair para a rede por acaso.
     """
     monkeypatch.setenv("DATABASE_SQLITE_PATH", str(tmp_path / "estado.db"))
     for nome in ("DATABASE_BACKEND", *_CAMPOS_POSTGRES, "WORKTREES_MANTIDAS"):
-        monkeypatch.delenv(nome, raising=False)
+        monkeypatch.setenv(nome, "")
     monkeypatch.setenv("BITBUCKET_TOKEN", "")
     monkeypatch.setenv("BITBUCKET_EMAIL", "")
 

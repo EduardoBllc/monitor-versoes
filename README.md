@@ -183,9 +183,9 @@ começando por letra ou dígito.
 
    ```console
    $ motor diagnostico
-   OK  Variáveis: todas preenchidas
+   OK  Variáveis: configuração do estado aceita
    OK  SQLite: conexão funciona
-   OK  Migração: revisão b8d4f0a2c3e5
+   OK  Migração: revisão e50b3d6e40a1
    OK  Repos: 1 repo(s) configurado(s)
    OK  Tarefas: credenciais aceitas
    não configurado  Bitbucket: sem BITBUCKET_TOKEN

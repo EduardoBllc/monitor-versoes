@@ -1458,13 +1458,22 @@ def test_config_antiga_do_postgres_para_sem_criar_o_sqlite(
 
 
 def test_so_o_host_do_postgres_no_central_usa_o_sqlite(monkeypatch, tmp_path):
+    import sqlite3
+
+    from motor.migracoes import head
+
     sqlite = _central_com(
         monkeypatch, tmp_path, '[ambiente]\nDATABASE_HOST = "localhost"\n'
     )
 
     main(["migrar"])
+    main(["migrar"])  # idempotente: a segunda não falha nem muda a revisão
 
-    assert sqlite.exists()
+    with contextlib.closing(sqlite3.connect(sqlite)) as conexao:
+        (revisao,) = conexao.execute(
+            "select version_num from alembic_version"
+        ).fetchone()
+    assert revisao == head()
 
 
 def test_tui_com_config_antiga_nao_monta_a_tela(monkeypatch, tmp_path, caplog):

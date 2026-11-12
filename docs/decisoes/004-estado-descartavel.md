@@ -19,10 +19,10 @@ número, tipo e base saem do nome da branch mais a inferência
 registros de "não houve entrega" e julgamentos de órfão ("este commit sem referência pertence
 a chX" ou "não pertence a nenhum", [034](034-julgamento-de-orfao.md)). Só existe no banco —
 por isso perder o arquivo do estado perde o julgamento, e `reconstruir-estado` não o traz de
-volta. Para commit sem
-`ch<num>` na mensagem, `reconstruir-estado` aplica o julgamento gravado e devolve em
-`PENDING_JUDGMENT{orfaos}` só o que ainda não foi julgado; quem pergunta ao humano e grava a
-resposta é o front-end, nunca o motor ([021](021-motor-nao-interativo.md)).
+volta. Para commit sem `ch<num>` na mensagem, `reconstruir-estado` aplica o julgamento
+gravado e devolve em `PENDING_JUDGMENT{orfaos}` só o que ainda não foi julgado; quem
+pergunta ao humano e grava a resposta é o front-end, nunca o motor
+([021](021-motor-nao-interativo.md)).
 
 Três consequências que valem gravar:
 
