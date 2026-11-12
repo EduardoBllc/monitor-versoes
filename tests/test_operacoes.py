@@ -186,7 +186,7 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     monkeypatch.setenv("BITBUCKET_TOKEN", "tok-secreto")
     monkeypatch.setenv("BITBUCKET_EMAIL", "dev@example.com")
     monkeypatch.setattr(operacoes, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
     monkeypatch.setattr(operacoes, "verificar", verificar_spy)
 
@@ -230,7 +230,7 @@ def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_i
         return esperado
 
     monkeypatch.setattr(operacoes, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
     monkeypatch.setattr(operacoes, "atualizar", atualizar_spy)
 
@@ -257,7 +257,7 @@ def test_continuar_repo_chama_o_atualizar_continue(tmp_path, monkeypatch, xdg_is
         return esperado
 
     monkeypatch.setattr(operacoes, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
     _registrar_repo(
         xdg_isolado, "alpha", checkout, topo=f'[tarefas]\nfonte = "{_FIXA}"\n'
@@ -283,7 +283,7 @@ def test_abortar_repo_chama_o_atualizar_abort(tmp_path, monkeypatch, xdg_isolado
         capturado.update(repo=deps.repo, versao=versao)
 
     monkeypatch.setattr(operacoes, "abrir_sessao", lambda: contextlib.nullcontext(None))
-    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
     _registrar_repo(
         xdg_isolado, "alpha", checkout, topo=f'[tarefas]\nfonte = "{_FIXA}"\n'

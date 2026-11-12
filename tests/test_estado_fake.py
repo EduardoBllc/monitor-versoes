@@ -56,7 +56,7 @@ def test_substituir_atribuicoes_recusa_versao_liberada():
 
 def test_substituir_atribuicoes_recusa_versao_nao_registrada():
     # Espelha a FK atribuicao.versao_id -> versao.id: sem registrar_versao
-    # antes, o Postgres rejeitaria o insert. Mensagem distinta da versao
+    # antes, o SQLite rejeitaria o insert. Mensagem distinta da versao
     # liberada, para nao confundir os dois motivos de recusa.
     estado = FakeEstado(repos={"r": RepoInfo(nome="r")})
 

@@ -1,6 +1,6 @@
 """Modelos SQLAlchemy. Vivem SO aqui — o dominio nunca importa sqlalchemy.
 
-Traducao modelo <-> dataclass acontece em postgres.py, na fronteira.
+Traducao modelo <-> dataclass acontece em sqlite.py, na fronteira.
 """
 
 from __future__ import annotations
@@ -33,10 +33,9 @@ CONVENCAO = {
 
 
 class DataComFuso(TypeDecorator[datetime.datetime]):
-    """`timestamptz` que volta com fuso nos dois backends.
+    """Data que volta com fuso.
 
-    O Postgres ja guarda e devolve o instante com fuso. O SQLite guarda texto
-    sem fuso e devolveria datetime ingenuo — que comparado com um datetime com
+    O SQLite guarda texto sem fuso e devolveria datetime ingenuo — que comparado com um datetime com
     fuso estoura `TypeError`. Aqui o SQLite grava em UTC e le como UTC.
     """
 

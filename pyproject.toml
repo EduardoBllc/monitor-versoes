@@ -8,7 +8,6 @@ dependencies = [
     "textual>=8.2.8",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
-    "psycopg[binary]>=3.2",
     "desktop-notifier>=6.2.0",
     "fastapi>=0.162.0",
     "uvicorn>=0.54.0",
@@ -42,7 +41,7 @@ build-backend = "setuptools.build_meta"
 include = ["motor*"]
 
 [tool.setuptools.package-data]
-motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "modelos/*", "daemon/static/**/*"]
+motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "daemon/static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

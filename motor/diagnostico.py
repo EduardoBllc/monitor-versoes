@@ -17,7 +17,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from motor.adapters.commitsource.bitbucket import verificar_credenciais
-from motor.adapters.estado.postgres import PostgresEstado
+from motor.adapters.estado import sqlite as estado_sqlite
 from motor.config import SECAO_REPOS, ConfigProjeto, checar_backend
 from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
 from motor.montagem import instanciar_fonte_tarefas
@@ -149,7 +149,7 @@ def _banco(
     try:
         # garantir=False: o diagnóstico só olha, não cria arquivo nem esquema.
         with abrir_sessao(garantir=False) as sessao:
-            estado = PostgresEstado(sessao=sessao)
+            estado = estado_sqlite.Estado(sessao=sessao)
             try:
                 estado.verificar_conexao()
             except MotorError as e:
@@ -182,7 +182,9 @@ def _estado_sem_secao(
 ) -> list[Resultado]:
     try:
         with abrir_sessao(garantir=False) as sessao:
-            no_banco = [r.nome for r in PostgresEstado(sessao=sessao).listar_repos()]
+            no_banco = [
+                r.nome for r in estado_sqlite.Estado(sessao=sessao).listar_repos()
+            ]
     except MotorError as e:
         return [Resultado(Peca.REPOS, Estado.NAO_VERIFICADA, formatar_com_notas(e))]
     return [

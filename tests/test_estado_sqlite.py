@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError
 
-from motor.adapters.estado.postgres import PostgresEstado
+from motor.adapters.estado.sqlite import Estado
 from motor.domain.types import Atribuicao, Exclusion, VersaoInfo
 from motor.errors import MotorError
 
@@ -27,7 +27,7 @@ def _info(numero: str) -> VersaoInfo:
 
 def test_ciclo_de_atribuicoes(sessao_sqlite):
     _semear_repo(sessao_sqlite)
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
 
     # dois chamados, cada um com seus proprios hashes: exercita o
@@ -58,7 +58,7 @@ def test_trigger_recusa_escrita_em_versao_liberada(sessao_sqlite):
     """A invariante central do congelamento. Um fake nao prova isto — a trigger
     tem que existir no banco de verdade."""
     _semear_repo(sessao_sqlite)
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     estado.substituir_atribuicoes(
         "webapp",
@@ -98,7 +98,7 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_sql
     atribuicoes so faz delete+insert — entao o buraco so aparece testando a
     trigger direto via SQL, por fora do adapter."""
     _semear_repo(sessao_sqlite)
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     estado.registrar_versao(
         "webapp",
@@ -138,7 +138,7 @@ def test_trigger_recusa_mover_atribuicao_para_fora_de_versao_liberada(sessao_sql
 
 def test_marcar_liberadas_nao_reescreve_data(sessao_sqlite):
     _semear_repo(sessao_sqlite)
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     # timezone.utc explicito: a coluna e timestamptz (migracao eafc77e6d0ce),
     # e um datetime naive de volta do banco nunca compara igual a um aware.
@@ -156,7 +156,7 @@ def test_marcar_liberadas_nao_reescreve_data(sessao_sqlite):
 
 def test_registrar_versao_nao_sobrescreve_a_base(sessao_sqlite):
     _semear_repo(sessao_sqlite)
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     # tipo diferente do primeiro registro (_info usa AJUSTADA): uma
     # implementacao que reescrevesse tipo/base_ref mas nao base_commit
@@ -187,7 +187,7 @@ def test_substituir_atribuicoes_recusa_versao_liberada_com_snapshot_vazio(
     nao tem nada para vetar e o commit passaria em silencio se o adapter nao
     checasse liberada_em antes."""
     _semear_repo(sessao_sqlite)
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     estado.registrar_versao("webapp", _info("13.34.0"))
     estado.marcar_liberadas("webapp", {"13.34.0": datetime.datetime(2026, 8, 1)})
 
@@ -219,7 +219,7 @@ def test_exclusoes(sessao_sqlite):
     )
     sessao_sqlite.commit()
 
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
 
     assert estado.exclusoes("webapp") == [
         Exclusion(
@@ -247,7 +247,7 @@ def test_sem_entrega(sessao_sqlite):
     )
     sessao_sqlite.commit()
 
-    estado = PostgresEstado(sessao=sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
     assert estado.sem_entrega("webapp") == {
         "555444": "chamado administrativo, sem commit"
     }

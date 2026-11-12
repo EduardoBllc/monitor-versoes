@@ -1,4 +1,4 @@
-"""As migrations do Alembic rodam no SQLite, sem Docker."""
+"""As migrations do Alembic rodam no SQLite."""
 
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ _CAMPOS_POSTGRES = tuple(
     f"DATABASE_{c}" for c in ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 )
 
-#: Ultimo commit da `main` com o backend Postgres e o `migrar-estado` (decisao 032).
+#: Ultimo commit da `main` com o backend Postgres e o `migrar-estado` (decisao 035).
 ULTIMO_COMMIT_COM_POSTGRES = "7e95ad4abcf7ae99013a025ee434bbd28ea06616"
 
 _COMANDO_SAIDA = (
@@ -93,7 +93,7 @@ def _url_sqlite() -> str:
 def checar_backend(env: Mapping[str, str] | None = None) -> None:
     """Recusa a config de um backend que nao existe mais.
 
-    O estado so mora em SQLite (decisao 032). `DATABASE_BACKEND=postgres`, ou as
+    O estado so mora em SQLite (decisao 035). `DATABASE_BACKEND=postgres`, ou as
     cinco `DATABASE_*` preenchidas sem ele, sao de quem usava o Postgres: cair no
     SQLite em silencio esconderia o estado antigo, entao o erro explica a saida.
     Algumas `DATABASE_*` soltas sao ignoradas: os nomes sao comuns e vazam do

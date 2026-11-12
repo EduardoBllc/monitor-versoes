@@ -1,7 +1,7 @@
 """Contrato de EstadoRepo: as MESMAS assercoes contra o fake e o SQLite.
 
 Por que este arquivo existe. `FakeEstado` e o que a suite inteira usa no lugar do
-banco. Onde ele e o `PostgresEstado` discordam, a suite fica verde num
+banco. Onde ele e o `Estado` discordam, a suite fica verde num
 comportamento que nao existe em producao — e este projeto pagou por isso tres
 vezes: o `FakeGit` divergiu do adapter real e escondeu um bug; o fake aceitou
 escrever atribuicao em versao nunca registrada onde a FK do banco recusa; e o
@@ -69,7 +69,7 @@ def estado(request):
             repos={REPO: RepoInfo(nome=REPO)},
         )
 
-    from motor.adapters.estado.postgres import PostgresEstado
+    from motor.adapters.estado.sqlite import Estado
 
     sessao = request.getfixturevalue("sessao_sqlite")
     sessao.execute(
@@ -77,7 +77,7 @@ def estado(request):
         {"n": REPO},
     )
     sessao.commit()
-    return PostgresEstado(sessao=sessao)
+    return Estado(sessao=sessao)
 
 
 # -- garantir repo ------------------------------------------------------------
@@ -209,7 +209,7 @@ def test_marcar_liberadas_nao_reescreve_data_ja_gravada(estado):
 
 
 def test_liberada_em_sempre_volta_com_fuso(estado):
-    """A coluna e timestamptz, entao o Postgres devolve com fuso mesmo recebendo
+    """A coluna e `DataComFuso`, entao o adapter devolve com fuso mesmo recebendo
     uma data naive. O fake guardava o que recebeu.
 
     Passou a importar: a distribuicao (docs/decisoes/005-alvo-distribuicao-entre-versoes.md)
@@ -230,7 +230,7 @@ def test_liberada_em_sempre_volta_com_fuso(estado):
 
 
 def test_substituir_atribuicoes_recusa_versao_nao_registrada(estado):
-    # no Postgres seria violacao de FK; o fake tem de recusar igual
+    # no SQLite seria violacao de FK; o fake tem de recusar igual
     with pytest.raises(NaoEncontrado):
         estado.substituir_atribuicoes(REPO, "13.34.0", [Atribuicao(chamado="1")])
 
@@ -291,7 +291,7 @@ def test_atribuicoes_devolve_copia_nao_referencia_viva(estado):
     estado.atribuicoes(REPO, "13.34.0")[0].commits.append("INVADIDO")
 
     # `commits` e list mutavel dentro de dataclass frozen: sem copia, o chamador
-    # corrompe o estado. O Postgres materializa linha nova a cada query.
+    # corrompe o estado. O adapter materializa linha nova a cada query.
     assert estado.atribuicoes(REPO, "13.34.0")[0].commits == ["aaa"]
 
 

@@ -50,7 +50,7 @@ class BackendIndisponivel(MotorError):
 
     Banco fora do ar, binario do git ausente ou velho demais, HTTP do rastreador ou
     do Bitbucket. E o unico ramo em que o CLI imprime dica de conserto de
-    ambiente (`docker compose up -d`).
+    ambiente (por exemplo, conferir `DATABASE_SQLITE_PATH`).
     """
 
 

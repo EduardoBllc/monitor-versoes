@@ -64,9 +64,7 @@ _PADRAO_VERSAO_GIT = re.compile(r"git version (\d+)\.(\d+)")
 _CREDENCIAL_EM_URL = re.compile(r"(https?://)[^/@\s]+@", re.IGNORECASE)
 
 #: Uso recente das worktrees, uma branch por linha, mais recente primeiro.
-#: Fica ao lado das worktrees que descreve — e local por maquina, ao
-#: contrario do estado no Postgres, que e compartilhado: uso registrado la
-#: faria uma maquina evictar worktree de outra.
+#: Fica ao lado das worktrees que descreve: e do clone, nao do estado.
 _ARQUIVO_MRU = ".motor-mru"
 
 

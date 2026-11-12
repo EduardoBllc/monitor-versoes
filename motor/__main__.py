@@ -59,7 +59,6 @@ from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.inscricao import executar_inscricao
-from motor.engine.migrar_estado import migrar_estado
 from motor.engine.orfaos import (
     OrfaoDaVersao,
     julgar_orfao,
@@ -69,7 +68,6 @@ from motor.engine.orfaos import (
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, formatar_com_notas
-from motor.init import iniciar
 from motor.inscricoes import (
     INTERVALO_PADRAO,
     Inscricao,
@@ -174,11 +172,6 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     else:
         os.environ[VAR_XDG_CONFIG_HOME] = xdg
     return erro
-
-
-def _init(_args: argparse.Namespace) -> None:
-    for mensagem in iniciar(Path.cwd(), caminho_config_global()):
-        print(mensagem)
 
 
 def _migrar(_args: argparse.Namespace) -> None:
@@ -322,7 +315,6 @@ def _inscricao(args: argparse.Namespace) -> None:
 # Comandos que não passam pela montagem de dependências do `main()` (repos,
 # fonte de tarefas, fontes de commit): cada um cuida do próprio banco, ou não usa.
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
-    "init": _init,
     "migrar": _migrar,
     "diagnostico": _diagnostico,
     "inscricao": _inscricao,
@@ -478,25 +470,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
-    sub.add_parser("init", help="escreve compose.yml no diretório atual")
-
     sub.add_parser(
         "diagnostico",
         help="checa cada peça da instalação e diz como corrigir o que falhar",
-    )
-
-    p_migrar = sub.add_parser(
-        "migrar-estado",
-        help="copia o estado completo de um banco para outro (SQLite <-> Postgres)",
-    )
-    p_migrar.add_argument(
-        "--de",
-        required=True,
-        metavar="URL",
-        help="origem: sqlite:///<caminho> ou postgresql://...",
-    )
-    p_migrar.add_argument(
-        "--para", required=True, metavar="URL", help="destino vazio, no mesmo formato"
     )
 
     p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
@@ -827,14 +803,6 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
             )
 
 
-def _migrar_estado(args: argparse.Namespace) -> None:
-    # Sem abrir_sessao nem database_url(): as URLs vem so dos argumentos.
-    resumo = migrar_estado(args.de, args.para)
-    for tabela, n in resumo.linhas.items():
-        print(f"{tabela}: {n}")
-    print(f"estado copiado: {resumo.total} linhas")
-
-
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
@@ -875,10 +843,6 @@ def main(argv: list[str] | None = None) -> None:
 
         if args.comando in _SEM_BANCO:
             _SEM_BANCO[args.comando](args)
-            return
-
-        if args.comando == "migrar-estado":
-            _migrar_estado(args)
             return
 
         # A trava antes da sessão e do montar_deps (que já roda git no clone):

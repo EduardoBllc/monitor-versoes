@@ -1,62 +1,15 @@
-"""`motor init` e o carregamento do ambiente (config central e `.env`)."""
+"""Carregamento do ambiente: config central, `.env` e shell."""
 
 from __future__ import annotations
 
 import os
-import re
-from pathlib import Path
 
 import dotenv
 import pytest
 
 import motor.__main__ as cli
-from motor.config import caminho_config_global
-from motor.init import iniciar
 
-MODELOS = Path(cli.__file__).parent / "modelos"
-COMPOSE = (MODELOS / "compose.yml").read_text(encoding="utf-8")
-
-
-_PADROES_COMPOSE = {
-    "DATABASE_NAME": "monitor_versoes",
-    "DATABASE_USER": "motor",
-    "DATABASE_PASSWORD": "motor",
-    "DATABASE_PORT": "5433",
-}
-
-
-def test_diretorio_vazio_cria_so_o_compose(tmp_path, monkeypatch, capsys):
-    monkeypatch.chdir(tmp_path)
-
-    cli.main(["init"])
-
-    assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == COMPOSE
-    assert not (tmp_path / ".env").exists()
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["compose.yml"]
-    saida = capsys.readouterr().out
-    assert f"[ambiente] de {caminho_config_global()}" in saida
-
-
-def test_compose_existente_fica_intacto(tmp_path):
-    (tmp_path / "compose.yml").write_text("meu", encoding="utf-8")
-
-    mensagens = iniciar(tmp_path, "/cfg/config.toml")
-
-    assert (tmp_path / "compose.yml").read_text(encoding="utf-8") == "meu"
-    assert "compose.yml já existe; mantido" in mensagens
-    assert not (tmp_path / ".env").exists()
-
-
-def test_compose_sobe_sem_env_com_os_padroes():
-    usadas = set(re.findall(r"\$\{(DATABASE_\w+)", COMPOSE))
-    assert usadas == set(_PADROES_COMPOSE)
-    for variavel, padrao in _PADROES_COMPOSE.items():
-        ocorrencias = re.findall(rf"\$\{{{variavel}([^}}]*)\}}", COMPOSE)
-        assert ocorrencias
-        assert all(o == f":-{padrao}" for o in ocorrencias), variavel
-
-
-_CHAVES = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
+_CHAVES = ("BITBUCKET_EMAIL", "WORKTREES_MANTIDAS")
 
 
 @pytest.mark.parametrize(
@@ -65,17 +18,17 @@ _CHAVES = ("HOST", "PORT", "NAME", "USER", "PASSWORD")
 )
 def test_carrega_env_do_diretorio_atual(tmp_path, monkeypatch, argv, arquivo):
     for chave in _CHAVES:
-        monkeypatch.setenv(f"DATABASE_{chave}", "antes")
+        monkeypatch.setenv(chave, "antes")
     (tmp_path / arquivo).write_text(
-        "".join(f"DATABASE_{c}=do_{c.lower()}\n" for c in _CHAVES), encoding="utf-8"
+        "".join(f"{c}=do_{c.lower()}\n" for c in _CHAVES), encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
 
     cli._carregar_ambiente(argv)
 
-    assert os.environ["DATABASE_HOST"] == "do_host"
-    assert os.environ["DATABASE_PASSWORD"] == "do_password"
+    assert os.environ["BITBUCKET_EMAIL"] == "do_bitbucket_email"
+    assert os.environ["WORKTREES_MANTIDAS"] == "do_worktrees_mantidas"
 
 
 # --- [ambiente] do config central ---
@@ -127,13 +80,13 @@ def test_precedencia_central_env_shell(
 
 
 def test_ambiente_central_vence_o_env_development(tmp_path, monkeypatch, cwd):
-    monkeypatch.setenv("DATABASE_BACKEND", "")
-    _central(tmp_path, monkeypatch, '[ambiente]\nDATABASE_BACKEND = "postgres"\n')
-    (cwd / ".env.development").write_text("DATABASE_BACKEND=sqlite\n")
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "")
+    _central(tmp_path, monkeypatch, '[ambiente]\nWORKTREES_MANTIDAS = "5"\n')
+    (cwd / ".env.development").write_text("WORKTREES_MANTIDAS=4\n")
 
     cli._carregar_ambiente(["--env", "development"])
 
-    assert os.environ["DATABASE_BACKEND"] == "postgres"
+    assert os.environ["WORKTREES_MANTIDAS"] == "5"
 
 
 def test_xdg_do_env_nao_muda_o_central_lido(tmp_path, monkeypatch, cwd):
@@ -166,11 +119,11 @@ def test_bitbucket_token_do_central_e_default_da_flag(
 
 def test_inscricao_executar_ignora_o_env_do_diretorio(tmp_path, monkeypatch, cwd):
     _limpar_no_fim(monkeypatch, CHAVE)
-    monkeypatch.setenv("DATABASE_BACKEND", "")
+    monkeypatch.setenv("WORKTREES_MANTIDAS", "")
     _central(tmp_path, monkeypatch, f'[ambiente]\n{CHAVE} = "central"\n')
-    (cwd / ".env").write_text("DATABASE_BACKEND=postgres\n")
+    (cwd / ".env").write_text("WORKTREES_MANTIDAS=5\n")
 
     cli._carregar_ambiente(["inscricao", "executar", "1.0.0", "--repo", "r"])
 
-    assert os.environ["DATABASE_BACKEND"] == ""
+    assert os.environ["WORKTREES_MANTIDAS"] == ""
     assert os.environ[CHAVE] == "central"
