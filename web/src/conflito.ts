@@ -118,11 +118,13 @@ const linhasDoTrecho = (trecho: string): string[] =>
 // ponytail: busca por conteúdo, em ordem; conteúdo repetido pode casar cedo, e o
 // cursor que só avança atenua. Merge de 3 vias no browser se isso pesar.
 // Trecho vazio (o lado apagou) ou não achado fica ancorado depois de
-// `anteriores[k]`, a linha que antecede o bloco no resultado; sem ela, no cursor.
+// `anteriores[k]`, as linhas que antecedem o bloco no resultado: a sequência
+// mais longa que casar, porque uma linha só costuma ser "" ou "}". Sem ela, no
+// cursor.
 export function localizar(
   arquivo: string,
   trechos: string[],
-  anteriores: readonly (string | null)[] = [],
+  anteriores: readonly (readonly string[])[] = [],
 ): Faixa[] {
   const linhas = linhasDe(arquivo);
   let cursor = 1;
@@ -135,12 +137,28 @@ export function localizar(
         return { inicio: i + 1, fim: i + n };
       }
     }
-    const anterior = anteriores[k];
-    const achada =
-      anterior == null ? -1 : linhas.indexOf(anterior, cursor - 1);
-    if (achada >= 0) cursor = achada + 2;
+    const contexto = anteriores[k] ?? [];
+    for (let m = contexto.length; m > 0; m--) {
+      const fim = acharSequencia(linhas, contexto.slice(-m), cursor - 1);
+      if (fim !== null) {
+        cursor = fim + 1;
+        break;
+      }
+    }
     return { inicio: cursor, fim: cursor - 1 };
   });
+}
+
+// Linha (começando em 1) da última linha da primeira ocorrência de `seq`
+// a partir do índice `de`, ou null.
+function acharSequencia(
+  linhas: readonly string[],
+  seq: readonly string[],
+  de: number,
+): number | null {
+  for (let i = de; i + seq.length <= linhas.length; i++)
+    if (seq.every((l, j) => linhas[i + j] === l)) return i + seq.length;
+  return null;
 }
 
 export function recolher(

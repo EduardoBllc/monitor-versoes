@@ -16,6 +16,7 @@ import {
   localizar,
   recolher,
   secoesDoBloco,
+  temMarcadores,
   trecho,
 } from "../conflito";
 import { linguagemDe } from "../linguagem";
@@ -149,7 +150,16 @@ export function MergeConteudo({
       const faixas = localizar(
         conteudo,
         originais.map((b) => (lado === Lado.OURS ? b.ours : b.theirs)),
-        originais.map((b) => linhasIniciais[b.inicio - 2] ?? null),
+        originais.map((b) => {
+          // Até CONTEXTO linhas antes do bloco, sem entrar no bloco anterior.
+          const antes = linhasIniciais.slice(
+            Math.max(0, b.inicio - 1 - CONTEXTO),
+            b.inicio - 1,
+          );
+          let i = antes.length;
+          while (i > 0 && !temMarcadores(antes[i - 1] ?? "")) i--;
+          return antes.slice(i);
+        }),
       );
       colorir(
         editor,
@@ -267,6 +277,10 @@ export function MergeConteudo({
         f.endLineNumber === modelo.getLineCount() && f.endColumn > 1;
       const bruto = trecho(r.original, lado);
       const novo = semQuebra ? bruto.replace(/\r?\n$/, "") : bruto;
+      // A lente não leva o foco, e sem ele o Ctrl+Z logo depois não chega aqui.
+      // Focar antes de avisar as lentes: o blur do painel do lado cancela a
+      // atualização pendente das lentes dele.
+      editor.focus();
       fotografar();
       editor.pushUndoStop();
       editor.executeEdits(COMANDO_ACEITAR, [{ range: f, text: novo }]);

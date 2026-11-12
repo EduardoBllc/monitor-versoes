@@ -13,6 +13,8 @@ export enum Classe {
 // Classes da margem (barra de estado); as outras pintam a linha inteira.
 const NA_MARGEM: readonly Classe[] = [Classe.ABERTO, Classe.DECIDIDO];
 const ALTURA_AVISO = 1;
+const NUNCA_CRESCE =
+  monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges;
 
 type ComAreasOcultas = {
   setHiddenAreas(faixas: monaco.IRange[], dono?: unknown): void;
@@ -30,33 +32,48 @@ export function recolherNoEditor(
   // recolher o que não mudou) e estável há anos; se sumir, a saída são dobras.
   const comAreas = editor as unknown as ComAreasOcultas;
   const dono = {};
-  let restantes = ocultas;
+  // O setHiddenAreas guarda as faixas cruas; quem as acompanha nas edições
+  // (aceitar encolhe ou cresce um bloco) é este rastro de decorações.
+  const opcoes = { stickiness: NUNCA_CRESCE };
+  const rastro = editor.createDecorationsCollection(
+    ocultas.map((f) => ({ range: intervalo(f), options: opcoes })),
+  );
   let zonas: string[] = [];
   let avisos: monaco.editor.IOverlayWidget[] = [];
+  let aplicadas = "";
   const aplicar = () => {
-    comAreas.setHiddenAreas(restantes.map(intervalo), dono);
+    const faixas = rastro.getRanges();
+    const chave = faixas.map((r) => `${r.startLineNumber}-${r.endLineNumber}`).join();
+    if (chave === aplicadas) return;
+    aplicadas = chave;
+    comAreas.setHiddenAreas(faixas, dono);
     avisos.forEach((a) => editor.removeOverlayWidget(a));
     editor.changeViewZones((acesso) => {
       zonas.forEach((z) => acesso.removeZone(z));
-      const novos = restantes.map((f, i) => {
+      const novos = faixas.map((r, i) => {
         // A view zone abre o espaço, mas fica sob a camada de texto e não
         // recebe clique; o aviso clicável é um overlay que segue a zona,
         // como o diff editor do Monaco faz nas regiões recolhidas.
         const aviso = document.createElement("div");
-        const n = f.fim - f.inicio + 1;
+        const n = r.endLineNumber - r.startLineNumber + 1;
         aviso.className = "cf-recolhido";
         aviso.textContent = `⋯ ${n} ${n === 1 ? "linha" : "linhas"}`;
         aviso.onclick = () => {
-          restantes = restantes.filter((r) => r !== f);
+          rastro.set(
+            rastro
+              .getRanges()
+              .filter((_, j) => j !== i)
+              .map((range) => ({ range, options: opcoes })),
+          );
           aplicar();
         };
         const widget: monaco.editor.IOverlayWidget = {
-          getId: () => `cf-recolhido-${i}-${f.inicio}`,
+          getId: () => `cf-recolhido-${i}-${r.startLineNumber}`,
           getDomNode: () => aviso,
           getPosition: () => null,
         };
         const zona = acesso.addZone({
-          afterLineNumber: f.inicio - 1,
+          afterLineNumber: r.startLineNumber - 1,
           heightInLines: ALTURA_AVISO,
           // A zona fica junto da área escondida; sem isto o Monaco a some.
           showInHiddenAreas: true,
@@ -76,10 +93,12 @@ export function recolherNoEditor(
     avisos.forEach((a) => editor.addOverlayWidget(a));
   };
   aplicar();
+  const ouvinte = editor.onDidChangeModelContent(aplicar);
   return {
     dispose: () => {
-      restantes = [];
-      aplicar();
+      ouvinte.dispose();
+      avisos.forEach((a) => editor.removeOverlayWidget(a));
+      rastro.clear();
     },
   };
 }

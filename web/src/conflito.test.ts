@@ -79,12 +79,21 @@ describe("localizar", () => {
     ]);
   });
 
-  it("trecho vazio fica ancorado depois da linha que o antecede no resultado", () => {
+  it("trecho vazio fica ancorado depois das linhas que o antecedem no resultado", () => {
     expect(
-      localizar("a\nX\nm\nk\nb\n", ["X\n", ""], [null, "k"]),
+      localizar("a\nX\nm\nk\nb\n", ["X\n", ""], [[], ["m", "k"]]),
     ).toEqual([
       { inicio: 2, fim: 2 },
       { inicio: 5, fim: 4 },
+    ]);
+  });
+
+  it("a âncora casa a sequência, não a primeira linha vazia ou }", () => {
+    expect(
+      localizar("X\n}\n\nq\n}\n\nz\n", ["X\n", ""], [[], ["q", "}", ""]]),
+    ).toEqual([
+      { inicio: 1, fim: 1 },
+      { inicio: 7, fim: 6 },
     ]);
   });
 
