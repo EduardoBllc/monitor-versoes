@@ -117,3 +117,54 @@ export function aceitar(texto: string, bloco: Bloco, lado: Lado): string {
   const meio = depois.length === 0 ? novo.replace(/\r?\n$/, "") : novo;
   return antes.join("") + meio + depois.join(QUEBRA);
 }
+
+// Linhas começando em 1, intervalo fechado; fim === inicio - 1 é faixa vazia,
+// ancorada antes de `inicio`.
+export type Faixa = { inicio: number; fim: number };
+
+export const CONTEXTO = 3;
+
+// Linhas de um trecho que termina em quebra: o último "" do split não é linha.
+const linhasDoTrecho = (trecho: string): string[] =>
+  trecho === "" ? [] : linhasDe(trecho.replace(/\n$/, ""));
+
+// ponytail: busca por conteúdo, em ordem; conteúdo repetido pode casar cedo, e o
+// cursor que só avança atenua. Merge de 3 vias no browser se isso pesar.
+export function localizar(arquivo: string, trechos: string[]): Faixa[] {
+  const linhas = linhasDe(arquivo);
+  let cursor = 1;
+  return trechos.map((t) => {
+    const procuradas = linhasDoTrecho(t);
+    const n = procuradas.length;
+    for (let i = cursor - 1; n > 0 && i + n <= linhas.length; i++) {
+      if (procuradas.every((l, j) => linhas[i + j] === l)) {
+        cursor = i + n + 1;
+        return { inicio: i + 1, fim: i + n };
+      }
+    }
+    return { inicio: cursor, fim: cursor - 1 };
+  });
+}
+
+export function recolher(
+  total: number,
+  visiveis: Faixa[],
+  contexto: number,
+): Faixa[] {
+  if (visiveis.length === 0) return [];
+  const abertas = visiveis
+    .map((f) => ({
+      inicio: Math.max(1, f.inicio - contexto),
+      fim: Math.min(total, f.fim + contexto),
+    }))
+    .sort((a, b) => a.inicio - b.inicio);
+  const ocultas: Faixa[] = [];
+  let proxima = 1;
+  for (const a of [...abertas, { inicio: total + 1, fim: total }]) {
+    // Esconder uma linha só custa o mesmo espaço que o aviso "⋯ 1 linha".
+    if (a.inicio - proxima >= 2)
+      ocultas.push({ inicio: proxima, fim: a.inicio - 1 });
+    proxima = Math.max(proxima, a.fim + 1);
+  }
+  return ocultas;
+}

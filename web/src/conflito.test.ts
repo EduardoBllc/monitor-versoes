@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { Lado, aceitar, blocoEm, blocos, temMarcadores } from "./conflito";
+import {
+  Lado,
+  aceitar,
+  blocoEm,
+  blocos,
+  localizar,
+  recolher,
+  temMarcadores,
+} from "./conflito";
 
 const BLOCO_2_VIAS = "antes\n<<<<<<< ours\nA\n=======\nB\n>>>>>>> theirs\n";
 const BLOCO_3_VIAS =
@@ -68,4 +76,62 @@ it.each([
   ["a\u2028=======\n", false],
 ])("temMarcadores(%j) = %s", (texto, esperado) => {
   expect(temMarcadores(texto)).toBe(esperado);
+});
+
+describe("localizar", () => {
+  it("acha cada trecho em ordem, sem voltar", () => {
+    expect(localizar("X\nm\nX\n", ["X\n", "X\n"])).toEqual([
+      { inicio: 1, fim: 1 },
+      { inicio: 3, fim: 3 },
+    ]);
+  });
+
+  it("trecho vazio fica ancorado logo depois do anterior", () => {
+    expect(localizar("a\nX\nb\n", ["X\n", ""])).toEqual([
+      { inicio: 2, fim: 2 },
+      { inicio: 3, fim: 2 },
+    ]);
+  });
+
+  it("trecho não achado vira faixa vazia no cursor", () => {
+    expect(localizar("a\nb\n", ["Z\n"])).toEqual([{ inicio: 1, fim: 0 }]);
+  });
+
+  it("aceita CRLF", () => {
+    expect(localizar("a\r\nX\r\nY\r\nb\r\n", ["X\r\nY\r\n"])).toEqual([
+      { inicio: 2, fim: 3 },
+    ]);
+  });
+});
+
+describe("recolher", () => {
+  it("esconde o que fica fora do contexto das faixas visíveis", () => {
+    expect(recolher(20, [{ inicio: 10, fim: 11 }], 3)).toEqual([
+      { inicio: 1, fim: 6 },
+      { inicio: 15, fim: 20 },
+    ]);
+  });
+
+  it("junta contextos que se encostam e não esconde uma linha só", () => {
+    expect(
+      recolher(
+        20,
+        [
+          { inicio: 5, fim: 5 },
+          { inicio: 9, fim: 9 },
+        ],
+        3,
+      ),
+    ).toEqual([{ inicio: 13, fim: 20 }]);
+  });
+
+  it("faixa vazia também ganha contexto", () => {
+    expect(recolher(20, [{ inicio: 5, fim: 4 }], 3)).toEqual([
+      { inicio: 8, fim: 20 },
+    ]);
+  });
+
+  it("sem faixa visível não esconde nada", () => {
+    expect(recolher(20, [], 3)).toEqual([]);
+  });
 });
