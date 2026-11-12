@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   EstadoBloco,
   Lado,
-  aceitar,
   aceitouLado,
-  blocoEm,
   blocos,
   estadoDoBloco,
   localizar,
   recolher,
+  secoesDoBloco,
   temMarcadores,
+  trecho,
 } from "./conflito";
 
 const BLOCO_2_VIAS = "antes\n<<<<<<< ours\nA\n=======\nB\n>>>>>>> theirs\n";
@@ -40,32 +40,15 @@ describe("blocos", () => {
   });
 });
 
-describe("blocoEm", () => {
-  it("acha o bloco pela linha do <<<<<<< e nada se ela não abre bloco", () => {
-    expect(blocoEm(DOIS_BLOCOS, 8)).toEqual(blocos(DOIS_BLOCOS)[1]);
-    expect(blocoEm(DOIS_BLOCOS, 7)).toBeUndefined();
-  });
-});
-
-describe("aceitar", () => {
-  const primeiro = "<<<<<<< ours\r\nA1\r\n=======\r\nB1\r\n>>>>>>> theirs\r\n";
-
+describe("trecho", () => {
   it.each([
     [Lado.OURS, "A2\r\n"],
     [Lado.THEIRS, "B2\r\n"],
     [Lado.AMBOS, "A2\r\nB2\r\n"],
     [Lado.BASE, "O2\r\n"],
-  ])("%s reescreve só o bloco escolhido", (lado, trecho) => {
+  ])("%s dá o texto daquele lado do bloco", (lado, esperado) => {
     const [, bloco] = blocos(DOIS_BLOCOS);
-    expect(aceitar(DOIS_BLOCOS, bloco!, lado)).toBe(
-      `x\r\n${primeiro}meio\r\n${trecho}fim`,
-    );
-  });
-
-  it("bloco no fim sem quebra de linha não ganha quebra", () => {
-    const texto = "<<<<<<< ours\nA\n=======\nB\n>>>>>>> theirs";
-    const [bloco] = blocos(texto);
-    expect(aceitar(texto, bloco!, Lado.THEIRS)).toBe("B");
+    expect(trecho(bloco!, lado)).toBe(esperado);
   });
 });
 
@@ -166,5 +149,31 @@ describe("aceitouLado", () => {
       false,
     );
     expect(aceitouLado(null, Lado.OURS)).toBe(false);
+  });
+});
+
+describe("secoesDoBloco", () => {
+  it("dá a faixa de cada marcador e de cada seção, em linhas do texto", () => {
+    const [bloco] = blocos("x\n" + BLOCO_3_VIAS);
+    expect(secoesDoBloco(bloco!)).toEqual([
+      { faixa: { inicio: 2, fim: 2 }, lado: null },
+      { faixa: { inicio: 3, fim: 3 }, lado: Lado.OURS },
+      { faixa: { inicio: 4, fim: 4 }, lado: null },
+      { faixa: { inicio: 5, fim: 5 }, lado: Lado.BASE },
+      { faixa: { inicio: 6, fim: 6 }, lado: null },
+      { faixa: { inicio: 7, fim: 7 }, lado: Lado.THEIRS },
+      { faixa: { inicio: 8, fim: 8 }, lado: null },
+    ]);
+  });
+
+  it("sem base e com seção vazia", () => {
+    const [bloco] = blocos("<<<<<<< ours\n=======\nB\nC\n>>>>>>> theirs\n");
+    expect(secoesDoBloco(bloco!)).toEqual([
+      { faixa: { inicio: 1, fim: 1 }, lado: null },
+      { faixa: { inicio: 2, fim: 1 }, lado: Lado.OURS },
+      { faixa: { inicio: 2, fim: 2 }, lado: null },
+      { faixa: { inicio: 3, fim: 4 }, lado: Lado.THEIRS },
+      { faixa: { inicio: 5, fim: 5 }, lado: null },
+    ]);
   });
 });

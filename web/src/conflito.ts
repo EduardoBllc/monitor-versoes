@@ -89,9 +89,6 @@ export function blocos(texto: string): Bloco[] {
   return achados;
 }
 
-export const blocoEm = (texto: string, inicio: number): Bloco | undefined =>
-  blocos(texto).find((b) => b.inicio === inicio);
-
 export function trecho(bloco: Bloco, lado: Lado): string {
   switch (lado) {
     case Lado.OURS:
@@ -106,16 +103,6 @@ export function trecho(bloco: Bloco, lado: Lado): string {
     default:
       return assertNever(lado);
   }
-}
-
-export function aceitar(texto: string, bloco: Bloco, lado: Lado): string {
-  const linhas = linhasDe(texto);
-  const antes = linhas.slice(0, bloco.inicio - 1).map((l) => l + QUEBRA);
-  const depois = linhas.slice(bloco.fim);
-  const novo = trecho(bloco, lado);
-  // Bloco na última linha, sem quebra final: o trecho também termina sem ela.
-  const meio = depois.length === 0 ? novo.replace(/\r?\n$/, "") : novo;
-  return antes.join("") + meio + depois.join(QUEBRA);
 }
 
 // Linhas começando em 1, intervalo fechado; fim === inicio - 1 é faixa vazia,
@@ -190,3 +177,30 @@ export const aceitouLado = (
   decisao: Decisao | null,
   lado: Lado.OURS | Lado.THEIRS,
 ): boolean => decisao?.lado === lado || decisao?.lado === Lado.AMBOS;
+
+type SecaoDoBloco = { faixa: Faixa; lado: Lado.OURS | Lado.BASE | Lado.THEIRS | null };
+
+// Linhas de cada marcador (lado null) e de cada seção do bloco, para colorir.
+export function secoesDoBloco(bloco: Bloco): SecaoDoBloco[] {
+  const secoes: SecaoDoBloco[] = [];
+  let linha = bloco.inicio;
+  const marcador = () => {
+    secoes.push({ faixa: { inicio: linha, fim: linha }, lado: null });
+    linha++;
+  };
+  const secao = (lado: Lado.OURS | Lado.BASE | Lado.THEIRS, texto: string) => {
+    const n = linhasDoTrecho(texto).length;
+    secoes.push({ faixa: { inicio: linha, fim: linha + n - 1 }, lado });
+    linha += n;
+  };
+  marcador();
+  secao(Lado.OURS, bloco.ours);
+  if (bloco.base !== null) {
+    marcador();
+    secao(Lado.BASE, bloco.base);
+  }
+  marcador();
+  secao(Lado.THEIRS, bloco.theirs);
+  marcador();
+  return secoes;
+}

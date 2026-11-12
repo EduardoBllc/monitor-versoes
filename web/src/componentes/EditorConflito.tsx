@@ -8,17 +8,16 @@ import {
   Group,
   Modal,
   NavLink,
-  SimpleGrid,
   Stack,
   Text,
   useComputedColorScheme,
 } from "@mantine/core";
-import { DiffEditor, Editor, loader, type OnMount } from "@monaco-editor/react";
+import { DiffEditor, Editor, loader } from "@monaco-editor/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as monaco from "monaco-editor";
 import TrabalhadorEditor from "monaco-editor/editor/editor.worker?worker";
 import TrabalhadorJson from "monaco-editor/language/json/json.worker?worker";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ErroApi, Metodo, api } from "../api/cliente";
 import { TipoArquivo, TipoErro, assertNever } from "../api/enums";
 import type {
@@ -28,14 +27,9 @@ import type {
   ConteudoDoConflito,
   Resolucao,
 } from "../api/tipos";
-import {
-  AVISO_DESCARTE,
-  Lado,
-  aceitar,
-  blocoEm,
-  blocos,
-  temMarcadores,
-} from "../conflito";
+import { AVISO_DESCARTE, Lado, temMarcadores } from "../conflito";
+import { linguagemDe } from "../linguagem";
+import { MergeConteudo } from "./MergeConteudo";
 import { ModalReabrir } from "./ModalReabrir";
 import { notificarErro, notificarOk } from "./notificar";
 import { TAMANHO_HASH } from "./PainelBloqueio";
@@ -49,9 +43,7 @@ self.MonacoEnvironment = {
 monaco.json.jsonDefaults.setDiagnosticsOptions({ validate: false });
 loader.config({ monaco });
 
-const LINGUAGEM = "plaintext";
 const ALTURA = "60vh";
-const COMANDO_ACEITAR = "monitor-versoes.aceitar";
 const COLUNA_LISTA = 3;
 const COLUNA_CONTEUDO = 9;
 
@@ -79,13 +71,6 @@ enum EsquemaCor {
   ESCURO = "dark",
 }
 
-const ACOES: readonly (readonly [Lado, string])[] = [
-  [Lado.THEIRS, "Aceitar theirs"],
-  [Lado.OURS, "Aceitar ours"],
-  [Lado.AMBOS, "Ambos"],
-  [Lado.BASE, "Base"],
-];
-
 const SO_LEITURA = { readOnly: true, minimap: { enabled: false } };
 
 export type EstadoConflitoWeb = { pendente: boolean; sujo: boolean };
@@ -103,78 +88,6 @@ function rotuloTipo(tipo: TipoArquivo): string {
     default:
       return assertNever(tipo);
   }
-}
-
-function Resultado({
-  modelo,
-  texto,
-  somenteLeitura,
-  tema,
-  aoMudar,
-}: {
-  modelo: string;
-  texto: string;
-  somenteLeitura: boolean;
-  tema: Tema;
-  aoMudar: (texto: string) => void;
-}) {
-  const registros = useRef<monaco.IDisposable[]>([]);
-  useEffect(() => () => registros.current.forEach((r) => r.dispose()), []);
-
-  // A ação de bloco edita o modelo (undo funciona) e o onChange leva ao estado.
-  const montar: OnMount = (editor, m) => {
-    registros.current.push(
-      m.editor.addCommand({
-        id: COMANDO_ACEITAR,
-        run: (_acesso: unknown, inicio: number, lado: Lado) => {
-          const modelo = editor.getModel();
-          // Pela linha, não pelo índice: lente atrasada não reescreve outro bloco.
-          const bloco = modelo && blocoEm(modelo.getValue(), inicio);
-          if (!modelo || !bloco) return;
-          editor.pushUndoStop();
-          editor.executeEdits(COMANDO_ACEITAR, [
-            {
-              range: modelo.getFullModelRange(),
-              text: aceitar(modelo.getValue(), bloco, lado),
-            },
-          ]);
-          editor.pushUndoStop();
-        },
-      }),
-      m.languages.registerCodeLensProvider(LINGUAGEM, {
-        provideCodeLenses: (modelo: monaco.editor.ITextModel) => ({
-          lenses:
-            modelo !== editor.getModel()
-              ? []
-              : blocos(modelo.getValue()).flatMap((b) =>
-                  ACOES.filter(
-                    ([lado]) => lado !== Lado.BASE || b.base !== null,
-                  ).map(([lado, titulo]) => ({
-                    range: new m.Range(b.inicio, 1, b.inicio, 1),
-                    command: {
-                      id: COMANDO_ACEITAR,
-                      title: titulo,
-                      arguments: [b.inicio, lado],
-                    },
-                  })),
-                ),
-        }),
-      }),
-    );
-  };
-
-  return (
-    <Editor
-      height={ALTURA}
-      language={LINGUAGEM}
-      path={modelo}
-      value={texto}
-      theme={tema}
-      options={{ readOnly: somenteLeitura, minimap: { enabled: false } }}
-      onMount={montar}
-      onChange={(v) => aoMudar(v ?? "")}
-    />
-  );
 }
 
 export default function EditorConflito({
@@ -229,6 +142,10 @@ export default function EditorConflito({
   const [enviando, setEnviando] = useState(false);
 
   const texto = edicao?.texto ?? dados?.disco ?? "";
+  const linguagem = linguagemDe(
+    atual?.caminho ?? "",
+    monaco.languages.getLanguages(),
+  );
   const sujo = edicao !== null && edicao.texto !== dados?.disco;
   // OUTRO só se resolve fora da web; quem barra o Continuar nesse caso é o motor.
   const pendente = arquivos.some(
@@ -331,37 +248,21 @@ export default function EditorConflito({
       case TipoArquivo.CONTEUDO:
         return (
           <Stack>
-            <SimpleGrid cols={3}>
-              <Text fw={700}>theirs — commit aplicado</Text>
-              <Text fw={700}>resultado</Text>
-              <Text fw={700}>ours — alvo</Text>
-              <Editor
-                key={modelo(Painel.THEIRS)}
-                height={ALTURA}
-                language={LINGUAGEM}
-                path={modelo(Painel.THEIRS)}
-                value={dados.theirs ?? ""}
-                theme={tema}
-                options={SO_LEITURA}
-              />
-              <Resultado
-                key={modelo(Painel.RESULTADO)}
-                modelo={modelo(Painel.RESULTADO)}
-                texto={texto}
-                somenteLeitura={atual.resolvido}
-                tema={tema}
-                aoMudar={editar}
-              />
-              <Editor
-                key={modelo(Painel.OURS)}
-                height={ALTURA}
-                language={LINGUAGEM}
-                path={modelo(Painel.OURS)}
-                value={dados.ours ?? ""}
-                theme={tema}
-                options={SO_LEITURA}
-              />
-            </SimpleGrid>
+            <MergeConteudo
+              // Nova leitura do disco (resolver, reabrir, recarregar) recomeça a tela.
+              key={`${id}/${dados.versao_disco}/${atual.resolvido}`}
+              caminho={atual.caminho}
+              modelos={{
+                [Lado.THEIRS]: modelo(Painel.THEIRS),
+                [Lado.OURS]: modelo(Painel.OURS),
+                resultado: modelo(Painel.RESULTADO),
+              }}
+              dados={dados}
+              texto={texto}
+              resolvido={atual.resolvido}
+              tema={tema}
+              aoMudar={editar}
+            />
             <Group>
               {atual.resolvido ? (
                 botaoReabrir
@@ -409,7 +310,7 @@ export default function EditorConflito({
                 });
               }}
               height={ALTURA}
-              language={LINGUAGEM}
+              language={linguagem}
               original={dados.base ?? ""}
               modified={existente ?? ""}
               originalModelPath={modelo(Painel.BASE)}
@@ -574,7 +475,7 @@ export default function EditorConflito({
       >
         <Editor
           height={ALTURA}
-          language={LINGUAGEM}
+          language={linguagem}
           path={`${Painel.VER_BASE}/${conflito.data?.commit ?? ""}/${atual?.caminho ?? ""}`}
           value={dados?.base ?? ""}
           theme={tema}
