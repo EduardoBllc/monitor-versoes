@@ -1,0 +1,39 @@
+/* Cores do mockup aprovado na #162; translúcidas para servir nos dois temas. */
+.cf-ours {
+  background: rgba(64, 120, 242, 0.22);
+}
+.cf-theirs {
+  background: rgba(46, 160, 67, 0.22);
+}
+.cf-base {
+  background: rgba(200, 160, 40, 0.18);
+}
+.cf-marcador {
+  background: rgba(128, 128, 128, 0.25);
+}
+.cf-aberto {
+  border-left: 3px solid #f85149;
+  margin-left: 3px;
+}
+.cf-decidido {
+  border-left: 3px solid #3fb950;
+  margin-left: 3px;
+}
+.cf-recolhido {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  background: rgba(128, 128, 128, 0.12);
+  cursor: pointer;
+  font-style: italic;
+  opacity: 0.7;
+  padding-left: 8px;
+  border-top: 1px dashed rgba(128, 128, 128, 0.5);
+  border-bottom: 1px dashed rgba(128, 128, 128, 0.5);
+}
+.cf-recolhido:hover {
+  opacity: 1;
+}

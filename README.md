@@ -244,7 +244,7 @@ começando por letra ou dígito.
    $ motor diagnostico
    OK  Variáveis: todas preenchidas
    OK  SQLite: conexão funciona
-   OK  Migração: revisão a7c3e9d1f2b4
+   OK  Migração: revisão b8d4f0a2c3e5
    OK  Repos: 1 repo(s) configurado(s)
    OK  Tarefas: credenciais aceitas
    não configurado  Bitbucket: sem BITBUCKET_TOKEN
@@ -283,10 +283,12 @@ As operações seguem rodando se a aba fechar. O porquê em
 
 Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
 
-- **Resolver na web**, no painel do bloqueio: para cada arquivo, o editor de 3 vias mostra
-  theirs (o commit aplicado), o resultado (que parte do que está em disco) e ours (o alvo).
-  Cada bloco de conflito tem "Aceitar theirs", "Aceitar ours", "Ambos" e, quando o bloco
-  traz a base, "Base"; o resultado também se edita à mão. A edição só vai para o disco em
+- **Resolver na web**, no painel do bloqueio: para cada arquivo, o editor mostra, como o
+  Merge Editor do VS Code, theirs (o commit aplicado) e ours (o alvo) lado a lado e, embaixo,
+  o resultado (que parte do que está em disco), com destaque de sintaxe e o que fica fora
+  dos conflitos recolhido. Cada conflito tem "Aceitar theirs" e "Aceitar ours" no painel de
+  cada lado e, no resultado, "Ambos" e, quando o bloco traz a base, "Usar base"; o
+  resultado também se edita à mão, e o Ctrl+Z desfaz. A edição só vai para o disco em
   **Marcar resolvido**, que fica desabilitado enquanto restar marcador. Modify/delete se
   resolve com "Manter arquivo" ou "Apagar arquivo"; binário, rename, add/add sem texto e
   submódulo ficam para o editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
@@ -295,6 +297,10 @@ Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
 Depois, **Continuar**. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum
 arquivo ainda não mesclado tiver marcador de conflito no disco, e aponta arquivo e linha. As
 regras do conflito estão na [decisão 013](docs/decisoes/013-conflito-e-checkpoint.md).
+
+Se a resolução não deixou alteração nenhuma no alvo, o continuar para e pede confirmação:
+**Registrar vazio** (na CLI, `atualizar --continue --allow-empty`) entra com um commit vazio,
+com o trailer `-x`, e o commit conta como aplicado; **Abortar** (`--abort`) o descarta.
 
 ### Editar a configuração pela interface
 
@@ -377,7 +383,7 @@ motor inscricao rodar                                             # o que o agen
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
 A execução agendada não depende de diretório: não lê `.env` e usa o `[ambiente]` do config
 central ou o ambiente do agendador.
-Também dá para gerenciar na TUI (tecla `i`).
+Também dá para gerenciar na TUI (tecla `i`) e na web (botão **Inscrições** da barra).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
 outras. O desfecho da última execução aparece no `listar`:

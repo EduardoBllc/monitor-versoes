@@ -1533,3 +1533,30 @@ def test_guarda_de_marcador_ve_texto_fora_de_utf8(tmp_path):
         _recusar_marcador_esquecido(
             Deps(git=g, tasks=FakeTaskSource(), estado=FakeEstado())
         )
+
+
+def test_new_git_subprocess_liga_rerere_quando_ausente(tmp_path):
+    repo_dir = init_repo_de_teste(tmp_path)
+
+    new_git_subprocess(repo_dir)
+
+    for chave in ("rerere.enabled", "rerere.autoUpdate"):
+        saida = subprocess.run(
+            ["git", "config", "--get", chave],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert saida.stdout.strip() == "true"
+
+
+def test_new_git_subprocess_nao_escreve_config_com_rerere_ja_ligado(tmp_path):
+    """Requisições paralelas do daemon montam o adaptador ao mesmo tempo; escrever
+    a config sem precisar disputa o `.git/config.lock` e uma delas falha (#163)."""
+    repo_dir = init_repo_de_teste(tmp_path)
+    new_git_subprocess(repo_dir)
+    # Outro escritor segurando o lock: qualquer `git config <chave> <valor>` falharia.
+    (tmp_path / ".git" / "config.lock").write_text("")
+
+    new_git_subprocess(repo_dir)
