@@ -244,7 +244,7 @@ começando por letra ou dígito.
    $ motor diagnostico
    OK  Variáveis: todas preenchidas
    OK  SQLite: conexão funciona
-   OK  Migração: revisão a7c3e9d1f2b4
+   OK  Migração: revisão b8d4f0a2c3e5
    OK  Repos: 1 repo(s) configurado(s)
    OK  Tarefas: credenciais aceitas
    não configurado  Bitbucket: sem BITBUCKET_TOKEN
@@ -264,6 +264,8 @@ motor atualizar 13.35.0 --repo meu-repo             # aplica os commits faltante
 motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
 motor atualizar 13.35.0 --repo meu-repo --abort
 motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
+motor orfaos    13.35.0 --repo meu-repo             # commits sem referência de tarefa e o julgamento
+motor julgar-orfao 13.35.0 <hash> --repo meu-repo --chamado 123 --motivo "..."  # ou --nenhum
 motor tui                                           # interface interativa
 motor serve                                         # interface web local (ver Interface web)
 motor inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
@@ -278,9 +280,64 @@ o resto.
 `motor serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
 (padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
 
-As operações seguem rodando se a aba fechar. Um pick bloqueado por conflito se resolve na
-worktree, no seu editor; depois, **Continuar**. O porquê em
+As operações seguem rodando se a aba fechar. O porquê em
 [decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md).
+
+Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
+
+- **Resolver na web**, no painel do bloqueio: para cada arquivo, o editor mostra, como o
+  Merge Editor do VS Code, theirs (o commit aplicado) e ours (o alvo) lado a lado e, embaixo,
+  o resultado (que parte do que está em disco), com destaque de sintaxe e o que fica fora
+  dos conflitos recolhido. Cada conflito tem "Aceitar theirs" e "Aceitar ours" no painel de
+  cada lado e, no resultado, "Ambos" e, quando o bloco traz a base, "Usar base"; o
+  resultado também se edita à mão, e o Ctrl+Z desfaz. A edição só vai para o disco em
+  **Marcar resolvido**, que fica desabilitado enquanto restar marcador. Modify/delete se
+  resolve com "Manter arquivo" ou "Apagar arquivo"; binário, rename, add/add sem texto e
+  submódulo ficam para o editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
+- **No seu editor**, na worktree que o painel mostra.
+
+Depois, **Continuar**. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum
+arquivo ainda não mesclado tiver marcador de conflito no disco, e aponta arquivo e linha. As
+regras do conflito estão na [decisão 013](docs/decisoes/013-conflito-e-checkpoint.md).
+
+Se a resolução não deixou alteração nenhuma no alvo, o continuar para e pede confirmação:
+**Registrar vazio** (na CLI, `atualizar --continue --allow-empty`) entra com um commit vazio,
+com o trailer `-x`, e o commit conta como aplicado; **Abortar** (`--abort`) o descarta.
+
+### Editar a configuração pela interface
+
+Na TUI, a tecla `g` abre a tela de configuração; na web, o botão **Configuração** da barra. As
+duas editam o `config.toml` central (geral, por repo e `[ambiente]`), preservam os comentários
+do arquivo e validam antes de gravar. Mudanças no `[ambiente]` valem sem reiniciar. Salvar não
+consulta o lock do clone: edite por um lugar de cada vez. O porquê:
+[033](docs/decisoes/033-config-editavel-pelas-interfaces.md).
+
+#### Para autores de plugin
+
+Para a tela mostrar as chaves do seu plugin (esquema, atribuição ou fonte de tarefas), declare
+`campos_config` na classe, uma tupla de `Campo`:
+
+```python
+from motor.config import TABELA_AMBIENTE
+from motor.config_edicao import Campo, Escopo, TipoCampo
+
+
+class MinhaFonte:
+    campos_config = (
+        Campo(Escopo.GERAL, "tarefas", "sistema", TipoCampo.INTEIRO, "Sistema"),
+        Campo(
+            Escopo.AMBIENTE,
+            TABELA_AMBIENTE,
+            "MINHA_FONTE_TOKEN",
+            TipoCampo.TEXTO,
+            "Token",
+            segredo=True,
+        ),
+    )
+```
+
+No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor na tela. O atributo é opcional
+e plugin que falha ao carregar é ignorado.
 
 ### Fontes de tasks e de commits
 
@@ -317,7 +374,7 @@ motor inscricao rodar                                             # o que o agen
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
 A execução agendada não depende de diretório: não lê `.env` e usa o `[ambiente]` do config
 central ou o ambiente do agendador.
-Também dá para gerenciar na TUI (tecla `i`).
+Também dá para gerenciar na TUI (tecla `i`) e na web (botão **Inscrições** da barra).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
 outras. O desfecho da última execução aparece no `listar`:
@@ -327,7 +384,7 @@ outras. O desfecho da última execução aparece no `listar`:
 | `aplicou` | commits aplicados e push feito |
 | `nada` | nada a aplicar |
 | `bloqueada` | conflito: checkpoint aberto, sem push |
-| `pulada` | cherry-pick pendente na versão; nada roda até `atualizar --continue` ou `--abort` |
+| `pulada` | cherry-pick pendente na versão (nada roda até `atualizar --continue` ou `--abort`), ou repo ocupado por outra operação do motor (roda de novo na próxima vez que vencer) |
 | `encerrada` | versão liberada; a inscrição é removida |
 | `erro` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
 
@@ -358,6 +415,7 @@ desfecho):
 | `ERROR: .../config.toml: repo 'meu-repo' sem seção [repos.meu-repo] (existentes: ...)` | `--repo` não é o nome de uma seção. Crie `[repos.meu-repo]` no `config.toml` central ou use um nome da lista (`(nenhuma)` se o arquivo não existe). |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho é obrigatório` | A seção não tem `caminho`. Aponte para o clone. |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `motor diagnostico` checa todas as seções. |
+| `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `motor serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
 | `error: argument --repo: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
 
 ## Próximos passos

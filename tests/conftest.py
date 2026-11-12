@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from typing import Any
 
@@ -57,6 +58,38 @@ def _config_central_isolado(monkeypatch, tmp_path):
     próprio sobrescreve o `XDG_CONFIG_HOME`.
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-isolado"))
+
+
+@pytest.fixture(autouse=True)
+def _ambiente_central_reiniciado():
+    """Cada teste começa sem base nem chaves aplicadas do `[ambiente]`."""
+    from motor.config import _reiniciar_ambiente_base
+
+    _reiniciar_ambiente_base()
+    yield
+    _reiniciar_ambiente_base()
+
+
+@pytest.fixture(autouse=True)
+def _os_environ_restaurado():
+    """`gravar` aplica o `[ambiente]` em `os.environ`; nada vaza entre testes."""
+    antes = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(antes)
+
+
+@pytest.fixture(autouse=True)
+def _travas_isoladas(monkeypatch, tmp_path):
+    """Os locks de repo da suíte ficam no `tmp_path`, não em `~/.local/share`.
+
+    Sem isso, um teste que trava um clone gravaria no diretório de dados de
+    quem roda, e uma operação real dessa máquina recusaria o teste (ou o
+    contrário).
+    """
+    import motor.trava
+
+    monkeypatch.setattr(motor.trava, "diretorio_travas", lambda: tmp_path / "travas")
 
 
 @pytest.fixture

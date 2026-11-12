@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config_repo, repos_configurados
-from motor.domain.types import VersionStatus
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
     atualizar,
@@ -20,9 +20,18 @@ from motor.engine.atualizar import (
     atualizar_continue,
     previa_atualizacao,
 )
+from motor.engine.conflito import (
+    ConflitoAberto,
+    ConteudoDoConflito,
+    ler_arquivo,
+    ler_conflito,
+    reabrir_arquivo,
+    resolver_arquivo,
+)
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
+from motor.engine.orfaos import OrfaoDaVersao, julgar_orfao, listar_orfaos
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado
 from motor.montagem import abrir_sessao, montar_deps, resolver_versionamento
@@ -30,6 +39,7 @@ from motor.ports import GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
+from motor.trava import Trava, travar
 
 
 @dataclass(frozen=True)
@@ -42,6 +52,23 @@ class RepoOption:
     @property
     def disponivel(self) -> bool:
         return self.caminho is not None
+
+
+def travar_repo(repo: RepoOption) -> Trava | None:
+    """Lock do clone do repo (decisão 032); `None` quando não há checkout.
+
+    Repo sem checkout não trava: falha como sempre, dentro do runner.
+    """
+    if repo.caminho is None:
+        return None
+    return travar(repo.nome, repo.caminho)
+
+
+@dataclass(frozen=True)
+class Resolucao:
+    caminho: str
+    conteudo: str | None
+    versao_disco: str
 
 
 @dataclass(frozen=True)
@@ -58,6 +85,10 @@ PreviewRunner = Callable[[RepoOption, str], VersionStatus]
 AbortRunner = Callable[[RepoOption, str], None]
 CriarRunner = Callable[[RepoOption, str], AtualizarResult]
 VersionamentoLoader = Callable[[RepoOption], Versionamento]
+LerConflitoRunner = Callable[[RepoOption, str], ConflitoAberto]
+LerArquivoConflitoRunner = Callable[[RepoOption, str, str], ConteudoDoConflito]
+ResolverArquivoRunner = Callable[[RepoOption, str, Resolucao], None]
+ReabrirArquivoRunner = Callable[[RepoOption, str, str], None]
 
 
 class ContinueRunner(Protocol):
@@ -71,6 +102,9 @@ class ContinueRunner(Protocol):
 
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
+OrfaosRunner = Callable[[RepoOption, str], list[OrfaoDaVersao]]
+# (repo, versao, hash, chamado ou None para "nenhum", motivo)
+JulgarRunner = Callable[[RepoOption, str, str, str | None, str], JulgamentoOrfao]
 
 
 @dataclass(frozen=True)
@@ -89,6 +123,12 @@ class Runners:
     previa_atualizacao: PreviewRunner | None = None
     # Sem ele, o versionamento sai da config do repo (`versionamento_do_repo`).
     versionamento_repo: VersionamentoLoader | None = None
+    ler_conflito: LerConflitoRunner | None = None
+    ler_arquivo_conflito: LerArquivoConflitoRunner | None = None
+    resolver_arquivo_conflito: ResolverArquivoRunner | None = None
+    reabrir_arquivo_conflito: ReabrirArquivoRunner | None = None
+    listar_orfaos: OrfaosRunner | None = None
+    julgar_orfao: JulgarRunner | None = None
 
 
 def descobrir_repos(
@@ -212,6 +252,52 @@ def abortar_repo(
         atualizar_abort(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def ler_conflito_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> ConflitoAberto:
+    with abrir_sessao() as sessao:
+        return ler_conflito(_deps_do_repo(repo, sessao, progresso), versao)
+
+
+def ler_arquivo_conflito_repo(
+    repo: RepoOption,
+    versao: str,
+    caminho: str,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> ConteudoDoConflito:
+    with abrir_sessao() as sessao:
+        return ler_arquivo(_deps_do_repo(repo, sessao, progresso), versao, caminho)
+
+
+def resolver_arquivo_conflito_repo(
+    repo: RepoOption,
+    versao: str,
+    resolucao: Resolucao,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> None:
+    with abrir_sessao() as sessao:
+        resolver_arquivo(
+            _deps_do_repo(repo, sessao, progresso),
+            versao,
+            resolucao.caminho,
+            resolucao.conteudo,
+            resolucao.versao_disco,
+        )
+
+
+def reabrir_arquivo_conflito_repo(
+    repo: RepoOption,
+    versao: str,
+    caminho: str,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> None:
+    with abrir_sessao() as sessao:
+        reabrir_arquivo(_deps_do_repo(repo, sessao, progresso), versao, caminho)
+
+
 def criar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> AtualizarResult:
@@ -224,6 +310,30 @@ def consultar_repo(
 ) -> list[ChamadoConsultado]:
     with abrir_sessao() as sessao:
         return consultar(_deps_do_repo(repo, sessao, progresso), versao)
+
+
+def orfaos_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> list[OrfaoDaVersao]:
+    with abrir_sessao() as sessao:
+        return listar_orfaos(_deps_do_repo(repo, sessao, progresso), versao)
+
+
+# Seis parâmetros: os cinco posicionais são a assinatura do JulgarRunner, que a
+# TUI e o daemon chamam, e o sexto é o relator que o `partial` amarra.
+def julgar_orfao_repo(  # noqa: PLR0913
+    repo: RepoOption,
+    versao: str,
+    hash_: str,
+    chamado: str | None,
+    motivo: str,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> JulgamentoOrfao:
+    with abrir_sessao() as sessao:
+        return julgar_orfao(
+            _deps_do_repo(repo, sessao, progresso), versao, hash_, chamado, motivo
+        )
 
 
 def avaliar_numero(
@@ -265,4 +375,14 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         partial(consultar_repo, progresso=relatar),
         partial(criar_repo, progresso=relatar),
         previa_atualizacao=partial(previa_repo, progresso=relatar),
+        ler_conflito=partial(ler_conflito_repo, progresso=relatar),
+        ler_arquivo_conflito=partial(ler_arquivo_conflito_repo, progresso=relatar),
+        resolver_arquivo_conflito=partial(
+            resolver_arquivo_conflito_repo, progresso=relatar
+        ),
+        reabrir_arquivo_conflito=partial(
+            reabrir_arquivo_conflito_repo, progresso=relatar
+        ),
+        listar_orfaos=partial(orfaos_repo, progresso=relatar),
+        julgar_orfao=partial(julgar_orfao_repo, progresso=relatar),
     )

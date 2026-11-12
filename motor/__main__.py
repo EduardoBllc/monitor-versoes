@@ -7,6 +7,7 @@ dominio aqui.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
@@ -31,7 +32,9 @@ from motor.agendador import (
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
+    VAR_XDG_CONFIG_HOME,
     ambiente_central,
+    aplicar_ambiente_central,
     caminho_config_global,
     carregar_config_global,
     carregar_config_repo,
@@ -57,9 +60,15 @@ from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.inscricao import executar_inscricao
 from motor.engine.migrar_estado import migrar_estado
+from motor.engine.orfaos import (
+    OrfaoDaVersao,
+    julgar_orfao,
+    linha_do_orfao,
+    listar_orfaos,
+)
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
+from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, formatar_com_notas
 from motor.init import iniciar
 from motor.inscricoes import (
     INTERVALO_PADRAO,
@@ -83,6 +92,7 @@ from motor.montagem import (
     montar_notificador,
 )
 from motor.progresso import Progresso, RelatorProgresso, silencioso
+from motor.trava import Trava, travar
 
 # Anotado Optional na declaracao: sem isso o `= None` do fallback conflita com
 # o tipo da funcao importada, e `if load_dotenv:` passa a ser lido como
@@ -146,7 +156,7 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     if (comando, acao) == ("inscricao", AcaoInscricao.RODAR):
         return None
     filho = (comando, acao) == ("inscricao", AcaoInscricao.EXECUTAR)
-    xdg = os.environ.get("XDG_CONFIG_HOME")
+    xdg = os.environ.get(VAR_XDG_CONFIG_HOME)
     erro: MotorError | None = None
     try:
         central = ambiente_central()
@@ -158,11 +168,11 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
         central, erro = {}, e
     if load_dotenv and not filho:
         load_dotenv(Path.cwd() / _ARQUIVOS_AMBIENTE[ambiente], override=True)
-    os.environ.update(central)
+    aplicar_ambiente_central(central)
     if xdg is None:
-        os.environ.pop("XDG_CONFIG_HOME", None)
+        os.environ.pop(VAR_XDG_CONFIG_HOME, None)
     else:
-        os.environ["XDG_CONFIG_HOME"] = xdg
+        os.environ[VAR_XDG_CONFIG_HOME] = xdg
     return erro
 
 
@@ -273,8 +283,11 @@ def _inscricao_executar(args: argparse.Namespace) -> None:
         )
         return
     try:
-        with abrir_sessao() as sessao:
+        with _travar(args.repo), abrir_sessao() as sessao:
             resultado = executar_inscricao(montar_deps(args.repo, sessao), args.versao)
+    except RepoOcupado as e:
+        # Sem notificação: tenta de novo na próxima vez que vencer (decisão 032).
+        resultado = Resultado(Desfecho.PULADA, mensagem=str(e))
     except MotorError as e:
         resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
     except Exception as e:
@@ -314,6 +327,35 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "diagnostico": _diagnostico,
     "inscricao": _inscricao,
 }
+
+
+def _parsers_de_orfaos(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+    comum: argparse.ArgumentParser,
+) -> None:
+    sub.add_parser(
+        "orfaos",
+        parents=[comum],
+        help="lista os commits sem referencia de tarefa da versao e o julgamento",
+    )
+    p_julgar = sub.add_parser(
+        "julgar-orfao",
+        parents=[comum],
+        help="grava a qual chamado pertence um commit orfao da versao",
+    )
+    p_julgar.add_argument("hash", help="hash do orfao (pode ser abreviado)")
+    destino = p_julgar.add_mutually_exclusive_group(required=True)
+    destino.add_argument(
+        "--chamado", metavar="ID", help="ID do chamado a que o commit pertence"
+    )
+    destino.add_argument(
+        "--nenhum",
+        action="store_true",
+        help="o commit nao pertence a chamado nenhum",
+    )
+    p_julgar.add_argument(
+        "--motivo", metavar="TEXTO", required=True, help="por que (obrigatorio)"
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -424,6 +466,7 @@ def _build_parser() -> argparse.ArgumentParser:
         parents=[comum],
         help="mostra os chamados e commits salvos para a versao",
     )
+    _parsers_de_orfaos(sub, comum)
 
     sub.add_parser(
         "tui",
@@ -662,6 +705,14 @@ def imprimir_consulta(chamados: list[ChamadoConsultado]) -> None:
             print(f"  - {commit.hash_origem[:8]} {titulo}")
 
 
+def imprimir_orfaos(orfaos: list[OrfaoDaVersao]) -> None:
+    if not orfaos:
+        print("sem orfaos")
+        return
+    for o in orfaos:
+        print(linha_do_orfao(o))
+
+
 def _escrever_progresso(progresso: Progresso, saida: TextIO) -> None:
     r"""Uma linha reescrita no lugar, em stderr.
 
@@ -702,6 +753,27 @@ def _limpar_progresso(relator: RelatorProgresso, saida: TextIO | None = None) ->
     saida.flush()
 
 
+def _travar(nome: str) -> Trava:
+    caminho = carregar_config_repo(nome).caminho
+    assert caminho is not None  # carregar_config_repo sempre o preenche
+    return travar(nome, caminho)
+
+
+def _trava_do_comando(
+    args: argparse.Namespace,
+) -> contextlib.AbstractContextManager[object]:
+    """Lock do clone para os comandos que tocam worktree, checkpoint ou GC.
+
+    As leituras (`consulta`, `verificar --auditar`, `reconstruir-estado`)
+    rodam com o repo ocupado: decisão 032.
+    """
+    if args.comando in {"criar", "atualizar"} or (
+        args.comando == "verificar" and not args.auditar
+    ):
+        return _travar(args.repo)
+    return contextlib.nullcontext()
+
+
 def _despachar(args: argparse.Namespace, deps: Deps) -> None:
     inicio = time.monotonic()
     if args.comando == "verificar":
@@ -724,14 +796,35 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
             imprimir_atualizacao(atualizar(deps, args.versao), deps.referencia)
     elif args.comando == "consulta":
         imprimir_consulta(consultar(deps, args.versao))
-    else:  # reconstruir-estado (unico comando restante; argparse ja validou)
+    else:  # orfaos, julgar-orfao e reconstruir-estado (argparse ja validou)
+        _despachar_orfaos(args, deps)
+    logging.debug(
+        "comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio
+    )
+
+
+def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
+    if args.comando == "orfaos":
+        imprimir_orfaos(listar_orfaos(deps, args.versao))
+    elif args.comando == "julgar-orfao":
+        j = julgar_orfao(
+            deps,
+            args.versao,
+            args.hash,
+            None if args.nenhum else args.chamado,
+            args.motivo,
+        )
+        print(f"julgado: {j.hash_origem[:8]} -> {j.chamado or 'nenhum'}")
+    else:  # reconstruir-estado (unico comando restante)
         resultado = reconstruir_estado(deps, args.versao)
         print(f"status: {resultado.status.name}, orfaos: {len(resultado.orfaos)}")
         for hash_ in resultado.orfaos:
             print(f"  - {hash_[:8]} (sem referencia de tarefa na mensagem)")
-    logging.debug(
-        "comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio
-    )
+        if resultado.orfaos:
+            print(
+                f"julgue com: motor julgar-orfao {args.versao} <hash> "
+                f"--repo {args.repo} (--chamado ID | --nenhum) --motivo TEXTO"
+            )
 
 
 def _migrar_estado(args: argparse.Namespace) -> None:
@@ -788,7 +881,9 @@ def main(argv: list[str] | None = None) -> None:
             _migrar_estado(args)
             return
 
-        with abrir_sessao() as sessao:
+        # A trava antes da sessão e do montar_deps (que já roda git no clone):
+        # a recusa sai antes de tocar no clone e no banco.
+        with _trava_do_comando(args), abrir_sessao() as sessao:
             relator = _relator_do_cli(desligado=getattr(args, "sem_progresso", False))
             deps = montar_deps(
                 args.repo,

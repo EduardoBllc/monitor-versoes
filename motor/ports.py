@@ -31,11 +31,13 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
+from motor.domain.conflito import Estagios
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
     ContextoAtribuicao,
     Exclusion,
+    JulgamentoOrfao,
     PrIndex,
     RepoInfo,
     Verificacao,
@@ -175,6 +177,26 @@ class GitRepo(Protocol):
 
     def pending_cherry_pick(self) -> tuple[str, bool]:
         """Cherry-pick pendente: (hash, ok)."""
+        ...
+
+    def arquivos_do_pick(self) -> dict[str, bool]:
+        """Arquivos do conflito do pick pendente: caminho -> já resolvido."""
+        ...
+
+    def estagios(self, caminho: str, /) -> Estagios:
+        """Base, ours, theirs e disco de um arquivo do pick, byte a byte."""
+        ...
+
+    def disco_bytes(self, caminho: str, /) -> bytes | None:
+        """Bytes do arquivo na worktree; `None` se ausente, link ou não regular."""
+        ...
+
+    def resolver(self, caminho: str, conteudo: str | None, /) -> None:
+        """Grava o conteúdo e marca resolvido; `None` resolve apagando."""
+        ...
+
+    def reabrir(self, caminho: str, /) -> None:
+        """Desfaz a resolução e devolve o arquivo ao conflito."""
         ...
 
     def continue_cherry_pick(self) -> CherryPickOutcome:
@@ -368,6 +390,17 @@ class EstadoRepo(Protocol):
 
     def sem_entrega(self, repo: str, /) -> dict[str, str]:
         """chamado -> motivo."""
+        ...
+
+    def julgamentos_orfao(self, repo: str, /) -> list[JulgamentoOrfao]:
+        """Julgamentos de órfão de todas as versões do repo, ordenados por
+        `(versao_numero, hash_origem)`."""
+        ...
+
+    def julgar_orfao(self, repo: str, j: JulgamentoOrfao, /) -> None:
+        """Upsert por `(repo, versao_numero, hash_origem)`. NaoEncontrado se a
+        versão não existir no estado. Não passa pelo congelamento: grava também
+        em versão liberada."""
         ...
 
     def commits_de_pr(

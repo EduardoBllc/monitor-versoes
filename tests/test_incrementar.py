@@ -12,9 +12,11 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.atribuicoes import Exata
+from motor.domain.conflito import Estagios
 from motor.domain.types import (
     CommitRef,
     Exclusion,
+    JulgamentoOrfao,
     RepoInfo,
     Verificacao,
     VersaoInfo,
@@ -30,7 +32,7 @@ from motor.engine.atualizar import (
 from motor.engine.deps import Deps
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import VALIDADE_VERIFICACAO, impressao_da_verificacao
-from motor.errors import MotorError, RecusaDeInvariante
+from motor.errors import ErroDeEntrada, MotorError, RecusaDeInvariante
 from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
 from motor.services.versionamento import Versionamento
@@ -39,6 +41,10 @@ from tests.versionamento import ESCALONADO_COMPOSTA
 
 D = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
 OUTRAS_ENTRADAS = "lista|grep"
+ARQUIVO_DO_PICK = "a.txt"
+VERSAO_DO_PICK = "13.7.0"
+CHAMADO_DO_PICK = "255514"
+COM_MARCADOR = "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> a0\n"
 D1 = D + datetime.timedelta(minutes=1)
 
 UM = {
@@ -367,6 +373,34 @@ def test_atualizar_abort_remove_worktree():
     assert "13.7.0" in g.branches, (
         "worktree_remove nao pode apagar a branch, so o checkout local"
     )
+
+
+def test_continuar_recusa_marcador_esquecido():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.estagios_on["a0"] = {
+        ARQUIVO_DO_PICK: Estagios(
+            "a\n", "a\nb\n", "a\nc\n", COM_MARCADOR, binario=False
+        )
+    }
+    deps = _deps(g, _estado(), [CHAMADO_DO_PICK], UM)
+    atualizar(deps, VERSAO_DO_PICK)
+
+    with pytest.raises(ErroDeEntrada):
+        atualizar_continue(deps, VERSAO_DO_PICK)
+    assert g.pending_cherry_pick() == ("a0", True), "o pick tem de continuar aberto"
+
+
+def test_continuar_aceita_modify_delete_sem_marcador():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.estagios_on["a0"] = {
+        ARQUIVO_DO_PICK: Estagios("x\n", None, "y\n", "y\n", binario=False)
+    }
+    deps = _deps(g, _estado(), [CHAMADO_DO_PICK], UM)
+    atualizar(deps, VERSAO_DO_PICK)
+
+    assert atualizar_continue(deps, VERSAO_DO_PICK).status == AtualizarStatus.DONE
 
 
 def test_atualizar_continue_conclui_o_lote():
@@ -804,7 +838,7 @@ def test_atualizar_recusa_tag_nova_mesmo_com_carimbo_vigente():
         Verificacao(
             tip="m0",
             impressao=impressao_da_verificacao(
-                [], {}, c.deps.identidade_das_entradas()
+                [], {}, [], c.deps.identidade_das_entradas()
             ),
             verificado_em=D,
             status=VersionStatus(faltantes=UM["255514"]),
@@ -914,3 +948,25 @@ def test_liberada_em_gravada_vence_o_criterio_que_mudou():
         atualizar(deps, "1.2.0")
     gravada = estado.versao("r", "1.2.0")
     assert gravada is not None and gravada.liberada_em == data
+
+
+def test_atualizar_mantem_orfao_julgado_na_atribuicao():
+    g = _git()
+    g.add_commit("o1", "m0", "ajuste solto", D)
+    g.set_branch("13.7.0", "o1")
+    estado = _estado()
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.7.0", tipo="ajustada", base_ref="13.6.0", base_commit="m0"
+        ),
+    )
+    estado.julgar_orfao("r", JulgamentoOrfao("o1", "13.7.0", "255514", "m"))
+
+    resultado = atualizar(_deps(g, estado, ["255514"], UM), "13.7.0")
+
+    assert resultado.status == AtualizarStatus.DONE
+    assert [c.hash_origem for c in resultado.aplicados] == ["a0"]
+    assert [
+        (a.chamado, a.estado, a.commits) for a in estado.atribuicoes("r", "13.7.0")
+    ] == [("255514", "aplicado", ["a0", "o1"])]

@@ -1,4 +1,8 @@
-"""Operações longas do daemon: uma thread por repo, progresso amostrado."""
+"""Operações longas do daemon: uma thread por execução, progresso amostrado.
+
+"Uma operação por repo" não é daqui: é o lock do clone (decisão 032), que o
+`disparar` toma antes de `iniciar` e entrega à thread.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +12,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from motor.daemon.erros import ErroApi, RepoOcupado, erro_api
+from motor.daemon.erros import ErroApi, erro_api
 from motor.domain.types import VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.progresso import Progresso, RelatorProgresso
+from motor.trava import Trava
 
 
 class Operacao(StrEnum):
@@ -49,7 +54,7 @@ Alvo = Callable[[RelatorProgresso], VersionStatus | AtualizarResult | None]
 
 class Execucoes:
     def __init__(self) -> None:
-        # protege só o dicionário (checar e registrar atômicos), nunca a operação
+        # protege só o registro, nunca a operação
         self._lock = threading.Lock()
         self._por_repo: dict[str, Execucao] = {}
         self._threads: dict[str, threading.Thread] = {}
@@ -57,45 +62,65 @@ class Execucoes:
         self._pendentes: dict[tuple[str, str], Execucao] = {}
 
     def iniciar(
-        self, repo: str, versao: str, operacao: Operacao, alvo: Alvo
+        self,
+        repo: str,
+        versao: str,
+        operacao: Operacao,
+        alvo: Alvo,
+        trava: Trava | None = None,
     ) -> Execucao:
+        """Registra e roda a execução; a `trava`, se vier, é solta pela thread."""
         execucao = Execucao(
             uuid.uuid4().hex, repo, versao, operacao, EstadoExecucao.RODANDO
         )
         thread = threading.Thread(
-            target=self._rodar, args=(execucao, alvo), daemon=True
+            target=self._rodar, args=(execucao, alvo, trava), daemon=True
         )
         with self._lock:
-            atual = self._por_repo.get(repo)
-            if atual is not None and atual.estado is EstadoExecucao.RODANDO:
-                raise RepoOcupado(repo)
             self._por_repo[repo] = execucao
             self._threads[repo] = thread
-        thread.start()
+        try:
+            thread.start()
+        except BaseException:
+            if trava is not None:
+                trava.soltar()
+            raise
         return execucao
 
     def atual(self, repo: str) -> Execucao | None:
         return self._por_repo.get(repo)
+
+    def rodando(self) -> bool:
+        with self._lock:
+            return any(
+                e.estado is EstadoExecucao.RODANDO for e in self._por_repo.values()
+            )
 
     def pendencias(self, repo: str) -> list[Execucao]:
         with self._lock:
             return [e for (r, _), e in self._pendentes.items() if r == repo]
 
     def aguardar(self, repo: str, timeout: float) -> bool:
-        """Espera a thread do repo terminar; usado pelos testes."""
+        """Espera a última thread iniciada no repo terminar; usado pelos testes."""
         thread = self._threads.get(repo)
         if thread is None:
             return True
         thread.join(timeout)
         return not thread.is_alive()
 
-    def _rodar(self, execucao: Execucao, alvo: Alvo) -> None:
+    def _rodar(self, execucao: Execucao, alvo: Alvo, trava: Trava | None) -> None:
         # last-writer-wins sem lock, como SlotProgresso
         def relatar(progresso: Progresso) -> None:
             execucao.progresso = progresso
 
         try:
-            execucao.resultado = alvo(relatar)
+            try:
+                execucao.resultado = alvo(relatar)
+            finally:
+                # Antes do `estado`: o cliente que dispara assim que vê o fim
+                # levaria um 409 espúrio se a trava ainda estivesse segurada.
+                if trava is not None:
+                    trava.soltar()
             self._lembrar(execucao)
             execucao.estado = EstadoExecucao.CONCLUIDA
         except Exception as e:

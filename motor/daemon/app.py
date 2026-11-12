@@ -5,34 +5,46 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
 from motor.config import SECAO_REPOS
+from motor.config_edicao import Alteracao, ConfigEditavel, gravar, ler_para_edicao
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
-from motor.daemon.erros import MENSAGEM_INTERNA, ErroApi, TipoErro, erro_api
+from motor.daemon.erros import (
+    MENSAGEM_INTERNA,
+    ConfigOcupada,
+    ErroApi,
+    TipoErro,
+    erro_api,
+)
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
-from motor.domain.types import VersionStatus
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult
+from motor.engine.conflito import ConflitoAberto, ConteudoDoConflito
 from motor.engine.consultar import ChamadoConsultado
+from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.operacoes import (
     RepoOption,
+    Resolucao,
     Runners,
     VersionamentoLoader,
     VersionOption,
     avaliar_numero,
     runners_com_progresso,
+    travar_repo,
     versionamento_do_repo,
 )
 from motor.progresso import RelatorProgresso, silencioso
@@ -85,6 +97,24 @@ class PedidoInscrever:
 class PedidoRemover:
     repo: str
     versao: str
+
+
+@dataclass(frozen=True)
+class PedidoJulgamento:
+    # None = "não pertence a chamado nenhum"
+    chamado: str | None
+    motivo: str
+
+
+@dataclass(frozen=True)
+class PedidoConfig:
+    alteracoes: list[Alteracao]
+    versao: str
+
+
+@dataclass(frozen=True)
+class PedidoReabertura:
+    caminho: str
 
 
 @dataclass(frozen=True)
@@ -146,13 +176,21 @@ class _Contexto:
         versao: str,
         operacao: Operacao,
         usar: Callable[[Runners, RepoOption], VersionStatus | AtualizarResult | None],
+        *,
+        travar: bool = True,
     ) -> Execucao:
+        """Toma o lock do clone na thread do pedido e o entrega à execução.
+
+        Travar aqui, e não na thread, é o que faz o `RepoOcupado` sair como
+        `409` síncrono, sem criar execução (decisão 032).
+        """
         repo = self.achar(nome)
 
         def alvo(relatar: RelatorProgresso) -> VersionStatus | AtualizarResult | None:
             return usar(self.fabrica(relatar), repo)
 
-        return self.execucoes.iniciar(nome, versao, operacao, alvo)
+        trava = travar_repo(repo) if travar else None
+        return self.execucoes.iniciar(nome, versao, operacao, alvo, trava)
 
 
 def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
@@ -184,6 +222,20 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
     def consultar(repo: str, versao: str) -> list[ChamadoConsultado]:
         return _exigir(ctx.leitura().consultar_versao)(ctx.achar(repo), versao)
 
+    # Síncronas e sem lock, como o `reconstruir-estado`: só fazem fetch e
+    # gravam no estado, sem tocar worktree, checkpoint nem GC (decisão 032).
+    @app.get("/api/repos/{repo}/versoes/{versao}/orfaos")
+    def listar_orfaos(repo: str, versao: str) -> list[OrfaoDaVersao]:
+        return _exigir(ctx.leitura().listar_orfaos)(ctx.achar(repo), versao)
+
+    @app.post("/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento")
+    def julgar_orfao(
+        repo: str, versao: str, hash: str, corpo: PedidoJulgamento
+    ) -> JulgamentoOrfao:
+        return _exigir(ctx.leitura().julgar_orfao)(
+            ctx.achar(repo), versao, hash, corpo.chamado, corpo.motivo
+        )
+
 
 def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
     base = "/api/repos/{repo}/versoes/{versao}"
@@ -205,6 +257,9 @@ def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
             versao,
             Operacao.VERIFICAR,
             lambda r, o: r.executar(o, versao, corpo.auditar),
+            # A auditoria não toca worktree, checkpoint nem GC: roda com o repo
+            # ocupado (decisão 032).
+            travar=not corpo.auditar,
         )
 
     @app.post(f"{base}/previa", status_code=aceito)
@@ -244,6 +299,39 @@ def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:
             Operacao.ABORTAR,
             lambda r, o: _exigir(r.abortar_repo)(o, versao),
         )
+
+
+def _rotas_conflito(app: FastAPI, ctx: _Contexto) -> None:
+    base = "/api/repos/{repo}/versoes/{versao}/conflito"
+    sem_corpo = HTTPStatus.NO_CONTENT
+
+    @app.get(base)
+    def ler_conflito(repo: str, versao: str) -> ConflitoAberto:
+        # Leitura não trava, como a consulta (decisão 032): a tela dispara as
+        # duas leituras juntas, e o flock recusaria a segunda.
+        return _exigir(ctx.leitura().ler_conflito)(ctx.achar(repo), versao)
+
+    @app.get(f"{base}/arquivo")
+    def ler_arquivo(
+        repo: str, versao: str, caminho: str = Query()
+    ) -> ConteudoDoConflito:
+        return _exigir(ctx.leitura().ler_arquivo_conflito)(
+            ctx.achar(repo), versao, caminho
+        )
+
+    @app.post(f"{base}/resolucao", status_code=sem_corpo)
+    def resolver(repo: str, versao: str, corpo: Resolucao) -> None:
+        runner = _exigir(ctx.leitura().resolver_arquivo_conflito)
+        opcao = ctx.achar(repo)
+        with travar_repo(opcao) or nullcontext():
+            runner(opcao, versao, corpo)
+
+    @app.post(f"{base}/reabertura", status_code=sem_corpo)
+    def reabrir(repo: str, versao: str, corpo: PedidoReabertura) -> None:
+        runner = _exigir(ctx.leitura().reabrir_arquivo_conflito)
+        opcao = ctx.achar(repo)
+        with travar_repo(opcao) or nullcontext():
+            runner(opcao, versao, corpo.caminho)
 
 
 def _rotas_execucao(app: FastAPI, ctx: _Contexto) -> None:
@@ -304,6 +392,18 @@ def _rotas_inscricoes(app: FastAPI, ctx: _Contexto) -> None:
         arquivo.remover(ctx.inscricoes_em, corpo.repo, corpo.versao)
 
 
+def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
+    @app.get("/api/config")
+    def ler_config() -> ConfigEditavel:
+        return ler_para_edicao()
+
+    @app.put("/api/config")
+    def gravar_config(corpo: PedidoConfig) -> ConfigEditavel:
+        if ctx.execucoes.rodando():
+            raise ConfigOcupada
+        return gravar(corpo.alteracoes, corpo.versao)
+
+
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:
     raiz = estaticos.resolve()
 
@@ -353,8 +453,10 @@ def criar_app(
 
     _rotas_repos(app, ctx)
     _rotas_operacoes(app, ctx)
+    _rotas_conflito(app, ctx)
     _rotas_execucao(app, ctx)
     _rotas_inscricoes(app, ctx)
+    _rotas_config(app, ctx)
     _rotas_estaticos(app, estaticos)
     return app
 

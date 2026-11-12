@@ -13,7 +13,9 @@ from motor.errors import (
     MotorError,
     NaoEncontrado,
     RecusaDeInvariante,
+    RepoOcupado,
     RespostaInvalida,
+    VersaoDesatualizada,
     formatar_com_notas,
 )
 
@@ -30,6 +32,7 @@ class TipoErro(StrEnum):
     RESPOSTA = "resposta"
     MOTOR = "motor"
     OCUPADO = "ocupado"
+    DESATUALIZADO = "desatualizado"
     INTERNO = "interno"
 
 
@@ -39,9 +42,9 @@ class ErroApi:
     mensagem: str
 
 
-class RepoOcupado(MotorError):
-    def __init__(self, repo: str) -> None:
-        super().__init__(f"repo {repo} já tem uma operação em andamento")
+class ConfigOcupada(MotorError):
+    def __init__(self) -> None:
+        super().__init__("há uma execução em andamento; tente depois de ela terminar")
 
 
 # Ordem irrelevante: a resolução anda pela MRO do erro, do mais específico ao MotorError.
@@ -52,6 +55,8 @@ _TABELA: dict[type[MotorError], tuple[HTTPStatus, TipoErro]] = {
     BackendIndisponivel: (HTTPStatus.SERVICE_UNAVAILABLE, TipoErro.BACKEND),
     RespostaInvalida: (HTTPStatus.BAD_GATEWAY, TipoErro.RESPOSTA),
     RepoOcupado: (HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+    ConfigOcupada: (HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+    VersaoDesatualizada: (HTTPStatus.CONFLICT, TipoErro.DESATUALIZADO),
     MotorError: (HTTPStatus.INTERNAL_SERVER_ERROR, TipoErro.MOTOR),
 }
 

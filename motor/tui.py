@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -32,6 +33,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from motor.config import SECAO_REPOS
+from motor.config_edicao import ler_para_edicao
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -39,6 +41,7 @@ from motor.engine.atualizar import (
     AtualizarStatus,
 )
 from motor.engine.consultar import ChamadoConsultado
+from motor.engine.orfaos import OrfaoDaVersao, linha_do_orfao
 from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
 from motor.inscricoes import (
     INTERVALO_PADRAO,
@@ -53,16 +56,20 @@ from motor.inscricoes import (
 from motor.operacoes import (
     AbortRunner,
     CriarRunner,
+    JulgarRunner,
+    OrfaosRunner,
     RepoOption,
     Runners,
     UpdateRunner,
     VersionOption,
     avaliar_numero,
     runners_com_progresso,
+    travar_repo,
     versionamento_do_repo,
 )
 from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import Versionamento
+from motor.tui_config import ConfigModal
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -182,6 +189,137 @@ def _linha_inscricao(i: Inscricao) -> str:
     return (
         f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  ·  {ultima}"
     )
+
+
+class OrfaosModal(ModalScreen[None]):
+    """Órfãos da versão, com o julgamento de cada um, e o formulário que julga
+    o órfão destacado.
+
+    Listar e julgar fazem `git fetch`, por isso rodam num worker de thread; a
+    lista volta a ser carregada depois de cada gravação.
+    """
+
+    BINDINGS: ClassVar[list[BindingType]] = [("escape", "dismiss", "Fechar")]
+    DEFAULT_CSS = """
+    OrfaosModal { align: center middle; }
+    OrfaosModal > Vertical {
+        width: 90%;
+        height: 80%;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+    }
+    #orfaos-lista { height: 1fr; }
+    #orfaos-form { height: auto; padding-top: 1; }
+    #orfao-chamado { width: 24; }
+    #orfao-nenhum { width: auto; margin: 0 1; }
+    #orfao-motivo { width: 1fr; }
+    #orfao-gravar { margin-left: 1; }
+    """
+
+    def __init__(
+        self,
+        listar: OrfaosRunner,
+        julgar: JulgarRunner,
+        repo: RepoOption,
+        versao: VersionOption,
+    ) -> None:
+        super().__init__()
+        self._listar = listar
+        self._julgar = julgar
+        self._repo = repo
+        self._versao = versao
+        self._orfaos: list[OrfaoDaVersao] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical() as caixa:
+            caixa.border_title = f"Órfãos de {self._repo.nome} {self._versao.numero}"
+            caixa.border_subtitle = "esc fecha"
+            yield OptionList(id="orfaos-lista")
+            with Horizontal(id="orfaos-form"):
+                yield Input(placeholder="chamado", id="orfao-chamado")
+                yield Checkbox("não pertence a chamado nenhum", id="orfao-nenhum")
+                yield Input(placeholder="motivo", id="orfao-motivo")
+                yield Button("Gravar", id="orfao-gravar", variant="primary")
+
+    def on_mount(self) -> None:
+        self.orfaos_worker(None)
+
+    def on_checkbox_changed(self, evento: Checkbox.Changed) -> None:
+        if evento.checkbox.id == "orfao-nenhum":
+            self.query_one("#orfao-chamado", Input).disabled = evento.value
+
+    def on_button_pressed(self, evento: Button.Pressed) -> None:
+        if evento.button.id == "orfao-gravar":
+            self._gravar()
+
+    def _gravar(self) -> None:
+        alvo = self.query_one("#orfaos-lista", OptionList).highlighted
+        if alvo is None or alvo >= len(self._orfaos):
+            self.notify("Escolha um órfão na lista.", severity="warning")
+            return
+        nenhum = self.query_one("#orfao-nenhum", Checkbox).value
+        chamado = self.query_one("#orfao-chamado", Input).value.strip()
+        motivo = self.query_one("#orfao-motivo", Input).value
+        if not nenhum and not chamado:
+            self.notify(
+                "Informe o chamado ou marque que não pertence a nenhum.",
+                severity="warning",
+            )
+            return
+        # A validação do motivo e do chamado é do motor: a TUI só repassa.
+        julgamento = (
+            self._orfaos[alvo].hash_origem,
+            None if nenhum else chamado,
+            motivo,
+        )
+        self.query_one("#orfao-gravar", Button).disabled = True
+        self.orfaos_worker(julgamento)
+
+    @work(thread=True, exclusive=True, group="orfaos")
+    def orfaos_worker(self, julgamento: tuple[str, str | None, str] | None) -> None:
+        numero = self._versao.numero
+        try:
+            if julgamento is not None:
+                hash_, chamado, motivo = julgamento
+                self._julgar(self._repo, numero, hash_, chamado, motivo)
+            orfaos = self._listar(self._repo, numero)
+        except Exception as erro:
+            self.app.call_from_thread(self._falha, erro)
+        else:
+            self.app.call_from_thread(self._mostrar, orfaos, julgamento is not None)
+        finally:
+            self.app.call_from_thread(self._liberar)
+
+    def _mostrar(self, orfaos: list[OrfaoDaVersao], gravou: bool) -> None:
+        lista = self.query_one("#orfaos-lista", OptionList)
+        destacado = lista.highlighted
+        self._orfaos = orfaos
+        lista.clear_options()
+        if orfaos:
+            # Text e não str: o "[pendente]" da linha seria lido como markup.
+            lista.add_options(Option(Text(linha_do_orfao(o))) for o in orfaos)
+            if destacado is not None:
+                lista.highlighted = min(destacado, len(orfaos) - 1)
+        else:
+            lista.add_option(Option("sem órfãos", disabled=True))
+        if gravou:
+            self.query_one("#orfao-motivo", Input).value = ""
+            self.query_one("#orfao-chamado", Input).value = ""
+            self.query_one("#orfao-nenhum", Checkbox).value = False
+
+    def _falha(self, erro: Exception) -> None:
+        if isinstance(erro, MotorError):
+            self.notify(formatar_com_notas(erro), severity="error")
+            return
+        logging.error(
+            "Erro interno nos órfãos da TUI",
+            exc_info=(type(erro), erro, erro.__traceback__),
+        )
+        self.notify("Erro interno fatal", severity="error")
+
+    def _liberar(self) -> None:
+        self.query_one("#orfao-gravar", Button).disabled = False
 
 
 class AbortarModal(ModalScreen[bool]):
@@ -445,6 +583,8 @@ class MotorTUI(App[None]):
         ("a", "abortar", "Abortar"),
         ("c", "criar", "Nova versão"),
         ("i", "inscricoes", "Inscrições"),
+        ("o", "orfaos", "Órfãos"),
+        ("g", "configurar", "Config"),
     ]
     CSS = """
     #barra { height: auto; padding: 1; align-vertical: middle; }
@@ -488,6 +628,8 @@ class MotorTUI(App[None]):
         self._abortar = runners.abortar_repo
         self._consultar = runners.consultar_versao
         self._criar = runners.criar_repo
+        self._listar_orfaos = runners.listar_orfaos
+        self._julgar_orfao = runners.julgar_orfao
         self._versionamento_repo = runners.versionamento_repo or versionamento_do_repo
         # O do repo em que o ultimo `criar` foi aberto: ordena a lista depois.
         self._versionamento: Versionamento | None = None
@@ -904,6 +1046,38 @@ class MotorTUI(App[None]):
     def action_inscricoes(self) -> None:
         self.push_screen(InscricoesModal(self._inscricoes_em, self._repo, self._versao))
 
+    def action_orfaos(self) -> None:
+        if self._repo is None or not self._repo.disponivel or self._versao is None:
+            self.notify(
+                "Selecione um repo disponível e uma versão.", severity="warning"
+            )
+            return
+        # Sem `_ocupado`: listar e julgar só fazem fetch e gravam no estado, num
+        # worker próprio do modal, e rodam ao lado de outra operação
+        # (docs/decisoes/034-julgamento-de-orfao.md).
+        if self._listar_orfaos is None or self._julgar_orfao is None:
+            return
+        self.push_screen(
+            OrfaosModal(
+                self._listar_orfaos, self._julgar_orfao, self._repo, self._versao
+            )
+        )
+
+    def action_configurar(self) -> None:
+        if self._ocupado:
+            self.notify("há uma execução em andamento", severity="warning")
+            return
+        try:
+            config = ler_para_edicao()
+        except ErroDeEntrada as erro:
+            self.notify(formatar_com_notas(erro), severity="error")
+            return
+        self.push_screen(ConfigModal(config), self._config_salva)
+
+    def _config_salva(self, gravou: bool | None) -> None:
+        if gravou:
+            self.carregar_repos_worker()
+
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:
             return
@@ -933,7 +1107,8 @@ class MotorTUI(App[None]):
         self, executar: CriarRunner, repo: RepoOption, numero: str
     ) -> None:
         try:
-            resultado = executar(repo, numero)
+            with _travado(repo):
+                resultado = executar(repo, numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1098,10 +1273,14 @@ class MotorTUI(App[None]):
         `_falha` e nao pergunta nada — sem lote na tela nao ha o que confirmar.
         """
         try:
-            if confirmar and self._previa is not None:
-                status = self._previa(repo, versao.numero)
-            else:
-                status = self._executar(repo, versao.numero, auditar)
+            # A auditoria não toca worktree, checkpoint nem GC: roda com o repo
+            # ocupado (decisão 032).
+            trava = _travado(repo) if confirmar or not auditar else _sem_trava()
+            with trava:
+                if confirmar and self._previa is not None:
+                    status = self._previa(repo, versao.numero)
+                else:
+                    status = self._executar(repo, versao.numero, auditar)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1134,7 +1313,8 @@ class MotorTUI(App[None]):
         self, executar: AbortRunner, repo: RepoOption, versao: VersionOption
     ) -> None:
         try:
-            executar(repo, versao.numero)
+            with _travado(repo):
+                executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1147,13 +1327,24 @@ class MotorTUI(App[None]):
         self, executar: UpdateRunner, repo: RepoOption, versao: VersionOption
     ) -> None:
         try:
-            resultado = executar(repo, versao.numero)
+            with _travado(repo):
+                resultado = executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
             self.call_from_thread(self._mostrar_atualizacao, resultado)
         finally:
             self.call_from_thread(self._bloquear, False)
+
+
+def _sem_trava() -> contextlib.AbstractContextManager[object]:
+    return contextlib.nullcontext()
+
+
+def _travado(repo: RepoOption) -> contextlib.AbstractContextManager[object]:
+    """Lock do clone durante a operação; a recusa cai no `_falha` do worker."""
+    trava = travar_repo(repo)
+    return _sem_trava() if trava is None else trava
 
 
 def run_tui() -> None:

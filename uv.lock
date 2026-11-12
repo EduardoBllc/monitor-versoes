@@ -564,6 +564,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "sqlalchemy" },
     { name = "textual" },
+    { name = "tomlkit" },
     { name = "uvicorn" },
 ]
 
@@ -574,7 +575,6 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "tomlkit" },
 ]
 
 [package.metadata]
@@ -592,7 +592,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.17.1" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "textual", specifier = ">=8.2.8" },
-    { name = "tomlkit", marker = "extra == 'dev'", specifier = ">=0.13" },
+    { name = "tomlkit", specifier = ">=0.13" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 provides-extras = ["dev"]

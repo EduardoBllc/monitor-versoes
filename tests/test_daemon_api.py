@@ -1,7 +1,11 @@
 import contextlib
+import datetime
 import json
+import os
 import threading
+import time
 from dataclasses import replace
+from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
@@ -11,14 +15,31 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import motor.operacoes as operacoes
+from motor.config import (
+    TABELA_AMBIENTE,
+    VAR_XDG_CONFIG_HOME,
+    Chave,
+    Tabela,
+    VarAmbiente,
+)
+from motor.config_edicao import AcaoAlteracao
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
-from motor.domain.types import VersionStatus
+from motor.domain.conflito import TipoArquivo
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
-from motor.errors import BackendIndisponivel, MotorError
+from motor.engine.conflito import ArquivoDoConflito, ConflitoAberto, ConteudoDoConflito
+from motor.engine.orfaos import OrfaoDaVersao
+from motor.errors import (
+    BackendIndisponivel,
+    ErroDeEntrada,
+    MotorError,
+    NaoEncontrado,
+    VersaoDesatualizada,
+)
 from motor.inscricoes import INTERVALO_PADRAO
-from motor.operacoes import RepoOption, Runners, VersionOption
+from motor.operacoes import RepoOption, Resolucao, Runners, VersionOption
 from motor.progresso import Progresso, RelatorProgresso
 from tests.versionamento import ESCALONADO_COMPOSTA
 
@@ -27,7 +48,16 @@ ESPERA_S = 5.0
 REPO = "meu-repo"
 VERSAO = "14.0.0"
 CLONE = "/tmp/clones/meu-repo"
+CAMINHO = "src/app/main.py"
+VERSAO_DISCO = "v1"
+CONFLITO = ConflitoAberto(
+    "abc123", "msg", None, [ArquivoDoConflito(CAMINHO, TipoArquivo.CONTEUDO, False)]
+)
+CONTEUDO = ConteudoDoConflito(TipoArquivo.CONTEUDO, "b", "o", "t", "d", VERSAO_DISCO)
+BASE_CONFLITO = f"/api/repos/{REPO}/versoes/{VERSAO}/conflito"
 REPOS = [RepoOption(REPO, CLONE), RepoOption("sem-clone", None)]
+ORFAOS = ["aaaa1111", "bbbb2222"]
+DATA_ORFAO = datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC)
 
 
 class Ambiente:
@@ -39,6 +69,9 @@ class Ambiente:
         self.versoes = [VersionOption("14.0.0", True), VersionOption("13.0.0", True)]
         self.resultado: VersionStatus | AtualizarResult = VersionStatus(verde=True)
         self.inscricoes = tmp_path / "inscricoes.json"
+        self.erro_conflito: MotorError | None = None
+        self.julgamentos: dict[str, JulgamentoOrfao] = {}
+        self.erro_julgar: MotorError | None = None
 
     def fabrica(self, relatar: RelatorProgresso) -> Runners:
         def executar(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -48,12 +81,60 @@ class Ambiente:
             self.soltar.wait(ESPERA_S)
             return cast(VersionStatus, self.resultado)
 
+        def falhar_ou(valor: Any) -> Any:
+            if self.erro_conflito is not None:
+                raise self.erro_conflito
+            return valor
+
+        def ler_conflito(repo: RepoOption, versao: str) -> ConflitoAberto:
+            return cast(ConflitoAberto, falhar_ou(CONFLITO))
+
+        def ler_arquivo(repo: RepoOption, versao: str, caminho: str) -> Any:
+            self.chamadas.append((repo.nome, versao, caminho))
+            return falhar_ou(CONTEUDO)
+
+        def resolver(repo: RepoOption, versao: str, resolucao: Resolucao) -> None:
+            self.chamadas.append(
+                (resolucao.caminho, resolucao.conteudo, resolucao.versao_disco)
+            )
+            falhar_ou(None)
+
+        def reabrir(repo: RepoOption, versao: str, caminho: str) -> None:
+            self.chamadas.append((caminho,))
+            falhar_ou(None)
+
         return Runners(
             lambda: REPOS,
             lambda repo: self.versoes,
             executar,
+            ler_conflito=ler_conflito,
+            ler_arquivo_conflito=ler_arquivo,
+            resolver_arquivo_conflito=resolver,
+            reabrir_arquivo_conflito=reabrir,
             versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
+            listar_orfaos=self.listar_orfaos,
+            julgar_orfao=self.julgar_orfao,
         )
+
+    def listar_orfaos(self, repo: RepoOption, versao: str) -> list[OrfaoDaVersao]:
+        return [
+            OrfaoDaVersao(h, f"assunto {h}", DATA_ORFAO, self.julgamentos.get(h))
+            for h in ORFAOS
+        ]
+
+    def julgar_orfao(
+        self,
+        repo: RepoOption,
+        versao: str,
+        hash_: str,
+        chamado: str | None,
+        motivo: str,
+    ) -> JulgamentoOrfao:
+        if self.erro_julgar is not None:
+            raise self.erro_julgar
+        j = JulgamentoOrfao(hash_, versao, chamado, motivo)
+        self.julgamentos[hash_] = j
+        return j
 
 
 @pytest.fixture
@@ -134,11 +215,71 @@ def test_segunda_operacao_no_mesmo_repo_da_409(
 ) -> None:
     url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
     assert cliente.post(url, json={"auditar": False}).status_code == HTTPStatus.ACCEPTED
-    r = cliente.post(url, json={"auditar": True})
+    # Sem auditar: a auditoria não trava, então não seria recusada.
+    r = cliente.post(url, json={"auditar": False})
     assert r.status_code == HTTPStatus.CONFLICT
     assert r.json()["tipo"] == TipoErro.OCUPADO
     amb.soltar.set()
     _esperar(cliente)
+
+
+_ROTAS_COBERTAS = [
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", {"auditar": False}),
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/previa", None),
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao", None),
+    (
+        f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao/continuar",
+        {"allow_empty": False},
+    ),
+    (f"/api/repos/{REPO}/versoes/{VERSAO}/atualizacao/abortar", None),
+    (f"/api/repos/{REPO}/versoes", {"numero": "14.0.1"}),
+]
+
+
+@pytest.mark.parametrize(
+    ("url", "corpo"),
+    _ROTAS_COBERTAS,
+    ids=["verificar", "previa", "atualizar", "continuar", "abortar", "criar"],
+)
+def test_repo_travado_por_fora_da_409_sem_criar_execucao(
+    cliente: TestClient, url: str, corpo: dict[str, Any] | None
+) -> None:
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        r = cliente.post(url, json=corpo)
+    assert r.status_code == HTTPStatus.CONFLICT
+    assert r.json()["tipo"] == TipoErro.OCUPADO
+    assert f"pid {os.getpid()}" in r.json()["mensagem"]
+    assert cliente.get(f"/api/repos/{REPO}/execucao").json() is None
+
+
+def test_execucao_rodando_sem_lock_nao_recusa(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
+    assert cliente.post(url, json={"auditar": True}).status_code == HTTPStatus.ACCEPTED
+    assert amb.iniciou.wait(ESPERA_S)
+    assert cliente.post(url, json={"auditar": False}).status_code == HTTPStatus.ACCEPTED
+    amb.soltar.set()
+    _esperar(cliente)
+    prazo = time.monotonic() + ESPERA_S
+    while len(amb.chamadas) < 2 and time.monotonic() < prazo:
+        time.sleep(0.01)
+    assert sorted(c[2] for c in amb.chamadas) == [False, True]
+
+
+def test_leituras_rodam_com_repo_travado(cliente: TestClient, amb: Ambiente) -> None:
+    from motor.trava import travar
+
+    amb.soltar.set()
+    with travar(REPO, CLONE):
+        assert cliente.get(f"/api/repos/{REPO}/versoes").status_code == HTTPStatus.OK
+        r = cliente.post(
+            f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", json={"auditar": True}
+        )
+        assert r.status_code == HTTPStatus.ACCEPTED
+        _esperar(cliente)
 
 
 def test_eventos_de_execucao_ja_terminada_entrega_fim_na_hora(
@@ -359,3 +500,241 @@ def test_estatico_nao_sai_da_pasta(cliente: TestClient, tmp_path: Path) -> None:
     resposta = c.get("/%2e%2e/segredo.txt")
     assert "segredo" not in resposta.text
     assert resposta.text == "<p>spa</p>"
+
+
+class CasoErro(StrEnum):
+    INVALIDO = "invalido"
+    VELHA = "velha"
+    OCUPADO = "ocupado"
+
+
+SEGREDO = "s3nha"
+PRINCIPAL_NOVO = "trunk"
+PORTA_INVALIDA = "abc"
+VERSAO_INEXISTENTE = "0" * 64
+
+
+def _definir(chave: str, valor: object, tabela: str, versao: str) -> dict[str, Any]:
+    alteracao = {
+        "acao": AcaoAlteracao.DEFINIR,
+        "tabela": tabela,
+        "chave": chave,
+        "valor": valor,
+    }
+    return {"alteracoes": [alteracao], "versao": versao}
+
+
+def _definir_principal(versao: str) -> dict[str, Any]:
+    return _definir(Chave.PRINCIPAL, PRINCIPAL_NOVO, Tabela.BRANCHES, versao)
+
+
+@pytest.fixture
+def config_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(VAR_XDG_CONFIG_HOME, str(tmp_path / "xdg"))
+
+
+def _valor(corpo: dict[str, Any], chave: str) -> Any:
+    return next(v["valor"] for v in corpo["valores"] if v["chave"] == chave)
+
+
+@pytest.mark.usefixtures("config_tmp")
+def test_config_get_put_ida_e_volta(cliente: TestClient) -> None:
+    lida = cliente.get("/api/config").json()
+    r = cliente.put("/api/config", json=_definir_principal(lida["versao"]))
+    assert r.status_code == HTTPStatus.OK
+    corpo = cliente.get("/api/config").json()
+    assert _valor(corpo, Chave.PRINCIPAL) == PRINCIPAL_NOVO
+
+
+@pytest.mark.usefixtures("config_tmp")
+def test_put_config_nao_devolve_segredo(cliente: TestClient) -> None:
+    versao = cliente.get("/api/config").json()["versao"]
+    r = cliente.put(
+        "/api/config",
+        json=_definir(VarAmbiente.BITBUCKET_TOKEN, SEGREDO, TABELA_AMBIENTE, versao),
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert SEGREDO not in r.text
+    assert SEGREDO not in cliente.get("/api/config").text
+
+
+@pytest.mark.usefixtures("config_tmp")
+@pytest.mark.parametrize(
+    ("caso", "status", "tipo"),
+    [
+        (CasoErro.INVALIDO, HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+        (CasoErro.VELHA, HTTPStatus.CONFLICT, TipoErro.RECUSA),
+        (CasoErro.OCUPADO, HTTPStatus.CONFLICT, TipoErro.OCUPADO),
+    ],
+)
+def test_put_config_erros(
+    cliente: TestClient, amb: Ambiente, caso: CasoErro, status: int, tipo: TipoErro
+) -> None:
+    versao = cliente.get("/api/config").json()["versao"]
+    corpo = _definir(
+        VarAmbiente.WORKTREES_MANTIDAS, PORTA_INVALIDA, TABELA_AMBIENTE, versao
+    )
+    if caso is CasoErro.VELHA:
+        corpo["versao"] = VERSAO_INEXISTENTE
+    if caso is CasoErro.OCUPADO:
+        corpo = _definir_principal(versao)
+        url = f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao"
+        cliente.post(url, json={"auditar": False})
+    try:
+        r = cliente.put("/api/config", json=corpo)
+        assert (r.status_code, r.json()["tipo"]) == (status, tipo)
+    finally:
+        amb.soltar.set()
+    if caso is CasoErro.OCUPADO:
+        _esperar(cliente)
+
+
+def test_conflito_le_lista_e_arquivo_com_caminho_na_query(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    lista = cliente.get(BASE_CONFLITO)
+    assert lista.status_code == HTTPStatus.OK
+    assert lista.json()["arquivos"][0]["caminho"] == CAMINHO
+    r = cliente.get(f"{BASE_CONFLITO}/arquivo", params={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["versao_disco"] == VERSAO_DISCO
+    assert amb.chamadas == [(REPO, VERSAO, CAMINHO)]
+
+
+def test_conflito_resolve_e_reabre_com_204(cliente: TestClient, amb: Ambiente) -> None:
+    corpo = {"caminho": CAMINHO, "conteudo": None, "versao_disco": VERSAO_DISCO}
+    r = cliente.post(f"{BASE_CONFLITO}/resolucao", json=corpo)
+    assert (r.status_code, r.content) == (HTTPStatus.NO_CONTENT, b"")
+    r = cliente.post(f"{BASE_CONFLITO}/reabertura", json={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.NO_CONTENT
+    assert amb.chamadas == [(CAMINHO, None, VERSAO_DISCO), (CAMINHO,)]
+
+
+@pytest.mark.parametrize(
+    ("erro", "status", "tipo"),
+    [
+        (NaoEncontrado("x"), HTTPStatus.NOT_FOUND, TipoErro.NAO_ENCONTRADO),
+        (VersaoDesatualizada("x"), HTTPStatus.CONFLICT, TipoErro.DESATUALIZADO),
+        (ErroDeEntrada("x"), HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+    ],
+)
+def test_conflito_traduz_erro_do_motor(
+    cliente: TestClient,
+    amb: Ambiente,
+    erro: MotorError,
+    status: HTTPStatus,
+    tipo: TipoErro,
+) -> None:
+    amb.erro_conflito = erro
+    r = cliente.post(
+        f"{BASE_CONFLITO}/resolucao",
+        json={"caminho": CAMINHO, "conteudo": "x", "versao_disco": VERSAO_DISCO},
+    )
+    assert r.status_code == status
+    assert r.json()["tipo"] == tipo
+
+
+@pytest.mark.parametrize(
+    ("rota", "corpo"),
+    [
+        (
+            "resolucao",
+            {"caminho": CAMINHO, "conteudo": "x", "versao_disco": VERSAO_DISCO},
+        ),
+        ("reabertura", {"caminho": CAMINHO}),
+    ],
+    ids=["resolucao", "reabertura"],
+)
+def test_escrita_de_conflito_com_repo_travado_da_409(
+    cliente: TestClient, rota: str, corpo: dict[str, Any]
+) -> None:
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        r = cliente.post(f"{BASE_CONFLITO}/{rota}", json=corpo)
+    assert r.status_code == HTTPStatus.CONFLICT
+    assert r.json()["tipo"] == TipoErro.OCUPADO
+
+
+def test_leitura_de_conflito_roda_com_repo_travado(cliente: TestClient) -> None:
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        assert cliente.get(BASE_CONFLITO).status_code == HTTPStatus.OK
+
+
+def test_escrita_de_conflito_solta_o_repo_depois_de_erro_do_runner(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    url = f"{BASE_CONFLITO}/reabertura"
+    amb.erro_conflito = NaoEncontrado("x")
+    assert (
+        cliente.post(url, json={"caminho": CAMINHO}).status_code == HTTPStatus.NOT_FOUND
+    )
+    amb.erro_conflito = None
+    r = cliente.post(url, json={"caminho": CAMINHO})
+    assert r.status_code == HTTPStatus.NO_CONTENT
+
+
+_ORFAOS_URL = f"/api/repos/{REPO}/versoes/{VERSAO}/orfaos"
+
+
+def _julgamento_url(hash_: str) -> str:
+    return f"{_ORFAOS_URL}/{hash_}/julgamento"
+
+
+def test_orfaos_lista_e_julga(cliente: TestClient) -> None:
+    lista = cliente.get(_ORFAOS_URL).json()
+    assert [o["hash_origem"] for o in lista] == ORFAOS
+    assert all(o["julgamento"] is None for o in lista)
+
+    r = cliente.post(_julgamento_url(ORFAOS[0]), json={"chamado": "123", "motivo": "a"})
+    assert r.status_code == HTTPStatus.OK
+    assert r.json() == {
+        "hash_origem": ORFAOS[0],
+        "versao_numero": VERSAO,
+        "chamado": "123",
+        "motivo": "a",
+    }
+    r = cliente.post(_julgamento_url(ORFAOS[1]), json={"chamado": None, "motivo": "b"})
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["chamado"] is None
+
+    julgados = [o["julgamento"] for o in cliente.get(_ORFAOS_URL).json()]
+    assert [(j["chamado"], j["motivo"]) for j in julgados] == [
+        ("123", "a"),
+        (None, "b"),
+    ]
+
+
+def test_rotas_de_orfaos_rodam_com_repo_travado(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    # Como o `reconstruir-estado`, só fazem fetch e gravam no estado (decisão 034).
+    from motor.trava import travar
+
+    with travar(REPO, CLONE):
+        assert cliente.get(_ORFAOS_URL).status_code == HTTPStatus.OK
+        r = cliente.post(
+            _julgamento_url(ORFAOS[0]), json={"chamado": None, "motivo": "m"}
+        )
+        assert r.status_code == HTTPStatus.OK
+    assert ORFAOS[0] in amb.julgamentos
+
+
+def test_julgamento_com_erro_de_entrada_da_422(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    amb.erro_julgar = ErroDeEntrada("o motivo do julgamento é obrigatório")
+    r = cliente.post(_julgamento_url(ORFAOS[0]), json={"chamado": None, "motivo": ""})
+    assert r.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert r.json() == {
+        "tipo": TipoErro.ENTRADA,
+        "mensagem": "o motivo do julgamento é obrigatório",
+    }
+
+
+def test_rotas_de_orfaos_no_openapi(cliente: TestClient) -> None:
+    caminhos = cast(FastAPI, cliente.app).openapi()["paths"]
+    assert "/api/repos/{repo}/versoes/{versao}/orfaos" in caminhos
+    assert "/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento" in caminhos

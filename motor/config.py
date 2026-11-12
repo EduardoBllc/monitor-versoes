@@ -6,6 +6,7 @@ import os
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from motor.domain.referencia import validar_padrao
 from motor.errors import ErroDeEntrada
@@ -16,7 +17,7 @@ _CAMPOS_POSTGRES = tuple(
 )
 
 #: Ultimo commit da `main` com o backend Postgres e o `migrar-estado` (decisao 032).
-ULTIMO_COMMIT_COM_POSTGRES = "422cb3c07b1055b057efc0e49a60b4e6839f77cf"
+ULTIMO_COMMIT_COM_POSTGRES = "7e95ad4abcf7ae99013a025ee434bbd28ea06616"
 
 _COMANDO_SAIDA = (
     "uvx --from git+https://github.com/EduardoBllc/monitor-versoes@"
@@ -36,6 +37,40 @@ _MENSAGEM_POSTGRES_REMOVIDO = (
 _WORKTREES_MANTIDAS_PADRAO = 3
 
 
+#: Variável que localiza a config central; nunca vem do `[ambiente]`.
+VAR_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
+
+
+class Tabela(StrEnum):
+    """Tabelas do TOML com chaves que o motor conhece."""
+
+    VERSAO = "versao"
+    LIBERACAO = "liberacao"
+    BRANCHES = "branches"
+    REFERENCIA = "referencia"
+    TAREFAS = "tarefas"
+
+
+class Chave(StrEnum):
+    ESQUEMA = "esquema"
+    ATRIBUICAO = "atribuicao"
+    TAG = "tag"
+    VERSAO = "versao"
+    PRINCIPAL = "principal"
+    PADRAO = "padrao"
+    FONTE = "fonte"
+    PISO = "piso"
+
+
+class VarAmbiente(StrEnum):
+    """Chaves do `[ambiente]`: os nomes das variáveis que o motor lê."""
+
+    DATABASE_SQLITE_PATH = "DATABASE_SQLITE_PATH"
+    WORKTREES_MANTIDAS = "WORKTREES_MANTIDAS"
+    BITBUCKET_EMAIL = "BITBUCKET_EMAIL"
+    BITBUCKET_TOKEN = "BITBUCKET_TOKEN"
+
+
 def diretorio_dados() -> str:
     """Diretorio de dados do usuario (estado.db, inscricoes.json)."""
     return os.path.join(os.path.expanduser("~"), ".local", "share", "monitor-versoes")
@@ -43,7 +78,7 @@ def diretorio_dados() -> str:
 
 def _caminho_sqlite() -> str:
     """Arquivo do SQLite: `DATABASE_SQLITE_PATH` ou o padrao do usuario."""
-    configurado = os.environ.get("DATABASE_SQLITE_PATH", "").strip()
+    configurado = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
     if configurado:
         return os.path.expanduser(configurado)
     return os.path.join(diretorio_dados(), "estado.db")
@@ -92,7 +127,7 @@ def worktrees_mantidas() -> int:
     numerico e erro do operador, nao default calado: `WORKTREES_MANTIDAS=tres`
     cairia em 3 e a pessoa nunca saberia que nao configurou nada.
     """
-    valor = os.environ.get("WORKTREES_MANTIDAS", "").strip()
+    valor = os.environ.get(VarAmbiente.WORKTREES_MANTIDAS, "").strip()
     if not valor:
         return _WORKTREES_MANTIDAS_PADRAO
     # isdigit recusa "-1", "1.5" e "3 worktrees" de uma vez; int() sozinho
@@ -161,7 +196,7 @@ def validar_nome_repo(valor: str) -> str:
 
 def caminho_config_global() -> str:
     """`$XDG_CONFIG_HOME/monitor-versoes/config.toml`, ou `~/.config/...`."""
-    base = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    base = os.environ.get(VAR_XDG_CONFIG_HOME, "").strip()
     if not base:
         base = os.path.join(os.path.expanduser("~"), ".config")
     return os.path.join(base, "monitor-versoes", "config.toml")
@@ -217,17 +252,17 @@ def _template(
 
 #: (atributo do ConfigProjeto, tabela, chave, e se e template com `{versao}`)
 _ESCOLHAS = (
-    ("esquema", "versao", "esquema", False),
-    ("atribuicao", "versao", "atribuicao", False),
-    ("tag_liberacao", "liberacao", "tag", True),
-    ("branch_versao", "branches", "versao", True),
-    ("branch_principal", "branches", "principal", False),
-    ("fonte_tarefas", "tarefas", "fonte", False),
+    ("esquema", Tabela.VERSAO, Chave.ESQUEMA, False),
+    ("atribuicao", Tabela.VERSAO, Chave.ATRIBUICAO, False),
+    ("tag_liberacao", Tabela.LIBERACAO, Chave.TAG, True),
+    ("branch_versao", Tabela.BRANCHES, Chave.VERSAO, True),
+    ("branch_principal", Tabela.BRANCHES, Chave.PRINCIPAL, False),
+    ("fonte_tarefas", Tabela.TAREFAS, Chave.FONTE, False),
 )
 
 
 def _padrao_referencia(dados: Mapping[str, object], caminho: str) -> str | None:
-    bruto = _tabela(dados, "referencia", caminho).get("padrao")
+    bruto = _tabela(dados, Tabela.REFERENCIA, caminho).get(Chave.PADRAO)
     return None if bruto is None else validar_padrao(bruto, caminho)
 
 
@@ -241,11 +276,11 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
     tarefas: dict[str, object] = {}
     escolhas: dict[str, Escolhido] = {}
     for dados, arquivo in camadas:
-        if (p := _texto(dados, "versao", "piso", arquivo)) is not None:
+        if (p := _texto(dados, Tabela.VERSAO, Chave.PISO, arquivo)) is not None:
             piso = Escolhido(p, arquivo)
         if (r := _padrao_referencia(dados, arquivo)) is not None:
             padrao = r
-        tarefas.update(_tabela(dados, "tarefas", arquivo))
+        tarefas.update(_tabela(dados, Tabela.TAREFAS, arquivo))
         for atributo, tabela, chave, template in _ESCOLHAS:
             ler = _template if template else _texto
             if (valor := ler(dados, tabela, chave, arquivo)) is not None:
@@ -268,7 +303,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
 
 def _topo(dados: Mapping[str, object], caminho: str) -> dict[str, object]:
     """O topo da config central, sem `[repos]`; `piso` aqui e erro."""
-    if _texto(dados, "versao", "piso", caminho) is not None:
+    if _texto(dados, Tabela.VERSAO, Chave.PISO, caminho) is not None:
         raise ErroDeEntrada(f"{caminho}: piso só vale em [{SECAO_REPOS}.<nome>.versao]")
     return {k: v for k, v in dados.items() if k != SECAO_REPOS}
 
@@ -317,16 +352,49 @@ def repos_configurados() -> dict[str, str | None]:
     }
 
 
+#: `base` é o ambiente antes do primeiro `[ambiente]`; `aplicadas`, o que ele pôs.
+_estado_ambiente: dict[str, dict[str, str]] = {}
+_chaves_aplicadas: set[str] = set()
+_BASE = "base"
+
+
+def _reiniciar_ambiente_base() -> None:
+    _estado_ambiente.clear()
+    _chaves_aplicadas.clear()
+
+
+def aplicar_ambiente_central(central: Mapping[str, str]) -> None:
+    """Aplica o `[ambiente]` sobre a base (shell + .env), desfazendo o que saiu.
+
+    `XDG_CONFIG_HOME` nunca vem do `[ambiente]`: o caminho do central não pode
+    mudar sob quem o acabou de ler.
+    """
+    base = _estado_ambiente.setdefault(_BASE, dict(os.environ))
+    novo = {k: v for k, v in central.items() if k != VAR_XDG_CONFIG_HOME}
+    for chave in _chaves_aplicadas - novo.keys():
+        if chave in base:
+            os.environ[chave] = base[chave]
+        else:
+            os.environ.pop(chave, None)
+    os.environ.update(novo)
+    _chaves_aplicadas.clear()
+    _chaves_aplicadas.update(novo)
+
+
 def ambiente_central() -> dict[str, str]:
-    """`[ambiente]` do topo da config central, como variaveis de ambiente.
+    """`[ambiente]` do topo da config central, como variaveis de ambiente."""
+    arquivo = caminho_config_global()
+    return ambiente_do_documento(_ler_toml(arquivo), arquivo)
+
+
+def ambiente_do_documento(dados: Mapping[str, object], arquivo: str) -> dict[str, str]:
+    """`[ambiente]` de um documento já lido, como variaveis de ambiente.
 
     Os nomes sao os das variaveis (os mesmos do .env), para que adapters e
     plugins leiam do ambiente sem saber de onde veio. Inteiro vira texto porque
     `DATABASE_PORT = 5433` e o natural em TOML; booleano, data e lista nao tem
     uma forma textual unica, e adivinhar uma seria configurar outra coisa.
     """
-    arquivo = caminho_config_global()
-    dados = _ler_toml(arquivo)
     bruto = _tabela(dados, TABELA_AMBIENTE, arquivo)
     _secoes(dados, arquivo)
     ambiente: dict[str, str] = {}
@@ -346,13 +414,24 @@ def ambiente_central() -> dict[str, str]:
 def carregar_config_global() -> ConfigProjeto:
     """So o topo da config central."""
     arquivo = caminho_config_global()
-    return _mesclar([(_topo(_ler_toml(arquivo), arquivo), arquivo)])
+    return config_global_do_documento(_ler_toml(arquivo), arquivo)
+
+
+def config_global_do_documento(
+    dados: Mapping[str, object], arquivo: str
+) -> ConfigProjeto:
+    return _mesclar([(_topo(dados, arquivo), arquivo)])
 
 
 def carregar_config_repo(nome: str) -> ConfigProjeto:
     """Topo mesclado com `[repos.<nome>]`, a seção vencendo; valida o `caminho`."""
     arquivo = caminho_config_global()
-    dados = _ler_toml(arquivo)
+    return config_repo_do_documento(_ler_toml(arquivo), arquivo, nome)
+
+
+def config_repo_do_documento(
+    dados: Mapping[str, object], arquivo: str, nome: str
+) -> ConfigProjeto:
     secoes = _secoes(dados, arquivo)
     if nome not in secoes:
         existentes = ", ".join(sorted(secoes)) or "(nenhuma)"

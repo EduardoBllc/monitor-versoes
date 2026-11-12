@@ -6,9 +6,11 @@ por cima dele. Se o banco for perdido, isto regenera as atribuicoes.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from motor.domain.commits import extrair_chamado
 from motor.domain.referencia import Referencia
-from motor.domain.types import Atribuicao
+from motor.domain.types import Atribuicao, CommitRef
 from motor.errors import MotorError
 from motor.ports import GitRepo
 
@@ -24,14 +26,16 @@ def extrair_trailer(msg: str) -> str | None:
     return None if fim < 0 else resto[:fim]
 
 
-def reconstruir_atribuicoes(
+def varrer(
     git: GitRepo, base_commit: str, branch: str, referencia: Referencia
-) -> tuple[list[Atribuicao], list[str]]:
-    """Varre base..branch e reagrupa por chamado.
+) -> tuple[dict[str, list[str]], list[CommitRef]]:
+    """Varre base..branch e separa os hashes de origem por chamado dos orfaos.
 
-    Devolve (atribuicoes, orfaos) — orfao e commit sem referencia de tarefa na
-    mensagem,
-    que nao e atribuivel a tarefa nenhuma e precisa de julgamento humano.
+    Orfao e commit cuja mensagem de origem nao tem referencia de tarefa: nao e
+    atribuivel a tarefa nenhuma sem julgamento humano. Os dois lados saem sem
+    repeticao e em ordem de hash. Os orfaos vem com os metadados do commit de
+    ORIGEM, lidos num `commits_meta` so: o `commits_in_range` nao traz o
+    `parent` e a data dele e a do autor, nao a do committer.
     """
     try:
         commits = git.commits_in_range(base_commit, branch)
@@ -39,8 +43,8 @@ def reconstruir_atribuicoes(
         e.add_note("varrendo commits")
         raise
 
-    por_chamado: dict[str, list[str]] = {}
-    orfaos: list[str] = []
+    por_chamado: dict[str, set[str]] = {}
+    orfaos: dict[str, CommitRef] = {}
 
     for c in commits:
         origem = extrair_trailer(c.msg)
@@ -55,14 +59,48 @@ def reconstruir_atribuicoes(
 
         chamado = extrair_chamado(meta.msg, referencia)
         if chamado is None:
-            orfaos.append(origem)
+            orfaos.setdefault(origem, meta)
             continue
-        por_chamado.setdefault(chamado, []).append(origem)
+        por_chamado.setdefault(chamado, set()).add(origem)
+
+    hashes = sorted(orfaos)
+    metas = git.commits_meta(hashes) if hashes else {}
+    return (
+        {chamado: sorted(h) for chamado, h in por_chamado.items()},
+        [metas.get(h, orfaos[h]) for h in hashes],
+    )
+
+
+def reconstruir_atribuicoes(
+    git: GitRepo,
+    base_commit: str,
+    branch: str,
+    referencia: Referencia,
+    julgamentos: Mapping[str, str | None] | None = None,
+) -> tuple[list[Atribuicao], list[str]]:
+    """Varre base..branch e reagrupa por chamado, aplicando os julgamentos.
+
+    `julgamentos` e hash de origem -> chamado (None = nao pertence a nenhum),
+    so da versao varrida. Devolve (atribuicoes, pendentes): orfao julgado com
+    chamado entra na atribuicao dele, julgado "nenhum" sai, e so o que nao foi
+    julgado fica pendente.
+    """
+    julgados = julgamentos or {}
+    por_chamado, orfaos = varrer(git, base_commit, branch, referencia)
+    agrupados = {chamado: set(h) for chamado, h in por_chamado.items()}
+    pendentes: list[str] = []
+    for o in orfaos:
+        if o.hash_origem not in julgados:
+            pendentes.append(o.hash_origem)
+            continue
+        chamado = julgados[o.hash_origem]
+        if chamado is not None:
+            agrupados.setdefault(chamado, set()).add(o.hash_origem)
 
     atribuicoes = [
         Atribuicao(
             chamado=chamado, marcada="", estado="aplicado", commits=sorted(hashes)
         )
-        for chamado, hashes in sorted(por_chamado.items())
+        for chamado, hashes in sorted(agrupados.items())
     ]
-    return atribuicoes, sorted(set(orfaos))
+    return atribuicoes, pendentes
