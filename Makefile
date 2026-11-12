@@ -34,11 +34,10 @@ db-dev:
 migrate-dev:
 	uv run motor --env development migrar
 
-# Gera uma revisão por autogenerate contra o banco de desenvolvimento (já
-# migrado). O env.py não carrega .env: set -a exporta as variáveis do arquivo.
+# Gera uma revisão por autogenerate contra um SQLite temporário levado ao head.
 migracao:
 	@test -n "$(m)" || { echo 'uso: make migracao m="descrição"'; exit 1; }
-	set -a; . ./.env.development; set +a; uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
+	uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
 
 # Mesma sequência das etapas do CI (.github/workflows/ci.yml chama estes alvos).
 check: fmt-check lint typecheck test web-check web-dist
