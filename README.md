@@ -4,7 +4,7 @@ Ferramenta CLI-first para montar e auditar branches de versão de release. Respo
 pergunta só: _"esta versão está com **todos** os commits que deveria?"_.
 
 A dificuldade é que versões são montadas por cherry-pick, e cherry-pick troca o hash —
-comparar hashes não responde nada. O `motor` cruza três fontes:
+comparar hashes não responde nada. O `monitor-versoes` cruza três fontes:
 
 | Fonte | Representa |
 | --- | --- |
@@ -52,8 +52,13 @@ Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes
 
 Para atualizar, `uv tool upgrade monitor-versoes`: busca o último commit da `main` e mantém os
 plugins do `--with`. A versão do pacote não muda a cada commit; se o comportamento novo não
-aparecer, force com `uv tool upgrade --reinstall monitor-versoes`. Se o `motor serve` estiver
-rodando, reinicie-o.
+aparecer, force com `uv tool upgrade --reinstall monitor-versoes`. Se o `monitor-versoes serve`
+estiver rodando, reinicie-o.
+
+Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Se você
+tem inscrições agendadas, rode `monitor-versoes inscricao agendar` de novo depois de atualizar: o
+timer do systemd e o LaunchAgent guardam o caminho absoluto do executável antigo, que deixa de
+existir. Não há migração automática.
 
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -103,8 +108,8 @@ leva a outro banco. Flags explícitas (`--bitbucket-token`, `--bitbucket-email`)
 
 O estado mora num arquivo SQLite local, `~/.local/share/monitor-versoes/estado.db`, ou no
 caminho de `DATABASE_SQLITE_PATH`. O primeiro uso cria o arquivo e as tabelas. Depois de
-atualizar o motor, `motor migrar` leva um estado já existente à revisão nova; o
-`motor diagnostico` avisa quando falta.
+atualizar o motor, `monitor-versoes migrar` leva um estado já existente à revisão nova; o
+`monitor-versoes diagnostico` avisa quando falta.
 
 ### Configurar por projeto
 
@@ -159,7 +164,7 @@ Para cada repo que já está no banco, crie `[repos.<nome>]` com o mesmo nome qu
 mova para a seção as chaves do antigo `.monitor-versoes.toml` (o `piso` vai para
 `[repos.<nome>.versao]`). Um `[versao] piso` no topo do `config.toml` também precisa ir para
 as seções: no topo ele é erro de leitura e impede qualquer comando. Confira com
-`motor diagnostico`. Inscrições antigas são descartadas com um aviso: inscreva de novo com o
+`monitor-versoes diagnostico`. Inscrições antigas são descartadas com um aviso: inscreva de novo com o
 nome da seção.
 
 O `padrao` é um template com exatamente um `{id}`; o resto é literal e a caixa é ignorada.
@@ -178,8 +183,8 @@ começando por letra ou dígito.
 1. O CLI responde:
 
    ```console
-   $ motor --help
-   usage: motor [-h] [--env {development,production}] comando ...
+   $ monitor-versoes --help
+   usage: monitor-versoes [-h] [--env {development,production}] comando ...
    ...
    ```
 
@@ -187,7 +192,7 @@ começando por letra ou dígito.
    configurados e credenciais, e sai com código 1 se alguma peça falhar:
 
    ```console
-   $ motor diagnostico
+   $ monitor-versoes diagnostico
    OK  Variáveis: configuração do estado aceita
    OK  SQLite: conexão funciona
    OK  Migração: revisão e50b3d6e40a1
@@ -197,33 +202,33 @@ começando por letra ou dígito.
    ```
 
    Cada `FALHA` traz a correção na própria linha. Migração pendente se corrige com
-   `motor migrar` (`motor --env development migrar` no desenvolvimento).
+   `monitor-versoes migrar` (`monitor-versoes --env development migrar` no desenvolvimento).
 
 ## Uso
 
 ```bash
-motor verificar 13.34.0 --repo meu-repo             # verde? tasks, faltantes
-motor verificar 13.34.0 --repo meu-repo --auditar   # versão liberada, sem escrever
-motor consulta  13.34.0 --repo meu-repo             # snapshot salvo, sem recalcular
-motor criar     13.35.0 --repo meu-repo             # cria a branch e compõe
-motor atualizar 13.35.0 --repo meu-repo             # aplica os commits faltantes
-motor atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
-motor atualizar 13.35.0 --repo meu-repo --abort
-motor reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
-motor orfaos    13.35.0 --repo meu-repo             # commits sem referência de tarefa e o julgamento
-motor julgar-orfao 13.35.0 <hash> --repo meu-repo --chamado 123 --motivo "..."  # ou --nenhum
-motor tui                                           # interface interativa
-motor serve                                         # interface web local (ver Interface web)
-motor inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
+monitor-versoes verificar 13.34.0 --repo meu-repo             # verde? tasks, faltantes
+monitor-versoes verificar 13.34.0 --repo meu-repo --auditar   # versão liberada, sem escrever
+monitor-versoes consulta  13.34.0 --repo meu-repo             # snapshot salvo, sem recalcular
+monitor-versoes criar     13.35.0 --repo meu-repo             # cria a branch e compõe
+monitor-versoes atualizar 13.35.0 --repo meu-repo             # aplica os commits faltantes
+monitor-versoes atualizar 13.35.0 --repo meu-repo --continue  # após resolver conflito
+monitor-versoes atualizar 13.35.0 --repo meu-repo --abort
+monitor-versoes reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estado a partir do git
+monitor-versoes orfaos    13.35.0 --repo meu-repo             # commits sem referência de tarefa e o julgamento
+monitor-versoes julgar-orfao 13.35.0 <hash> --repo meu-repo --chamado 123 --motivo "..."  # ou --nenhum
+monitor-versoes tui                                           # interface interativa
+monitor-versoes serve                                         # interface web local (ver Interface web)
+monitor-versoes inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
 ```
 
 Todos os comandos de versão aceitam `--repo` (o nome de uma seção `[repos.<nome>]`),
-`--debug`, `--sem-progresso`, `--task-source` e `--lista`. `motor <comando> -h` lista
+`--debug`, `--sem-progresso`, `--task-source` e `--lista`. `monitor-versoes <comando> -h` lista
 o resto.
 
 ### Interface web
 
-`motor serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
+`monitor-versoes serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
 (padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
 
 As operações seguem rodando se a aba fechar. O porquê em
@@ -320,12 +325,12 @@ faltantes e faz push). Ficam num arquivo local, `~/.local/share/monitor-versoes/
 o porquê: [028](docs/decisoes/028-inscricoes-fora-do-estado.md).
 
 ```bash
-motor inscricao adicionar 13.35.0 --repo meu-repo --intervalo 1h  # Nm ou Nh, padrão 30m
-motor inscricao listar                                            # clone, intervalo, última execução
-motor inscricao remover 13.35.0 --repo meu-repo
-motor inscricao agendar                                           # instala o disparo a cada minuto
-motor inscricao agendar --desfazer
-motor inscricao rodar                                             # o que o agendador chama
+monitor-versoes inscricao adicionar 13.35.0 --repo meu-repo --intervalo 1h  # Nm ou Nh, padrão 30m
+monitor-versoes inscricao listar                                            # clone, intervalo, última execução
+monitor-versoes inscricao remover 13.35.0 --repo meu-repo
+monitor-versoes inscricao agendar                                           # instala o disparo a cada minuto
+monitor-versoes inscricao agendar --desfazer
+monitor-versoes inscricao rodar                                             # o que o agendador chama
 ```
 
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
@@ -345,7 +350,7 @@ outras. O desfecho da última execução aparece no `listar`:
 | `encerrada` | versão liberada; a inscrição é removida |
 | `erro` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
 
-`agendar` usa o `motor` do `PATH` no momento do comando (caminho absoluto) e instala, no Linux,
+`agendar` usa o `monitor-versoes` do `PATH` no momento do comando (caminho absoluto) e instala, no Linux,
 o timer de usuário do systemd (`monitor-versoes-inscricoes.timer`) e, no macOS, um LaunchAgent
 (`monitor-versoes.inscricoes.plist`). Outro sistema falha com erro de entrada. O agendador roda
 sem o agente SSH nem o `PATH` da sua sessão (push por SSH via agente pode falhar e virar `erro`);
@@ -371,8 +376,8 @@ desfecho):
 | `ERROR: faltando [tarefas] fonte em ...; ou use --task-source manual --lista <arquivo>` | Nenhuma fonte de tarefas na config. Defina `[tarefas] fonte` no `config.toml` central, ou use a lista manual. |
 | `ERROR: .../config.toml: repo 'meu-repo' sem seção [repos.meu-repo] (existentes: ...)` | `--repo` não é o nome de uma seção. Crie `[repos.meu-repo]` no `config.toml` central ou use um nome da lista (`(nenhuma)` se o arquivo não existe). |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho é obrigatório` | A seção não tem `caminho`. Aponte para o clone. |
-| `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `motor diagnostico` checa todas as seções. |
-| `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `motor serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
+| `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `monitor-versoes diagnostico` checa todas as seções. |
+| `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `monitor-versoes serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
 | `error: argument --repo: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
 
 ## Próximos passos

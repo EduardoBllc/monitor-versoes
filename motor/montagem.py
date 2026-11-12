@@ -10,7 +10,7 @@ fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
 O plugin da fonte de tarefas nem e carregado aqui: a `FonteDaConfig` o carrega
 na primeira busca ou na primeira resolucao da referencia.
 Unica excecao deliberada: `garantir_repo`, que cria a linha do repo no estado.
-O I/O do `motor diagnostico` vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
+O I/O do `monitor-versoes diagnostico` vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
     para rodar `--help`.
 
     `garantir` aplica as migrations se o banco ainda nao tem esquema (primeiro
-    uso, sem o usuario rodar `alembic`). O `motor diagnostico` passa `False`:
+    uso, sem o usuario rodar `alembic`). O `monitor-versoes diagnostico` passa `False`:
     ele so olha.
     """
     url = database_url()

@@ -24,7 +24,7 @@ dev = [
 ]
 
 [project.scripts]
-motor = "motor.__main__:main"
+monitor-versoes = "motor.__main__:main"
 
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"

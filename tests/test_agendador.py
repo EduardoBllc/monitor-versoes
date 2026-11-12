@@ -4,6 +4,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ from motor.agendador import (
 )
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 
-EXE = "/opt/bin/motor"
+EXE = "/opt/bin/monitor-versoes"
 
 
 class Registro:
@@ -118,6 +119,19 @@ def test_motor_fora_do_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda _n: None)
     with pytest.raises(ErroDeEntrada):
         executavel_motor()
+
+
+def test_procura_o_executavel_que_o_pacote_instala(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    scripts = tomllib.loads(pyproject.read_text())["project"]["scripts"]
+    (instalado_pelo_pacote,) = scripts
+    caminho = f"/opt/bin/{instalado_pelo_pacote}"
+    monkeypatch.setattr(
+        shutil, "which", lambda n: caminho if n == instalado_pelo_pacote else None
+    )
+    assert executavel_motor() == caminho
 
 
 @pytest.mark.parametrize("exc", [OSError("x"), subprocess.CalledProcessError(1, "x")])

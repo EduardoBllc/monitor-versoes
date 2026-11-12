@@ -728,7 +728,7 @@ def test_pr_com_prefixo_em_maiuscula_casa():
     assert hashes == ["c1", "c2"], f"faltou a PR de titulo em caixa alta: {hashes}"
 
 
-# -- verificar_credenciais (motor diagnostico) --------------------------------
+# -- verificar_credenciais (monitor-versoes diagnostico) ----------------------
 
 
 def _cliente(handler) -> httpx.Client:

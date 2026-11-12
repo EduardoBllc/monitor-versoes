@@ -84,7 +84,7 @@ def test_congelamento_identificado_pelo_marcador_nao_pelo_texto():
         Estado(sessao=_como_sessao(sessao)).exclusoes("webapp")
 
 
-# -- verificar_conexao (motor diagnostico) -----------------------------------
+# -- verificar_conexao (monitor-versoes diagnostico) -------------------------
 
 
 class _SessaoExecuteFalha(_SessaoQueFalha):

@@ -1,4 +1,4 @@
-"""`motor migrar`: erros do motor ao abrir o estado."""
+"""`monitor-versoes migrar`: erros do motor ao abrir o estado."""
 
 from __future__ import annotations
 

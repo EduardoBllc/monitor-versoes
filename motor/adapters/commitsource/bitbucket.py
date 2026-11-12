@@ -82,7 +82,7 @@ def verificar_credenciais(
     """Chamada autenticada de leitura (`GET /user`), independente de repositório.
 
     O endpoint exige escopo de leitura de conta no token. Usado pelo
-    `motor diagnostico`.
+    `monitor-versoes diagnostico`.
     """
     if not email:
         raise ErroDeEntrada("BITBUCKET_TOKEN configurado sem BITBUCKET_EMAIL")

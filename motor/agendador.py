@@ -1,4 +1,4 @@
-"""Instala o disparo por minuto de `motor inscricao rodar` no systemd ou no launchd."""
+"""Instala o disparo por minuto de `monitor-versoes inscricao rodar` no systemd ou no launchd."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ INTERVALO_LAUNCHD_S = 60
 CHAVE_ROTULO = "Label"
 CHAVE_ARGUMENTOS = "ProgramArguments"
 CHAVE_INTERVALO = "StartInterval"
-EXECUTAVEL = "motor"
+EXECUTAVEL = "monitor-versoes"
 SYSTEMCTL = ("systemctl", "--user")
 LAUNCHCTL = "launchctl"
 

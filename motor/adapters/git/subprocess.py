@@ -573,7 +573,7 @@ class GitSubprocess:
             except MotorError as e:
                 raise NaoEncontrado(
                     f"worktree de {branch} nao encontrada em {dir_} e branch "
-                    f"{branch} nao existe pra adotar (rode 'motor criar {branch}' "
+                    f"{branch} nao existe pra adotar (rode 'monitor-versoes criar {branch}' "
                     f"primeiro): {e}"
                 ) from e
         self._registrar_uso(branch)

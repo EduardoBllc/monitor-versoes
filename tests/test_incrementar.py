@@ -456,7 +456,7 @@ def test_atualizar_continue_preserva_os_commits_do_lote_anterior():
 def test_atualizar_continue_recusa_versao_com_tag():
     """A versao ganhou tag enquanto o conflito estava aberto.
 
-    O --continue e ponto de entrada do CLI por si (`motor atualizar --continue`)
+    O --continue e ponto de entrada do CLI por si (`monitor-versoes atualizar --continue`)
     e commita o pick ANTES de delegar pro atualizar. Sem a recusa aqui, o commit
     entraria na branch de uma versao congelada e so depois o run morreria
     pedindo pra remarcar a tarefa.

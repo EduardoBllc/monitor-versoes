@@ -121,7 +121,7 @@ def test_entrada_antiga_e_descartada_com_aviso(
 
     stderr = capsys.readouterr().err
     assert "aviso:" in stderr
-    assert f"motor inscricao adicionar {Versao.V1} --repo" in stderr
+    assert f"monitor-versoes inscricao adicionar {Versao.V1} --repo" in stderr
     inscrever(arq, _insc(Repo.A, Versao.V2))
     assert CAMPO_CLONE_ANTIGO not in arq.read_text()
 
