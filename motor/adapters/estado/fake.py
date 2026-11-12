@@ -64,7 +64,7 @@ class FakeEstado:
             if atual is None or atual.liberada_em is not None:
                 continue
             # Data naive vira UTC, como em `FakeGit.add_commit`: a coluna e
-            # timestamptz e o Postgres devolve com fuso mesmo recebendo naive.
+            # `DataComFuso` e o adapter devolve com fuso mesmo recebendo naive.
             # Guardar o que veio deixaria a suite verde numa comparacao mista
             # que estoura so em producao — a distribuicao
             # (docs/decisoes/005-alvo-distribuicao-entre-versoes.md) compara esta
@@ -93,7 +93,7 @@ class FakeEstado:
         # Reconstroi cada Atribuicao em vez de devolver a armazenada: `commits`
         # e list mutavel dentro de uma dataclass frozen, entao devolver a
         # instancia guardada compartilharia a lista por referencia e o chamador
-        # poderia corromper o estado do fake. O Postgres materializa linha nova
+        # poderia corromper o estado do fake. O adapter materializa linha nova
         # a cada query e nunca tem esse problema.
         return [
             Atribuicao(
@@ -110,7 +110,7 @@ class FakeEstado:
     def substituir_atribuicoes(
         self, repo: str, versao: str, novas: list[Atribuicao], /
     ) -> None:
-        # Espelha a trigger do Postgres: o fake nao pode aceitar o que o banco
+        # Espelha a trigger do SQLite: o fake nao pode aceitar o que o banco
         # recusa, senao os testes de engine validam um comportamento que nao
         # existe em producao.
         atual = self.versao(repo, versao)
@@ -196,7 +196,7 @@ class FakeEstado:
     # -- internos --------------------------------------------------------
 
     def _exigir_repo(self, repo: str) -> None:
-        """Recusa repo desconhecido, como o PostgresEstado._repo_id faz.
+        """Recusa repo desconhecido, como o Estado._repo_id faz.
 
         Sem isto o fake era mais permissivo que o banco: devolvia None/[]/{} ou
         gravava versao pendurada num repo inexistente, onde o adapter real

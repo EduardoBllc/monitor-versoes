@@ -69,6 +69,23 @@ varredura inteira. `subprocess.run` na mão reabre os dois buracos e quebra a
 promessa de `motor.ports` de que adapter só levanta `MotorError`. Os `Popen` que
 não cabem nos helpers levam a mesma guarda escrita à mão.
 
+## Migrações
+
+`make migracao m="descrição"` gera a revisão por autogenerate contra um SQLite
+temporário levado ao `head`; não exige banco nenhum. Confira o arquivo gerado
+antes do commit.
+
+- O autogenerate do SQLite não compara índice de expressão
+  (`uq_exclusao_repo_hash_versao`): mudança nele se escreve à mão.
+- Em `batch_alter_table`, nome de constraint vai em `op.f(...)`, no drop e no
+  create.
+
+Por quê: o `env.py` passa o `target_metadata`, e a convenção de nomes do
+`MetaData` é aplicada a todo nome cru, inclusive ao que já tem o prefixo. Foi
+assim que o check de `atribuicao` ficou `ck_atribuicao_ck_atribuicao_estado`; um
+drop com nome cru procuraria um nome que não existe. O teste que compara modelos
+e migrações acusa a divergência.
+
 ## Comentários
 
 Comentário explica o porquê, não o quê.

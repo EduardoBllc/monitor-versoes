@@ -265,7 +265,7 @@ def repo_montavel(monkeypatch, tmp_path):
     _escrever_central(raiz)
     estado = FakeEstado(repos={NOME_REPO: RepoInfo(nome=NOME_REPO)})
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda *_, **__: FakeGit())
-    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
     return raiz
 
 
@@ -288,7 +288,7 @@ def test_montar_deps_usa_o_caminho_da_secao(repo_montavel, monkeypatch):
 
     monkeypatch.setattr(montagem, "new_git_subprocess", abrir_git)
     estado = FakeEstado()
-    monkeypatch.setattr(montagem, "PostgresEstado", lambda sessao: estado)
+    monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
 
     deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
 
@@ -442,11 +442,11 @@ def test_primeiro_uso_cria_arquivo_e_esquema_do_sqlite(monkeypatch, tmp_path):
 
 
 def test_diagnostico_nao_cria_esquema(monkeypatch, tmp_path):
-    from motor.adapters.estado.postgres import PostgresEstado
+    from motor.adapters.estado.sqlite import Estado
     from motor.montagem import abrir_sessao
 
     monkeypatch.delenv("DATABASE_BACKEND", raising=False)
     monkeypatch.setenv("DATABASE_SQLITE_PATH", str(tmp_path / "estado.db"))
 
     with abrir_sessao(garantir=False) as sessao:
-        assert PostgresEstado(sessao=sessao).revisao_migracao() is None
+        assert Estado(sessao=sessao).revisao_migracao() is None

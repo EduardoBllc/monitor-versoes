@@ -5,6 +5,7 @@ Sem `alembic.ini`: a única opção necessária (`script_location`) é montada a
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from alembic import command
@@ -16,7 +17,7 @@ from motor.errors import BackendIndisponivel
 
 
 def config_alembic(url: str | None = None) -> Config:
-    """Config do Alembic; `url` (já normalizada) tem precedência sobre a do ambiente."""
+    """Config do Alembic; `url` tem precedência sobre a do ambiente."""
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent))
     if url is not None:
@@ -37,11 +38,18 @@ def migrar() -> None:
         command.upgrade(config_alembic(), "head")
     except OperationalError as erro:
         raise BackendIndisponivel(
-            "não foi possível conectar ao Postgres para migrar; "
-            "suba o banco com `docker compose up -d`"
+            f"não foi possível abrir o estado para migrar: {erro.orig}; "
+            "confira DATABASE_SQLITE_PATH e as permissões do arquivo"
         ) from erro
 
 
 def criar_revisao(mensagem: str) -> None:
-    """Gera uma revisão por autogenerate; exige o banco já migrado."""
-    command.revision(config_alembic(), message=mensagem, autogenerate=True)
+    """Gera uma revisão por autogenerate, sem exigir banco nenhum.
+
+    Compara os modelos com um SQLite temporário levado ao `head`, que é
+    descartado no fim.
+    """
+    with tempfile.TemporaryDirectory() as pasta:
+        url = f"sqlite:///{Path(pasta) / 'estado.db'}"
+        command.upgrade(config_alembic(url), "head")
+        command.revision(config_alembic(url), message=mensagem, autogenerate=True)

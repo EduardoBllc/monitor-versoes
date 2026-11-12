@@ -1,4 +1,4 @@
-"""Argumentos que sairam do CLI com o Tickio e continuam recusados.
+"""Argumentos que sairam do CLI (com o Tickio e com o Postgres) e continuam recusados.
 
 Este arquivo nomeia o que saiu de proposito: e uma das excecoes listadas no
 teste de nucleo neutro (tests/test_nucleo_neutro.py).
@@ -34,5 +34,15 @@ def test_repo_adicionar_recusa_tickio_sistema_id():
         _build_parser().parse_args(
             ["repo", "adicionar", "backend", "--tickio-sistema-id", "42"]
         )
+
+    assert saida.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "argv", [["init"], ["migrar-estado", "--de", "x", "--para", "y"]]
+)
+def test_comandos_do_postgres_sairam(argv):
+    with pytest.raises(SystemExit) as saida:
+        _build_parser().parse_args(argv)
 
     assert saida.value.code == 2

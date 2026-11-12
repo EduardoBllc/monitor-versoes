@@ -1,16 +1,14 @@
 # O estado: por que existe e por que é descartável
 
-- **Status:** aceita
+- **Status:** aceita; o estado em dois backends e o `migrar-estado` foram revistos pela
+  [035](035-estado-local-em-sqlite.md)
 - **Data:** 2026-08-21
 - **Depende de:** [002](002-oraculo-tres-fontes.md), [009](009-inferencia-de-base.md),
   [010](010-travas-publicada-e-liberada.md), [011](011-congelamento-no-banco.md),
   [021](021-motor-nao-interativo.md), [034](034-julgamento-de-orfao.md)
 
-Mora em SQLite (padrão, um arquivo local, sem Docker) ou em Postgres (opt-in), escolhido por
-`DATABASE_BACKEND`, escopado por repo. O contrato do estado é o mesmo nos dois, e a suíte de
-contrato roda contra ambos. `migrar-estado --de <url> --para <url>` copia o estado completo
-(inclusive o julgamento humano, abaixo) de um para o outro, nos dois sentidos; ele não troca
-o backend sozinho. Guarda duas coisas de natureza diferente:
+Mora num arquivo SQLite local ([035](035-estado-local-em-sqlite.md)), escopado por repo.
+Guarda duas coisas de natureza diferente:
 
 **Projeção, recuperável** — a derivação task → commits. `reconstruir-estado` regenera:
 número, tipo e base saem do nome da branch mais a inferência
@@ -20,10 +18,11 @@ número, tipo e base saem do nome da branch mais a inferência
 **Julgamento humano, não recuperável** — exclusões ("esse commit o grep pegou mas não entra"),
 registros de "não houve entrega" e julgamentos de órfão ("este commit sem referência pertence
 a chX" ou "não pertence a nenhum", [034](034-julgamento-de-orfao.md)). Só existe no banco —
-por isso trocar de backend é `migrar-estado`, não `reconstruir-estado`. Para commit sem
-`ch<num>` na mensagem, `reconstruir-estado` aplica o julgamento gravado e devolve em
-`PENDING_JUDGMENT{orfaos}` só o que ainda não foi julgado; quem pergunta ao humano e grava a
-resposta é o front-end, nunca o motor ([021](021-motor-nao-interativo.md)).
+por isso perder o arquivo do estado perde o julgamento, e `reconstruir-estado` não o traz de
+volta. Para commit sem `ch<num>` na mensagem, `reconstruir-estado` aplica o julgamento
+gravado e devolve em `PENDING_JUDGMENT{orfaos}` só o que ainda não foi julgado; quem
+pergunta ao humano e grava a resposta é o front-end, nunca o motor
+([021](021-motor-nao-interativo.md)).
 
 Três consequências que valem gravar:
 

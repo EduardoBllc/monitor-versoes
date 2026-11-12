@@ -31,7 +31,6 @@ import {
   linhasDe,
   opcoesDe,
   textoDe,
-  visivel,
   type Escalar,
   type Formulario,
   type Linha,
@@ -168,17 +167,14 @@ function Entrada({
 }
 
 function Lista({
-  linhas: todas,
-  campos,
+  linhas,
   valores,
   mudar,
 }: {
   linhas: Linha[];
-  campos: ConfigEditavel["campos"];
   valores: Valores;
   mudar: (k: string, v: Escalar) => void;
 }) {
-  const linhas = todas.filter((l) => visivel(campos, valores, l.campo));
   if (linhas.length === 0) return <Text c="dimmed">Nada a configurar.</Text>;
   return (
     <Stack>
@@ -271,7 +267,6 @@ function Editor({
         <Tabs.Panel value={Aba.GERAL} pt="md">
           <Lista
             linhas={doMotor.filter((l) => !ehAmbiente(l))}
-            campos={config.campos}
             valores={valores}
             mudar={mudar}
           />
@@ -322,7 +317,6 @@ function Editor({
         <Tabs.Panel value={Aba.AMBIENTE} pt="md">
           <Lista
             linhas={doMotor.filter(ehAmbiente)}
-            campos={config.campos}
             valores={valores}
             mudar={mudar}
           />
@@ -334,8 +328,7 @@ function Editor({
                 <Title order={5}>{origem}</Title>
                 <Lista
                   linhas={plugins.filter((l) => (l.campo?.origem ?? SEM_ORIGEM) === origem)}
-                  campos={config.campos}
-                  valores={valores}
+                        valores={valores}
                   mudar={mudar}
                 />
               </Stack>

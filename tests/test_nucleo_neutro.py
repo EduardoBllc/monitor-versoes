@@ -22,7 +22,7 @@ _NOMES = re.compile(r"tickio|vendabem", re.I)
 _EXCLUIDOS_NOMES = (
     _VERSIONS,
     _TESTES / "test_migracoes_sqlite.py",
-    _TESTES / "test_estado_postgres.py",
+    _TESTES / "test_estado_sqlite.py",
     _TESTES / "test_argumentos_removidos.py",
     _TESTES / "test_nucleo_neutro.py",
 )

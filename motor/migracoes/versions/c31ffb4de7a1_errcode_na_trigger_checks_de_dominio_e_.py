@@ -19,7 +19,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# Igual a ERRCODE_VERSAO_CONGELADA em motor/adapters/estado/postgres.py.
+# Igual a ERRCODE_VERSAO_CONGELADA em motor/adapters/estado/sqlite.py.
 # Classe MV: nao colide com nenhuma classe do padrao (Appendix A do Postgres).
 ERRCODE = "MV001"
 

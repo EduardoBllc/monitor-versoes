@@ -1,4 +1,4 @@
-"""O wheel precisa levar migrações e modelos, ou `motor migrar` nasce quebrado."""
+"""O wheel precisa levar as migrações e o build da web, ou `motor migrar` nasce quebrado."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 _SINAIS_SEM_REDE = ("failed to fetch", "dns error", "connect", "network", "offline")
 
 
-def test_wheel_contem_migracoes_e_modelos(tmp_path: Path):
+def test_wheel_contem_migracoes_e_build_da_web(tmp_path: Path):
     if shutil.which("uv") is None:
         pytest.skip("uv fora do PATH")
     build_existia = (RAIZ / "build").exists()
@@ -42,7 +42,6 @@ def test_wheel_contem_migracoes_e_modelos(tmp_path: Path):
     esperados = {
         "motor/migracoes/env.py",
         "motor/migracoes/script.py.mako",
-        "motor/modelos/compose.yml",
         "motor/daemon/static/index.html",
     }
     versions = RAIZ / "motor" / "migracoes" / "versions"

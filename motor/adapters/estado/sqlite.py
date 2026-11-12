@@ -1,4 +1,4 @@
-"""PostgresEstado: traduz modelo ORM <-> dataclass do dominio na fronteira."""
+"""Estado: traduz modelo ORM <-> dataclass do dominio na fronteira."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from motor.errors import (
     RecusaDeInvariante,
 )
 
-# Levantado pela trigger trava_versao_liberada; ver a migracao que a define.
+# Marcador na mensagem da trigger trava_versao_liberada; ver a migracao que a define.
 ERRCODE_VERSAO_CONGELADA = "MV001"
 
 # A linha que o select devolve. Amarra o retorno de _scalar/_scalars ao modelo
@@ -71,7 +71,7 @@ def _repo_info(linha: models.Repo) -> RepoInfo:
 
 
 @dataclass
-class PostgresEstado:
+class Estado:
     sessao: Session
 
     def verificar_conexao(self) -> None:
@@ -270,8 +270,8 @@ class PostgresEstado:
                 .where(models.Versao.repo_id == repo_id)
             )
         ]
-        # Ordena aqui, nao no ORDER BY: a collation do Postgres pode ignorar
-        # pontuacao e divergir da ordem de bytes do SQLite e do fake.
+        # Ordena aqui, nao no ORDER BY: a ordem fica a mesma do fake, sem
+        # depender da collation do banco.
         return sorted(julgamentos, key=lambda j: (j.versao_numero, j.hash_origem))
 
     def julgar_orfao(self, repo: str, j: JulgamentoOrfao, /) -> None:
@@ -469,13 +469,12 @@ class PostgresEstado:
         """Traduz erro do banco em MotorError.
 
         A trigger de congelamento chega aqui como DBAPIError; deixa-la subir
-        crua imprimiria traceback de psycopg em vez de mensagem util.
+        crua imprimiria traceback do driver em vez de mensagem util.
 
-        DBAPIError e nao DatabaseError: InterfaceError (conexao que morreu no
-        meio do comando) e irmao de DatabaseError, nao filho — com o catch mais
-        estreito ele escapava como "Erro interno fatal (bug)" com traceback de
-        psycopg, que e justamente a confusao operador-vs-bug que o motor
-        promete nao fazer.
+        DBAPIError e nao DatabaseError: InterfaceError e irmao de
+        DatabaseError, nao filho — com o catch mais estreito ele escapava como
+        "Erro interno fatal (bug)" com traceback, que e justamente a confusao
+        operador-vs-bug que o motor promete nao fazer.
         """
         try:
             self.sessao.commit()
@@ -483,40 +482,20 @@ class PostgresEstado:
             self._traduzir_erro(e)
 
     def _traduzir_erro(self, e: DBAPIError) -> NoReturn:
-        """Decide a mensagem pelo SQLSTATE, nao pelo tipo nem pelo texto.
+        """Congelamento vira recusa; erro do SQLite, banco inacessivel.
 
-        Antes ramificava por `isinstance(e, OperationalError)`, que e mais largo
-        do que a mensagem promete: psycopg mapeia deadlock (40P01) e statement
-        timeout (57014) para OperationalError tambem, e os dois saiam como
-        "banco inacessivel ... docker compose up -d" — banco que respondeu, e a
-        resposta foi um erro de execucao.
-
-        E identificava o congelamento por `"imutavel" in str(e.orig)`, o que
-        acoplava o adapter a um texto que vive nas migracoes: reescrever a
-        mensagem da trigger quebrava esta traducao em silencio. Agora a trigger
-        levanta com `errcode = 'MV001'` e o match e no codigo.
-
-        Sem SQLSTATE = o servidor nunca respondeu (recusa de conexao, conexao
-        morta no meio do comando). E o unico caso que "suba o container" ajuda.
+        O congelamento e identificado pelo marcador `MV001` que a trigger poe
+        na mensagem (o SQLite nao tem errcode), e nao pelo texto da mensagem:
+        reescrever o texto da trigger nao quebra esta traducao.
         """
         self.sessao.rollback()
-        sqlstate = getattr(e.orig, "sqlstate", None)
-        if sqlstate is None and ERRCODE_VERSAO_CONGELADA in str(e.orig):
-            # SQLite: a trigger nao tem errcode, o marcador vai na mensagem.
+        if ERRCODE_VERSAO_CONGELADA in str(e.orig):
             raise RecusaDeInvariante(
                 "versao liberada e imutavel — remarque a tarefa para a proxima versao"
             ) from e
-        if sqlstate == ERRCODE_VERSAO_CONGELADA or (
-            # fallback para banco que ainda nao rodou a migracao do errcode
-            sqlstate is not None and "imutavel" in str(e.orig)
-        ):
-            raise RecusaDeInvariante(
-                "versao liberada e imutavel — remarque a tarefa para a proxima versao"
+        if type(e.orig).__module__.startswith("sqlite3"):
+            raise BackendIndisponivel(
+                f"banco inacessivel: {e.orig}. "
+                "Confira DATABASE_SQLITE_PATH e as permissoes do arquivo"
             ) from e
-        if sqlstate is None:
-            if type(e.orig).__module__.startswith("sqlite3"):
-                dica = "Confira DATABASE_SQLITE_PATH e as permissoes do arquivo"
-            else:
-                dica = "Suba com: docker compose up -d"
-            raise BackendIndisponivel(f"banco inacessivel: {e.orig}. {dica}") from e
         raise MotorError(f"erro do banco: {e.orig}") from e

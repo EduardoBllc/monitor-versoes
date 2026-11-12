@@ -4,7 +4,6 @@ import type { Alteracao, Campo, ConfigEditavel, ValorLido } from "./api/tipos";
 export const ORIGEM_MOTOR = "motor";
 export const TABELA_AMBIENTE = "ambiente";
 export const SEM_ORIGEM = "";
-export const CHAVE_BACKEND = "DATABASE_BACKEND";
 
 export enum EstadoSegredo {
   DEFINIDO = "definido",
@@ -129,16 +128,4 @@ export function alteracoesDe(
     .filter((repo) => !formulario.reposCriados.includes(repo))
     .map((repo) => ({ acao: AcaoAlteracao.REMOVER_REPO, repo }));
   return [...criar, ...chaves, ...remover];
-}
-
-// Campo de um backend só aparece com ele escolhido no formulário (ou o padrão, sem escolha).
-export function visivel(
-  campos: Campo[],
-  valores: Formulario["valores"],
-  campo: Campo | undefined,
-): boolean {
-  if (!campo?.backend) return true;
-  const escolhido = valores[chaveDe(null, TABELA_AMBIENTE, CHAVE_BACKEND)];
-  const padrao = achaCampo(campos, null, TABELA_AMBIENTE, CHAVE_BACKEND)?.padrao;
-  return (vazio(escolhido) ? padrao : escolhido) === campo.backend;
 }

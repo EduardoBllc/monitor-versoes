@@ -1,4 +1,4 @@
-"""As migrations do Alembic rodam no SQLite, sem Docker."""
+"""As migrations do Alembic rodam no SQLite."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from sqlalchemy import create_engine, inspect, text
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
+from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from motor.adapters.estado.models import Base
@@ -15,6 +17,7 @@ from motor.migracoes import config_alembic
 REV_TIPO_LIVRE_ANTERIOR = "e5a8b1c2d3f4"
 REV_COM_TRACKER = "f6b9c3d2e1a7"
 REV_SEM_TRACKER = "a7c3e9d1f2b4"
+REV_CHECK_COM_NOME_DUPLICADO = "c9d2e4f6a8b0"
 
 
 @pytest.fixture
@@ -153,3 +156,135 @@ def test_downgrade_base_funciona(url: str) -> None:
         ).all()
     assert restantes == ["alembic_version"]
     assert triggers == []
+
+
+def _ddl(con: Connection, nome: str) -> str:
+    sql: str = con.execute(
+        text("select sql from sqlite_master where name = :nome"), {"nome": nome}
+    ).scalar_one()
+    return sql
+
+
+def _triggers(con: Connection) -> list[tuple[str, str]]:
+    return sorted(
+        (nome, sql)
+        for nome, sql in con.execute(
+            text("select name, sql from sqlite_master where type = 'trigger'")
+        )
+    )
+
+
+def test_check_de_atribuicao_ganha_o_nome_da_convencao(url: str) -> None:
+    command.upgrade(config_alembic(url), REV_CHECK_COM_NOME_DUPLICADO)
+    engine = create_engine(url)
+    with engine.connect() as con:
+        triggers_antes = _triggers(con)
+        commit_antes = _ddl(con, "atribuicao_commit")
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        ddl = _ddl(con, "atribuicao")
+        assert "CONSTRAINT ck_atribuicao_estado CHECK" in ddl
+        assert "ck_atribuicao_ck_" not in ddl
+        assert len(triggers_antes) == 6
+        assert _triggers(con) == triggers_antes
+        assert _ddl(con, "atribuicao_commit") == commit_antes
+    with pytest.raises(IntegrityError), engine.begin() as con:
+        con.execute(text("insert into repo (id, nome) values (1, 'webapp')"))
+        con.execute(
+            text(
+                "insert into versao (id, repo_id, numero, base_ref, base_commit) "
+                "values (1, 1, '14.1.0', '14.0.0', 'aaa111')"
+            )
+        )
+        con.execute(
+            text(
+                "insert into atribuicao (versao_id, chamado, marcada, estado) "
+                "values (1, 'T-1', '14.1.0', 'x')"
+            )
+        )
+    engine.dispose()
+
+
+def test_downgrade_volta_o_nome_antigo_do_check(url: str) -> None:
+    command.upgrade(config_alembic(url), REV_CHECK_COM_NOME_DUPLICADO)
+    engine = create_engine(url)
+    with engine.connect() as con:
+        triggers_antes = _triggers(con)
+
+    command.upgrade(config_alembic(url), "head")
+    command.downgrade(config_alembic(url), REV_CHECK_COM_NOME_DUPLICADO)
+
+    with engine.connect() as con:
+        ddl = _ddl(con, "atribuicao")
+        assert "CONSTRAINT ck_atribuicao_ck_atribuicao_estado CHECK" in ddl
+        assert _triggers(con) == triggers_antes
+    engine.dispose()
+
+
+def test_dados_sobrevivem_a_troca_do_nome_do_check(url: str) -> None:
+    command.upgrade(config_alembic(url), REV_CHECK_COM_NOME_DUPLICADO)
+    engine = create_engine(url)
+    consultas = {
+        "repo": "select * from repo",
+        "versao": "select * from versao",
+        "atribuicao": "select * from atribuicao",
+        "atribuicao_commit": "select * from atribuicao_commit",
+        "exclusao": "select * from exclusao",
+        "sem_entrega": "select * from sem_entrega",
+    }
+    with engine.begin() as con:
+        con.execute(text("insert into repo (id, nome) values (1, 'webapp')"))
+        con.execute(
+            text(
+                "insert into versao (id, repo_id, numero, base_ref, base_commit) "
+                "values (1, 1, '14.1.0', '14.0.0', 'aaa111')"
+            )
+        )
+        con.execute(
+            text(
+                "insert into atribuicao (versao_id, chamado, marcada, estado) "
+                "values (1, 'T-1', '14.1.0', 'aplicado')"
+            )
+        )
+        con.execute(
+            text(
+                "insert into atribuicao_commit (versao_id, chamado, hash_origem) "
+                "values (1, 'T-1', 'bbb222')"
+            )
+        )
+        con.execute(
+            text(
+                "insert into exclusao (repo_id, hash_origem, versao_numero, motivo) "
+                "values (1, 'ccc333', '14.1.0', 'revertido')"
+            )
+        )
+        con.execute(
+            text(
+                "insert into sem_entrega (repo_id, chamado, motivo) "
+                "values (1, 'T-2', 'só configuração')"
+            )
+        )
+    with engine.connect() as con:
+        antes = {t: con.execute(text(q)).all() for t, q in consultas.items()}
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        depois = {t: con.execute(text(q)).all() for t, q in consultas.items()}
+    assert all(antes.values())
+    assert depois == antes
+    engine.dispose()
+
+
+# O SQLite não reflete índice de expressão: o autogenerate pula o
+# uq_exclusao_repo_hash_versao, que se escreve à mão.
+@pytest.mark.filterwarnings("ignore:.*expression-based index")
+def test_modelos_e_migracoes_nao_divergem(url: str) -> None:
+    command.upgrade(config_alembic(url), "head")
+    engine = create_engine(url)
+    with engine.connect() as con:
+        diferencas = compare_metadata(MigrationContext.configure(con), Base.metadata)
+    engine.dispose()
+    assert diferencas == []

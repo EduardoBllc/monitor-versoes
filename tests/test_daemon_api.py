@@ -551,7 +551,7 @@ def test_put_config_nao_devolve_segredo(cliente: TestClient) -> None:
     versao = cliente.get("/api/config").json()["versao"]
     r = cliente.put(
         "/api/config",
-        json=_definir(VarAmbiente.DATABASE_PASSWORD, SEGREDO, TABELA_AMBIENTE, versao),
+        json=_definir(VarAmbiente.BITBUCKET_TOKEN, SEGREDO, TABELA_AMBIENTE, versao),
     )
     assert r.status_code == HTTPStatus.OK
     assert SEGREDO not in r.text
@@ -571,7 +571,9 @@ def test_put_config_erros(
     cliente: TestClient, amb: Ambiente, caso: CasoErro, status: int, tipo: TipoErro
 ) -> None:
     versao = cliente.get("/api/config").json()["versao"]
-    corpo = _definir(VarAmbiente.DATABASE_PORT, PORTA_INVALIDA, TABELA_AMBIENTE, versao)
+    corpo = _definir(
+        VarAmbiente.WORKTREES_MANTIDAS, PORTA_INVALIDA, TABELA_AMBIENTE, versao
+    )
     if caso is CasoErro.VELHA:
         corpo["versao"] = VERSAO_INEXISTENTE
     if caso is CasoErro.OCUPADO:

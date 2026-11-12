@@ -31,7 +31,7 @@ from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.estado.fake import FakeEstado
-from motor.adapters.estado.postgres import PostgresEstado
+from motor.adapters.estado.sqlite import Estado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.git.subprocess import GitSubprocess
 from motor.adapters.notificador.desktop import NotificadorDesktop
@@ -57,7 +57,7 @@ from tests.versionamento import Escalonado
 # adapter deixa a suite verde num caminho que quebra em producao, e este
 # projeto ja pagou por isso tres vezes.
 _GIT: list[type[GitRepo]] = [GitSubprocess, FakeGit]
-_ESTADO: list[type[EstadoRepo]] = [PostgresEstado, FakeEstado]
+_ESTADO: list[type[EstadoRepo]] = [Estado, FakeEstado]
 _TASKS: list[type[TaskSource]] = [
     ManualList,
     FakeTaskSource,

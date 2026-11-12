@@ -6,39 +6,24 @@ unexport VIRTUAL_ENV
 # `python -m`, como o pre-commit e o CI sempre rodaram: a raiz entra no sys.path.
 DEV := uv run --extra dev python -m
 
-.PHONY: install db migrate setup db-dev migrate-dev migracao check fmt fmt-check lint typecheck test web-check web-dist
+.PHONY: install setup migracao check fmt fmt-check lint typecheck test web-check web-dist
 
-# --- Usuário: produção (porta 5433) ---
+# --- Usuário ---
 
 install:
 	uv sync
 
-# Postgres opt-in (DATABASE_BACKEND=postgres): o padrao do motor e SQLite, sem Docker.
-db:
-	docker compose -f motor/modelos/compose.yml --project-directory . up -d --wait
-
-# Exige DATABASE_BACKEND=postgres no [ambiente] do config central (ou no .env); no SQLite o primeiro uso migra sozinho.
-migrate:
-	uv run motor migrar
-
-# --- Contribuidor: desenvolvimento (.env.development, porta 5434) ---
+# --- Contribuidor ---
 
 setup:
 	uv sync --all-extras
 	cp -n .env.development.example .env.development
 	$(DEV) pre_commit install
 
-db-dev:
-	docker compose -f motor/modelos/compose.yml --project-directory . --env-file .env.development up -d --wait
-
-migrate-dev:
-	uv run motor --env development migrar
-
-# Gera uma revisão por autogenerate contra o banco de desenvolvimento (já
-# migrado). O env.py não carrega .env: set -a exporta as variáveis do arquivo.
+# Gera uma revisão por autogenerate contra um SQLite temporário levado ao head.
 migracao:
 	@test -n "$(m)" || { echo 'uso: make migracao m="descrição"'; exit 1; }
-	set -a; . ./.env.development; set +a; uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
+	uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
 
 # Mesma sequência das etapas do CI (.github/workflows/ci.yml chama estes alvos).
 check: fmt-check lint typecheck test web-check web-dist
@@ -56,7 +41,7 @@ lint:
 typecheck:
 	$(DEV) mypy
 
-# -rs lista o motivo de cada skip: integração pulada aparece no log.
+# -rs lista o motivo de cada skip no log.
 test:
 	$(DEV) pytest -rs
 

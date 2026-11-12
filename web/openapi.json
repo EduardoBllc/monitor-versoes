@@ -1320,14 +1320,6 @@
         ],
         "title": "Avaliacao"
       },
-      "Backend": {
-        "type": "string",
-        "enum": [
-          "sqlite",
-          "postgres"
-        ],
-        "title": "Backend"
-      },
       "Campo": {
         "properties": {
           "escopo": {
@@ -1393,16 +1385,6 @@
             "type": "string",
             "title": "Exemplo",
             "default": ""
-          },
-          "backend": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Backend"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "type": "object",

@@ -8,13 +8,12 @@ config = context.config
 
 target_metadata = Base.metadata
 
-# Nunca via config.set_main_option: configparser interpola "%" e uma senha
-# como "se%40nha%25x" (ja com quote() aplicado) quebra com ValueError antes
-# de qualquer tentativa de conexao. A url vai direto para o engine.
+# Nunca via config.set_main_option: configparser interpola "%", e um caminho
+# com "%" quebraria com ValueError. A url vai direto para o engine.
 #
-# `attributes["url"]` vem de quem chama por codigo (primeiro uso e
-# `migrar-estado`); sem ele, a URL sai da config, sem o aviso de backend padrao.
-url = config.attributes.get("url") or database_url(avisar=False)
+# `attributes["url"]` vem de quem chama por codigo (primeiro uso, testes e
+# `make migracao`); sem ele, a URL sai da config, que recusa backend antigo.
+url = config.attributes.get("url") or database_url()
 
 
 def run_migrations_offline() -> None:

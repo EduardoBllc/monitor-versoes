@@ -18,8 +18,7 @@ atribuição é recalculada.
   um commit que já está na branch e que nenhuma tarefa reclama. "Pertence a chX" não cabe na
   exclusão, e "não pertence a nenhum" nela mudaria o que a exclusão significa para o
   `verificar`. É julgamento humano, como a exclusão e o "sem entrega"
-  ([004](004-estado-descartavel.md)): o `migrar-estado` o copia e a impressão do carimbo
-  o inclui.
+  ([004](004-estado-descartavel.md)): a impressão do carimbo o inclui.
 - **Vale só na versão em que foi feito.** O mesmo commit pode ser órfão em duas versões, e
   a resposta numa não responde a outra: o operador julga o que viu naquela branch.
 - **No `verificar`, ele é uma fonte de commits das tarefas do alvo, ao lado da fonte de

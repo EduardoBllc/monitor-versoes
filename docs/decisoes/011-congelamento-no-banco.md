@@ -1,14 +1,13 @@
 # O congelamento é constraint de banco, não `if` de aplicação
 
-- **Status:** aceita
+- **Status:** aceita; a variante de Postgres saiu com a [035](035-estado-local-em-sqlite.md)
 - **Data:** 2026-08-21
 - **Depende de:** [004](004-estado-descartavel.md), [010](010-travas-publicada-e-liberada.md)
 
-Uma trigger recusa (nos dois backends, SQLite e Postgres) `INSERT`/`UPDATE`/`DELETE` em `atribuicao`/`atribuicao_commit` que toque
-versão com data de liberação preenchida. No Postgres é uma função plpgsql com `errcode = 'MV001'`; no SQLite, que não tem trigger
-multi-evento nem errcode, são três triggers por tabela (insert, update, delete) cuja recusa
-leva o marcador `MV001` na mensagem. O adapter reconhece o `MV001` de cada dialeto. A regra é
-a mesma. Dois detalhes que custaram para acertar:
+Triggers recusam `INSERT`/`UPDATE`/`DELETE` em `atribuicao`/`atribuicao_commit` que toque
+versão com data de liberação preenchida. O SQLite não tem trigger multi-evento nem errcode:
+são três triggers por tabela (insert, update, delete) cuja recusa leva o marcador `MV001` na
+mensagem, e o adapter reconhece o marcador. Dois detalhes que custaram para acertar:
 
 - **A trigger olha `old.versao_id` e `new.versao_id`, não só o novo.** Checando só `new`,
   um `UPDATE ... SET versao_id = <versão aberta> WHERE versao_id = <versão liberada>` passa: o

@@ -78,8 +78,3 @@ export enum AcaoAlteracao {
   CRIAR_REPO = "criar_repo",
   REMOVER_REPO = "remover_repo",
 }
-
-export enum Backend {
-  SQLITE = "sqlite",
-  POSTGRES = "postgres",
-}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AcaoAlteracao, Backend, Escopo, TipoCampo } from "./api/enums";
+import { AcaoAlteracao, Escopo, TipoCampo } from "./api/enums";
 import type { ConfigEditavel } from "./api/tipos";
 import {
   ORIGEM_MOTOR,
@@ -11,15 +11,13 @@ import {
   linhasDe,
   opcoesDe,
   textoDe,
-  visivel,
-  CHAVE_BACKEND,
   type Formulario,
 } from "./config";
 
 const TABELA_VERSAO = "versao";
 const CHAVE_ESQUEMA = "esquema";
 const CHAVE_CAMINHO = "caminho";
-const CHAVE_SENHA = "DATABASE_PASSWORD";
+const CHAVE_SENHA = "BITBUCKET_TOKEN";
 const REPO_NOVO = "novo";
 const REPO_VELHO = "velho";
 
@@ -213,30 +211,5 @@ describe("textoDe", () => {
     expect(textoDe(PORTA)).toBe(PORTA);
     expect(textoDe(Number(PORTA))).toBe(PORTA);
     expect(textoDe(null)).toBe("");
-  });
-});
-
-describe("visivel", () => {
-  const campoBackend = {
-    ...original.campos[1]!,
-    chave: CHAVE_BACKEND,
-    tipo: TipoCampo.ESCOLHA,
-    segredo: false,
-    padrao: Backend.SQLITE,
-  };
-  const doPostgres = { ...original.campos[1]!, backend: Backend.POSTGRES };
-  const campos = [campoBackend, doPostgres];
-  const backend = chaveDe(null, TABELA_AMBIENTE, CHAVE_BACKEND);
-
-  it("sem backend escolhido vale o padrão", () => {
-    expect(visivel(campos, {}, doPostgres)).toBe(false);
-  });
-
-  it("segue o backend escolhido no formulário", () => {
-    expect(visivel(campos, { [backend]: Backend.POSTGRES }, doPostgres)).toBe(true);
-  });
-
-  it("campo sem backend sempre aparece", () => {
-    expect(visivel(campos, { [backend]: Backend.POSTGRES }, campoBackend)).toBe(true);
   });
 });

@@ -11,7 +11,6 @@ from motor import plugins
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
-    Backend,
     Chave,
     Tabela,
     VarAmbiente,
@@ -95,9 +94,9 @@ def _ep(nome: str, valor: str) -> EntryPoint:
 
 
 def test_segredo_nunca_sai_na_leitura():
-    _escrever(f'[ambiente]\n{VarAmbiente.DATABASE_PASSWORD} = "{SEGREDO}"\n')
+    _escrever(f'[ambiente]\n{VarAmbiente.BITBUCKET_TOKEN} = "{SEGREDO}"\n')
     lido = ler_para_edicao()
-    [v] = [v for v in lido.valores if v.chave == VarAmbiente.DATABASE_PASSWORD]
+    [v] = [v for v in lido.valores if v.chave == VarAmbiente.BITBUCKET_TOKEN]
     assert v.valor is None and v.definido is True
     assert SEGREDO not in repr(lido)
 
@@ -194,13 +193,15 @@ def test_opcoes_incluem_os_instalados(chave):
 
 
 MODO_GRUPO = 0o640
+EMAIL_BASE = "base@exemplo.com"
+EMAIL_CENTRAL = "central@exemplo.com"
 CHAVE_LISTA = "filtros"
 
 
 @pytest.fixture(autouse=True)
-def _backend_base(monkeypatch):
+def _ambiente_base(monkeypatch):
     """Gravar reaplica o `[ambiente]` no processo; o monkeypatch o desfaz no fim."""
-    monkeypatch.setenv(VarAmbiente.DATABASE_BACKEND, Backend.SQLITE)
+    monkeypatch.setenv(VarAmbiente.BITBUCKET_EMAIL, EMAIL_BASE)
 
 
 def _bytes() -> bytes:
@@ -257,8 +258,8 @@ def test_repo_com_ponto_no_nome(tmp_path):
     "alteracao",
     [
         _definir("abc", Chave.PISO, Tabela.VERSAO, "a"),
-        _definir("cinco", VarAmbiente.DATABASE_PORT, TABELA_AMBIENTE),
-        _definir("²", VarAmbiente.DATABASE_PORT, TABELA_AMBIENTE),
+        _definir("cinco", VarAmbiente.WORKTREES_MANTIDAS, TABELA_AMBIENTE),
+        _definir("²", VarAmbiente.WORKTREES_MANTIDAS, TABELA_AMBIENTE),
         _definir("release", Chave.VERSAO, Tabela.BRANCHES),
     ],
 )
@@ -280,7 +281,7 @@ def test_versao_velha_recusada():
 
 def test_gravar_cria_arquivo_e_diretorio():
     gravar(
-        [_definir(Backend.SQLITE, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
+        [_definir(EMAIL_CENTRAL, VarAmbiente.BITBUCKET_EMAIL, TABELA_AMBIENTE)],
         hashlib.sha256(b"").hexdigest(),
     )
     assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_ARQUIVO_NOVO
@@ -304,27 +305,21 @@ def test_chave_nao_editavel_sobrevive():
 
 def test_gravar_reaplica_ambiente():
     definida = gravar(
-        [_definir(Backend.POSTGRES, VarAmbiente.DATABASE_BACKEND, TABELA_AMBIENTE)],
+        [_definir(EMAIL_CENTRAL, VarAmbiente.BITBUCKET_EMAIL, TABELA_AMBIENTE)],
         ler_para_edicao().versao,
     )
-    assert os.environ[VarAmbiente.DATABASE_BACKEND] == Backend.POSTGRES
+    assert os.environ[VarAmbiente.BITBUCKET_EMAIL] == EMAIL_CENTRAL
     gravar(
         [
             Alteracao(
                 AcaoAlteracao.REMOVER,
                 tabela=TABELA_AMBIENTE,
-                chave=VarAmbiente.DATABASE_BACKEND,
+                chave=VarAmbiente.BITBUCKET_EMAIL,
             )
         ],
         definida.versao,
     )
-    assert os.environ[VarAmbiente.DATABASE_BACKEND] == Backend.SQLITE
-
-
-def test_backend_como_o_leitor_aceita_nao_bloqueia_gravacao():
-    _escrever(f'[ambiente]\n{VarAmbiente.DATABASE_BACKEND} = "Postgres"\n')
-    gravar([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
-    assert 'a = "2"' in _bytes().decode()
+    assert os.environ[VarAmbiente.BITBUCKET_EMAIL] == EMAIL_BASE
 
 
 def test_gravar_segue_symlink(tmp_path):

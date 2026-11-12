@@ -21,7 +21,7 @@ from textual.widgets import (
     TabPane,
 )
 
-from motor.config import TABELA_AMBIENTE, Backend, VarAmbiente
+from motor.config import TABELA_AMBIENTE
 from motor.config_edicao import (
     ORIGEM_MOTOR,
     AcaoAlteracao,
@@ -46,8 +46,6 @@ TEXTO_TRUE = "true"
 TEXTO_FALSE = "false"
 TIPO_INPUT_INTEIRO: Final = "integer"
 TIPO_INPUT_TEXTO: Final = "text"
-_V_BACKEND: Final = VarAmbiente.DATABASE_BACKEND
-_CHAVE_BACKEND: Final = (None, TABELA_AMBIENTE, _V_BACKEND)
 
 
 def _chave_de(v: ValorLido) -> ChaveForm:
@@ -143,7 +141,6 @@ class ConfigModal(ModalScreen[bool]):
         self._removidos: list[str] = []
         self._containers: dict[str, Widget] = {}
         self._lidos = {_chave_de(v): v for v in config.valores}
-        self._do_backend: list[tuple[Backend, list[Widget]]] = []
 
     @staticmethod
     def id_de(chave: ChaveForm) -> str:
@@ -207,12 +204,6 @@ class ConfigModal(ModalScreen[bool]):
         return Campo(escopo, v.tabela, v.chave, TipoCampo.TEXTO, v.chave)
 
     def _widgets_do_campo(self, repo: str | None, campo: Campo) -> list[Widget]:
-        widgets = self._widgets_sem_backend(repo, campo)
-        if campo.backend is not None:
-            self._do_backend.append((campo.backend, widgets))
-        return widgets
-
-    def _widgets_sem_backend(self, repo: str | None, campo: Campo) -> list[Widget]:
         chave = (repo, campo.tabela, campo.chave)
         lido = self._lidos.get(chave)
         herdado = self._lidos.get((None, campo.tabela, campo.chave)) if repo else None
@@ -277,26 +268,6 @@ class ConfigModal(ModalScreen[bool]):
         container.add_class("repo")
         self._containers[nome] = container
         return container
-
-    def on_mount(self) -> None:
-        self._mostrar_do_backend()
-
-    def on_select_changed(self, evento: Select.Changed) -> None:
-        if evento.select is self._entradas.get(_CHAVE_BACKEND):
-            self._mostrar_do_backend()
-
-    def _mostrar_do_backend(self) -> None:
-        """Campos de banco só do backend escolhido; sem escolha, o padrão."""
-        entrada = self._entradas.get(_CHAVE_BACKEND)
-        escolhido = None if entrada is None else entrada.value
-        if escolhido in (None, "", Select.NULL):
-            escolhido = next(
-                (c.padrao for c in self._config.campos if c.chave == _V_BACKEND),
-                None,
-            )
-        for backend, widgets in self._do_backend:
-            for widget in widgets:
-                widget.display = backend == escolhido
 
     async def on_button_pressed(self, evento: Button.Pressed) -> None:
         evento.stop()

@@ -23,7 +23,6 @@ from motor.config import (
     SECAO_REPOS,
     TABELA_AMBIENTE,
     WORKTREES_MANTIDAS_PADRAO,
-    Backend,
     Chave,
     Tabela,
     VarAmbiente,
@@ -80,8 +79,6 @@ class Campo:
     descricao: str = ""
     padrao: str | None = None
     exemplo: str = ""
-    #: Só vale com este `DATABASE_BACKEND`; a UI esconde o campo nos outros.
-    backend: Backend | None = None
 
 
 @dataclass(frozen=True)
@@ -114,8 +111,6 @@ _GRUPO_DO_CAMPO: dict[tuple[str, str], str] = {
 
 _V = VarAmbiente
 _AMB = TABELA_AMBIENTE
-
-_SQ, _PG = Backend.SQLITE, Backend.POSTGRES
 
 _CAMPOS_MOTOR = (
     Campo(
@@ -206,73 +201,12 @@ _CAMPOS_MOTOR = (
     Campo(
         _A,
         _AMB,
-        _V.DATABASE_BACKEND,
-        _ES,
-        "Backend do banco",
-        opcoes=tuple(Backend),
-        descricao="Onde o estado do monitor é guardado",
-        padrao=Backend.SQLITE,
-    ),
-    Campo(
-        _A,
-        _AMB,
         _V.DATABASE_SQLITE_PATH,
         _TX,
         "Arquivo do SQLite",
         descricao="Arquivo do banco SQLite",
         padrao=os.path.join(diretorio_dados(), ARQUIVO_SQLITE),
         exemplo="~/estado.db",
-        backend=_SQ,
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.DATABASE_HOST,
-        _TX,
-        "Host do banco",
-        descricao="Host do Postgres",
-        exemplo="localhost",
-        backend=_PG,
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.DATABASE_PORT,
-        _IN,
-        "Porta do banco",
-        descricao="Porta do Postgres",
-        exemplo="5433",
-        backend=_PG,
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.DATABASE_NAME,
-        _TX,
-        "Nome do banco",
-        descricao="Nome do banco no Postgres",
-        exemplo="monitor_versoes",
-        backend=_PG,
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.DATABASE_USER,
-        _TX,
-        "Usuário do banco",
-        descricao="Usuário do Postgres",
-        exemplo="motor",
-        backend=_PG,
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.DATABASE_PASSWORD,
-        _TX,
-        "Senha do banco",
-        segredo=True,
-        descricao="Senha do usuário do Postgres",
-        backend=_PG,
     ),
     Campo(
         _A,
@@ -518,8 +452,6 @@ def _validar_tipo(campo: Campo, valor: object) -> None:
             isinstance(valor, int) and not isinstance(valor, bool) and valor >= 0
         )
     elif campo.tipo is TipoCampo.ESCOLHA and campo.origem == ORIGEM_MOTOR:
-        if campo.chave == VarAmbiente.DATABASE_BACKEND and isinstance(valor, str):
-            valor = valor.strip().lower()  # como config.backend() lê
         valido = valor in campo.opcoes or (
             isinstance(valor, str) and plugins.MARCADOR_IMPORT in valor
         )

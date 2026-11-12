@@ -27,8 +27,8 @@ o lote de novo. O carimbo **vale só se as quatro condições** se cumprem:
   reaproveita.
 
 **O carimbo é cache**, descartável como o resto do estado
-([004](004-estado-descartavel.md)): `migrar-estado` não o copia e `reconstruir-estado` não
-o toca. `--auditar` e o snapshot de versão liberada não o gravam.
+([004](004-estado-descartavel.md)): `reconstruir-estado` não o toca. `--auditar` e o
+snapshot de versão liberada não o gravam.
 
 **A trava de tag continua sem cache**, com fetch próprio a cada chamada
 ([022](022-fetch-origin-em-todo-entry-point.md), [023](023-onde-nao-se-abstrai.md)): o

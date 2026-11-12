@@ -1,4 +1,4 @@
-"""Engine e esquema do estado, nos dois backends (SQLite e Postgres)."""
+"""Engine e esquema do estado (SQLite)."""
 
 from __future__ import annotations
 
@@ -8,37 +8,28 @@ from alembic import command
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session
 
-from motor.adapters.estado.postgres import PostgresEstado
+from motor.adapters.estado.sqlite import Estado
 from motor.migracoes import config_alembic
 
 
-def normalizar_url(url: str) -> str:
-    """`postgresql://` e `postgres://` vao para o driver instalado (psycopg v3)."""
-    for prefixo in ("postgresql://", "postgres://"):
-        if url.startswith(prefixo):
-            return "postgresql+psycopg://" + url[len(prefixo) :]
-    return url
-
-
 def criar_engine(url: str) -> Engine:
-    """Engine do estado. No SQLite liga as FKs em toda conexao: o padrao do
-    SQLite e ignora-las, e o contrato "atribuicao em versao inexistente e
-    recusada" depende delas."""
-    engine = create_engine(normalizar_url(url))
-    if engine.dialect.name == "sqlite":
+    """Engine do estado. Liga as FKs em toda conexao: o padrao do SQLite e
+    ignora-las, e o contrato "atribuicao em versao inexistente e recusada"
+    depende delas."""
+    engine = create_engine(url)
 
-        @event.listens_for(engine, "connect")
-        def _ligar_fks(conexao: Any, _registro: Any) -> None:
-            cursor = conexao.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
+    @event.listens_for(engine, "connect")
+    def _ligar_fks(conexao: Any, _registro: Any) -> None:
+        cursor = conexao.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
     return engine
 
 
 def aplicar_migracoes(url: str) -> None:
     """`alembic upgrade head` por codigo, na `url` dada (nao a da config)."""
-    command.upgrade(config_alembic(normalizar_url(url)), "head")
+    command.upgrade(config_alembic(url), "head")
 
 
 def garantir_esquema(url: str) -> bool:
@@ -50,7 +41,7 @@ def garantir_esquema(url: str) -> bool:
     engine = criar_engine(url)
     try:
         with Session(engine) as sessao:
-            migrado = PostgresEstado(sessao=sessao).revisao_migracao() is not None
+            migrado = Estado(sessao=sessao).revisao_migracao() is not None
     finally:
         engine.dispose()
     if migrado:
