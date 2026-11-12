@@ -92,7 +92,7 @@ export function blocos(texto: string): Bloco[] {
 export const blocoEm = (texto: string, inicio: number): Bloco | undefined =>
   blocos(texto).find((b) => b.inicio === inicio);
 
-function trecho(bloco: Bloco, lado: Lado): string {
+export function trecho(bloco: Bloco, lado: Lado): string {
   switch (lado) {
     case Lado.OURS:
       return bloco.ours;
@@ -168,3 +168,25 @@ export function recolher(
   }
   return ocultas;
 }
+
+export enum EstadoBloco {
+  ABERTO = "aberto",
+  DECIDIDO = "decidido",
+  EDITADO = "editado",
+}
+
+// `texto` é o que o Aceitar gravou no lugar do bloco.
+export type Decisao = { lado: Lado; texto: string };
+
+export function estadoDoBloco(
+  atual: string,
+  decisao: Decisao | null,
+): EstadoBloco {
+  if (decisao !== null && atual === decisao.texto) return EstadoBloco.DECIDIDO;
+  return temMarcadores(atual) ? EstadoBloco.ABERTO : EstadoBloco.EDITADO;
+}
+
+export const aceitouLado = (
+  decisao: Decisao | null,
+  lado: Lado.OURS | Lado.THEIRS,
+): boolean => decisao?.lado === lado || decisao?.lado === Lado.AMBOS;

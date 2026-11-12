@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  EstadoBloco,
   Lado,
   aceitar,
+  aceitouLado,
   blocoEm,
   blocos,
+  estadoDoBloco,
   localizar,
   recolher,
   temMarcadores,
@@ -133,5 +136,35 @@ describe("recolher", () => {
 
   it("sem faixa visível não esconde nada", () => {
     expect(recolher(20, [], 3)).toEqual([]);
+  });
+});
+
+describe("estadoDoBloco", () => {
+  const ours = { lado: Lado.OURS, texto: "A\n" };
+
+  it.each([
+    [BLOCO_2_VIAS, null, EstadoBloco.ABERTO],
+    ["A\n", ours, EstadoBloco.DECIDIDO],
+    ["A mexido\n", ours, EstadoBloco.EDITADO],
+    // O Ctrl+Z depois do Aceitar volta os marcadores.
+    [BLOCO_2_VIAS, ours, EstadoBloco.ABERTO],
+    ["x\n", null, EstadoBloco.EDITADO],
+  ])("%j com %j é %s", (atual, decisao, esperado) => {
+    expect(estadoDoBloco(atual, decisao)).toBe(esperado);
+  });
+});
+
+describe("aceitouLado", () => {
+  it("ambos vale para os dois lados", () => {
+    const ambos = { lado: Lado.AMBOS, texto: "" };
+    expect(aceitouLado(ambos, Lado.OURS)).toBe(true);
+    expect(aceitouLado(ambos, Lado.THEIRS)).toBe(true);
+  });
+
+  it("um lado não vale para o outro, e sem decisão nada vale", () => {
+    expect(aceitouLado({ lado: Lado.OURS, texto: "" }, Lado.THEIRS)).toBe(
+      false,
+    );
+    expect(aceitouLado(null, Lado.OURS)).toBe(false);
   });
 });
