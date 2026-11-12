@@ -161,11 +161,12 @@ class ConfigModal(ModalScreen[bool]):
                         yield Button("Criar repo", id="criar-repo")
                 with TabPane("Ambiente"):
                     yield VerticalScroll(*self._campos_de(Escopo.AMBIENTE, None, True))
-                with TabPane("Plugins"):
-                    yield VerticalScroll(
-                        *self._campos_de(Escopo.GERAL, None, False),
-                        *self._campos_de(Escopo.AMBIENTE, None, False),
-                    )
+                if any(c.origem != ORIGEM_MOTOR for c in cfg.campos):
+                    with TabPane("Plugins"):
+                        yield VerticalScroll(
+                            *self._campos_de(Escopo.GERAL, None, False),
+                            *self._campos_de(Escopo.AMBIENTE, None, False),
+                        )
             with Horizontal(id="config-botoes"):
                 yield Button("Cancelar", id="cancelar")
                 yield Button("Salvar", id="salvar", variant="primary")
@@ -205,14 +206,16 @@ class ConfigModal(ModalScreen[bool]):
     def _widgets_do_campo(self, repo: str | None, campo: Campo) -> list[Widget]:
         chave = (repo, campo.tabela, campo.chave)
         lido = self._lidos.get(chave)
-        rotulo = Label(campo.rotulo, classes="rotulo")
+        herdado = self._lidos.get((None, campo.tabela, campo.chave)) if repo else None
+        dica = "" if herdado is None or herdado.valor is None else str(herdado.valor)
+        # Com valor herdado do topo, o padrão do motor não vale: a dica mostra o herdado.
+        padrao = "" if campo.padrao is None or dica else f" (padrão: {campo.padrao})"
+        rotulo = Label(campo.rotulo + padrao, classes="rotulo", markup=False)
         if lido is not None and not lido.editavel:
             return [rotulo, Static(f"({MSG_SOMENTE_LEITURA})")]
         if campo.segredo:
             return self._widgets_do_segredo(chave, campo, lido, rotulo)
         atual = None if lido is None or lido.valor is None else lido.valor
-        herdado = self._lidos.get((None, campo.tabela, campo.chave)) if repo else None
-        dica = "" if herdado is None or herdado.valor is None else str(herdado.valor)
         entrada: Input | Select[str]
         if campo.tipo == TipoCampo.ESCOLHA:
             opcoes = list(campo.opcoes)

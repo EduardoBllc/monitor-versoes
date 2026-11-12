@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, OptionList, Select, TabbedContent
+from textual.widgets import Input, Label, OptionList, Select, TabbedContent
 
 from motor.config import (
     CHAVE_CAMINHO,
@@ -46,7 +46,7 @@ TEXTO_COMENTARIO = "# meu comentário"
 VALOR_NOVO = "develop"
 VALOR_TOPO = "main"
 WORKTREES = VarAmbiente.WORKTREES_MANTIDAS
-PORTA_TEXTO = "5433"
+WORKTREES_TEXTO = "5"
 CHAVE_TOKEN = "token"
 
 
@@ -260,6 +260,9 @@ def test_tui_config_repo_mostra_valor_do_topo_como_placeholder():
             )
             assert principal.placeholder == VALOR_TOPO
             assert principal.value == ""
+            # O "(padrão: X)" do motor só aparece no topo; no repo vale o herdado.
+            rotulos = [str(r.content) for r in modal.query(".rotulo").results(Label)]
+            assert sum(r.startswith("Branch principal (padrão:") for r in rotulos) == 1
 
     asyncio.run(fluxo())
 
@@ -268,9 +271,9 @@ def test_inteiro_gravado_como_texto_nao_tocado_nao_gera_alteracao():
     campo = Campo(
         Escopo.AMBIENTE, TABELA_AMBIENTE, WORKTREES, TipoCampo.INTEIRO, "Worktrees"
     )
-    lido = ValorLido(None, TABELA_AMBIENTE, WORKTREES, PORTA_TEXTO, True, True)
+    lido = ValorLido(None, TABELA_AMBIENTE, WORKTREES, WORKTREES_TEXTO, True, True)
     chave = (None, TABELA_AMBIENTE, WORKTREES)
-    novo = converter_texto(PORTA_TEXTO, lido, True)
+    novo = converter_texto(WORKTREES_TEXTO, lido, True)
     assert (
         alteracoes_do_formulario(_config([campo], [lido]), {chave: novo}, [], []) == []
     )

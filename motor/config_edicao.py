@@ -18,9 +18,11 @@ from tomlkit.exceptions import TOMLKitError
 
 from motor import plugins
 from motor.config import (
+    ARQUIVO_SQLITE,
     CHAVE_CAMINHO,
     SECAO_REPOS,
     TABELA_AMBIENTE,
+    WORKTREES_MANTIDAS_PADRAO,
     Chave,
     Tabela,
     VarAmbiente,
@@ -30,14 +32,22 @@ from motor.config import (
     caminho_config_global,
     config_global_do_documento,
     config_repo_do_documento,
+    diretorio_dados,
     validar_nome_repo,
 )
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.montagem import (
+    ATRIBUICAO_PADRAO,
+    ESQUEMA_PADRAO,
     GRUPO_ATRIBUICOES,
     GRUPO_ESQUEMAS,
     GRUPO_TAREFAS,
     resolver_versionamento,
+)
+from motor.services.versionamento import (
+    BRANCH_VERSAO_PADRAO,
+    PRINCIPAL_PADRAO,
+    TAG_PADRAO,
 )
 
 ORIGEM_MOTOR = "motor"
@@ -66,6 +76,9 @@ class Campo:
     segredo: bool = False
     opcoes: tuple[str, ...] = ()
     origem: str = ORIGEM_MOTOR
+    descricao: str = ""
+    padrao: str | None = None
+    exemplo: str = ""
 
 
 @dataclass(frozen=True)
@@ -100,19 +113,129 @@ _V = VarAmbiente
 _AMB = TABELA_AMBIENTE
 
 _CAMPOS_MOTOR = (
-    Campo(_G, Tabela.VERSAO, Chave.ESQUEMA, _ES, "Esquema de versão"),
-    Campo(_G, Tabela.VERSAO, Chave.ATRIBUICAO, _ES, "Atribuição"),
-    Campo(_G, Tabela.LIBERACAO, Chave.TAG, _TX, "Tag de liberação"),
-    Campo(_G, Tabela.BRANCHES, Chave.VERSAO, _TX, "Branch de versão"),
-    Campo(_G, Tabela.BRANCHES, Chave.PRINCIPAL, _TX, "Branch principal"),
-    Campo(_G, Tabela.REFERENCIA, Chave.PADRAO, _TX, "Padrão de referência"),
-    Campo(_G, Tabela.TAREFAS, Chave.FONTE, _ES, "Fonte de tarefas"),
-    Campo(_R, None, CHAVE_CAMINHO, _TX, "Caminho"),
-    Campo(_R, Tabela.VERSAO, Chave.PISO, _TX, "Piso de versão"),
-    Campo(_A, _AMB, _V.DATABASE_SQLITE_PATH, _TX, "Arquivo do SQLite"),
-    Campo(_A, _AMB, _V.BITBUCKET_EMAIL, _TX, "E-mail do Bitbucket"),
-    Campo(_A, _AMB, _V.WORKTREES_MANTIDAS, _IN, "Worktrees mantidas"),
-    Campo(_A, _AMB, _V.BITBUCKET_TOKEN, _TX, "Token do Bitbucket", segredo=True),
+    Campo(
+        _G,
+        Tabela.VERSAO,
+        Chave.ESQUEMA,
+        _ES,
+        "Esquema de versão",
+        descricao="Plugin que define o formato da versão e de onde ela sai",
+        padrao=ESQUEMA_PADRAO,
+    ),
+    Campo(
+        _G,
+        Tabela.VERSAO,
+        Chave.ATRIBUICAO,
+        _ES,
+        "Atribuição",
+        descricao="Política que decide quais tarefas são alvo de cada versão",
+        padrao=ATRIBUICAO_PADRAO,
+    ),
+    Campo(
+        _G,
+        Tabela.LIBERACAO,
+        Chave.TAG,
+        _TX,
+        "Tag de liberação",
+        descricao="Tag que libera a versão; exatamente um {versao}. "
+        "Sem ela, vale o critério do esquema",
+        padrao=TAG_PADRAO,
+        exemplo="v{versao}",
+    ),
+    Campo(
+        _G,
+        Tabela.BRANCHES,
+        Chave.VERSAO,
+        _TX,
+        "Branch de versão",
+        descricao="Branch de cada versão; exatamente um {versao}",
+        padrao=BRANCH_VERSAO_PADRAO,
+        exemplo="release/{versao}",
+    ),
+    Campo(
+        _G,
+        Tabela.BRANCHES,
+        Chave.PRINCIPAL,
+        _TX,
+        "Branch principal",
+        descricao="Branch de onde as versões novas saem",
+        padrao=PRINCIPAL_PADRAO,
+        exemplo="develop",
+    ),
+    Campo(
+        _G,
+        Tabela.REFERENCIA,
+        Chave.PADRAO,
+        _TX,
+        "Padrão de referência",
+        descricao="Como a tarefa aparece na mensagem do commit; exatamente um {id}. "
+        "Sem ele, vale o que a fonte de tarefas propõe",
+        exemplo="ch{id}",
+    ),
+    Campo(
+        _G,
+        Tabela.TAREFAS,
+        Chave.FONTE,
+        _ES,
+        "Fonte de tarefas",
+        descricao="Plugin que lista as tarefas; sem ela, só a lista manual",
+    ),
+    Campo(
+        _R,
+        None,
+        CHAVE_CAMINHO,
+        _TX,
+        "Caminho",
+        descricao="Diretório do clone local do repo",
+        exemplo="~/projetos/meu-repo",
+    ),
+    Campo(
+        _R,
+        Tabela.VERSAO,
+        Chave.PISO,
+        _TX,
+        "Piso de versão",
+        descricao="Menor versão cujas tarefas são buscadas; sem ele, nada é cortado",
+        exemplo="13.0.0",
+    ),
+    Campo(
+        _A,
+        _AMB,
+        _V.DATABASE_SQLITE_PATH,
+        _TX,
+        "Arquivo do SQLite",
+        descricao="Arquivo do banco SQLite",
+        padrao=os.path.join(diretorio_dados(), ARQUIVO_SQLITE),
+        exemplo="~/estado.db",
+    ),
+    Campo(
+        _A,
+        _AMB,
+        _V.BITBUCKET_EMAIL,
+        _TX,
+        "E-mail do Bitbucket",
+        descricao="E-mail da conta do Bitbucket; ativa a descoberta de commits por PR",
+        exemplo="voce@empresa.com",
+    ),
+    Campo(
+        _A,
+        _AMB,
+        _V.BITBUCKET_TOKEN,
+        _TX,
+        "Token do Bitbucket",
+        segredo=True,
+        descricao="API token da conta do Bitbucket",
+    ),
+    Campo(
+        _A,
+        _AMB,
+        _V.WORKTREES_MANTIDAS,
+        _IN,
+        "Worktrees mantidas",
+        descricao="Worktrees de versão mantidas em disco para o próximo comando "
+        "reusar; 0 descarta a cada run",
+        padrao=str(WORKTREES_MANTIDAS_PADRAO),
+    ),
 )
 
 

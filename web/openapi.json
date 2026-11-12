@@ -1364,6 +1364,27 @@
             "type": "string",
             "title": "Origem",
             "default": "motor"
+          },
+          "descricao": {
+            "type": "string",
+            "title": "Descricao",
+            "default": ""
+          },
+          "padrao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padrao"
+          },
+          "exemplo": {
+            "type": "string",
+            "title": "Exemplo",
+            "default": ""
           }
         },
         "type": "object",

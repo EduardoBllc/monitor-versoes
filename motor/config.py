@@ -34,7 +34,8 @@ _MENSAGEM_POSTGRES_REMOVIDO = (
 )
 
 #: Worktrees de versao que ficam em disco depois de cada operacao.
-_WORKTREES_MANTIDAS_PADRAO = 3
+WORKTREES_MANTIDAS_PADRAO = 3
+ARQUIVO_SQLITE = "estado.db"
 
 
 #: Variável que localiza a config central; nunca vem do `[ambiente]`.
@@ -81,7 +82,7 @@ def _caminho_sqlite() -> str:
     configurado = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
     if configurado:
         return os.path.expanduser(configurado)
-    return os.path.join(diretorio_dados(), "estado.db")
+    return os.path.join(diretorio_dados(), ARQUIVO_SQLITE)
 
 
 def _url_sqlite() -> str:
@@ -129,7 +130,7 @@ def worktrees_mantidas() -> int:
     """
     valor = os.environ.get(VarAmbiente.WORKTREES_MANTIDAS, "").strip()
     if not valor:
-        return _WORKTREES_MANTIDAS_PADRAO
+        return WORKTREES_MANTIDAS_PADRAO
     # isdigit recusa "-1", "1.5" e "3 worktrees" de uma vez; int() sozinho
     # aceitaria negativo, que nao tem significado aqui.
     if not valor.isdigit():

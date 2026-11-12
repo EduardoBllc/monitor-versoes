@@ -38,6 +38,8 @@ const original: ConfigEditavel = {
       segredo: false,
       opcoes: [],
       origem: ORIGEM_MOTOR,
+      descricao: "",
+      exemplo: "",
     },
     {
       escopo: Escopo.AMBIENTE,
@@ -48,6 +50,8 @@ const original: ConfigEditavel = {
       segredo: true,
       opcoes: [],
       origem: ORIGEM_MOTOR,
+      descricao: "",
+      exemplo: "",
     },
   ],
   valores: [

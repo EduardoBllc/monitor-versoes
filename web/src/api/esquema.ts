@@ -464,6 +464,18 @@ export interface components {
              * @default motor
              */
             origem: string;
+            /**
+             * Descricao
+             * @default
+             */
+            descricao: string;
+            /** Padrao */
+            padrao?: string | null;
+            /**
+             * Exemplo
+             * @default
+             */
+            exemplo: string;
         };
         /** ChamadoConsultado */
         ChamadoConsultado: {
