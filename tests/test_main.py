@@ -566,7 +566,7 @@ def test_reconstruir_estado_pendente_indica_julgar_orfao(bordas, tmp_path, capsy
 
     main(["reconstruir-estado", "13.34.0", "--repo", _repo_dir(tmp_path)])
 
-    assert "motor julgar-orfao 13.34.0" in capsys.readouterr().out
+    assert "monitor-versoes julgar-orfao 13.34.0" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

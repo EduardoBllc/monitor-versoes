@@ -225,7 +225,8 @@ def _inscricao_adicionar(args: argparse.Namespace) -> None:
     print(f"inscrição de {args.versao} registrada")
     if not _agendador_instalado():
         print(
-            "agendador não instalado: rode `motor inscricao agendar`", file=sys.stderr
+            "agendador não instalado: rode `monitor-versoes inscricao agendar`",
+            file=sys.stderr,
         )
 
 
@@ -351,8 +352,8 @@ def _parsers_de_orfaos(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Um subparser por comando: `motor -h` lista os comandos e
-    `motor <comando> -h` mostra so as flags daquele comando (help nativo do
+    """Um subparser por comando: `monitor-versoes -h` lista os comandos e
+    `monitor-versoes <comando> -h` mostra so as flags daquele comando (help nativo do
     argparse). Flags compartilhadas (--repo, --debug) vivem num parent parser.
     """
     comum = argparse.ArgumentParser(add_help=False)
@@ -398,7 +399,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="arquivo de lista (obrigatorio com --task-source=manual)",
     )
 
-    parser = argparse.ArgumentParser(prog="motor")
+    parser = argparse.ArgumentParser(prog="monitor-versoes")
     parser.add_argument(
         "--env",
         choices=_ARQUIVOS_AMBIENTE,
@@ -647,7 +648,9 @@ def imprimir_atualizacao(r: AtualizarResult, referencia: FonteReferencia) -> Non
             )[r.blocked_commit]
             linha += f", depende de {', '.join(refs)}, fora desta versao"
         print(linha)
-        print("resolva e rode: motor atualizar <versao> --repo <path> --continue")
+        print(
+            "resolva e rode: monitor-versoes atualizar <versao> --repo <path> --continue"
+        )
         return
     if r.status == AtualizarStatus.VAZIO:
         print(
@@ -655,11 +658,11 @@ def imprimir_atualizacao(r: AtualizarResult, referencia: FonteReferencia) -> Non
             "nenhuma no alvo"
         )
         print(
-            "confirme com: motor atualizar <versao> --repo <path> --continue "
+            "confirme com: monitor-versoes atualizar <versao> --repo <path> --continue "
             "--allow-empty (entra como commit vazio, com o trailer -x)"
         )
         print(
-            "ou descarte o commit com: motor atualizar <versao> --repo <path> --abort"
+            "ou descarte o commit com: monitor-versoes atualizar <versao> --repo <path> --abort"
         )
         return
     print("concluido")
@@ -798,7 +801,7 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
             print(f"  - {hash_[:8]} (sem referencia de tarefa na mensagem)")
         if resultado.orfaos:
             print(
-                f"julgue com: motor julgar-orfao {args.versao} <hash> "
+                f"julgue com: monitor-versoes julgar-orfao {args.versao} <hash> "
                 f"--repo {args.repo} (--chamado ID | --nenhum) --motivo TEXTO"
             )
 

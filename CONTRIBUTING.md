@@ -19,7 +19,7 @@ Para criar uma migração nova: `make migracao m="descrição"`; a revisão nasc
 Para rodar o CLI contra o banco de desenvolvimento, passe `--env development`:
 
 ```bash
-./.venv/bin/motor --env development verificar 13.34.0 --repo meu-repo
+./.venv/bin/monitor-versoes --env development verificar 13.34.0 --repo meu-repo
 ```
 
 ## Produção é o padrão; desenvolvimento é explícito
@@ -31,7 +31,7 @@ estado de produção) só entra quando pedido, com `--env development` no CLI.
 
 O `[ambiente]` do central vence também o `.env.development`. Na máquina em que você
 desenvolve, não ponha `[ambiente]` no central, ou aponte `XDG_CONFIG_HOME` para outro
-diretório ao usar `--env development`; senão `motor --env development ...` usa o estado do
+diretório ao usar `--env development`; senão `monitor-versoes --env development ...` usa o estado do
 `[ambiente]`.
 
 A suíte de testes não usa nenhum dos dois e não lê o `.env.development`: o estado roda no
@@ -56,11 +56,11 @@ mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de ab
 
 ## Front-end web
 
-`web/` é a SPA do `motor serve` ([decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md)).
+`web/` é a SPA do `monitor-versoes serve` ([decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md)).
 
 ```bash
 # terminal 1, na raiz do repo
-uv run motor serve
+uv run monitor-versoes serve
 
 # terminal 2
 cd web
@@ -77,8 +77,8 @@ O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
 | Sintoma | Causa e saída |
 | --- | --- |
 | `uv run pytest` morre na coleta com `SyntaxError: future feature annotations is not defined` | Um `VIRTUAL_ENV` de outro projeto (Python antigo) vazou para o shell e o `uv` o prefere ao `.venv`. Não é erro de código. Use `make` (ele faz `unexport VIRTUAL_ENV`), ou `unset VIRTUAL_ENV`, ou chame `./.venv/bin/python -m pytest` (idem `mypy`, `ruff`). Sem `.venv`: `unset VIRTUAL_ENV; uv sync --all-extras`. |
-| `motor --env development ...` sai com `ERROR: o suporte a Postgres no estado foi removido ...` | O `.env.development` é anterior à [decisão 035](docs/decisoes/035-estado-local-em-sqlite.md) e ainda tem `DATABASE_BACKEND=postgres`. Recrie-o a partir do exemplo: `cp .env.development.example .env.development`. |
-| `motor migrar` migrou o estado errado | Sem `--env development`, o motor usa o `[ambiente]` do central ou o `.env` (produção). Use `motor --env development migrar`. Se mesmo assim foi para produção, o `[ambiente]` do central está vencendo o `.env.development`: tire-o do central ou aponte `XDG_CONFIG_HOME` para outro diretório. |
+| `monitor-versoes --env development ...` sai com `ERROR: o suporte a Postgres no estado foi removido ...` | O `.env.development` é anterior à [decisão 035](docs/decisoes/035-estado-local-em-sqlite.md) e ainda tem `DATABASE_BACKEND=postgres`. Recrie-o a partir do exemplo: `cp .env.development.example .env.development`. |
+| `monitor-versoes migrar` migrou o estado errado | Sem `--env development`, o motor usa o `[ambiente]` do central ou o `.env` (produção). Use `monitor-versoes --env development migrar`. Se mesmo assim foi para produção, o `[ambiente]` do central está vencendo o `.env.development`: tire-o do central ou aponte `XDG_CONFIG_HOME` para outro diretório. |
 
 ## Fluxo
 

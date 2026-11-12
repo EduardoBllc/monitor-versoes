@@ -1,4 +1,4 @@
-"""O wheel precisa levar as migrações e o build da web, ou `motor migrar` nasce quebrado."""
+"""O wheel precisa levar as migrações e o build da web, ou `monitor-versoes migrar` nasce quebrado."""
 
 from __future__ import annotations
 

@@ -45,7 +45,7 @@ MENSAGEM_TEMPO_ESGOTADO = "execução excedeu {limite}s e foi interrompida"
 CAMPO_CLONE_ANTIGO = "clone"
 AVISO_INSCRICAO_ANTIGA = (
     "aviso: inscrição antiga de {clone} {versao} descartada; reinscreva com "
-    "`motor inscricao adicionar {versao} --repo <nome>`"
+    "`monitor-versoes inscricao adicionar {versao} --repo <nome>`"
 )
 _PADRAO_INTERVALO = re.compile(r"([1-9]\d*)([mh])")
 

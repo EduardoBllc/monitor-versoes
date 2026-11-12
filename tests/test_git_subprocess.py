@@ -532,7 +532,7 @@ def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):
     repo_dir = init_repo_de_teste(tmp_path)
     g = new_git_subprocess(repo_dir)
 
-    with pytest.raises(NaoEncontrado, match="rode 'motor criar"):
+    with pytest.raises(NaoEncontrado, match="rode 'monitor-versoes criar"):
         g.use_worktree("99.0.0")
 
 

@@ -319,7 +319,7 @@ def test_reconstruir_estado_relata_as_tres_bordas():
 
 
 def test_relator_do_terminal_escreve_a_contagem_em_stderr():
-    """stderr, nao stdout: a saida do comando e canalizavel (`motor consulta |
+    """stderr, nao stdout: a saida do comando e canalizavel (`monitor-versoes consulta |
     grep`) e uma barra no meio dela quebraria o pipe de quem consome.
     """
     saida = io.StringIO()

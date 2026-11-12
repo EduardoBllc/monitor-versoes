@@ -173,7 +173,10 @@ def test_migracao_vazia_aponta_o_primeiro_uso():
 
 @pytest.mark.parametrize(
     ("ambiente", "correcao"),
-    [("production", "motor migrar"), ("development", "motor --env development migrar")],
+    [
+        ("production", "monitor-versoes migrar"),
+        ("development", "monitor-versoes --env development migrar"),
+    ],
 )
 def test_migracao_antiga_aponta_o_migrar(ambiente, correcao):
     por_peca, _ = _rodar(abrir=_sessao_com("antiga"), ambiente=ambiente)

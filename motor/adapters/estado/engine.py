@@ -36,7 +36,7 @@ def garantir_esquema(url: str) -> bool:
     """Aplica as migrations se o banco ainda nao tem esquema.
 
     Devolve `True` quando aplicou. Banco ja migrado (mesmo numa revisao antiga)
-    nao e tocado: a divergencia de revisao e do `motor diagnostico`.
+    nao e tocado: a divergencia de revisao e do `monitor-versoes diagnostico`.
     """
     engine = criar_engine(url)
     try:

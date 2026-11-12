@@ -75,7 +75,7 @@ class Estado:
     sessao: Session
 
     def verificar_conexao(self) -> None:
-        """`SELECT 1`: o banco responde? Usado pelo `motor diagnostico`."""
+        """`SELECT 1`: o banco responde? Usado pelo `monitor-versoes diagnostico`."""
         try:
             self.sessao.execute(text("SELECT 1"))
         except DBAPIError as e:

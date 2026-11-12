@@ -85,9 +85,9 @@ def diagnosticar(  # noqa: PLR0913
     o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
     arquivo = ".env.development" if ambiente == "development" else ".env"
     migrar = (
-        "motor --env development migrar"
+        "monitor-versoes --env development migrar"
         if ambiente == "development"
-        else "motor migrar"
+        else "monitor-versoes migrar"
     )
     onde = f"[ambiente] de {config_em} (ou no {arquivo})"
 
