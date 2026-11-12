@@ -17,6 +17,7 @@ import { DiffEditor, Editor, loader, type OnMount } from "@monaco-editor/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as monaco from "monaco-editor";
 import TrabalhadorEditor from "monaco-editor/editor/editor.worker?worker";
+import TrabalhadorJson from "monaco-editor/language/json/json.worker?worker";
 import { useEffect, useRef, useState } from "react";
 import { ErroApi, Metodo, api } from "../api/cliente";
 import { TipoArquivo, TipoErro, assertNever } from "../api/enums";
@@ -39,8 +40,13 @@ import { ModalReabrir } from "./ModalReabrir";
 import { notificarErro, notificarOk } from "./notificar";
 import { TAMANHO_HASH } from "./PainelBloqueio";
 
-// Monaco do bundle e worker local, sem CDN: o daemon só serve 127.0.0.1.
-self.MonacoEnvironment = { getWorker: () => new TrabalhadorEditor() };
+// Monaco do bundle e workers locais, sem CDN: o daemon só serve 127.0.0.1.
+self.MonacoEnvironment = {
+  getWorker: (_id: string, rotulo: string) =>
+    rotulo === "json" ? new TrabalhadorJson() : new TrabalhadorEditor(),
+};
+// Marcador de conflito não é JSON válido: o sublinhado vermelho seria ruído.
+monaco.json.jsonDefaults.setDiagnosticsOptions({ validate: false });
 loader.config({ monaco });
 
 const LINGUAGEM = "plaintext";
