@@ -30,10 +30,11 @@ from motor.daemon.erros import (
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
 from motor.domain.inscricao import UltimaExecucao
-from motor.domain.types import VersionStatus
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult
 from motor.engine.conflito import ConflitoAberto, ConteudoDoConflito
 from motor.engine.consultar import ChamadoConsultado
+from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.operacoes import (
     RepoOption,
@@ -96,6 +97,13 @@ class PedidoInscrever:
 class PedidoRemover:
     repo: str
     versao: str
+
+
+@dataclass(frozen=True)
+class PedidoJulgamento:
+    # None = "não pertence a chamado nenhum"
+    chamado: str | None
+    motivo: str
 
 
 @dataclass(frozen=True)
@@ -213,6 +221,20 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
     @app.get("/api/repos/{repo}/versoes/{versao}/chamados")
     def consultar(repo: str, versao: str) -> list[ChamadoConsultado]:
         return _exigir(ctx.leitura().consultar_versao)(ctx.achar(repo), versao)
+
+    # Síncronas e sem lock, como o `reconstruir-estado`: só fazem fetch e
+    # gravam no estado, sem tocar worktree, checkpoint nem GC (decisão 032).
+    @app.get("/api/repos/{repo}/versoes/{versao}/orfaos")
+    def listar_orfaos(repo: str, versao: str) -> list[OrfaoDaVersao]:
+        return _exigir(ctx.leitura().listar_orfaos)(ctx.achar(repo), versao)
+
+    @app.post("/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento")
+    def julgar_orfao(
+        repo: str, versao: str, hash: str, corpo: PedidoJulgamento
+    ) -> JulgamentoOrfao:
+        return _exigir(ctx.leitura().julgar_orfao)(
+            ctx.achar(repo), versao, hash, corpo.chamado, corpo.motivo
+        )
 
 
 def _rotas_operacoes(app: FastAPI, ctx: _Contexto) -> None:

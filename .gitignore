@@ -67,3 +67,6 @@ docs/superpowers/*
 
 # Front
 web/node_modules/
+
+# Restos de resolução de conflito
+*.orig

@@ -50,6 +50,7 @@ import { ModalConfirmarLote } from "./componentes/ModalConfirmarLote";
 import { ModalConfig } from "./componentes/ModalConfig";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
+import { ModalOrfaos } from "./componentes/ModalOrfaos";
 import { ModalResultado } from "./componentes/ModalResultado";
 import { PainelBloqueio } from "./componentes/PainelBloqueio";
 import { ResultadoAtualizacao } from "./componentes/ResultadoAtualizacao";
@@ -109,6 +110,7 @@ function Tela() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [criando, setCriando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
+  const [orfaos, setOrfaos] = useState(false);
   const [configurando, setConfigurando] = useState(false);
   const [atualizacoes, setAtualizacoes] = useState<
     Readonly<Record<string, EstadoAtualizacao>>
@@ -424,6 +426,7 @@ function Tela() {
           }
           aoCriar={() => setCriando(true)}
           aoInscricoes={() => setInscricoes(true)}
+          aoOrfaos={() => setOrfaos(true)}
           aoConfigurar={() => setConfigurando(true)}
         />
       </AppShell.Header>
@@ -510,6 +513,15 @@ function Tela() {
           aberto={criando}
           aoFechar={() => setCriando(false)}
           aoCriar={(numero) => void disparar(base, { numero })}
+        />
+      )}
+      {repo !== undefined && versao !== undefined && (
+        <ModalOrfaos
+          key={`${repo}@${versao}`}
+          repo={repo}
+          versao={versao}
+          aberto={orfaos}
+          aoFechar={() => setOrfaos(false)}
         />
       )}
       <ModalConfig

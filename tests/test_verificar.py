@@ -10,10 +10,19 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.atribuicoes import Composta, Exata
-from motor.domain.types import Atribuicao, CommitRef, RepoInfo, VersaoInfo
+from motor.domain.types import (
+    Atribuicao,
+    CommitRef,
+    Exclusion,
+    JulgamentoOrfao,
+    RepoInfo,
+    VersaoInfo,
+)
 from motor.engine.deps import Deps
+from motor.engine.orfaos import julgar_orfao
+from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from motor.engine.vigencia import impressao_da_verificacao
+from motor.engine.vigencia import impressao_da_verificacao, verificacao_vigente
 from motor.errors import ErroDeEntrada, MotorError
 from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
@@ -1035,7 +1044,7 @@ def test_verificar_grava_carimbo_com_tip_impressao_hora_e_status():
     assert carimbo is not None
     assert carimbo.tip == deps.git.resolve_ref("14.0.0")
     assert carimbo.impressao == impressao_da_verificacao(
-        [], {}, deps.identidade_das_entradas()
+        [], {}, [], deps.identidade_das_entradas()
     )
     assert carimbo.verificado_em == AGORA
     assert carimbo.status == status
@@ -1212,3 +1221,198 @@ def test_exata_nao_acusa_ambiguidade_com_aberta_menor():
 
     assert status.tasks_ambiguas == []
     assert [c.hash_origem for c in status.faltantes] == ["m1"]
+
+
+# -- julgamento de orfao -------------------------------------------------------
+
+A0 = CommitRef(
+    hash_origem="a0", parent="m0", chamado="123123", commit_date=D, msg="ch123123 alfa"
+)
+O1 = CommitRef(hash_origem="o1", parent="m0", commit_date=D, msg="ajuste solto")
+
+
+def _git_com_orfao(tags: dict[str, bool] | None = None) -> FakeGit:
+    """Acima de m0, a branch da 14.0.0 (e a da 13.34.0) tem o orfao o1 e o
+    pick de a0 (ch123123), entao os dois estao presentes. zz e um commit sem
+    referencia que so existe no master."""
+    git = _git(tags)
+    git.add_commit("o1", "m0", "ajuste solto", D)
+    git.add_commit("pa0", "o1", "ch123123 alfa\n\n(cherry picked from commit a0)", D)
+    git.add_commit("zz", "a0", "ajuste so no master", D)
+    for versao in ("13.34.0", "14.0.0"):
+        git.set_branch(versao, "pa0")
+    return git
+
+
+def _deps_orfao(
+    *julgamentos: JulgamentoOrfao,
+    fonte: dict[str, list[CommitRef]] | None = None,
+    chamados: list[str] | None = None,
+    git: FakeGit | None = None,
+) -> Deps:
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+    _versao_registrada(estado, "13.34.0")
+    for j in julgamentos:
+        estado.julgar_orfao("r", j)
+    tasks = FakeTaskSource(chamados={"14.0.0": chamados or ["123123"]})
+    commits = FakeCommitSource(por_chamado={"123123": [A0]} if fonte is None else fonte)
+    deps = _deps(git or _git_com_orfao(), tasks, commits, estado)
+    deps.agora = lambda: AGORA
+    return deps
+
+
+def _atribuidos(deps: Deps, versao: str = "14.0.0") -> dict[str, list[str]]:
+    return {a.chamado: a.commits for a in deps.estado.atribuicoes("r", versao)}
+
+
+def test_orfao_julgado_entra_na_atribuicao_do_chamado_no_alvo():
+    deps = _deps_orfao(JulgamentoOrfao("o1", "14.0.0", "123123", "m"))
+
+    status = verificar(deps, "14.0.0")
+
+    assert deps.estado.atribuicoes("r", "14.0.0") == [
+        Atribuicao(
+            chamado="123123", marcada="14.0.0", estado="aplicado", commits=["a0", "o1"]
+        )
+    ]
+    assert status.faltantes == []
+
+
+def test_reconstruir_e_verificar_mantem_o_orfao_julgado():
+    deps = _deps_orfao(JulgamentoOrfao("o1", "14.0.0", "123123", "m"))
+
+    reconstruir_estado(deps, "14.0.0")
+    verificar(deps, "14.0.0")
+
+    assert _atribuidos(deps) == {"123123": ["a0", "o1"]}
+
+
+def test_julgamento_de_chamado_fora_do_alvo_nao_cria_atribuicao():
+    deps = _deps_orfao(JulgamentoOrfao("o1", "14.0.0", "555", "m"))
+
+    verificar(deps, "14.0.0")
+
+    assert _atribuidos(deps) == {"123123": ["a0"]}
+
+
+def test_orfao_julgado_nenhum_fica_fora_das_atribuicoes():
+    deps = _deps_orfao(JulgamentoOrfao("o1", "14.0.0", None, "m"))
+
+    verificar(deps, "14.0.0")
+
+    assert _atribuidos(deps) == {"123123": ["a0"]}
+
+
+def test_exclusao_vence_o_julgamento():
+    deps = _deps_orfao(JulgamentoOrfao("o1", "14.0.0", "123123", "m"))
+    assert isinstance(deps.estado, FakeEstado)
+    deps.estado._exclusoes["r"] = [Exclusion("o1", "14.0.0", "fora")]
+
+    verificar(deps, "14.0.0")
+
+    assert _atribuidos(deps) == {"123123": ["a0"]}
+
+
+def test_julgamento_de_outra_versao_nao_muda_o_verificar():
+    sem = _deps_orfao()
+    com = _deps_orfao(JulgamentoOrfao("o1", "13.34.0", "123123", "m"))
+
+    assert verificar(com, "14.0.0") == verificar(sem, "14.0.0")
+    assert _atribuidos(com) == _atribuidos(sem)
+
+
+def test_chamado_sem_commit_pela_fonte_com_orfao_julgado_sai_de_tasks_sem_commits():
+    deps = _deps_orfao(JulgamentoOrfao("o1", "14.0.0", "123123", "m"), fonte={})
+
+    status = verificar(deps, "14.0.0")
+
+    assert status.tasks_sem_commits == []
+    assert deps.estado.atribuicoes("r", "14.0.0") == [
+        Atribuicao(
+            chamado="123123", marcada="14.0.0", estado="aplicado", commits=["o1"]
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("fonte", "esperado"),
+    [
+        pytest.param(
+            {"123123": [A0, replace(O1, chamado="123123")]},
+            {"123123": ["a0", "o1"], "777": []},
+            id="mesmo-chamado",
+        ),
+        pytest.param(
+            {"123123": [A0], "777": [replace(O1, chamado="777")]},
+            {"123123": ["a0", "o1"], "777": ["o1"]},
+            id="outro-chamado",
+        ),
+    ],
+)
+def test_hash_julgado_nao_duplica_e_nao_sai_de_outro_chamado(fonte, esperado):
+    deps = _deps_orfao(
+        JulgamentoOrfao("o1", "14.0.0", "123123", "m"),
+        fonte=fonte,
+        chamados=["123123", "777"],
+    )
+
+    verificar(deps, "14.0.0")
+
+    assert _atribuidos(deps) == esperado
+
+
+def test_julgamento_de_hash_fora_da_branch_nao_vira_faltante():
+    deps = _deps_orfao(JulgamentoOrfao("zz", "14.0.0", "123123", "m"))
+
+    status = verificar(deps, "14.0.0")
+
+    assert "zz" not in {c.hash_origem for c in status.faltantes}
+    assert _atribuidos(deps) == {"123123": ["a0"]}
+
+
+def test_versao_sem_julgamento_nao_varre_nem_exige_referencia():
+    git = _git_com_orfao()
+    git.commits_in_range_err = MotorError("nao devia varrer")
+    deps = _deps_orfao(git=git)
+
+    def sem_referencia():
+        raise ErroDeEntrada("sem [referencia] padrao")
+
+    deps.referencia = sem_referencia
+
+    verificar(deps, "14.0.0")
+
+    assert _atribuidos(deps) == {"123123": ["a0"]}
+
+
+def test_versao_liberada_aplica_julgamento_so_na_auditoria():
+    git = _git_com_orfao(tags={"13.34.0": True})
+    git.tag_commits["13.34.0"] = "pa0"
+    deps = _deps_orfao(JulgamentoOrfao("o1", "13.34.0", "123123", "m"), git=git)
+    assert isinstance(deps.tasks, FakeTaskSource)
+    deps.tasks.chamados["13.34.0"] = ["123123"]
+    deps.estado.marcar_liberadas("r", {"13.34.0": D})
+
+    comum = verificar(deps, "13.34.0")
+
+    assert (comum.ancestrais, comum.faltantes) == ([], [])
+    assert deps.estado.atribuicoes("r", "13.34.0") == []
+
+    auditada = verificar(deps, "13.34.0", auditar=True)
+
+    assert "o1" in {c.hash_origem for c in auditada.ancestrais}
+
+
+@pytest.mark.parametrize("onde", ["14.0.0", "13.34.0"], ids=["mesma", "outra"])
+def test_gravar_julgamento_invalida_o_carimbo_e_verificar_o_renova(onde):
+    deps = _deps_orfao()
+
+    verificar(deps, "14.0.0")
+    assert verificacao_vigente(deps, "14.0.0") is not None
+
+    julgar_orfao(deps, onde, "o1", None, "m")
+    assert verificacao_vigente(deps, "14.0.0") is None
+
+    verificar(deps, "14.0.0")
+    assert verificacao_vigente(deps, "14.0.0") is not None

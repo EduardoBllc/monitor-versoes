@@ -13,9 +13,10 @@ from rich.console import Console
 from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 
 import motor.tui as tui
-from motor.domain.types import CommitRef, VersionStatus
+from motor.domain.types import CommitRef, JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.consultar import ChamadoConsultado
+from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import MotorError
 from motor.inscricoes import (
     INTERVALO_PADRAO,
@@ -34,6 +35,7 @@ from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import versionamento_padrao
 from motor.tui import (
     MotorTUI,
+    OrfaosModal,
     PainelProgresso,
     renderizar_chamado,
     renderizar_status,
@@ -298,6 +300,8 @@ def test_run_tui_liga_os_runners_reais_e_compartilha_o_slot(monkeypatch):
         (app._abortar, esperado.abortar_repo),
         (app._consultar, esperado.consultar_versao),
         (app._criar, esperado.criar_repo),
+        (app._listar_orfaos, esperado.listar_orfaos),
+        (app._julgar_orfao, esperado.julgar_orfao),
     ]
     for obtido, previsto in ligados:
         assert isinstance(obtido, partial) and isinstance(previsto, partial)
@@ -2526,3 +2530,130 @@ def test_app_auditoria_roda_com_repo_ocupado():
             assert _OCUPADO not in tela
 
     asyncio.run(executar_fluxo())
+
+
+_Julgada = tuple[RepoOption, str, str, str | None, str]
+
+
+def _app_orfaos(
+    julgamentos: dict[str, JulgamentoOrfao], chamadas: list[_Julgada]
+) -> MotorTUI:
+    orfaos = ["aaaa1111", "bbbb2222"]
+
+    def listar(repo: RepoOption, versao: str) -> list[OrfaoDaVersao]:
+        return [
+            OrfaoDaVersao(
+                hash_origem=h,
+                assunto=f"assunto {h}",
+                data=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC),
+                julgamento=julgamentos.get(h),
+            )
+            for h in orfaos
+        ]
+
+    def julgar(
+        repo: RepoOption, versao: str, hash_: str, chamado: str | None, motivo: str
+    ) -> JulgamentoOrfao:
+        chamadas.append((repo, versao, hash_, chamado, motivo))
+        j = JulgamentoOrfao(hash_, versao, chamado, motivo)
+        julgamentos[hash_] = j
+        return j
+
+    return MotorTUI(
+        Runners(
+            lambda: [_REPO_PREVIA],
+            lambda opcao: [_VERSAO_PREVIA],
+            _nunca_executa,
+            listar_orfaos=listar,
+            julgar_orfao=julgar,
+        )
+    )
+
+
+def test_orfaos_sem_repo_e_versao_avisa_e_nao_abre(monkeypatch):
+    severidades: list[str] = []
+
+    async def executar_fluxo() -> None:
+        app = _app_orfaos({}, [])
+        monkeypatch.setattr(
+            app,
+            "notify",
+            lambda mensagem, **kw: severidades.append(kw.get("severity")),
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.press("o")
+            await pilot.pause()
+            assert not isinstance(app.screen, OrfaosModal)
+
+    asyncio.run(executar_fluxo())
+    assert severidades == ["warning"]
+
+
+def test_orfaos_abre_com_execucao_da_tui_em_andamento():
+    """Listar e julgar rodam ao lado de outra operação (decisão 034)."""
+
+    async def executar_fluxo() -> None:
+        app = _app_orfaos({}, [])
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+            app._ocupado = True
+            await pilot.press("o")
+            await pilot.pause()
+            assert isinstance(app.screen, OrfaosModal)
+
+    asyncio.run(executar_fluxo())
+
+
+def test_orfaos_lista_e_julga_nos_dois_sentidos():
+    julgamentos: dict[str, JulgamentoOrfao] = {}
+    chamadas: list[_Julgada] = []
+    numero = _VERSAO_PREVIA.numero
+
+    def textos(app) -> list[str]:
+        lista = app.screen.query_one("#orfaos-lista", OptionList)
+        return [
+            _texto(lista.get_option_at_index(i).prompt)
+            for i in range(lista.option_count)
+        ]
+
+    async def gravar(app, pilot, indice: int, chamado: str | None, motivo: str):
+        modal = app.screen
+        modal.query_one("#orfaos-lista", OptionList).highlighted = indice
+        if chamado is None:
+            modal.query_one("#orfao-nenhum", Checkbox).value = True
+        else:
+            modal.query_one("#orfao-chamado", Input).value = chamado
+        modal.query_one("#orfao-motivo", Input).value = motivo
+        await pilot.pause()
+        modal.query_one("#orfao-gravar", Button).press()
+        await pilot.pause()
+        await modal.workers.wait_for_complete()
+        await pilot.pause()
+
+    async def executar_fluxo() -> None:
+        app = _app_orfaos(julgamentos, chamadas)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await _selecionar_previa(app, pilot)
+            await pilot.press("o")
+            await pilot.pause()
+            assert isinstance(app.screen, OrfaosModal)
+            await app.screen.workers.wait_for_complete()
+            await pilot.pause()
+            assert all("[pendente]" in t for t in textos(app))
+
+            await gravar(app, pilot, 0, "123", "m1")
+            primeiro, segundo = textos(app)
+            assert "pertence a 123: m1" in primeiro
+            assert "[pendente]" in segundo
+
+            await gravar(app, pilot, 1, None, "m2")
+            primeiro, segundo = textos(app)
+            assert "pertence a 123: m1" in primeiro
+            assert "nenhum: m2" in segundo
+
+    asyncio.run(executar_fluxo())
+    assert chamadas == [
+        (_REPO_PREVIA, numero, "aaaa1111", "123", "m1"),
+        (_REPO_PREVIA, numero, "bbbb2222", None, "m2"),
+    ]

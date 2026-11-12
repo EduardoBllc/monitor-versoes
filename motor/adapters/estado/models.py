@@ -154,6 +154,24 @@ class SemEntrega(Base):
     motivo: Mapped[str]
 
 
+class JulgamentoOrfao(Base):
+    """Julgamento humano de um commit órfão da versão: o git não o recupera,
+    e nenhum recálculo o apaga (docs/decisoes/004-estado-descartavel.md).
+
+    Sem trigger de congelamento: não é atribuição. Numa versão liberada ele
+    pode ser gravado antes de levantar o congelamento e vale no
+    `verificar --auditar` (docs/decisoes/034-julgamento-de-orfao.md).
+    """
+
+    __tablename__ = "julgamento_orfao"
+
+    versao_id: Mapped[int] = mapped_column(ForeignKey("versao.id"), primary_key=True)
+    hash_origem: Mapped[str] = mapped_column(primary_key=True)
+    # null = o commit não pertence a chamado nenhum.
+    chamado: Mapped[str | None] = mapped_column(default=None)
+    motivo: Mapped[str]
+
+
 class PrCommitCache(Base):
     """Commits de uma PR mergeada do host — cache puro de fato imutavel.
 

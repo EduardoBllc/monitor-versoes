@@ -346,6 +346,8 @@ def test_runners_com_progresso_liga_cada_runner_ao_relator():
         (r.consultar_versao, operacoes.consultar_repo),
         (r.criar_repo, operacoes.criar_repo),
         (r.previa_atualizacao, operacoes.previa_repo),
+        (r.listar_orfaos, operacoes.orfaos_repo),
+        (r.julgar_orfao, operacoes.julgar_orfao_repo),
     ]
     for runner, alvo in ligados:
         assert isinstance(runner, partial) and runner.func is alvo
