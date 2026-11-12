@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -30,6 +31,7 @@ import {
   linhasDe,
   opcoesDe,
   textoDe,
+  visivel,
   type Escalar,
   type Formulario,
   type Linha,
@@ -50,6 +52,22 @@ type Valores = Formulario["valores"];
 const rotuloDe = (l: Linha): string =>
   l.campo?.rotulo ?? [l.tabela, l.chave].filter(Boolean).join(".");
 
+function Rotulo({ linha }: { linha: Linha }) {
+  const texto = rotuloDe(linha);
+  const descricao = linha.campo?.descricao;
+  if (!descricao) return texto;
+  return (
+    <Group component="span" gap={4} display="inline-flex">
+      {texto}
+      <Tooltip label={descricao} multiline w={280} withArrow events={{ hover: true, focus: true, touch: true }}>
+        <Text span c="dimmed" tabIndex={0} aria-label={descricao} style={{ cursor: "help" }}>
+          ⓘ
+        </Text>
+      </Tooltip>
+    </Group>
+  );
+}
+
 function Entrada({
   linha,
   valores,
@@ -63,7 +81,11 @@ function Entrada({
 }) {
   const k = chaveDe(linha.repo, linha.tabela, linha.chave);
   const { campo, lido } = linha;
-  const label = rotuloDe(linha);
+  const label = <Rotulo linha={linha} />;
+  // Com valor herdado do topo (placeholder), o padrão do motor não vale.
+  const description =
+    placeholder == null && campo?.padrao != null ? `Padrão: ${campo.padrao}` : undefined;
+  const dica = placeholder ?? (campo?.exemplo || undefined);
   const somenteLeitura = lido?.editavel === false;
   const atual = valores[k] ?? null;
   if (campo?.segredo) {
@@ -78,6 +100,7 @@ function Entrada({
       <Group align="end">
         <PasswordInput
           label={label}
+          description={description}
           style={{ flex: 1 }}
           autoComplete="new-password"
           placeholder={marcas[estado]}
@@ -100,10 +123,11 @@ function Entrada({
     return (
       <Select
         label={label}
+        description={description}
         data={opcoesDe(campo, atual)}
         disabled={somenteLeitura}
         clearable
-        placeholder={placeholder}
+        placeholder={dica}
         value={typeof atual === "string" ? atual : null}
         onChange={(v) => mudar(k, v)}
       />
@@ -113,8 +137,9 @@ function Entrada({
     return (
       <NumberInput
         label={label}
+        description={description}
         readOnly={somenteLeitura}
-        placeholder={placeholder}
+        placeholder={dica}
         value={textoDe(atual)}
         onChange={(v) => mudar(k, typeof v === "number" ? v : null)}
       />
@@ -133,8 +158,9 @@ function Entrada({
   return (
     <TextInput
       label={label}
+      description={description}
       readOnly={somenteLeitura}
-      placeholder={placeholder}
+      placeholder={dica}
       value={typeof atual === "string" ? atual : ""}
       onChange={(e) => mudar(k, e.currentTarget.value)}
     />
@@ -142,14 +168,17 @@ function Entrada({
 }
 
 function Lista({
-  linhas,
+  linhas: todas,
+  campos,
   valores,
   mudar,
 }: {
   linhas: Linha[];
+  campos: ConfigEditavel["campos"];
   valores: Valores;
   mudar: (k: string, v: Escalar) => void;
 }) {
+  const linhas = todas.filter((l) => visivel(campos, valores, l.campo));
   if (linhas.length === 0) return <Text c="dimmed">Nada a configurar.</Text>;
   return (
     <Stack>
@@ -237,11 +266,12 @@ function Editor({
           <Tabs.Tab value={Aba.GERAL}>Geral</Tabs.Tab>
           <Tabs.Tab value={Aba.REPOS}>Repos</Tabs.Tab>
           <Tabs.Tab value={Aba.AMBIENTE}>Ambiente</Tabs.Tab>
-          <Tabs.Tab value={Aba.PLUGINS}>Plugins</Tabs.Tab>
+          {origens.length > 0 && <Tabs.Tab value={Aba.PLUGINS}>Plugins</Tabs.Tab>}
         </Tabs.List>
         <Tabs.Panel value={Aba.GERAL} pt="md">
           <Lista
             linhas={doMotor.filter((l) => !ehAmbiente(l))}
+            campos={config.campos}
             valores={valores}
             mudar={mudar}
           />
@@ -292,18 +322,19 @@ function Editor({
         <Tabs.Panel value={Aba.AMBIENTE} pt="md">
           <Lista
             linhas={doMotor.filter(ehAmbiente)}
+            campos={config.campos}
             valores={valores}
             mudar={mudar}
           />
         </Tabs.Panel>
         <Tabs.Panel value={Aba.PLUGINS} pt="md">
           <Stack>
-            {origens.length === 0 && <Text c="dimmed">Nenhum plugin declara chaves.</Text>}
             {origens.map((origem) => (
               <Stack key={origem} gap="xs">
                 <Title order={5}>{origem}</Title>
                 <Lista
                   linhas={plugins.filter((l) => (l.campo?.origem ?? SEM_ORIGEM) === origem)}
+                  campos={config.campos}
                   valores={valores}
                   mudar={mudar}
                 />

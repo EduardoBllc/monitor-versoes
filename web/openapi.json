@@ -1320,6 +1320,14 @@
         ],
         "title": "Avaliacao"
       },
+      "Backend": {
+        "type": "string",
+        "enum": [
+          "sqlite",
+          "postgres"
+        ],
+        "title": "Backend"
+      },
       "Campo": {
         "properties": {
           "escopo": {
@@ -1364,6 +1372,37 @@
             "type": "string",
             "title": "Origem",
             "default": "motor"
+          },
+          "descricao": {
+            "type": "string",
+            "title": "Descricao",
+            "default": ""
+          },
+          "padrao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padrao"
+          },
+          "exemplo": {
+            "type": "string",
+            "title": "Exemplo",
+            "default": ""
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Backend"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

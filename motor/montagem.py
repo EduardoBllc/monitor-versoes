@@ -243,6 +243,10 @@ def _identidade_das_entradas(
     )
 
 
+ESQUEMA_PADRAO = "semver"
+ATRIBUICAO_PADRAO = "exata"
+
+
 def _plugin(grupo: str, escolhido: Escolhido | None, padrao: str) -> type:
     """A classe escolhida na config, ou a do padrao embutido."""
     return carregar_plugin(grupo, padrao if escolhido is None else escolhido.valor)
@@ -254,9 +258,9 @@ def resolver_versionamento(config: ConfigProjeto) -> Versionamento:
     O piso e validado aqui, pelo esquema em uso, e nao na leitura da config: um
     piso que o esquema nao reconhece falha so em quem usa o versionamento.
     """
-    esquema: EsquemaVersao = _plugin(GRUPO_ESQUEMAS, config.esquema, "semver")()
+    esquema: EsquemaVersao = _plugin(GRUPO_ESQUEMAS, config.esquema, ESQUEMA_PADRAO)()
     politica: PoliticaAtribuicao = _plugin(
-        GRUPO_ATRIBUICOES, config.atribuicao, "exata"
+        GRUPO_ATRIBUICOES, config.atribuicao, ATRIBUICAO_PADRAO
     )()
     piso = config.piso
     if piso is not None:
