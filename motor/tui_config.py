@@ -215,15 +215,16 @@ class ConfigModal(ModalScreen[bool]):
     def _widgets_sem_backend(self, repo: str | None, campo: Campo) -> list[Widget]:
         chave = (repo, campo.tabela, campo.chave)
         lido = self._lidos.get(chave)
-        padrao = "" if campo.padrao is None else f" (padrão: {campo.padrao})"
+        herdado = self._lidos.get((None, campo.tabela, campo.chave)) if repo else None
+        dica = "" if herdado is None or herdado.valor is None else str(herdado.valor)
+        # Com valor herdado do topo, o padrão do motor não vale: a dica mostra o herdado.
+        padrao = "" if campo.padrao is None or dica else f" (padrão: {campo.padrao})"
         rotulo = Label(campo.rotulo + padrao, classes="rotulo", markup=False)
         if lido is not None and not lido.editavel:
             return [rotulo, Static(f"({MSG_SOMENTE_LEITURA})")]
         if campo.segredo:
             return self._widgets_do_segredo(chave, campo, lido, rotulo)
         atual = None if lido is None or lido.valor is None else lido.valor
-        herdado = self._lidos.get((None, campo.tabela, campo.chave)) if repo else None
-        dica = "" if herdado is None or herdado.valor is None else str(herdado.valor)
         entrada: Input | Select[str]
         if campo.tipo == TipoCampo.ESCOLHA:
             opcoes = list(campo.opcoes)

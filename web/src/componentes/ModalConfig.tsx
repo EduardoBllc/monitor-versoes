@@ -82,7 +82,9 @@ function Entrada({
   const k = chaveDe(linha.repo, linha.tabela, linha.chave);
   const { campo, lido } = linha;
   const label = <Rotulo linha={linha} />;
-  const description = campo?.padrao != null ? `Padrão: ${campo.padrao}` : undefined;
+  // Com valor herdado do topo (placeholder), o padrão do motor não vale.
+  const description =
+    placeholder == null && campo?.padrao != null ? `Padrão: ${campo.padrao}` : undefined;
   const dica = placeholder ?? (campo?.exemplo || undefined);
   const somenteLeitura = lido?.editavel === false;
   const atual = valores[k] ?? null;

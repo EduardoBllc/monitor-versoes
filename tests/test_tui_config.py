@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, OptionList, Select, TabbedContent
+from textual.widgets import Input, Label, OptionList, Select, TabbedContent
 
 from motor.config import (
     CHAVE_CAMINHO,
@@ -261,6 +261,9 @@ def test_tui_config_repo_mostra_valor_do_topo_como_placeholder():
             )
             assert principal.placeholder == VALOR_TOPO
             assert principal.value == ""
+            # O "(padrão: X)" do motor só aparece no topo; no repo vale o herdado.
+            rotulos = [str(r.content) for r in modal.query(".rotulo").results(Label)]
+            assert sum(r.startswith("Branch principal (padrão:") for r in rotulos) == 1
 
     asyncio.run(fluxo())
 

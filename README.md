@@ -337,9 +337,10 @@ class MinhaFonte:
 ```
 
 No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor na tela.
-Opcionais: `descricao` (o tooltip da web), `padrao` (o valor sem a chave, mostrado ao lado do
-campo) e `exemplo` (o placeholder da web). A aba Plugins só aparece quando algum plugin declara campos. O atributo é opcional
-e plugin que falha ao carregar é ignorado.
+O atributo `campos_config` é opcional e plugin que falha ao carregar é ignorado; a aba Plugins
+só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao` (o tooltip da
+web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
+web) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
 
 ### Fontes de tasks e de commits
 
