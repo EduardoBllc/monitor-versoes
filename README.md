@@ -53,6 +53,11 @@ opcional (veja "Estado: SQLite (padrão) ou Postgres").
 
 Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
 
+Para atualizar, `uv tool upgrade monitor-versoes`: busca o último commit da `main` e mantém os
+plugins do `--with`. A versão do pacote não muda a cada commit; se o comportamento novo não
+aparecer, force com `uv tool upgrade --reinstall monitor-versoes`. Se o `motor serve` estiver
+rodando, reinicie-o.
+
 `motor init` não sobrescreve arquivo existente. Se preferir, copie o arquivo abaixo.
 
 `compose.yml`:
