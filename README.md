@@ -50,6 +50,11 @@ O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração
 
 Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
 
+Para atualizar, `uv tool upgrade monitor-versoes`: busca o último commit da `main` e mantém os
+plugins do `--with`. A versão do pacote não muda a cada commit; se o comportamento novo não
+aparecer, force com `uv tool upgrade --reinstall monitor-versoes`. Se o `motor serve` estiver
+rodando, reinicie-o.
+
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Configurar o ambiente
