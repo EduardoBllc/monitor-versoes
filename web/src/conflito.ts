@@ -89,10 +89,7 @@ export function blocos(texto: string): Bloco[] {
   return achados;
 }
 
-export const blocoEm = (texto: string, inicio: number): Bloco | undefined =>
-  blocos(texto).find((b) => b.inicio === inicio);
-
-function trecho(bloco: Bloco, lado: Lado): string {
+export function trecho(bloco: Bloco, lado: Lado): string {
   switch (lado) {
     case Lado.OURS:
       return bloco.ours;
@@ -108,12 +105,130 @@ function trecho(bloco: Bloco, lado: Lado): string {
   }
 }
 
-export function aceitar(texto: string, bloco: Bloco, lado: Lado): string {
-  const linhas = linhasDe(texto);
-  const antes = linhas.slice(0, bloco.inicio - 1).map((l) => l + QUEBRA);
-  const depois = linhas.slice(bloco.fim);
-  const novo = trecho(bloco, lado);
-  // Bloco na última linha, sem quebra final: o trecho também termina sem ela.
-  const meio = depois.length === 0 ? novo.replace(/\r?\n$/, "") : novo;
-  return antes.join("") + meio + depois.join(QUEBRA);
+// Linhas começando em 1, intervalo fechado; fim === inicio - 1 é faixa vazia,
+// ancorada antes de `inicio`.
+export type Faixa = { inicio: number; fim: number };
+
+export const CONTEXTO = 3;
+
+// Linhas de um trecho que termina em quebra: o último "" do split não é linha.
+const linhasDoTrecho = (trecho: string): string[] =>
+  trecho === "" ? [] : linhasDe(trecho.replace(/\n$/, ""));
+
+// ponytail: busca por conteúdo, em ordem; conteúdo repetido pode casar cedo, e o
+// cursor que só avança atenua. Merge de 3 vias no browser se isso pesar.
+// Trecho vazio (o lado apagou) ou não achado fica ancorado depois de
+// `anteriores[k]`, as linhas que antecedem o bloco no resultado: a sequência
+// mais longa que casar, porque uma linha só costuma ser "" ou "}". Sem ela, no
+// cursor.
+export function localizar(
+  arquivo: string,
+  trechos: string[],
+  anteriores: readonly (readonly string[])[] = [],
+): Faixa[] {
+  const linhas = linhasDe(arquivo);
+  let cursor = 1;
+  return trechos.map((t, k) => {
+    const procuradas = linhasDoTrecho(t);
+    const n = procuradas.length;
+    for (let i = cursor - 1; n > 0 && i + n <= linhas.length; i++) {
+      if (procuradas.every((l, j) => linhas[i + j] === l)) {
+        cursor = i + n + 1;
+        return { inicio: i + 1, fim: i + n };
+      }
+    }
+    const contexto = anteriores[k] ?? [];
+    for (let m = contexto.length; m > 0; m--) {
+      const fim = acharSequencia(linhas, contexto.slice(-m), cursor - 1);
+      if (fim !== null) {
+        cursor = fim + 1;
+        break;
+      }
+    }
+    return { inicio: cursor, fim: cursor - 1 };
+  });
+}
+
+// Linha (começando em 1) da última linha da primeira ocorrência de `seq`
+// a partir do índice `de`, ou null.
+function acharSequencia(
+  linhas: readonly string[],
+  seq: readonly string[],
+  de: number,
+): number | null {
+  for (let i = de; i + seq.length <= linhas.length; i++)
+    if (seq.every((l, j) => linhas[i + j] === l)) return i + seq.length;
+  return null;
+}
+
+export function recolher(
+  total: number,
+  visiveis: Faixa[],
+  contexto: number,
+): Faixa[] {
+  if (visiveis.length === 0) return [];
+  const abertas = visiveis
+    .map((f) => ({
+      inicio: Math.max(1, f.inicio - contexto),
+      fim: Math.min(total, f.fim + contexto),
+    }))
+    .sort((a, b) => a.inicio - b.inicio);
+  const ocultas: Faixa[] = [];
+  let proxima = 1;
+  for (const a of [...abertas, { inicio: total + 1, fim: total }]) {
+    // Esconder uma linha só custa o mesmo espaço que o aviso "⋯ 1 linha".
+    if (a.inicio - proxima >= 2)
+      ocultas.push({ inicio: proxima, fim: a.inicio - 1 });
+    proxima = Math.max(proxima, a.fim + 1);
+  }
+  return ocultas;
+}
+
+export enum EstadoBloco {
+  ABERTO = "aberto",
+  DECIDIDO = "decidido",
+  EDITADO = "editado",
+}
+
+// `texto` é o que o Aceitar gravou no lugar do bloco.
+export type Decisao = { lado: Lado; texto: string };
+
+export function estadoDoBloco(
+  atual: string,
+  decisao: Decisao | null,
+): EstadoBloco {
+  if (decisao !== null && atual === decisao.texto) return EstadoBloco.DECIDIDO;
+  return temMarcadores(atual) ? EstadoBloco.ABERTO : EstadoBloco.EDITADO;
+}
+
+export const aceitouLado = (
+  decisao: Decisao | null,
+  lado: Lado.OURS | Lado.THEIRS,
+): boolean => decisao?.lado === lado || decisao?.lado === Lado.AMBOS;
+
+type SecaoDoBloco = { faixa: Faixa; lado: Lado.OURS | Lado.BASE | Lado.THEIRS | null };
+
+// Linhas de cada marcador (lado null) e de cada seção do bloco, para colorir.
+export function secoesDoBloco(bloco: Bloco): SecaoDoBloco[] {
+  const secoes: SecaoDoBloco[] = [];
+  let linha = bloco.inicio;
+  const marcador = () => {
+    secoes.push({ faixa: { inicio: linha, fim: linha }, lado: null });
+    linha++;
+  };
+  const secao = (lado: Lado.OURS | Lado.BASE | Lado.THEIRS, texto: string) => {
+    const n = linhasDoTrecho(texto).length;
+    secoes.push({ faixa: { inicio: linha, fim: linha + n - 1 }, lado });
+    linha += n;
+  };
+  marcador();
+  secao(Lado.OURS, bloco.ours);
+  if (bloco.base !== null) {
+    marcador();
+    secao(Lado.BASE, bloco.base);
+  }
+  marcador();
+  secao(Lado.THEIRS, bloco.theirs);
+  marcador();
+  return secoes;
 }
