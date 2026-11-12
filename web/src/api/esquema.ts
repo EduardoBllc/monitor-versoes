@@ -209,6 +209,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/{repo}/versoes/{versao}/conflito": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ler Conflito */
+        get: operations["ler_conflito_api_repos__repo__versoes__versao__conflito_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{repo}/versoes/{versao}/conflito/arquivo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ler Arquivo */
+        get: operations["ler_arquivo_api_repos__repo__versoes__versao__conflito_arquivo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{repo}/versoes/{versao}/conflito/resolucao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolver */
+        post: operations["resolver_api_repos__repo__versoes__versao__conflito_resolucao_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{repo}/versoes/{versao}/conflito/reabertura": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reabrir */
+        post: operations["reabrir_api_repos__repo__versoes__versao__conflito_reabertura_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo}/execucao": {
         parameters: {
             query?: never;
@@ -279,10 +347,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ler Config */
+        get: operations["ler_config_api_config_get"];
+        /** Gravar Config */
+        put: operations["gravar_config_api_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AcaoAlteracao
+         * @enum {string}
+         */
+        AcaoAlteracao: "definir" | "remover" | "criar_repo" | "remover_repo";
+        /**
+         * Alteracao
+         * @description `repo=None` é o topo; `tabela=None` é chave direta do topo ou da seção.
+         */
+        Alteracao: {
+            acao: components["schemas"]["AcaoAlteracao"];
+            /** Repo */
+            repo?: string | null;
+            /** Tabela */
+            tabela?: string | null;
+            /** Chave */
+            chave?: string | null;
+            /** Valor */
+            valor?: string | number | boolean | null;
+        };
+        /** ArquivoDoConflito */
+        ArquivoDoConflito: {
+            /** Caminho */
+            caminho: string;
+            tipo: components["schemas"]["TipoArquivo"];
+            /** Resolvido */
+            resolvido: boolean;
+        };
         /** AtualizarResult */
         AtualizarResult: {
             status: components["schemas"]["AtualizarStatus"];
@@ -325,6 +439,32 @@ export interface components {
             /** Erro */
             erro: string;
         };
+        /** Campo */
+        Campo: {
+            escopo: components["schemas"]["Escopo"];
+            /** Tabela */
+            tabela: string | null;
+            /** Chave */
+            chave: string;
+            tipo: components["schemas"]["TipoCampo"];
+            /** Rotulo */
+            rotulo: string;
+            /**
+             * Segredo
+             * @default false
+             */
+            segredo: boolean;
+            /**
+             * Opcoes
+             * @default []
+             */
+            opcoes: string[];
+            /**
+             * Origem
+             * @default motor
+             */
+            origem: string;
+        };
         /** ChamadoConsultado */
         ChamadoConsultado: {
             /** Chamado */
@@ -363,6 +503,42 @@ export interface components {
              */
             msg: string;
         };
+        /** ConfigEditavel */
+        ConfigEditavel: {
+            /** Campos */
+            campos: components["schemas"]["Campo"][];
+            /** Valores */
+            valores: components["schemas"]["ValorLido"][];
+            /** Repos */
+            repos: string[];
+            /** Versao */
+            versao: string;
+        };
+        /** ConflitoAberto */
+        ConflitoAberto: {
+            /** Commit */
+            commit: string;
+            /** Mensagem */
+            mensagem: string;
+            /** Chamado */
+            chamado: string | null;
+            /** Arquivos */
+            arquivos: components["schemas"]["ArquivoDoConflito"][];
+        };
+        /** ConteudoDoConflito */
+        ConteudoDoConflito: {
+            tipo: components["schemas"]["TipoArquivo"];
+            /** Base */
+            base: string | null;
+            /** Ours */
+            ours: string | null;
+            /** Theirs */
+            theirs: string | null;
+            /** Disco */
+            disco: string | null;
+            /** Versao Disco */
+            versao_disco: string;
+        };
         /**
          * Desfecho
          * @enum {string}
@@ -374,6 +550,11 @@ export interface components {
             /** Mensagem */
             mensagem: string;
         };
+        /**
+         * Escopo
+         * @enum {string}
+         */
+        Escopo: "geral" | "repo" | "ambiente";
         /**
          * EstadoExecucao
          * @enum {string}
@@ -466,6 +647,13 @@ export interface components {
             /** Existentes */
             existentes: string[];
         };
+        /** PedidoConfig */
+        PedidoConfig: {
+            /** Alteracoes */
+            alteracoes: components["schemas"]["Alteracao"][];
+            /** Versao */
+            versao: string;
+        };
         /** PedidoContinuar */
         PedidoContinuar: {
             /** Allow Empty */
@@ -484,6 +672,11 @@ export interface components {
             chamado: string | null;
             /** Motivo */
             motivo: string;
+        };
+        /** PedidoReabertura */
+        PedidoReabertura: {
+            /** Caminho */
+            caminho: string;
         };
         /** PedidoRemover */
         PedidoRemover: {
@@ -532,6 +725,15 @@ export interface components {
             /** Piso Versao */
             piso_versao?: string | null;
         };
+        /** Resolucao */
+        Resolucao: {
+            /** Caminho */
+            caminho: string;
+            /** Conteudo */
+            conteudo: string | null;
+            /** Versao Disco */
+            versao_disco: string;
+        };
         /** Sugestao */
         Sugestao: {
             /** Numero */
@@ -540,10 +742,20 @@ export interface components {
             tipo: string | null;
         };
         /**
+         * TipoArquivo
+         * @enum {string}
+         */
+        TipoArquivo: "conteudo" | "modificado_apagado" | "outro";
+        /**
+         * TipoCampo
+         * @enum {string}
+         */
+        TipoCampo: "texto" | "inteiro" | "escolha";
+        /**
          * TipoErro
          * @enum {string}
          */
-        TipoErro: "entrada" | "nao_encontrado" | "recusa" | "backend" | "resposta" | "motor" | "ocupado" | "interno";
+        TipoErro: "entrada" | "nao_encontrado" | "recusa" | "backend" | "resposta" | "motor" | "ocupado" | "desatualizado" | "interno";
         /** UltimaExecucao */
         UltimaExecucao: {
             /**
@@ -573,6 +785,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValorLido */
+        ValorLido: {
+            /** Repo */
+            repo: string | null;
+            /** Tabela */
+            tabela: string | null;
+            /** Chave */
+            chave: string;
+            /** Valor */
+            valor: string | number | boolean | null;
+            /** Definido */
+            definido: boolean;
+            /** Editavel */
+            editavel: boolean;
         };
         /** VersionOption */
         VersionOption: {
@@ -1054,6 +1281,140 @@ export interface operations {
             };
         };
     };
+    ler_conflito_api_repos__repo__versoes__versao__conflito_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConflitoAberto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ler_arquivo_api_repos__repo__versoes__versao__conflito_arquivo_get: {
+        parameters: {
+            query: {
+                caminho: string;
+            };
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConteudoDoConflito"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolver_api_repos__repo__versoes__versao__conflito_resolucao_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Resolucao"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reabrir_api_repos__repo__versoes__versao__conflito_reabertura_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoReabertura"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     execucao_atual_api_repos__repo__execucao_get: {
         parameters: {
             query?: never;
@@ -1217,6 +1578,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ler_config_api_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigEditavel"];
+                };
+            };
+        };
+    };
+    gravar_config_api_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigEditavel"];
+                };
             };
             /** @description Validation Error */
             422: {

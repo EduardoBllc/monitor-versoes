@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -32,6 +33,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from motor.config import SECAO_REPOS
+from motor.config_edicao import ler_para_edicao
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.atualizar import (
@@ -62,10 +64,12 @@ from motor.operacoes import (
     VersionOption,
     avaliar_numero,
     runners_com_progresso,
+    travar_repo,
     versionamento_do_repo,
 )
 from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import Versionamento
+from motor.tui_config import ConfigModal
 
 
 class ResultadoModal(ModalScreen[None]):
@@ -580,6 +584,7 @@ class MotorTUI(App[None]):
         ("c", "criar", "Nova versão"),
         ("i", "inscricoes", "Inscrições"),
         ("o", "orfaos", "Órfãos"),
+        ("g", "configurar", "Config"),
     ]
     CSS = """
     #barra { height: auto; padding: 1; align-vertical: middle; }
@@ -1055,6 +1060,21 @@ class MotorTUI(App[None]):
             )
         )
 
+    def action_configurar(self) -> None:
+        if self._ocupado:
+            self.notify("há uma execução em andamento", severity="warning")
+            return
+        try:
+            config = ler_para_edicao()
+        except ErroDeEntrada as erro:
+            self.notify(formatar_com_notas(erro), severity="error")
+            return
+        self.push_screen(ConfigModal(config), self._config_salva)
+
+    def _config_salva(self, gravou: bool | None) -> None:
+        if gravou:
+            self.carregar_repos_worker()
+
     def action_criar(self) -> None:
         if self._ocupado or self._criar is None or self._repo is None:
             return
@@ -1084,7 +1104,8 @@ class MotorTUI(App[None]):
         self, executar: CriarRunner, repo: RepoOption, numero: str
     ) -> None:
         try:
-            resultado = executar(repo, numero)
+            with _travado(repo):
+                resultado = executar(repo, numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1249,10 +1270,14 @@ class MotorTUI(App[None]):
         `_falha` e nao pergunta nada — sem lote na tela nao ha o que confirmar.
         """
         try:
-            if confirmar and self._previa is not None:
-                status = self._previa(repo, versao.numero)
-            else:
-                status = self._executar(repo, versao.numero, auditar)
+            # A auditoria não toca worktree, checkpoint nem GC: roda com o repo
+            # ocupado (decisão 032).
+            trava = _travado(repo) if confirmar or not auditar else _sem_trava()
+            with trava:
+                if confirmar and self._previa is not None:
+                    status = self._previa(repo, versao.numero)
+                else:
+                    status = self._executar(repo, versao.numero, auditar)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1285,7 +1310,8 @@ class MotorTUI(App[None]):
         self, executar: AbortRunner, repo: RepoOption, versao: VersionOption
     ) -> None:
         try:
-            executar(repo, versao.numero)
+            with _travado(repo):
+                executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
@@ -1298,13 +1324,24 @@ class MotorTUI(App[None]):
         self, executar: UpdateRunner, repo: RepoOption, versao: VersionOption
     ) -> None:
         try:
-            resultado = executar(repo, versao.numero)
+            with _travado(repo):
+                resultado = executar(repo, versao.numero)
         except Exception as erro:
             self.call_from_thread(self._falha, erro, True)
         else:
             self.call_from_thread(self._mostrar_atualizacao, resultado)
         finally:
             self.call_from_thread(self._bloquear, False)
+
+
+def _sem_trava() -> contextlib.AbstractContextManager[object]:
+    return contextlib.nullcontext()
+
+
+def _travado(repo: RepoOption) -> contextlib.AbstractContextManager[object]:
+    """Lock do clone durante a operação; a recusa cai no `_falha` do worker."""
+    trava = travar_repo(repo)
+    return _sem_trava() if trava is None else trava
 
 
 def run_tui() -> None:

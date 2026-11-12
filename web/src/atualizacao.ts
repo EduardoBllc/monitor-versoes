@@ -99,6 +99,11 @@ const depoisDeAplicar = (r: AtualizarResult): EstadoAtualizacao => {
   }
 };
 
+// Num 409, só há o que acompanhar se o daemon roda algo no repo; senão o lock é de
+// outro processo (CLI, TUI ou inscrição).
+export const acompanhaOcupado = (x: Execucao | null): boolean =>
+  x?.estado === EstadoExecucao.RODANDO;
+
 // Atualizar, continuar e criar concluídos sem DONE deixam o cherry-pick aberto.
 export const pickAberto = (x: Execucao): boolean =>
   x.estado === EstadoExecucao.CONCLUIDA &&

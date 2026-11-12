@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
+from motor.domain.conflito import marcadores_restantes
 from motor.domain.types import CommitRef, VersionStatus
 from motor.engine.deps import Deps
 from motor.engine.verificar import (
@@ -243,6 +244,21 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     )
 
 
+def _recusar_marcador_esquecido(deps: Deps) -> None:
+    """O `continue_cherry_pick` dá `add -A`: marcador esquecido viraria commit."""
+    linhas = []
+    for caminho, resolvido in deps.git.arquivos_do_pick().items():
+        if resolvido:
+            continue
+        dados = deps.git.disco_bytes(caminho)
+        if dados is not None:
+            # Latin-1 decodifica qualquer byte; os marcadores são ASCII.
+            texto = dados.decode("latin-1")
+            linhas += [f"{caminho}:{n}" for n in marcadores_restantes(texto)]
+    if linhas:
+        raise ErroDeEntrada("marcador de conflito ainda no disco: " + ", ".join(linhas))
+
+
 def atualizar_continue(
     deps: Deps, versao: str, *, allow_empty: bool = False
 ) -> AtualizarResult:
@@ -274,6 +290,7 @@ def atualizar_continue(
     pendente, ok = deps.git.pending_cherry_pick()
     if not ok:
         raise ErroDeEntrada("nenhum cherry-pick pendente pra continuar")
+    _recusar_marcador_esquecido(deps)
 
     if deps.git.continue_cherry_pick() == CherryPickOutcome.VAZIO:
         if not allow_empty:

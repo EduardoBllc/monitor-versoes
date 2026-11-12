@@ -417,7 +417,7 @@ def _orfaos_julgados(
 ) -> dict[str, list[CommitRef]]:
     """Orfaos atuais da versao julgados "pertence a chX", com chX no alvo,
     agrupados por chamado: a outra fonte de commits das tarefas do alvo, ao
-    lado da fonte de commits (docs/decisoes/032-julgamento-de-orfao.md).
+    lado da fonte de commits (docs/decisoes/034-julgamento-de-orfao.md).
 
     So varre quando ha o que aplicar: sem julgamento aplicavel, o `verificar`
     nao paga a varredura nem passa a exigir o padrao de referencia. Julgamento

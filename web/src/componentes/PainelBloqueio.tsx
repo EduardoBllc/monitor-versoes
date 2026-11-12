@@ -3,9 +3,15 @@ import { AtualizarStatus } from "../api/enums";
 import type { AtualizarResult } from "../api/tipos";
 import { ResultadoAtualizacao } from "./ResultadoAtualizacao";
 
-const TAMANHO_HASH = 8;
+export const TAMANHO_HASH = 8;
 
-export function PainelBloqueio({ resultado }: { resultado: AtualizarResult }) {
+export function PainelBloqueio({
+  resultado,
+  aoResolver,
+}: {
+  resultado: AtualizarResult;
+  aoResolver: () => void;
+}) {
   const bloqueada = resultado.status === AtualizarStatus.BLOCKED;
   return (
     <Stack maw={720}>
@@ -44,9 +50,14 @@ export function PainelBloqueio({ resultado }: { resultado: AtualizarResult }) {
           )}
         </CopyButton>
       </Group>
+      {bloqueada && (
+        <Group>
+          <Button onClick={aoResolver}>Resolver na web</Button>
+        </Group>
+      )}
       <Alert color="yellow">
         {bloqueada
-          ? "Resolva os arquivos na worktree com o seu editor e então clique em Continuar, ou descarte em Abortar."
+          ? "Resolva os arquivos na web ou na worktree, com o seu editor, e então clique em Continuar; ou descarte em Abortar."
           : "A resolução não deixou alteração nenhuma no alvo. Registrar vazio entra com um commit vazio, com o trailer -x; Abortar descarta o commit."}
       </Alert>
     </Stack>

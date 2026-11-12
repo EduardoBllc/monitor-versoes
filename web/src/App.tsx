@@ -15,13 +15,26 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Metodo, api, ErroApi } from "./api/cliente";
-import { EstadoExecucao, Operacao, TipoErro } from "./api/enums";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { CHAVE_REPOS, Metodo, api, ErroApi } from "./api/cliente";
+import {
+  AtualizarStatus,
+  EstadoExecucao,
+  Operacao,
+  TipoErro,
+} from "./api/enums";
 import {
   FaseAtualizacao,
   INICIAL,
   TipoEventoAtualizacao,
+  acompanhaOcupado,
   proximo,
   type EstadoAtualizacao,
   type Evento,
@@ -31,8 +44,10 @@ import { acompanhar, type Execucao } from "./api/eventos";
 import type { RepoOption, VersionOption } from "./api/tipos";
 import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
+import type { EstadoConflitoWeb } from "./componentes/EditorConflito";
 import { ModalAbortar } from "./componentes/ModalAbortar";
 import { ModalConfirmarLote } from "./componentes/ModalConfirmarLote";
+import { ModalConfig } from "./componentes/ModalConfig";
 import { ModalCriar } from "./componentes/ModalCriar";
 import { ModalInscricoes } from "./componentes/ModalInscricoes";
 import { ModalOrfaos } from "./componentes/ModalOrfaos";
@@ -56,6 +71,7 @@ import {
   type EstadoExecucoes,
   type Resultado,
 } from "./execucoes";
+import { AVISO_DESCARTE } from "./conflito";
 import { caminhoDe, lerCaminho } from "./rotas";
 
 // Sem refetch ao voltar do editor nem retry: cada leitura de versões faz git fetch.
@@ -63,6 +79,9 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: false } },
 });
 const ALTURA_BARRA = 64;
+// Lazy: o Monaco fica fora do chunk principal.
+const EditorConflito = lazy(() => import("./componentes/EditorConflito"));
+const CONFLITO_ABRINDO: EstadoConflitoWeb = { pendente: true, sujo: false };
 const chave = (repo: string, versao: string): string => `${repo}@${versao}`;
 
 function useCaminho() {
@@ -92,10 +111,13 @@ function Tela() {
   const [criando, setCriando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
   const [orfaos, setOrfaos] = useState(false);
+  const [configurando, setConfigurando] = useState(false);
   const [atualizacoes, setAtualizacoes] = useState<
     Readonly<Record<string, EstadoAtualizacao>>
   >({});
   const [abortando, setAbortando] = useState(false);
+  const [resolvendo, setResolvendo] = useState<string | null>(null);
+  const [conflitoWeb, setConflitoWeb] = useState(CONFLITO_ABRINDO);
   const repoRef = useRef(repo);
   repoRef.current = repo;
   const versaoRef = useRef(versao);
@@ -110,7 +132,7 @@ function Tela() {
   }, []);
 
   const repos = useQuery({
-    queryKey: ["repos"],
+    queryKey: CHAVE_REPOS,
     queryFn: () => api<RepoOption[]>(Metodo.GET, "/api/repos"),
   });
   const versoes = useQuery({
@@ -244,8 +266,18 @@ function Tela() {
     try {
       await api<Execucao>(Metodo.POST, caminho, corpo);
     } catch (erro) {
-      // 409: já há operação rodando neste repo (outra aba); passa a acompanhá-la.
-      if (!(erro instanceof ErroApi && erro.tipo === TipoErro.OCUPADO)) {
+      // 409: o repo está travado. Se for uma execução do daemon (outra aba), passa a
+      // acompanhá-la; se for um processo de fora (CLI, TUI, inscrição), mostra a recusa.
+      const ocupadoAqui =
+        erro instanceof ErroApi &&
+        erro.tipo === TipoErro.OCUPADO &&
+        acompanhaOcupado(
+          await api<Execucao | null>(
+            Metodo.GET,
+            `/api/repos/${encodeURIComponent(repo)}/execucao`,
+          ).catch(() => null),
+        );
+      if (!ocupadoAqui) {
         notificarErro(erro);
         despachar(k, {
           tipo: TipoEventoAtualizacao.RECONECTOU,
@@ -279,6 +311,23 @@ function Tela() {
       ? [k.slice(repo.length + 1)]
       : [],
   );
+  // Bloqueio encerrado (continuou, abortou): o próximo passa de novo pelo painel.
+  useEffect(() => {
+    if (!pendente) setResolvendo(null);
+  }, [pendente]);
+  const naTelaConflito =
+    resolvendo === chaveAtual &&
+    pendente &&
+    atualizacao.resultado?.status === AtualizarStatus.BLOCKED;
+  // Só experiência de uso: quem decide o continuar é o motor.
+  const continuarBarrado = naTelaConflito && conflitoWeb.pendente;
+  const navegar = (acao: () => void) => {
+    if (
+      !(naTelaConflito && conflitoWeb.sujo) ||
+      window.confirm(AVISO_DESCARTE)
+    )
+      acao();
+  };
   const aplicando =
     atualizacao.fase === FaseAtualizacao.PREVIA ||
     atualizacao.fase === FaseAtualizacao.APLICANDO;
@@ -327,8 +376,10 @@ function Tela() {
           {...(versao && { versao })}
           ocupado={ocupado}
           bloqueadas={bloqueadas}
-          aoEscolherRepo={(nome) => ir(nome)}
-          aoEscolherVersao={(numero) => repo && ir(repo, numero)}
+          aoEscolherRepo={(nome) => navegar(() => ir(nome))}
+          aoEscolherVersao={(numero) =>
+            navegar(() => repo && ir(repo, numero))
+          }
           aoVerificar={(auditar) => {
             void disparar(
               `${base}/${encodeURIComponent(versao ?? "")}/verificacao`,
@@ -345,7 +396,7 @@ function Tela() {
                       ? "yellow"
                       : "red"
                   }
-                  disabled={ocupado}
+                  disabled={ocupado || continuarBarrado}
                   onClick={() => aplicar(true)}
                 >
                   {atualizacao.fase === FaseAtualizacao.VAZIA
@@ -376,6 +427,7 @@ function Tela() {
           aoCriar={() => setCriando(true)}
           aoInscricoes={() => setInscricoes(true)}
           aoOrfaos={() => setOrfaos(true)}
+          aoConfigurar={() => setConfigurando(true)}
         />
       </AppShell.Header>
       <AppShell.Main>
@@ -399,8 +451,24 @@ function Tela() {
           <ProgressoExecucao
             progresso={execucoes.progresso[repo] ?? PROGRESSO_INICIAL}
           />
+        ) : naTelaConflito && atualizacao.resultado && repo && versao ? (
+          <Suspense fallback={<Loader />}>
+            <EditorConflito
+              repo={repo}
+              versao={versao}
+              resultado={atualizacao.resultado}
+              aoSair={() => setResolvendo(null)}
+              aoMudar={setConflitoWeb}
+            />
+          </Suspense>
         ) : pendente && atualizacao.resultado ? (
-          <PainelBloqueio resultado={atualizacao.resultado} />
+          <PainelBloqueio
+            resultado={atualizacao.resultado}
+            aoResolver={() => {
+              setConflitoWeb(CONFLITO_ABRINDO);
+              setResolvendo(chaveAtual);
+            }}
+          />
         ) : (
           repo !== undefined &&
           versao !== undefined && (
@@ -456,6 +524,10 @@ function Tela() {
           aoFechar={() => setOrfaos(false)}
         />
       )}
+      <ModalConfig
+        aberto={configurando}
+        aoFechar={() => setConfigurando(false)}
+      />
       <ModalInscricoes
         aberto={inscricoes}
         aoFechar={() => setInscricoes(false)}

@@ -20,7 +20,7 @@ o lote de novo. O carimbo **vale só se as quatro condições** se cumprem:
 - **o tip é o mesmo**: outro commit na branch (inclusive picks de um `atualizar` anterior,
   [015](015-estado-regravado-ao-final-do-lote.md)) muda o que falta aplicar;
 - **a impressão é a mesma**: exclusão, "sem entrega" ou julgamento de órfão
-  ([032](032-julgamento-de-orfao.md)) novos mudam o julgamento sem mexer no tip. Entram os
+  ([034](034-julgamento-de-orfao.md)) novos mudam o julgamento sem mexer no tip. Entram os
   de todas as versões do repo. A impressão também leva as entradas da resolução (fonte de tasks e conteúdo da
   lista manual, `[tarefas]` da config, fonte de commits, padrão de referência e piso):
   trocá-las é o operador pedindo outro lote, não mudança externa, e por isso nunca

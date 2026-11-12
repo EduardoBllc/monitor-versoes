@@ -4,7 +4,7 @@
 - **Data:** 2026-08-21
 - **Depende de:** [002](002-oraculo-tres-fontes.md), [009](009-inferencia-de-base.md),
   [010](010-travas-publicada-e-liberada.md), [011](011-congelamento-no-banco.md),
-  [021](021-motor-nao-interativo.md), [032](032-julgamento-de-orfao.md)
+  [021](021-motor-nao-interativo.md), [034](034-julgamento-de-orfao.md)
 
 Mora em SQLite (padrão, um arquivo local, sem Docker) ou em Postgres (opt-in), escolhido por
 `DATABASE_BACKEND`, escopado por repo. O contrato do estado é o mesmo nos dois, e a suíte de
@@ -19,7 +19,7 @@ número, tipo e base saem do nome da branch mais a inferência
 
 **Julgamento humano, não recuperável** — exclusões ("esse commit o grep pegou mas não entra"),
 registros de "não houve entrega" e julgamentos de órfão ("este commit sem referência pertence
-a chX" ou "não pertence a nenhum", [032](032-julgamento-de-orfao.md)). Só existe no banco —
+a chX" ou "não pertence a nenhum", [034](034-julgamento-de-orfao.md)). Só existe no banco —
 por isso trocar de backend é `migrar-estado`, não `reconstruir-estado`. Para commit sem
 `ch<num>` na mensagem, `reconstruir-estado` aplica o julgamento gravado e devolve em
 `PENDING_JUDGMENT{orfaos}` só o que ainda não foi julgado; quem pergunta ao humano e grava a

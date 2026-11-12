@@ -1492,3 +1492,71 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
     monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
     daemon_app.servir(porta)
     assert rodou == [porta]
+
+
+# -- lock do repo (decisão 032) ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "comando",
+    [
+        ["atualizar"],
+        ["atualizar", "--continue"],
+        ["atualizar", "--abort"],
+        ["criar"],
+        ["verificar"],
+    ],
+    ids=["atualizar", "continue", "abort", "criar", "verificar"],
+)
+def test_operacao_coberta_com_repo_ocupado_e_recusada_antes_do_banco(
+    bordas, tmp_path, caplog, monkeypatch, comando
+):
+    from motor.trava import travar
+
+    nome = _repo_dir(tmp_path)
+    monkeypatch.setattr(cli, "abrir_sessao", lambda: pytest.fail("abriu o banco"))
+    with travar(nome, str(tmp_path / nome)), pytest.raises(SystemExit) as saida:
+        main([comando[0], "13.34.0", "--repo", nome, *comando[1:]])
+    assert saida.value.code == 1
+    assert f"ocupado por outra operação (pid {os.getpid()})" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "comando",
+    [["verificar", "--auditar"], ["consulta"], ["reconstruir-estado"]],
+    ids=["auditar", "consulta", "reconstruir-estado"],
+)
+def test_leituras_rodam_com_repo_ocupado(bordas, tmp_path, monkeypatch, comando):
+    from motor.trava import travar
+
+    nome = _repo_dir(tmp_path)
+    sentinela = object()
+    despachados: list[object] = []
+    monkeypatch.setattr(cli, "montar_deps", lambda *a, **k: sentinela)
+    monkeypatch.setattr(cli, "_despachar", lambda args, deps: despachados.append(deps))
+    with travar(nome, str(tmp_path / nome)):
+        main([comando[0], "13.34.0", "--repo", nome, *comando[1:]])
+    assert despachados == [sentinela]
+
+
+def test_inscricao_executar_com_repo_ocupado_sai_pulada_sem_notificar(
+    inscricoes_env, monkeypatch, tmp_path, capsys
+):
+    from motor.domain.inscricao import Desfecho
+    from motor.inscricoes import carregar
+    from motor.trava import travar
+
+    arquivo, notificador = inscricoes_env
+    nome = _preparar_execucao(
+        monkeypatch, tmp_path, lambda deps, versao: pytest.fail("executou")
+    )
+    with travar(nome, str(tmp_path / nome)):
+        main(["inscricao", "executar", _Inscr.VERSAO, "--repo", nome])
+    ultima = carregar(arquivo)[0].ultima
+    assert ultima is not None
+    assert ultima.desfecho == Desfecho.PULADA
+    assert ultima.mensagem is not None and "ocupado" in ultima.mensagem
+    assert notificador.enviadas == []
+    capsys.readouterr()
+    main(["inscricao", "listar"])
+    assert ultima.mensagem in capsys.readouterr().out

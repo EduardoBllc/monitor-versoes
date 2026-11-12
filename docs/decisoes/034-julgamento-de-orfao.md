@@ -3,7 +3,8 @@
 - **Status:** aceita
 - **Data:** 2026-11-11
 - **Depende de:** [002](002-oraculo-tres-fontes.md), [004](004-estado-descartavel.md),
-  [005](005-alvo-distribuicao-entre-versoes.md), [021](021-motor-nao-interativo.md)
+  [005](005-alvo-distribuicao-entre-versoes.md), [011](011-congelamento-no-banco.md),
+  [021](021-motor-nao-interativo.md), [032](032-lock-por-repo-entre-processos.md)
 
 Órfão é o commit de `base..branch` cuja mensagem de origem não tem referência de tarefa. O
 `reconstruir-estado` o devolve em `PENDING_JUDGMENT` e para, porque quem pergunta ao humano
@@ -44,3 +45,6 @@ atribuição é recalculada.
 - **Varre só quando há o que aplicar.** O `verificar` só procura órfãos quando a versão tem
   julgamento "pertence a chX" com chX no alvo. Assim uma versão sem julgamento não paga a
   varredura nem passa a exigir o padrão de referência.
+- **Listar e julgar não tomam o lock do clone** ([032](032-lock-por-repo-entre-processos.md)).
+  Como o `reconstruir-estado`, só fazem `fetch` e gravam no estado, sem tocar worktree,
+  checkpoint nem GC. Rodam com outra operação segurando o repo, na CLI, na TUI e na web.
