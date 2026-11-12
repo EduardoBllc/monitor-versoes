@@ -283,10 +283,12 @@ As operações seguem rodando se a aba fechar. O porquê em
 
 Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
 
-- **Resolver na web**, no painel do bloqueio: para cada arquivo, o editor de 3 vias mostra
-  theirs (o commit aplicado), o resultado (que parte do que está em disco) e ours (o alvo).
-  Cada bloco de conflito tem "Aceitar theirs", "Aceitar ours", "Ambos" e, quando o bloco
-  traz a base, "Base"; o resultado também se edita à mão. A edição só vai para o disco em
+- **Resolver na web**, no painel do bloqueio: para cada arquivo, o editor mostra, como o
+  Merge Editor do VS Code, theirs (o commit aplicado) e ours (o alvo) lado a lado e, embaixo,
+  o resultado (que parte do que está em disco), com destaque de sintaxe e o que fica fora
+  dos conflitos recolhido. Cada conflito tem "Aceitar theirs" e "Aceitar ours" no painel de
+  cada lado e, no resultado, "Ambos" e, quando o bloco traz a base, "Usar base"; o
+  resultado também se edita à mão, e o Ctrl+Z desfaz. A edição só vai para o disco em
   **Marcar resolvido**, que fica desabilitado enquanto restar marcador. Modify/delete se
   resolve com "Manter arquivo" ou "Apagar arquivo"; binário, rename, add/add sem texto e
   submódulo ficam para o editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
