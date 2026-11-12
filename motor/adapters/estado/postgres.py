@@ -18,6 +18,7 @@ from motor.domain.types import (
     Atribuicao,
     CommitRef,
     Exclusion,
+    JulgamentoOrfao,
     PrIndex,
     RepoInfo,
     Verificacao,
@@ -252,6 +253,42 @@ class PostgresEstado:
             )
         }
 
+    def julgamentos_orfao(self, repo: str, /) -> list[JulgamentoOrfao]:
+        repo_id = self._repo_id(repo)
+        julgamentos = [
+            JulgamentoOrfao(
+                hash_origem=j.hash_origem,
+                versao_numero=numero,
+                chamado=j.chamado,
+                motivo=j.motivo,
+            )
+            for j, numero in self._linhas(
+                select(models.JulgamentoOrfao, models.Versao.numero)
+                .join(
+                    models.Versao, models.Versao.id == models.JulgamentoOrfao.versao_id
+                )
+                .where(models.Versao.repo_id == repo_id)
+            )
+        ]
+        # Ordena aqui, nao no ORDER BY: a collation do Postgres pode ignorar
+        # pontuacao e divergir da ordem de bytes do SQLite e do fake.
+        return sorted(julgamentos, key=lambda j: (j.versao_numero, j.hash_origem))
+
+    def julgar_orfao(self, repo: str, j: JulgamentoOrfao, /) -> None:
+        versao_id = self._versao_id(repo, j.versao_numero)
+        if versao_id is None:
+            raise NaoEncontrado(f"versao {j.versao_numero} nao registrada no estado")
+        # merge: julgar de novo o mesmo orfao substitui, sem duplicar a chave.
+        self.sessao.merge(
+            models.JulgamentoOrfao(
+                versao_id=versao_id,
+                hash_origem=j.hash_origem,
+                chamado=j.chamado,
+                motivo=j.motivo,
+            )
+        )
+        self._commit()
+
     def commits_de_pr(
         self, repo: str, pr_ids: list[int], /
     ) -> dict[int, list[CommitRef]]:
@@ -415,6 +452,12 @@ class PostgresEstado:
     def _scalars(self, stmt: Select[tuple[_Linha]]) -> Iterable[_Linha]:
         try:
             return self.sessao.scalars(stmt)
+        except DBAPIError as e:
+            self._traduzir_erro(e)
+
+    def _linhas(self, stmt: Select[tuple[_Linha, str]]) -> list[tuple[_Linha, str]]:
+        try:
+            return [(a, b) for a, b in self.sessao.execute(stmt).tuples()]
         except DBAPIError as e:
             self._traduzir_erro(e)
 

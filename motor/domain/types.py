@@ -87,6 +87,21 @@ class Exclusion:
 
 
 @dataclass(frozen=True)
+class JulgamentoOrfao:
+    """Julgamento humano de um commit órfão (sem referência de tarefa) de uma
+    versão. Como a `Exclusion`, o git não o recupera.
+
+    `chamado=None` quer dizer "não pertence a chamado nenhum"; senão é o ID
+    puro, a mesma chave das atribuições.
+    """
+
+    hash_origem: str = ""
+    versao_numero: str = ""
+    chamado: str | None = None
+    motivo: str = ""
+
+
+@dataclass(frozen=True)
 class Atribuicao:
     chamado: str = ""
     marcada: str = ""  # versao para a qual o rastreador marcou

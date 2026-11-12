@@ -90,6 +90,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/{repo}/versoes/{versao}/orfaos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar Orfaos */
+        get: operations["listar_orfaos_api_repos__repo__versoes__versao__orfaos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Julgar Orfao */
+        post: operations["julgar_orfao_api_repos__repo__versoes__versao__orfaos__hash__julgamento_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo}/versoes/{versao}/verificacao": {
         parameters: {
             query?: never;
@@ -574,6 +608,33 @@ export interface components {
             intervalo: string;
             ultima: components["schemas"]["UltimaExecucao"] | null;
         };
+        /**
+         * JulgamentoOrfao
+         * @description Julgamento humano de um commit órfão (sem referência de tarefa) de uma
+         *     versão. Como a `Exclusion`, o git não o recupera.
+         *
+         *     `chamado=None` quer dizer "não pertence a chamado nenhum"; senão é o ID
+         *     puro, a mesma chave das atribuições.
+         */
+        JulgamentoOrfao: {
+            /**
+             * Hash Origem
+             * @default
+             */
+            hash_origem: string;
+            /**
+             * Versao Numero
+             * @default
+             */
+            versao_numero: string;
+            /** Chamado */
+            chamado?: string | null;
+            /**
+             * Motivo
+             * @default
+             */
+            motivo: string;
+        };
         /** NumeroVersao */
         NumeroVersao: {
             /** Numero */
@@ -584,6 +645,19 @@ export interface components {
          * @enum {string}
          */
         Operacao: "verificar" | "previa" | "atualizar" | "continuar" | "abortar" | "criar";
+        /** OrfaoDaVersao */
+        OrfaoDaVersao: {
+            /** Hash Origem */
+            hash_origem: string;
+            /** Assunto */
+            assunto: string;
+            /**
+             * Data
+             * Format: date-time
+             */
+            data: string;
+            julgamento: components["schemas"]["JulgamentoOrfao"] | null;
+        };
         /** PedidoAvaliacao */
         PedidoAvaliacao: {
             /** Numero */
@@ -609,6 +683,13 @@ export interface components {
             repo: string;
             /** Versao */
             versao: string;
+        };
+        /** PedidoJulgamento */
+        PedidoJulgamento: {
+            /** Chamado */
+            chamado: string | null;
+            /** Motivo */
+            motivo: string;
         };
         /** PedidoReabertura */
         PedidoReabertura: {
@@ -968,6 +1049,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChamadoConsultado"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_orfaos_api_repos__repo__versoes__versao__orfaos_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrfaoDaVersao"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    julgar_orfao_api_repos__repo__versoes__versao__orfaos__hash__julgamento_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+                hash: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoJulgamento"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JulgamentoOrfao"];
                 };
             };
             /** @description Validation Error */

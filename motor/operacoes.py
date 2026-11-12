@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config_repo, repos_configurados
-from motor.domain.types import VersionStatus
+from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
     atualizar,
@@ -31,6 +31,7 @@ from motor.engine.conflito import (
 from motor.engine.consultar import ChamadoConsultado, consultar
 from motor.engine.criar import criar
 from motor.engine.deps import Deps
+from motor.engine.orfaos import OrfaoDaVersao, julgar_orfao, listar_orfaos
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado
 from motor.montagem import abrir_sessao, montar_deps, resolver_versionamento
@@ -101,6 +102,9 @@ class ContinueRunner(Protocol):
 
 
 ConsultaRunner = Callable[[RepoOption, str], list[ChamadoConsultado]]
+OrfaosRunner = Callable[[RepoOption, str], list[OrfaoDaVersao]]
+# (repo, versao, hash, chamado ou None para "nenhum", motivo)
+JulgarRunner = Callable[[RepoOption, str, str, str | None, str], JulgamentoOrfao]
 
 
 @dataclass(frozen=True)
@@ -123,6 +127,8 @@ class Runners:
     ler_arquivo_conflito: LerArquivoConflitoRunner | None = None
     resolver_arquivo_conflito: ResolverArquivoRunner | None = None
     reabrir_arquivo_conflito: ReabrirArquivoRunner | None = None
+    listar_orfaos: OrfaosRunner | None = None
+    julgar_orfao: JulgarRunner | None = None
 
 
 def descobrir_repos(
@@ -306,6 +312,30 @@ def consultar_repo(
         return consultar(_deps_do_repo(repo, sessao, progresso), versao)
 
 
+def orfaos_repo(
+    repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
+) -> list[OrfaoDaVersao]:
+    with abrir_sessao() as sessao:
+        return listar_orfaos(_deps_do_repo(repo, sessao, progresso), versao)
+
+
+# Seis parâmetros: os cinco posicionais são a assinatura do JulgarRunner, que a
+# TUI e o daemon chamam, e o sexto é o relator que o `partial` amarra.
+def julgar_orfao_repo(  # noqa: PLR0913
+    repo: RepoOption,
+    versao: str,
+    hash_: str,
+    chamado: str | None,
+    motivo: str,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> JulgamentoOrfao:
+    with abrir_sessao() as sessao:
+        return julgar_orfao(
+            _deps_do_repo(repo, sessao, progresso), versao, hash_, chamado, motivo
+        )
+
+
 def avaliar_numero(
     versionamento: Versionamento, existentes: list[str], numero: str
 ) -> tuple[str, str]:
@@ -353,4 +383,6 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         reabrir_arquivo_conflito=partial(
             reabrir_arquivo_conflito_repo, progresso=relatar
         ),
+        listar_orfaos=partial(orfaos_repo, progresso=relatar),
+        julgar_orfao=partial(julgar_orfao_repo, progresso=relatar),
     )

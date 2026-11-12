@@ -37,6 +37,7 @@ from motor.domain.types import (
     CommitRef,
     ContextoAtribuicao,
     Exclusion,
+    JulgamentoOrfao,
     PrIndex,
     RepoInfo,
     Verificacao,
@@ -389,6 +390,17 @@ class EstadoRepo(Protocol):
 
     def sem_entrega(self, repo: str, /) -> dict[str, str]:
         """chamado -> motivo."""
+        ...
+
+    def julgamentos_orfao(self, repo: str, /) -> list[JulgamentoOrfao]:
+        """Julgamentos de órfão de todas as versões do repo, ordenados por
+        `(versao_numero, hash_origem)`."""
+        ...
+
+    def julgar_orfao(self, repo: str, j: JulgamentoOrfao, /) -> None:
+        """Upsert por `(repo, versao_numero, hash_origem)`. NaoEncontrado se a
+        versão não existir no estado. Não passa pelo congelamento: grava também
+        em versão liberada."""
         ...
 
     def commits_de_pr(

@@ -9,6 +9,7 @@ from motor.domain.types import (
     Atribuicao,
     CommitRef,
     Exclusion,
+    JulgamentoOrfao,
     PrIndex,
     RepoInfo,
     Verificacao,
@@ -24,6 +25,10 @@ class FakeEstado:
     _atribuicoes: dict[tuple[str, str], list[Atribuicao]] = field(default_factory=dict)
     _exclusoes: dict[str, list[Exclusion]] = field(default_factory=dict)
     _sem_entrega: dict[str, dict[str, str]] = field(default_factory=dict)
+    # (repo, versao, hash) -> julgamento: a chave e a do upsert do adapter.
+    _julgamentos: dict[tuple[str, str, str], JulgamentoOrfao] = field(
+        default_factory=dict
+    )
     # (repo, pr_id) -> hash -> commit. Dict por hash, nao lista: o adapter
     # real usa merge, entao regravar o mesmo hash sobrescreve em vez de somar.
     _pr_commits: dict[tuple[str, int], dict[str, CommitRef]] = field(
@@ -122,6 +127,19 @@ class FakeEstado:
     def sem_entrega(self, repo: str, /) -> dict[str, str]:
         self._exigir_repo(repo)
         return dict(self._sem_entrega.get(repo, {}))
+
+    def julgamentos_orfao(self, repo: str, /) -> list[JulgamentoOrfao]:
+        self._exigir_repo(repo)
+        return [
+            self._julgamentos[chave]
+            for chave in sorted(k for k in self._julgamentos if k[0] == repo)
+        ]
+
+    def julgar_orfao(self, repo: str, j: JulgamentoOrfao, /) -> None:
+        # Sem checar liberada_em, como o adapter: o julgamento nao e atribuicao.
+        if self.versao(repo, j.versao_numero) is None:
+            raise NaoEncontrado(f"versao {j.versao_numero} nao registrada no estado")
+        self._julgamentos[(repo, j.versao_numero, j.hash_origem)] = j
 
     def commits_de_pr(
         self, repo: str, pr_ids: list[int], /

@@ -12,7 +12,11 @@ import pytest
 
 from motor.adapters.git.fake import FakeGit
 from motor.errors import MotorError
-from motor.services.reconstrutor import extrair_trailer, reconstruir_atribuicoes
+from motor.services.reconstrutor import (
+    extrair_trailer,
+    reconstruir_atribuicoes,
+    varrer,
+)
 from tests.fontes_falsas import REFERENCIA_CH
 
 D = datetime.datetime(2026, 1, 1)
@@ -109,3 +113,26 @@ def test_excecao_fora_do_contrato_propaga_sem_embrulho():
 
     with pytest.raises(RuntimeError, match="git morreu de verdade"):
         reconstruir_atribuicoes(git, "base", "13.34.0", REFERENCIA_CH)
+
+
+def test_varrer_devolve_orfaos_com_meta_da_origem():
+    """Commit direto e pick de origem sem referencia sao orfaos; o mesmo
+    orfao picado duas vezes aparece uma vez so, e a origem sumida nao aparece.
+    O meta e o da origem (parent e data do committer), nao o do pick."""
+    git = _git(
+        "ajuste direto",
+        "solto\n\n(cherry picked from commit ooo)",
+        "solto de novo\n\n(cherry picked from commit ooo)",
+        "sumiu\n\n(cherry picked from commit desaparecido)",
+        "ch123456 alfa",
+    )
+    origem_data = datetime.datetime(2025, 12, 1, tzinfo=datetime.UTC)
+    git.add_commit("ooo", "pai-da-origem", "solto na origem", origem_data)
+
+    por_chamado, orfaos = varrer(git, "base", "13.34.0", REFERENCIA_CH)
+
+    assert por_chamado == {"123456": ["p5"]}
+    assert [(o.hash_origem, o.parent, o.commit_date) for o in orfaos] == [
+        ("ooo", "pai-da-origem", origem_data),
+        ("p1", "base", D.replace(tzinfo=datetime.UTC)),
+    ]

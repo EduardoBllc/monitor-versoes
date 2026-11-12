@@ -271,6 +271,125 @@
         }
       }
     },
+    "/api/repos/{repo}/versoes/{versao}/orfaos": {
+      "get": {
+        "summary": "Listar Orfaos",
+        "operationId": "listar_orfaos_api_repos__repo__versoes__versao__orfaos_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrfaoDaVersao"
+                  },
+                  "title": "Response Listar Orfaos Api Repos  Repo  Versoes  Versao  Orfaos Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento": {
+      "post": {
+        "summary": "Julgar Orfao",
+        "operationId": "julgar_orfao_api_repos__repo__versoes__versao__orfaos__hash__julgamento_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hash"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoJulgamento"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JulgamentoOrfao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/repos/{repo}/versoes/{versao}/verificacao": {
       "post": {
         "summary": "Verificar",
@@ -1653,6 +1772,39 @@
         ],
         "title": "InscricaoVista"
       },
+      "JulgamentoOrfao": {
+        "properties": {
+          "hash_origem": {
+            "type": "string",
+            "title": "Hash Origem",
+            "default": ""
+          },
+          "versao_numero": {
+            "type": "string",
+            "title": "Versao Numero",
+            "default": ""
+          },
+          "chamado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chamado"
+          },
+          "motivo": {
+            "type": "string",
+            "title": "Motivo",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "JulgamentoOrfao",
+        "description": "Julgamento humano de um commit órfão (sem referência de tarefa) de uma\nversão. Como a `Exclusion`, o git não o recupera.\n\n`chamado=None` quer dizer \"não pertence a chamado nenhum\"; senão é o ID\npuro, a mesma chave das atribuições."
+      },
       "NumeroVersao": {
         "properties": {
           "numero": {
@@ -1677,6 +1829,41 @@
           "criar"
         ],
         "title": "Operacao"
+      },
+      "OrfaoDaVersao": {
+        "properties": {
+          "hash_origem": {
+            "type": "string",
+            "title": "Hash Origem"
+          },
+          "assunto": {
+            "type": "string",
+            "title": "Assunto"
+          },
+          "data": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Data"
+          },
+          "julgamento": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JulgamentoOrfao"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "hash_origem",
+          "assunto",
+          "data",
+          "julgamento"
+        ],
+        "title": "OrfaoDaVersao"
       },
       "PedidoAvaliacao": {
         "properties": {
@@ -1750,6 +1937,31 @@
           "versao"
         ],
         "title": "PedidoInscrever"
+      },
+      "PedidoJulgamento": {
+        "properties": {
+          "chamado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chamado"
+          },
+          "motivo": {
+            "type": "string",
+            "title": "Motivo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chamado",
+          "motivo"
+        ],
+        "title": "PedidoJulgamento"
       },
       "PedidoReabertura": {
         "properties": {

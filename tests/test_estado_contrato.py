@@ -31,6 +31,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    JulgamentoOrfao,
     PrIndex,
     RepoInfo,
     Verificacao,
@@ -142,6 +143,13 @@ def test_listar_repos_devolve_em_ordem(estado):
         pytest.param(
             lambda e: e.gravar_commits_de_pr("outro", {7: []}),
             id="gravar_commits_de_pr",
+        ),
+        pytest.param(lambda e: e.julgamentos_orfao("outro"), id="julgamentos_orfao"),
+        pytest.param(
+            lambda e: e.julgar_orfao(
+                "outro", JulgamentoOrfao("abc", "13.34.0", None, "m")
+            ),
+            id="julgar_orfao",
         ),
     ],
 )
@@ -527,3 +535,54 @@ def test_verificacao_ilegivel_devolve_none(estado, status_ilegivel):
     estado.sessao.commit()
 
     assert estado.verificacao(REPO, "13.34.0") is None
+
+
+# -- julgamento de orfao -------------------------------------------------------
+
+
+def test_julgamentos_orfao_comecam_vazios(estado):
+    assert estado.julgamentos_orfao(REPO) == []
+
+
+def test_julgar_orfao_grava_e_rele_nos_dois_sentidos(estado):
+    estado.registrar_versao(REPO, _base())
+    nenhum = JulgamentoOrfao("bbb", "13.34.0", None, "merge de manutencao")
+    pertence = JulgamentoOrfao("aaa", "13.34.0", "123", "faz parte do ch123")
+    estado.julgar_orfao(REPO, nenhum)
+    estado.julgar_orfao(REPO, pertence)
+
+    assert estado.julgamentos_orfao(REPO) == [pertence, nenhum]
+
+
+def test_julgar_orfao_de_novo_substitui(estado):
+    estado.registrar_versao(REPO, _base())
+    estado.julgar_orfao(REPO, JulgamentoOrfao("aaa", "13.34.0", "123", "primeiro"))
+    novo = JulgamentoOrfao("aaa", "13.34.0", None, "segundo")
+    estado.julgar_orfao(REPO, novo)
+
+    assert estado.julgamentos_orfao(REPO) == [novo]
+
+
+def test_julgamento_e_por_versao(estado):
+    estado.registrar_versao(REPO, _base("13.35.0"))
+    estado.registrar_versao(REPO, _base())
+    na_35 = JulgamentoOrfao("aaa", "13.35.0", None, "m")
+    na_34 = JulgamentoOrfao("aaa", "13.34.0", "123", "m")
+    estado.julgar_orfao(REPO, na_35)
+    estado.julgar_orfao(REPO, na_34)
+
+    assert estado.julgamentos_orfao(REPO) == [na_34, na_35]
+
+
+def test_julgar_orfao_recusa_versao_nao_registrada(estado):
+    with pytest.raises(NaoEncontrado):
+        estado.julgar_orfao(REPO, JulgamentoOrfao("aaa", "13.34.0", None, "m"))
+
+
+def test_julgar_orfao_aceita_versao_liberada(estado):
+    estado.registrar_versao(REPO, _base())
+    estado.marcar_liberadas(REPO, {"13.34.0": QUANDO})
+    j = JulgamentoOrfao("aaa", "13.34.0", "123", "m")
+    estado.julgar_orfao(REPO, j)
+
+    assert estado.julgamentos_orfao(REPO) == [j]

@@ -59,6 +59,12 @@ from motor.engine.criar import criar
 from motor.engine.deps import Deps
 from motor.engine.inscricao import executar_inscricao
 from motor.engine.migrar_estado import migrar_estado
+from motor.engine.orfaos import (
+    OrfaoDaVersao,
+    julgar_orfao,
+    linha_do_orfao,
+    listar_orfaos,
+)
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, formatar_com_notas
@@ -322,6 +328,35 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
 }
 
 
+def _parsers_de_orfaos(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+    comum: argparse.ArgumentParser,
+) -> None:
+    sub.add_parser(
+        "orfaos",
+        parents=[comum],
+        help="lista os commits sem referencia de tarefa da versao e o julgamento",
+    )
+    p_julgar = sub.add_parser(
+        "julgar-orfao",
+        parents=[comum],
+        help="grava a qual chamado pertence um commit orfao da versao",
+    )
+    p_julgar.add_argument("hash", help="hash do orfao (pode ser abreviado)")
+    destino = p_julgar.add_mutually_exclusive_group(required=True)
+    destino.add_argument(
+        "--chamado", metavar="ID", help="ID do chamado a que o commit pertence"
+    )
+    destino.add_argument(
+        "--nenhum",
+        action="store_true",
+        help="o commit nao pertence a chamado nenhum",
+    )
+    p_julgar.add_argument(
+        "--motivo", metavar="TEXTO", required=True, help="por que (obrigatorio)"
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Um subparser por comando: `motor -h` lista os comandos e
     `motor <comando> -h` mostra so as flags daquele comando (help nativo do
@@ -430,6 +465,7 @@ def _build_parser() -> argparse.ArgumentParser:
         parents=[comum],
         help="mostra os chamados e commits salvos para a versao",
     )
+    _parsers_de_orfaos(sub, comum)
 
     sub.add_parser(
         "tui",
@@ -668,6 +704,14 @@ def imprimir_consulta(chamados: list[ChamadoConsultado]) -> None:
             print(f"  - {commit.hash_origem[:8]} {titulo}")
 
 
+def imprimir_orfaos(orfaos: list[OrfaoDaVersao]) -> None:
+    if not orfaos:
+        print("sem orfaos")
+        return
+    for o in orfaos:
+        print(linha_do_orfao(o))
+
+
 def _escrever_progresso(progresso: Progresso, saida: TextIO) -> None:
     r"""Uma linha reescrita no lugar, em stderr.
 
@@ -751,14 +795,35 @@ def _despachar(args: argparse.Namespace, deps: Deps) -> None:
             imprimir_atualizacao(atualizar(deps, args.versao), deps.referencia)
     elif args.comando == "consulta":
         imprimir_consulta(consultar(deps, args.versao))
-    else:  # reconstruir-estado (unico comando restante; argparse ja validou)
+    else:  # orfaos, julgar-orfao e reconstruir-estado (argparse ja validou)
+        _despachar_orfaos(args, deps)
+    logging.debug(
+        "comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio
+    )
+
+
+def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
+    if args.comando == "orfaos":
+        imprimir_orfaos(listar_orfaos(deps, args.versao))
+    elif args.comando == "julgar-orfao":
+        j = julgar_orfao(
+            deps,
+            args.versao,
+            args.hash,
+            None if args.nenhum else args.chamado,
+            args.motivo,
+        )
+        print(f"julgado: {j.hash_origem[:8]} -> {j.chamado or 'nenhum'}")
+    else:  # reconstruir-estado (unico comando restante)
         resultado = reconstruir_estado(deps, args.versao)
         print(f"status: {resultado.status.name}, orfaos: {len(resultado.orfaos)}")
         for hash_ in resultado.orfaos:
             print(f"  - {hash_[:8]} (sem referencia de tarefa na mensagem)")
-    logging.debug(
-        "comando '%s' concluido em %.3fs", args.comando, time.monotonic() - inicio
-    )
+        if resultado.orfaos:
+            print(
+                f"julgue com: motor julgar-orfao {args.versao} <hash> "
+                f"--repo {args.repo} (--chamado ID | --nenhum) --motivo TEXTO"
+            )
 
 
 def _migrar_estado(args: argparse.Namespace) -> None:
