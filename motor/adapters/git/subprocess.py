@@ -1087,6 +1087,12 @@ def new_git_subprocess(
     """Espelha git.NewGitSubprocess: valida versão e liga rerere aqui."""
     _checar_versao_git()
     g = GitSubprocess(repo_path=repo_path, progresso=progresso)
-    g._run(repo_path, "config", "rerere.enabled", "true")
-    g._run(repo_path, "config", "rerere.autoUpdate", "true")
+    for chave in ("rerere.enabled", "rerere.autoUpdate"):
+        # Só escreve se preciso: escrever pega o .git/config.lock, e requisições
+        # paralelas do daemon montando o adaptador colidiam nele (#163).
+        lido = _rodar_git(
+            ["git", "config", "--type=bool", "--get", chave], cwd=repo_path
+        )
+        if lido.stdout.strip() != "true":
+            g._run(repo_path, "config", chave, "true")
     return g
