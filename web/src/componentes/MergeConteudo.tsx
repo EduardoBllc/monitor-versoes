@@ -89,6 +89,7 @@ export function MergeConteudo({
   const linguagem = linguagemDe(caminho, monaco.languages.getLanguages());
   // Os blocos de quando a tela montou; a chave do componente troca a cada leitura.
   const [originais] = useState(() => (resolvido ? [] : blocos(texto)));
+  const [linhasIniciais] = useState(() => texto.split("\n"));
   const registro = useRef<Registro[]>([]);
   const resultado = useRef<monaco.editor.ITextModel | null>(null);
   const [mudou] = useState(() => new monaco.Emitter<void>());
@@ -148,6 +149,7 @@ export function MergeConteudo({
       const faixas = localizar(
         conteudo,
         originais.map((b) => (lado === Lado.OURS ? b.ours : b.theirs)),
+        originais.map((b) => linhasIniciais[b.inicio - 2] ?? null),
       );
       colorir(
         editor,

@@ -79,6 +79,15 @@ describe("localizar", () => {
     ]);
   });
 
+  it("trecho vazio fica ancorado depois da linha que o antecede no resultado", () => {
+    expect(
+      localizar("a\nX\nm\nk\nb\n", ["X\n", ""], [null, "k"]),
+    ).toEqual([
+      { inicio: 2, fim: 2 },
+      { inicio: 5, fim: 4 },
+    ]);
+  });
+
   it("trecho não achado vira faixa vazia no cursor", () => {
     expect(localizar("a\nb\n", ["Z\n"])).toEqual([{ inicio: 1, fim: 0 }]);
   });

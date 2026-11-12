@@ -32,11 +32,16 @@ export function recolherNoEditor(
   const dono = {};
   let restantes = ocultas;
   let zonas: string[] = [];
+  let avisos: monaco.editor.IOverlayWidget[] = [];
   const aplicar = () => {
     comAreas.setHiddenAreas(restantes.map(intervalo), dono);
+    avisos.forEach((a) => editor.removeOverlayWidget(a));
     editor.changeViewZones((acesso) => {
       zonas.forEach((z) => acesso.removeZone(z));
-      zonas = restantes.map((f) => {
+      const novos = restantes.map((f, i) => {
+        // A view zone abre o espaço, mas fica sob a camada de texto e não
+        // recebe clique; o aviso clicável é um overlay que segue a zona,
+        // como o diff editor do Monaco faz nas regiões recolhidas.
         const aviso = document.createElement("div");
         const n = f.fim - f.inicio + 1;
         aviso.className = "cf-recolhido";
@@ -45,15 +50,30 @@ export function recolherNoEditor(
           restantes = restantes.filter((r) => r !== f);
           aplicar();
         };
-        return acesso.addZone({
+        const widget: monaco.editor.IOverlayWidget = {
+          getId: () => `cf-recolhido-${i}-${f.inicio}`,
+          getDomNode: () => aviso,
+          getPosition: () => null,
+        };
+        const zona = acesso.addZone({
           afterLineNumber: f.inicio - 1,
           heightInLines: ALTURA_AVISO,
-          domNode: aviso,
-          // Sem isto o Monaco engole o clique na view zone.
-          suppressMouseDown: false,
+          // A zona fica junto da área escondida; sem isto o Monaco a some.
+          showInHiddenAreas: true,
+          domNode: document.createElement("div"),
+          onDomNodeTop: (topo) => {
+            aviso.style.top = `${topo}px`;
+          },
+          onComputedHeight: (altura) => {
+            aviso.style.height = `${altura}px`;
+          },
         });
+        return { zona, widget };
       });
+      zonas = novos.map((n) => n.zona);
+      avisos = novos.map((n) => n.widget);
     });
+    avisos.forEach((a) => editor.addOverlayWidget(a));
   };
   aplicar();
   return {

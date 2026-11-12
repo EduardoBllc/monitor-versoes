@@ -117,10 +117,16 @@ const linhasDoTrecho = (trecho: string): string[] =>
 
 // ponytail: busca por conteúdo, em ordem; conteúdo repetido pode casar cedo, e o
 // cursor que só avança atenua. Merge de 3 vias no browser se isso pesar.
-export function localizar(arquivo: string, trechos: string[]): Faixa[] {
+// Trecho vazio (o lado apagou) ou não achado fica ancorado depois de
+// `anteriores[k]`, a linha que antecede o bloco no resultado; sem ela, no cursor.
+export function localizar(
+  arquivo: string,
+  trechos: string[],
+  anteriores: readonly (string | null)[] = [],
+): Faixa[] {
   const linhas = linhasDe(arquivo);
   let cursor = 1;
-  return trechos.map((t) => {
+  return trechos.map((t, k) => {
     const procuradas = linhasDoTrecho(t);
     const n = procuradas.length;
     for (let i = cursor - 1; n > 0 && i + n <= linhas.length; i++) {
@@ -129,6 +135,10 @@ export function localizar(arquivo: string, trechos: string[]): Faixa[] {
         return { inicio: i + 1, fim: i + n };
       }
     }
+    const anterior = anteriores[k];
+    const achada =
+      anterior == null ? -1 : linhas.indexOf(anterior, cursor - 1);
+    if (achada >= 0) cursor = achada + 2;
     return { inicio: cursor, fim: cursor - 1 };
   });
 }
