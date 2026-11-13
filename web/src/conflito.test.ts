@@ -6,6 +6,7 @@ import {
   blocos,
   estadoDoBloco,
   localizar,
+  proximoPendente,
   recolher,
   secoesDoBloco,
   temMarcadores,
@@ -193,5 +194,22 @@ describe("secoesDoBloco", () => {
       { faixa: { inicio: 3, fim: 4 }, lado: Lado.THEIRS },
       { faixa: { inicio: 5, fim: 5 }, lado: null },
     ]);
+  });
+});
+
+describe("proximoPendente", () => {
+  const lista = (...resolvidos: boolean[]) =>
+    resolvidos.map((resolvido, i) => ({ caminho: `a${i + 1}`, resolvido }));
+
+  it.each([
+    ["o seguinte na lista", lista(true, false, false), "a1", "a2"],
+    ["volta ao início depois do último", lista(true, false, true), "a3", "a2"],
+    ["pula os já resolvidos", lista(false, true, true), "a2", "a1"],
+  ])("abre %s", (_, arquivos, resolvido, esperado) => {
+    expect(proximoPendente(arquivos, resolvido)).toBe(esperado);
+  });
+
+  it("devolve null quando o resolvido era o último pendente", () => {
+    expect(proximoPendente(lista(true, true), "a2")).toBeNull();
   });
 });

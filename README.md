@@ -247,7 +247,11 @@ Um pick bloqueado por conflito se resolve de dois jeitos, inclusive misturados:
   submódulo ficam para o editor local. "Reabrir" desfaz a resolução de um arquivo e volta os marcadores.
 - **No seu editor**, na worktree que o painel mostra.
 
-Depois, **Continuar**. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum
+Quando a web resolve um arquivo (**Marcar resolvido**, **Manter arquivo** ou **Apagar
+arquivo**), a tela abre o próximo não resolvido na ordem da lista, voltando ao início; um
+arquivo que só se resolve no editor local abre com essa instrução. Se não sobrar nenhum
+pendente, a web dispara o **Continuar** sozinha. Depois de resolver no editor local, o
+**Continuar** é manual. Em qualquer front-end (CLI, TUI e web), o continuar recusa se algum
 arquivo ainda não mesclado tiver marcador de conflito no disco, e aponta arquivo e linha. As
 regras do conflito estão na [decisão 013](docs/decisoes/013-conflito-e-checkpoint.md).
 

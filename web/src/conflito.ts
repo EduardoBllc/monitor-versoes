@@ -232,3 +232,14 @@ export function secoesDoBloco(bloco: Bloco): SecaoDoBloco[] {
   marcador();
   return secoes;
 }
+
+// Próximo arquivo não resolvido depois de `resolvido`, na ordem da lista e com volta
+// ao início; null quando não sobra nenhum, nem os que só se resolvem fora da web.
+export function proximoPendente(
+  arquivos: readonly { caminho: string; resolvido: boolean }[],
+  resolvido: string,
+): string | null {
+  const i = arquivos.findIndex((a) => a.caminho === resolvido);
+  const girada = [...arquivos.slice(i + 1), ...arquivos.slice(0, i + 1)];
+  return girada.find((a) => !a.resolvido)?.caminho ?? null;
+}
