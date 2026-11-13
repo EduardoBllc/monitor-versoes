@@ -25,7 +25,6 @@ jobs:
           client-id: ${{ secrets.AGENTE_APP_CLIENT_ID }}
           private-key: ${{ secrets.AGENTE_APP_PRIVATE_KEY }}
       - uses: googleapis/release-please-action@v5.0.0
-        id: rp
         with:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
@@ -33,16 +32,26 @@ jobs:
 
       # O uv.lock guarda a versão do próprio projeto e o CI roda `uv sync --locked`. O updater
       # de TOML do release-please não acha a entrada no uv.lock, então o lock é regerado aqui,
-      # na branch do PR de release, a cada vez que o release-please a reescreve.
+      # na branch do PR de release aberto. Procura pela label, e não pelo output `pr` da action,
+      # que só vem quando o PR é criado ou alterado: um push na main sem `feat`/`fix` deixa o
+      # PR igual e não o informaria.
+      - name: Branch do PR de release
+        id: branch
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          nome=$(gh pr list -R "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' \
+            --json headRefName --jq '.[0].headRefName // ""')
+          echo "nome=$nome" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7.0.1
-        if: steps.rp.outputs.pr
+        if: steps.branch.outputs.nome != ''
         with:
-          ref: ${{ fromJSON(steps.rp.outputs.pr).headBranchName }}
+          ref: ${{ steps.branch.outputs.nome }}
           token: ${{ steps.app.outputs.token }}
       - uses: astral-sh/setup-uv@v10.3.0
-        if: steps.rp.outputs.pr
+        if: steps.branch.outputs.nome != ''
       - name: uv.lock na versão nova
-        if: steps.rp.outputs.pr
+        if: steps.branch.outputs.nome != ''
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           BOT: ${{ steps.app.outputs.app-slug }}[bot]
