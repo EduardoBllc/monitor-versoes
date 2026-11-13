@@ -2,7 +2,6 @@ import { AcaoAlteracao, Escopo } from "./api/enums";
 import type { Alteracao, Campo, ConfigEditavel, ValorLido } from "./api/tipos";
 
 export const ORIGEM_MOTOR = "motor";
-export const TABELA_AMBIENTE = "ambiente";
 
 export enum EstadoSegredo {
   DEFINIDO = "definido",

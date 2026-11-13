@@ -5,12 +5,15 @@ import { ErroApi, Metodo, api } from "../api/cliente";
 import { EstadoTeste, TipoErro, type PecaTestavel } from "../api/enums";
 import type { ConfigEditavel, ResultadoTeste } from "../api/tipos";
 import { alteracoesDe, type Formulario } from "../config";
-import { assinatura, type Destino } from "../configSecoes";
+import { NOME_SECAO, assinatura, type Destino } from "../configSecoes";
 import { notificarErro } from "./notificar";
 
-const COR: Partial<Record<string, string>> = {
-  [EstadoTeste.OK]: "green",
-  [EstadoTeste.FALHA]: "red",
+const ESTILO: Record<EstadoTeste, { cor: string; sinal: string }> = {
+  [EstadoTeste.OK]: { cor: "green", sinal: "✓" },
+  [EstadoTeste.FALHA]: { cor: "red", sinal: "✕" },
+  [EstadoTeste.NAO_VERIFICADA]: { cor: "gray", sinal: "" },
+  [EstadoTeste.NAO_CONFIGURADO]: { cor: "gray", sinal: "" },
+  [EstadoTeste.AVISO]: { cor: "gray", sinal: "" },
 };
 
 export function TestarSecao({
@@ -64,16 +67,22 @@ export function TestarSecao({
         </Button>
         {children}
       </Group>
-      {resultado && (
-        <Alert color={COR[resultado.estado] ?? "gray"} title={resultado.estado}>
-          <Text size="sm">{resultado.detalhe}</Text>
-          {resultado.correcao && (
-            <Text size="sm" c="dimmed">
-              Correção: {resultado.correcao}
-            </Text>
-          )}
-        </Alert>
-      )}
+      {resultado && <Resultado nome={typeof destino === "string" ? NOME_SECAO[destino] : destino.repo} {...resultado} />}
     </Stack>
+  );
+}
+
+function Resultado({ nome, estado, detalhe, correcao }: ResultadoTeste & { nome: string }) {
+  // O tipo gerado é string; o enum espelha os valores do motor.
+  const { cor, sinal } = ESTILO[estado as EstadoTeste] ?? ESTILO[EstadoTeste.AVISO];
+  return (
+    <Alert color={cor} title={sinal ? `${sinal} ${nome}` : `${nome}: ${estado}`}>
+      <Text size="sm">{detalhe}</Text>
+      {correcao && (
+        <Text size="sm" c="dimmed">
+          Correção: {correcao}
+        </Text>
+      )}
+    </Alert>
   );
 }

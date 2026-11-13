@@ -135,7 +135,7 @@ function Barra({ segmentos, abrir, continuar }: { segmentos: Segmento[]; abrir: 
                 color={COR_BARRA[s.marca] ?? "gray"}
               />
               <Text size="xs" c="dimmed" mt={4}>
-                {s.nome} <Sinal marca={s.marca} />
+                {s.nome} {s.marca !== Marca.PENDENTE && <Sinal marca={s.marca} />}
               </Text>
             </UnstyledButton>
           ))}
@@ -283,8 +283,8 @@ function Editor({
   }
 
   return (
-    <Stack gap={0}>
-      <Group align="flex-start" wrap="nowrap" gap="xl">
+    <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+      <Group align="flex-start" wrap="nowrap" gap="xl" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <Box component="nav" aria-label="Seções da configuração" w={240} style={{ flexShrink: 0 }}>
           {LATERAL.map(({ grupo, secoes }) => (
             <Fragment key={grupo}>
@@ -327,15 +327,7 @@ function Editor({
           <Fragment key={JSON.stringify(destino)}>{conteudo}</Fragment>
         </Stack>
       </Group>
-      <Group
-        justify="flex-end"
-        pos="sticky"
-        bottom={0}
-        py="sm"
-        mt="md"
-        bg="var(--mantine-color-body)"
-        style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
-      >
+      <Group justify="flex-end" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
         {pendentes > 0 && (
           <Text c="dimmed" size="sm">
             {pendentes === 1 ? "1 alteração não salva" : `${pendentes} alterações não salvas`}
@@ -352,7 +344,7 @@ function Editor({
 export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
   const cliente = useQueryClient();
   const [recusada, setRecusada] = useState(false);
-  // Salvar recarrega o editor; a seção aberta continua a mesma.
+  // Salvar recarrega o editor na seção aberta; recarregar e fechar voltam à próxima pendência.
   const [retomar, setRetomar] = useState<Destino | null>(null);
   const [confirmar, setConfirmar] = useState(false);
   const sujo = useRef(false);
@@ -386,9 +378,19 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
   return (
     <Modal
       opened={aberto}
-      onClose={() => (sujo.current ? setConfirmar(true) : fechar())}
+      onClose={() => {
+        // O Escape chega às duas modais; a confirmação não o escuta, e quem a fecha é este handler.
+        if (confirmar) setConfirmar(false);
+        else if (sujo.current) setConfirmar(true);
+        else fechar();
+      }}
       title="Configuração"
       fullScreen
+      // Rodapé fixo: o corpo ocupa a altura e só o meio rola.
+      styles={{
+        content: { display: "flex", flexDirection: "column" },
+        body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+      }}
     >
       {config.error && <Alert color="red">{config.error.message}</Alert>}
       {dados && (
@@ -406,6 +408,7 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
           aoRecusa={() => setRecusada(true)}
           aoRecarregar={() => {
             setRecusada(false);
+            setRetomar(null);
             void config.refetch();
           }}
         />
@@ -415,6 +418,7 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
         onClose={() => setConfirmar(false)}
         title="Descartar as alterações não salvas?"
         centered
+        closeOnEscape={false}
         zIndex={getDefaultZIndex("modal") + 1}
       >
         <Group justify="flex-end">

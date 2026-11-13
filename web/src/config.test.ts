@@ -4,7 +4,6 @@ import type { ConfigEditavel } from "./api/tipos";
 import {
   ORIGEM_MOTOR,
   EstadoSegredo,
-  TABELA_AMBIENTE,
   alteracoesDe,
   chaveDe,
   estadoSegredo,
@@ -14,6 +13,7 @@ import {
   type Formulario,
 } from "./config";
 
+const TABELA_AMBIENTE = "ambiente";
 const TABELA_VERSAO = "versao";
 const CHAVE_ESQUEMA = "esquema";
 const CHAVE_CAMINHO = "caminho";

@@ -47,10 +47,6 @@ const ESCOLHE: Record<GrupoPlugin, TabelaChave> = {
   [GrupoPlugin.ATRIBUICOES]: [Tabela.VERSAO, Chave.ATRIBUICAO],
 };
 
-/** Grupo de plugin cuja escolha a linha guarda, se for uma. */
-export const grupoEscolhidoPor = (l: Linha): GrupoPlugin | undefined =>
-  (Object.keys(ESCOLHE) as GrupoPlugin[]).find((g) => ESCOLHE[g][0] === l.tabela && ESCOLHE[g][1] === l.chave);
-
 const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
   [GrupoPlugin.TAREFAS]: Secao.TAREFAS,
   [GrupoPlugin.PRS]: Secao.PRS,
@@ -143,18 +139,34 @@ export function linhasDaSecao(config: ConfigEditavel, formulario: Formulario, se
   return linhasDe(config, null).filter((l) => secaoDe(config, formulario, l) === secao);
 }
 
-/** Linhas de um repo: as dele, as gerais que ele sobrescreve e as que pode sobrescrever. */
+const grupoEscolhidoPor = (l: Linha): GrupoPlugin | undefined =>
+  (Object.keys(ESCOLHE) as GrupoPlugin[]).find((g) => ESCOLHE[g][0] === l.tabela && ESCOLHE[g][1] === l.chave);
+
+/**
+ * Linhas de um repo: as dele, as gerais que ele sobrescreve, as que pode sobrescrever e,
+ * por chave da sobrescrita que escolhe um plugin, os campos desse plugin.
+ */
 export function linhasDoRepo(
   config: ConfigEditavel,
   formulario: Formulario,
   repo: string,
-): { proprias: Linha[]; sobrescritas: Linha[]; sobrescreviveis: Linha[] } {
+): { proprias: Linha[]; sobrescritas: Linha[]; sobrescreviveis: Linha[]; doPlugin: Record<string, Linha[]> } {
   const linhas = linhasDe(config, repo).filter((l) => visivel(config, formulario, l));
   const gerais = linhas.filter((l) => l.campo?.escopo !== Escopo.REPO);
+  const sobrescritas = gerais.filter((l) => sobrescreve(l, formulario));
+  // Escolha ainda vazia herda o plugin geral: os campos dele não são "deste" repo.
+  const doPlugin = sobrescritas.flatMap((escolha): [string, Linha[]][] => {
+    const k = chaveDe(escolha.repo, escolha.tabela, escolha.chave);
+    const grupo = grupoEscolhidoPor(escolha);
+    if (grupo === undefined || vazio(formulario.valores[k])) return [];
+    const origem = escolhido(config, formulario, grupo, repo);
+    return [[k, gerais.filter((l) => grupoDe(l) === grupo && l.campo?.origem === origem)]];
+  });
   return {
     proprias: linhas.filter((l) => l.campo?.escopo === Escopo.REPO),
-    sobrescritas: gerais.filter((l) => sobrescreve(l, formulario)),
+    sobrescritas,
     sobrescreviveis: gerais.filter((l) => !sobrescreve(l, formulario)),
+    doPlugin: Object.fromEntries(doPlugin),
   };
 }
 

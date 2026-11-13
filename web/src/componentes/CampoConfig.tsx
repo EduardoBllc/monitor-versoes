@@ -16,7 +16,7 @@ export type Valores = Formulario["valores"];
 export const rotuloDe = (l: Linha): string =>
   l.campo?.rotulo ?? [l.tabela, l.chave].filter(Boolean).join(".");
 
-export function Rotulo({ linha }: { linha: Linha }) {
+function Rotulo({ linha }: { linha: Linha }) {
   const texto = rotuloDe(linha);
   const descricao = linha.campo?.descricao;
   if (!descricao) return texto;
@@ -103,7 +103,7 @@ export function Entrada({
         readOnly={somenteLeitura}
         placeholder={dica}
         value={textoDe(atual)}
-        onChange={(v) => mudar(k, typeof v === "number" ? v : null)}
+        onChange={(v) => mudar(k, typeof v === "number" ? v : "")}
       />
     );
   }

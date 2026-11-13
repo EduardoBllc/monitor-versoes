@@ -2,7 +2,7 @@ import { Box, Button, CloseButton, Group, Paper, Select, Stack, Text, Title } fr
 import type { ReactNode } from "react";
 import type { ConfigEditavel } from "../api/tipos";
 import { chaveDe, vazio, type Escalar, type Formulario, type Linha } from "../config";
-import { escolhido, grupoEscolhidoPor, linhasDoRepo } from "../configSecoes";
+import { linhasDoRepo } from "../configSecoes";
 import { Entrada, rotuloDe } from "./CampoConfig";
 
 const chave = (l: Linha) => chaveDe(l.repo, l.tabela, l.chave);
@@ -23,18 +23,9 @@ export function SecaoRepo({
   children: ReactNode;
 }) {
   const { valores } = formulario;
-  const { proprias, sobrescritas, sobrescreviveis } = linhasDoRepo(config, formulario, repo);
+  const { proprias, sobrescritas, sobrescreviveis, doPlugin } = linhasDoRepo(config, formulario, repo);
   const escritas = new Set(sobrescritas.map(chave));
-  // Campos do plugin que o repo escolhe por conta própria: moram sob a sobrescrita que o escolheu.
-  const doPlugin = (escolha: Linha): Linha[] => {
-    const grupo = grupoEscolhidoPor(escolha);
-    if (grupo === undefined) return [];
-    const origem = escolhido(config, formulario, grupo, repo);
-    return [...sobrescritas, ...sobrescreviveis].filter(
-      (l) => l.campo?.grupo === (grupo as string) && l.campo.origem === origem,
-    );
-  };
-  const aninhadas = new Set(sobrescritas.flatMap(doPlugin).map(chave));
+  const aninhadas = new Set(Object.values(doPlugin).flat().map(chave));
   const geral = (l: Linha): string => {
     const v = valores[chaveDe(null, l.tabela, l.chave)];
     return `Geral: ${(vazio(v) ? l.campo?.padrao : String(v)) || "não definido"}`;
@@ -74,9 +65,9 @@ export function SecaoRepo({
             .map((l) => (
               <Stack key={chave(l)} gap="xs">
                 {campo(l)}
-                {doPlugin(l).length > 0 && (
+                {(doPlugin[chave(l)] ?? []).length > 0 && (
                   <Stack ml="md" pl="md" style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
-                    {doPlugin(l).map(campo)}
+                    {doPlugin[chave(l)]?.map(campo)}
                   </Stack>
                 )}
               </Stack>

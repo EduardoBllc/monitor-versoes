@@ -11,7 +11,6 @@ import {
 import type { Campo, ConfigEditavel, ResultadoTeste, ValorLido } from "./api/tipos";
 import {
   ORIGEM_MOTOR,
-  TABELA_AMBIENTE,
   alteracoesDe,
   chaveDe,
   type Formulario,
@@ -40,6 +39,7 @@ const PROPORCIONAL = "proporcional";
 const MODULO = "meu.modulo:Fonte";
 const REPO = "app";
 
+const TABELA_AMBIENTE = "ambiente";
 const TABELA_TICKIO = "tickio";
 const TABELA_JIRA = "jira";
 const TABELA_SEMVER = "semver";
@@ -257,6 +257,14 @@ describe("linhasDoRepo", () => {
 
     const limpa = linhasDoRepo(CONFIG, formulario({ [principalRepo]: "" }), REPO);
     expect(chaves(limpa.sobrescritas)).toContain(principalRepo);
+  });
+
+  it("campos do plugin que o repo escolhe ficam sob a sobrescrita, e escolha vazia não leva nenhum", () => {
+    const fonteRepo = chaveDe(REPO, Tabela.TAREFAS, Chave.FONTE);
+    const comJira = linhasDoRepo(CONFIG, formulario({ [fonteRepo]: JIRA }), REPO).doPlugin;
+    expect(chaves(comJira[fonteRepo] ?? [])).toEqual([chaveDe(REPO, TABELA_JIRA, URL)]);
+
+    expect(linhasDoRepo(CONFIG, formulario({ [fonteRepo]: "" }), REPO).doPlugin).toEqual({});
   });
 });
 
