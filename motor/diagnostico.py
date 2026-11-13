@@ -1,6 +1,6 @@
 """Diagnóstico da instalação: checa cada peça e diz qual falhou e como corrigir.
 
-Tudo chega por parâmetro (ambiente, abertura de sessão, cliente HTTP, `head` do
+Tudo chega por parâmetro (ambiente, abertura de sessão, `head` do
 alembic, config central), para ser testável sem banco real nem rede. Não tem efeito colateral:
 não escreve no banco, não roda git, não exige repo cadastrado.
 """
@@ -13,14 +13,12 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
 from sqlalchemy.orm import Session
 
-from motor.adapters.commitsource.bitbucket import verificar_credenciais
 from motor.adapters.estado import sqlite as estado_sqlite
-from motor.config import SECAO_REPOS, ConfigProjeto, checar_backend
+from motor.config import SECAO_REPOS, ConfigProjeto, Tabela, checar_backend
 from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
-from motor.montagem import instanciar_fonte_tarefas
+from motor.montagem import instanciar_fonte_tarefas, instanciar_host_pr
 
 
 class Peca(enum.StrEnum):
@@ -30,7 +28,7 @@ class Peca(enum.StrEnum):
     MIGRACAO = "Migração"
     REPOS = "Repos"
     TAREFAS = "Tarefas"
-    BITBUCKET = "Bitbucket"
+    PRS = "Fonte de PR"
 
 
 class Estado(enum.Enum):
@@ -67,7 +65,7 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
     return []
 
 
-# Nove parâmetros, oito nomeados: cada um é uma peça injetada para o teste
+# Oito parâmetros, sete nomeados: cada um é uma peça injetada para o teste
 # rodar sem banco, rede nem arquivo de config reais.
 def diagnosticar(  # noqa: PLR0913
     env: Mapping[str, str],
@@ -79,7 +77,6 @@ def diagnosticar(  # noqa: PLR0913
     repos: Callable[[], Mapping[str, str | None]],
     config_em: str,
     erro_ambiente: MotorError | None = None,
-    cliente: httpx.Client | None = None,
 ) -> list[Resultado]:
     """`config_em` é o caminho do config central; `erro_ambiente`, o erro ao ler
     o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
@@ -115,7 +112,7 @@ def diagnosticar(  # noqa: PLR0913
     ]
     resultados += _repos(abrir_sessao, repos, banco_ok)
     resultados.append(_tarefas(config_central, onde))
-    resultados.append(_bitbucket(env, cliente))
+    resultados.append(_prs(config_central, onde))
     return resultados
 
 
@@ -239,53 +236,65 @@ def _repos(
     return linhas
 
 
-def _tarefas(config_central: Callable[[], ConfigProjeto], onde: str) -> Resultado:
-    """A fonte de tarefas do `config.toml` central: o diagnóstico não tem repo.
+def _plugin_da_config(
+    peca: Peca,
+    config_central: Callable[[], ConfigProjeto],
+    onde: str,
+    tabela: Tabela,
+    instanciar: Callable[[ConfigProjeto], object | None],
+) -> Resultado:
+    """O plugin de `[tabela] fonte` do `config.toml` central: o diagnóstico não
+    tem repo. `instanciar` devolve `None` quando a `fonte` não está definida.
 
     Credencial só é conferida se o plugin oferece `verificar_credenciais`.
     """
-    plugins = "conferir [tarefas] fonte e os plugins instalados"
+    plugins = f"conferir [{tabela}] fonte e os plugins instalados"
     try:
-        config = config_central()
+        plugin = instanciar(config_central())
     except MotorError as e:
-        return _falha(Peca.TAREFAS, e, plugins)
-    if config.fonte_tarefas is None:
+        return _falha(peca, e, plugins)
+    if plugin is None:
         return Resultado(
-            Peca.TAREFAS,
+            peca,
             Estado.NAO_CONFIGURADO,
-            "sem [tarefas] fonte no config.toml central",
-            "definir [tarefas] fonte no config.toml central",
+            f"sem [{tabela}] fonte no config.toml central",
+            f"definir [{tabela}] fonte no config.toml central",
         )
-    try:
-        fonte = instanciar_fonte_tarefas(config)
-    except MotorError as e:
-        return _falha(Peca.TAREFAS, e, plugins)
-    verificar = getattr(fonte, "verificar_credenciais", None)
+    verificar = getattr(plugin, "verificar_credenciais", None)
     if not callable(verificar):
-        return Resultado(
-            Peca.TAREFAS, Estado.NAO_VERIFICADA, "a fonte não oferece verificação"
-        )
+        return Resultado(peca, Estado.NAO_VERIFICADA, "a fonte não oferece verificação")
     try:
         verificar()
     except MotorError as e:
-        return _falha(Peca.TAREFAS, e, f"conferir as credenciais da fonte em {onde}")
-    return Resultado(Peca.TAREFAS, Estado.OK, "credenciais aceitas")
+        return _falha(peca, e, f"conferir as credenciais da fonte em {onde}")
+    return Resultado(peca, Estado.OK, "credenciais aceitas")
 
 
-def _bitbucket(env: Mapping[str, str], cliente: httpx.Client | None) -> Resultado:
-    token = env.get("BITBUCKET_TOKEN", "")
-    if not token:
-        return Resultado(Peca.BITBUCKET, Estado.NAO_CONFIGURADO, "sem BITBUCKET_TOKEN")
-    try:
-        verificar_credenciais(token, env.get("BITBUCKET_EMAIL", ""), client=cliente)
-    except MotorError as e:
-        return _falha(
-            Peca.BITBUCKET,
-            e,
-            "conferir BITBUCKET_TOKEN/BITBUCKET_EMAIL "
-            "(o token precisa de escopo de leitura de conta)",
-        )
-    return Resultado(Peca.BITBUCKET, Estado.OK, "credencial aceita")
+def _tarefas(config_central: Callable[[], ConfigProjeto], onde: str) -> Resultado:
+    def instanciar(config: ConfigProjeto) -> object | None:
+        if config.fonte_tarefas is None:
+            return None
+        return instanciar_fonte_tarefas(config)
+
+    return _plugin_da_config(
+        Peca.TAREFAS, config_central, onde, Tabela.TAREFAS, instanciar
+    )
+
+
+def _sem_repo() -> str:
+    raise ErroDeEntrada("o diagnóstico não tem repo")
+
+
+def _prs(config_central: Callable[[], ConfigProjeto], onde: str) -> Resultado:
+    """`verificar_credenciais` do host não precisa de repo: a URL do `origin`
+    que o host pedir falha com erro de entrada."""
+
+    def instanciar(config: ConfigProjeto) -> object | None:
+        if config.fonte_prs is None:
+            return None
+        return instanciar_host_pr(config, _sem_repo)
+
+    return _plugin_da_config(Peca.PRS, config_central, onde, Tabela.PRS, instanciar)
 
 
 def formatar(resultado: Resultado) -> str:

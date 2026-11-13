@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import motor.operacoes as operacoes
+from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     TABELA_AMBIENTE,
     VAR_XDG_CONFIG_HOME,
@@ -551,7 +552,7 @@ def test_put_config_nao_devolve_segredo(cliente: TestClient) -> None:
     versao = cliente.get("/api/config").json()["versao"]
     r = cliente.put(
         "/api/config",
-        json=_definir(VarAmbiente.BITBUCKET_TOKEN, SEGREDO, TABELA_AMBIENTE, versao),
+        json=_definir(VarBitbucket.TOKEN, SEGREDO, TABELA_AMBIENTE, versao),
     )
     assert r.status_code == HTTPStatus.OK
     assert SEGREDO not in r.text

@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import os
 
-import httpx
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
@@ -73,14 +72,6 @@ def _abrir_proibido(garantir=True):
     raise AssertionError("não devia abrir sessão")
 
 
-def _bitbucket_ok(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(200, json={"access": "tok"})
-
-
-def _cliente(handler=_bitbucket_ok) -> httpx.Client:
-    return httpx.Client(transport=httpx.MockTransport(handler))
-
-
 def _sem_fonte() -> ConfigProjeto:
     return ConfigProjeto()
 
@@ -93,7 +84,6 @@ def _rodar(
     *,
     abrir=None,
     ambiente="production",
-    handler=_bitbucket_ok,
     config_central=_sem_fonte,
     repos=dict,
     erro_ambiente=None,
@@ -107,7 +97,6 @@ def _rodar(
         repos=repos,
         config_em=CONFIG_EM,
         erro_ambiente=erro_ambiente,
-        cliente=_cliente(handler),
     )
     return {r.peca: r for r in resultados}, resultados
 
@@ -131,10 +120,10 @@ def test_instalacao_integra():
         Peca.MIGRACAO,
         Peca.REPOS,
         Peca.TAREFAS,
-        Peca.BITBUCKET,
+        Peca.PRS,
     ]
     assert por_peca[Peca.TAREFAS].estado is Estado.NAO_CONFIGURADO
-    assert por_peca[Peca.BITBUCKET].estado is Estado.NAO_CONFIGURADO
+    assert por_peca[Peca.PRS].estado is Estado.NAO_CONFIGURADO
 
 
 def test_erro_no_ambiente_central_vira_linha_propria_e_o_resto_segue():
@@ -147,7 +136,7 @@ def test_erro_no_ambiente_central_vira_linha_propria_e_o_resto_segue():
     assert resultados[0].estado is Estado.FALHA
     assert CONFIG_EM in resultados[0].detalhe
     assert resultados[0].correcao == f"corrigir {CONFIG_EM}"
-    assert {Peca.VARIAVEIS, Peca.SQLITE, Peca.TAREFAS, Peca.BITBUCKET} <= set(por_peca)
+    assert {Peca.VARIAVEIS, Peca.SQLITE, Peca.TAREFAS, Peca.PRS} <= set(por_peca)
 
 
 @pytest.mark.parametrize(
@@ -225,35 +214,6 @@ def _repos_de(resultados):
     return [r for r in resultados if r.peca is Peca.REPOS]
 
 
-def test_bitbucket_sem_token_nao_faz_rede():
-    def handler(request):
-        if "bitbucket" in str(request.url):
-            raise AssertionError("sem rede")
-        return _bitbucket_ok(request)
-
-    por_peca, _ = _rodar(handler=handler)
-
-    assert por_peca[Peca.BITBUCKET].estado is Estado.NAO_CONFIGURADO
-
-
-def test_bitbucket_token_recusado_e_aceito():
-    def recusa(request):
-        if "bitbucket" in str(request.url):
-            return httpx.Response(401)
-        return _bitbucket_ok(request)
-
-    env = {**ENV_OK, "BITBUCKET_TOKEN": "tok", "BITBUCKET_EMAIL": "a@b.c"}
-
-    recusado, resultados = _rodar(env, handler=recusa)
-    aceito, _ = _rodar(env, handler=lambda r: httpx.Response(200, json={"access": "t"}))
-    sem_email, _ = _rodar({**ENV_OK, "BITBUCKET_TOKEN": "tok"})
-
-    assert recusado[Peca.BITBUCKET].estado is Estado.FALHA
-    assert falhou(resultados)
-    assert aceito[Peca.BITBUCKET].estado is Estado.OK
-    assert sem_email[Peca.BITBUCKET].estado is Estado.FALHA
-
-
 def test_falhas_independentes_no_mesmo_relatorio(tmp_path):
     por_peca, resultados = _rodar(
         abrir=_banco_fora, repos=lambda: {"x": str(tmp_path / "nao")}
@@ -264,16 +224,10 @@ def test_falhas_independentes_no_mesmo_relatorio(tmp_path):
 
 
 def test_credenciais_nunca_aparecem():
-    env = {
-        **CINCO_POSTGRES,
-        "BITBUCKET_TOKEN": "bb-secreto",
-        "BITBUCKET_EMAIL": "a@b.c",
-    }
-
-    _, resultados = _rodar(env, handler=lambda r: httpx.Response(401))
+    _, resultados = _rodar(CINCO_POSTGRES)
     texto = " ".join(f"{r.detalhe} {r.correcao}" for r in resultados)
 
-    for segredo in ("senha-secreta", "bb-secreto"):
+    for segredo in ("senha-secreta",):
         assert segredo not in texto
 
 
@@ -381,23 +335,92 @@ def test_linha_tarefas_cita_a_mensagem_da_falha(tmp_path, monkeypatch):
     assert "construtor quebrou" in por_peca[Peca.TAREFAS].detalhe
 
 
-def test_config_central_invalida_falha_so_na_linha_tarefas():
+# -- linha Fonte de PR -----------------------------------------------------------
+
+_PLUGINS_PR = "conferir [prs] fonte e os plugins instalados"
+
+
+@pytest.mark.parametrize(
+    ("fonte", "token", "estado", "correcao"),
+    [
+        (
+            None,
+            "",
+            Estado.NAO_CONFIGURADO,
+            "definir [prs] fonte no config.toml central",
+        ),
+        ("inexistente", "", Estado.FALHA, _PLUGINS_PR),
+        ("tests.fontes_falsas:HostConstrutorComBug", "", Estado.FALHA, _PLUGINS_PR),
+        ("tests.fontes_falsas:HostSemVerificacao", "", Estado.NAO_VERIFICADA, ""),
+        ("tests.fontes_falsas:HostFalso", "certo", Estado.OK, ""),
+        (
+            "tests.fontes_falsas:HostFalso",
+            "errado",
+            Estado.FALHA,
+            f"conferir as credenciais da fonte em [ambiente] de {CONFIG_EM} "
+            "(ou no .env)",
+        ),
+    ],
+    ids=[
+        "sem-fonte",
+        "plugin-nao-carrega",
+        "construtor-levanta",
+        "sem-verificacao",
+        "credencial-aceita",
+        "credencial-recusada",
+    ],
+)
+def test_linha_fonte_de_pr_por_estado(
+    tmp_path, monkeypatch, fonte, token, estado, correcao
+):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HOST_FALSO_TOKEN", token)
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text("" if fonte is None else f'[prs]\nfonte = "{fonte}"\n')
+
+    por_peca, resultados = _rodar(config_central=carregar_config_global)
+
+    linha = por_peca[Peca.PRS]
+    assert linha.estado is estado
+    assert linha.correcao == correcao
+    assert falhou(resultados) is (estado is Estado.FALHA)
+
+
+def test_bitbucket_sem_credencial_falha_sem_rede(tmp_path, monkeypatch):
+    """O plugin embutido: sem `BITBUCKET_EMAIL`, a falha sai antes de qualquer
+    requisição (sem `httpx.Client` injetado, uma requisição sairia para a rede)."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("BITBUCKET_TOKEN", "tok")
+    monkeypatch.delenv("BITBUCKET_EMAIL", raising=False)
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text('[prs]\nfonte = "bitbucket"\n')
+
+    por_peca, _ = _rodar(config_central=carregar_config_global)
+
+    assert por_peca[Peca.PRS].estado is Estado.FALHA
+    assert "BITBUCKET_EMAIL" in por_peca[Peca.PRS].detalhe
+
+
+def test_config_central_invalida_falha_so_nas_linhas_de_plugin():
     def invalida() -> ConfigProjeto:
         raise ErroDeEntrada("config.toml: TOML invalido")
 
     por_peca, resultados = _rodar(config_central=invalida)
 
-    assert por_peca[Peca.TAREFAS].estado is Estado.FALHA
-    assert "TOML invalido" in por_peca[Peca.TAREFAS].detalhe
+    for peca in (Peca.TAREFAS, Peca.PRS):
+        assert por_peca[peca].estado is Estado.FALHA
+        assert "TOML invalido" in por_peca[peca].detalhe
     assert [r.peca for r in resultados] == [
         Peca.VARIAVEIS,
         Peca.SQLITE,
         Peca.MIGRACAO,
         Peca.REPOS,
         Peca.TAREFAS,
-        Peca.BITBUCKET,
+        Peca.PRS,
     ]
-    outras = [r for r in resultados if r.peca is not Peca.TAREFAS]
+    outras = [r for r in resultados if r.peca not in (Peca.TAREFAS, Peca.PRS)]
     assert all(r.estado is not Estado.FALHA for r in outras)
 
 

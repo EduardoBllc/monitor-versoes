@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
+from motor.adapters.commitsource.bitbucket import BitbucketPrs
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource, FakeHostPr
 from motor.adapters.commitsource.grep import GrepCommitSource
@@ -41,7 +41,7 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.atribuicoes import Composta, Exata
 from motor.esquemas.semver import Semver
-from motor.montagem import FonteDaConfig
+from motor.montagem import FonteDaConfig, HostDaConfig
 from motor.ports import (
     CommitSource,
     EsquemaVersao,
@@ -67,13 +67,12 @@ _TASKS: list[type[TaskSource]] = [
     FonteFixa,
 ]
 _COMMITS: list[type[CommitSource]] = [
-    BitbucketPRCommitSource,
     PrCommitSource,
     GrepCommitSource,
     ChainCommitSource,
     FakeCommitSource,
 ]
-_HOSTS_PR: list[type[HostPr]] = [FakeHostPr]
+_HOSTS_PR: list[type[HostPr]] = [BitbucketPrs, HostDaConfig, FakeHostPr]
 _ESQUEMAS: list[type[EsquemaVersao]] = [Semver, Escalonado]
 _ATRIBUICOES: list[type[PoliticaAtribuicao]] = [Exata, Composta]
 
@@ -93,7 +92,7 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
         len(_ESQUEMAS),
         len(_ATRIBUICOES),
         len(_NOTIFICADORES),
-    ] == [2, 2, 4, 5, 1, 2, 2, 2]
+    ] == [2, 2, 4, 4, 3, 2, 2, 2]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:

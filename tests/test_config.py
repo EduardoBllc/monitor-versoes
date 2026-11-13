@@ -5,6 +5,7 @@ import os
 import pytest
 
 from motor import config
+from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
     SECAO_REPOS,
@@ -198,7 +199,7 @@ def test_piso_fora_do_formato_e_lido_cru(central, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "tabela", ["versao", "tarefas", "referencia", "liberacao", "branches"]
+    "tabela", ["versao", "tarefas", "prs", "referencia", "liberacao", "branches"]
 )
 def test_tabela_que_nao_e_tabela_e_erro(central, tabela):
     central.write_text(f'{tabela} = "x"\n')
@@ -256,6 +257,7 @@ _CHAVES_NOVAS = [
     ("branch_versao", "branches", "versao", "{versao}", "release/{versao}"),
     ("branch_principal", "branches", "principal", "master", "main"),
     ("fonte_tarefas", "tarefas", "fonte", "rastreador", "outro"),
+    ("fonte_prs", "prs", "fonte", "bitbucket", "outro"),
 ]
 
 
@@ -376,6 +378,19 @@ def test_tarefas_da_secao_sobrescreve_so_a_chave_declarada(central, tmp_path):
     assert config.carregar_config_repo(NOME).tarefas == {"fonte": "t", "sistema": 7}
 
 
+def test_prs_do_repo_vence_a_central_e_mescla_chave_a_chave(central, tmp_path):
+    central.write_text(
+        '[prs]\nfonte = "central"\nx = 1\ny = 2\n'
+        + _com_caminho(tmp_path, relativo='[prs]\nfonte = "do-repo"\ny = 3\n')
+    )
+
+    lido = config.carregar_config_repo(NOME)
+
+    assert lido.prs == {"fonte": "do-repo", "x": 1, "y": 3}
+    assert lido.fonte_prs is not None
+    assert lido.fonte_prs.valor == "do-repo"
+
+
 def test_padrao_de_referencia_da_secao_vence_o_topo(central, tmp_path):
     central.write_text(
         '[referencia]\npadrao = "a{id}"\n'
@@ -485,7 +500,7 @@ def test_ambiente_por_repo_e_erro(central, tmp_path, ler):
 
 
 def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):
-    host, nome = VarAmbiente.BITBUCKET_EMAIL, VarAmbiente.WORKTREES_MANTIDAS
+    host, nome = VarBitbucket.EMAIL, VarAmbiente.WORKTREES_MANTIDAS
     monkeypatch.setenv(host, "shell")
     monkeypatch.delenv(nome, raising=False)
     config.aplicar_ambiente_central({host: "central", nome: "x"})

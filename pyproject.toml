@@ -29,6 +29,9 @@ monitor-versoes = "motor.__main__:main"
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"
 
+[project.entry-points."monitor_versoes.prs"]
+bitbucket = "motor.adapters.commitsource.bitbucket:BitbucketPrs"
+
 [project.entry-points."monitor_versoes.atribuicoes"]
 exata = "motor.atribuicoes:Exata"
 composta = "motor.atribuicoes:Composta"

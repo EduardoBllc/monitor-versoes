@@ -41,6 +41,7 @@ from motor.montagem import (
     ESQUEMA_PADRAO,
     GRUPO_ATRIBUICOES,
     GRUPO_ESQUEMAS,
+    GRUPO_PRS,
     GRUPO_TAREFAS,
     resolver_versionamento,
 )
@@ -51,7 +52,7 @@ from motor.services.versionamento import (
 )
 
 ORIGEM_MOTOR = "motor"
-_GRUPOS = (GRUPO_TAREFAS, GRUPO_ESQUEMAS, GRUPO_ATRIBUICOES)
+_GRUPOS = (GRUPO_TAREFAS, GRUPO_PRS, GRUPO_ESQUEMAS, GRUPO_ATRIBUICOES)
 
 
 class Escopo(StrEnum):
@@ -107,6 +108,7 @@ _GRUPO_DO_CAMPO: dict[tuple[str, str], str] = {
     (Tabela.VERSAO, Chave.ESQUEMA): GRUPO_ESQUEMAS,
     (Tabela.VERSAO, Chave.ATRIBUICAO): GRUPO_ATRIBUICOES,
     (Tabela.TAREFAS, Chave.FONTE): GRUPO_TAREFAS,
+    (Tabela.PRS, Chave.FONTE): GRUPO_PRS,
 }
 
 _V = VarAmbiente
@@ -181,6 +183,14 @@ _CAMPOS_MOTOR = (
         descricao="Plugin que lista as tarefas; sem ela, só a lista manual",
     ),
     Campo(
+        _G,
+        Tabela.PRS,
+        Chave.FONTE,
+        _ES,
+        "Fonte de PR",
+        descricao="Plugin do host de PR; sem ela, os commits saem só do grep na principal",
+    ),
+    Campo(
         _R,
         None,
         CHAVE_CAMINHO,
@@ -207,24 +217,6 @@ _CAMPOS_MOTOR = (
         descricao="Arquivo do banco SQLite",
         padrao=os.path.join(diretorio_dados(), ARQUIVO_SQLITE),
         exemplo="~/estado.db",
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.BITBUCKET_EMAIL,
-        _TX,
-        "E-mail do Bitbucket",
-        descricao="E-mail da conta do Bitbucket; ativa a descoberta de commits por PR",
-        exemplo="voce@empresa.com",
-    ),
-    Campo(
-        _A,
-        _AMB,
-        _V.BITBUCKET_TOKEN,
-        _TX,
-        "Token do Bitbucket",
-        segredo=True,
-        descricao="API token da conta do Bitbucket",
     ),
     Campo(
         _A,

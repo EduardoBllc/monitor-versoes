@@ -1,4 +1,4 @@
-"""Fontes de tarefas falsas, carregadas pela config como `modulo:Classe`.
+"""Fontes de tarefas e hosts de PR falsos, carregados pela config como `modulo:Classe`.
 
 Servem aos testes da montagem, da CLI, da TUI e do diagnostico: o nucleo nao
 traz fonte de tarefas por entry point, e cada teste escolhe a sua pelo
@@ -7,11 +7,13 @@ traz fonte de tarefas por entry point, e cada teste escolhe a sua pelo
 
 from __future__ import annotations
 
+import datetime
 import os
 from collections.abc import Mapping
 from typing import ClassVar
 
 from motor.domain.referencia import Referencia
+from motor.domain.types import CommitRef, PrIndex
 from motor.errors import ErroDeEntrada
 
 #: Referencia de teste: o commit cita `ch<digitos>`.
@@ -81,3 +83,48 @@ class FonteConstrutorComBug:
 
     def fetch(self, versao: str, /) -> list[str]:
         raise AssertionError("nunca instanciada")
+
+
+# -- hosts de PR (`[prs] fonte`) ------------------------------------------------
+
+
+class HostFalso:
+    """Host de PR sem PR nenhuma; guarda os kwargs recebidos. Exige
+    `HOST_FALSO_TOKEN` na busca e oferece `verificar_credenciais`."""
+
+    recebidos: ClassVar[list[dict[str, object]]] = []
+
+    def __init__(self, **kwargs: object) -> None:
+        HostFalso.recebidos.append(dict(kwargs))
+
+    def prs_mergeadas(self, desde: datetime.datetime | None, /) -> list[PrIndex]:
+        if not os.environ.get("HOST_FALSO_TOKEN", ""):
+            raise ErroDeEntrada("faltando no ambiente: HOST_FALSO_TOKEN")
+        return []
+
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        return []
+
+    def verificar_credenciais(self) -> None:
+        if os.environ.get("HOST_FALSO_TOKEN", "") != "certo":
+            raise ErroDeEntrada("credencial recusada")
+
+
+class HostSemVerificacao:
+    """Host de PR que não oferece `verificar_credenciais`."""
+
+    def __init__(self, **kwargs: object) -> None:
+        pass
+
+    def prs_mergeadas(self, desde: datetime.datetime | None, /) -> list[PrIndex]:
+        return []
+
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        return []
+
+
+class HostConstrutorComBug:
+    """Construtor com bug: levanta algo que não é `MotorError`."""
+
+    def __init__(self, **kwargs: object) -> None:
+        raise RuntimeError("bug")

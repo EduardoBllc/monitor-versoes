@@ -8,25 +8,26 @@ ver so `motor.ports`.
 consulta o git: `atualizar --abort` e `reconstruir-estado` recebem as mesmas
 fontes e nunca as chamam. Quem cobra credencial e o adapter, na primeira busca.
 O plugin da fonte de tarefas nem e carregado aqui: a `FonteDaConfig` o carrega
-na primeira busca ou na primeira resolucao da referencia.
+na primeira busca ou na primeira resolucao da referencia. O do host de PR, a
+`HostDaConfig`, na primeira busca de commits.
 Unica excecao deliberada: `garantir_repo`, que cria a linha do repo no estado.
 O I/O do `monitor-versoes diagnostico` vive em `motor/diagnostico.py` e nos metodos de verificacao dos adapters, nao aqui.
 """
 
 from __future__ import annotations
 
+import datetime
 import functools
 import hashlib
-import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
+from motor.adapters.commitsource.pr import PrCommitSource
 from motor.adapters.estado.engine import criar_engine, garantir_esquema
 from motor.adapters.estado.sqlite import Estado
 from motor.adapters.git.subprocess import new_git_subprocess
@@ -44,6 +45,7 @@ from motor.domain.referencia import (
     Referencia,
     resolver_referencia,
 )
+from motor.domain.types import CommitRef, PrIndex
 from motor.engine.deps import Deps
 from motor.errors import ErroDeEntrada, MotorError
 from motor.plugins import carregar_plugin
@@ -52,6 +54,7 @@ from motor.ports import (
     EsquemaVersao,
     EstadoRepo,
     GitRepo,
+    HostPr,
     Notificador,
     PoliticaAtribuicao,
     TaskSource,
@@ -68,15 +71,6 @@ from motor.services.versionamento import (
 
 
 @dataclass(frozen=True)
-class CredenciaisBitbucket:
-    """Token e email da conta do Bitbucket. Vazios desligam a fonte de PR."""
-
-    # repr=False: um log do objeto imprimiria a credencial em claro.
-    token: str = field(default="", repr=False)
-    email: str = field(default="", repr=False)
-
-
-@dataclass(frozen=True)
 class FonteTasks:
     """Escolha do operador para a fonte de tasks (`--task-source`/`--lista`)."""
 
@@ -85,13 +79,14 @@ class FonteTasks:
 
 
 # defaults dos parametros: os dataclasses sao congelados, entao compartilhar e seguro.
-_SEM_BITBUCKET = CredenciaisBitbucket()
 _DA_CONFIG = FonteTasks()
 
 #: Grupo de entry points das fontes de tarefas. O nucleo nao registra nenhuma.
 GRUPO_TAREFAS = "monitor_versoes.tarefas"
 GRUPO_ESQUEMAS = "monitor_versoes.esquemas"
 GRUPO_ATRIBUICOES = "monitor_versoes.atribuicoes"
+#: Grupo de entry points dos hosts de PR. O pacote registra um no pyproject.toml.
+GRUPO_PRS = "monitor_versoes.prs"
 
 
 @contextmanager
@@ -173,6 +168,55 @@ class FonteDaConfig:
         return _proposta(self.carregar())
 
 
+def instanciar_host_pr(config: ConfigProjeto, remote_url: Callable[[], str]) -> HostPr:
+    """Carrega o plugin de `[prs] fonte` e o instancia.
+
+    Mesmo contrato da fonte de tarefas: so argumentos nomeados (o `[prs]`
+    mesclado, os arquivos lidos e a fonte da URL do `origin`), e erro que nao e
+    `MotorError` vira `ErroDeEntrada`.
+    """
+    escolhido = config.fonte_prs
+    if escolhido is None:
+        onde = " e ".join(config.arquivos) or "a config"
+        raise ErroDeEntrada(f"faltando [prs] fonte em {onde}")
+    classe = carregar_plugin(GRUPO_PRS, escolhido.valor)
+    try:
+        host: HostPr = classe(
+            prs=config.prs, arquivos=config.arquivos, remote_url=remote_url
+        )
+    except MotorError:
+        raise
+    except Exception as e:
+        raise ErroDeEntrada(
+            f"fonte de PR {escolhido.valor!r}: construtor falhou ({e})"
+        ) from e
+    return host
+
+
+@dataclass
+class HostDaConfig:
+    """Host de PR da config, carregado so na primeira busca.
+
+    Montar nao e usar: plugin inexistente ou construtor quebrado nao pode
+    derrubar `atualizar --abort`. So a carga que deu certo fica em cache.
+    """
+
+    config: ConfigProjeto
+    remote_url: Callable[[], str]
+    _carregado: HostPr | None = field(default=None, init=False, repr=False)
+
+    def carregar(self) -> HostPr:
+        if self._carregado is None:
+            self._carregado = instanciar_host_pr(self.config, self.remote_url)
+        return self._carregado
+
+    def prs_mergeadas(self, desde: datetime.datetime | None, /) -> Iterable[PrIndex]:
+        return self.carregar().prs_mergeadas(desde)
+
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        return self.carregar().commits_da_pr(pr_id)
+
+
 def montar_task_source(
     config: ConfigProjeto, *, fonte: str = "config", lista_manual: str = ""
 ) -> TaskSource:
@@ -203,9 +247,7 @@ def _proposta_de(tasks: TaskSource) -> Referencia | None:
     return _proposta(tasks)
 
 
-def _identidade_das_entradas(
-    tasks: TaskSource, commits: CommitSource, config: ConfigProjeto
-) -> str:
+def _identidade_das_entradas(tasks: TaskSource, config: ConfigProjeto) -> str:
     """O que alimenta a resolucao do alvo: trocar qualquer parte invalida o
     carimbo da verificacao."""
     fonte_tasks = type(tasks).__name__
@@ -221,10 +263,11 @@ def _identidade_das_entradas(
     return repr(
         (
             fonte_tasks,
-            type(commits).__name__,
+            None if config.fonte_prs is None else config.fonte_prs.valor,
             _proposta_de(tasks),
-            # `[tarefas]` alimenta o plugin da fonte de tarefas.
+            # `[tarefas]` e `[prs]` alimentam os plugins das fontes.
             sorted(config.tarefas.items()),
+            sorted(config.prs.items()),
             config.padrao_referencia,
             config.piso,
             # Esquema e politica decidem as fontes do alvo; liberacao e branches,
@@ -292,25 +335,24 @@ def _camada(config: Escolhido | None, do_esquema: str | None, padrao: str) -> st
     return padrao if do_esquema is None else do_esquema
 
 
-# Seis parametros, cinco deles nomeados e com default salvo a referencia: e
-# configuracao da montagem, nao uma funcao que faz cinco coisas.
+# Configuracao da montagem, nao uma funcao que faz sete coisas.
 def montar_commit_source(  # noqa: PLR0913
     git: GitRepo,
     *,
     referencia: FonteReferencia,
-    bitbucket: CredenciaisBitbucket = _SEM_BITBUCKET,
+    config: ConfigProjeto,
     estado: EstadoRepo | None = None,
     repo: str = "",
     progresso: RelatorProgresso = silencioso,
     versionamento: FonteVersionamento = versionamento_padrao,
 ) -> CommitSource:
-    """Grep na branch principal e o fallback sempre disponivel. Com token do Bitbucket, a
-    PR (merged) vira a fonte primaria: ordem da lista = prioridade.
+    """Grep na branch principal e o fallback sempre disponivel. Com `[prs]
+    fonte`, a PR (merged) do host vira a fonte primaria: ordem da lista =
+    prioridade.
 
-    O `workspace/repo` do Bitbucket nao e resolvido aqui: sai do
-    `git.remote_url("origin")` na primeira busca, dentro do adapter. Resolver
-    agora faria todo comando pagar uma chamada de git — e `atualizar --abort`
-    num clone sem `origin` passaria a falhar na montagem.
+    O plugin nao e carregado aqui, e a URL do `origin` so e lida pelo host na
+    primeira busca: `atualizar --abort` num clone sem `origin`, ou com plugin
+    ausente, nao pode falhar na montagem.
     """
 
     # Fonte, nao valor: a principal sai do esquema, e resolve-lo aqui faria um
@@ -325,12 +367,12 @@ def montar_commit_source(  # noqa: PLR0913
         ref_principal=ref_principal,
     )
     # sem estado nao ha indice local de PRs, e a fonte de PR depende dele.
-    if not bitbucket.token or estado is None:
+    if config.fonte_prs is None or estado is None:
         return grep
-    pr = BitbucketPRCommitSource(
-        token=bitbucket.token,
-        email=bitbucket.email,
-        git=git,
+    pr = PrCommitSource(
+        HostDaConfig(config, lambda: git.remote_url("origin")),
+        config.fonte_prs.valor,
+        git,
         progresso=progresso,
         # indice local de PRs + cache de `PR -> commits`: uma varredura
         # incremental no lugar de uma busca por chamado.
@@ -351,14 +393,9 @@ def montar_deps(
     sessao: Session,
     *,
     tasks: FonteTasks = _DA_CONFIG,
-    bitbucket: CredenciaisBitbucket = _SEM_BITBUCKET,
     progresso: RelatorProgresso = silencioso,
 ) -> Deps:
-    """O `Deps` completo, com as quatro portas montadas.
-
-    Token e email vazios caem no ambiente: e assim que a TUI, que nao tem flag
-    nenhuma, liga a fonte de PR do Bitbucket.
-    """
+    """O `Deps` completo, com as quatro portas montadas."""
     config = carregar_config_repo(nome_repo)
     assert config.caminho is not None  # carregar_config_repo sempre o preenche
     git = new_git_subprocess(config.caminho, progresso=progresso)
@@ -383,10 +420,7 @@ def montar_deps(
     commit_source = montar_commit_source(
         git,
         referencia=referencia,
-        bitbucket=CredenciaisBitbucket(
-            token=bitbucket.token or os.environ.get("BITBUCKET_TOKEN", ""),
-            email=bitbucket.email or os.environ.get("BITBUCKET_EMAIL", ""),
-        ),
+        config=config,
         estado=estado,
         repo=nome_repo,
         progresso=progresso,
@@ -405,8 +439,6 @@ def montar_deps(
         referencia=referencia,
         # Fonte: calcula-la exige a proposta do plugin, que montar nao carrega.
         identidade_das_entradas=functools.cache(
-            functools.partial(
-                _identidade_das_entradas, fonte_tasks, commit_source, config
-            )
+            functools.partial(_identidade_das_entradas, fonte_tasks, config)
         ),
     )

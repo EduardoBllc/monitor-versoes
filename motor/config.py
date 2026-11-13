@@ -50,6 +50,7 @@ class Tabela(StrEnum):
     BRANCHES = "branches"
     REFERENCIA = "referencia"
     TAREFAS = "tarefas"
+    PRS = "prs"
 
 
 class Chave(StrEnum):
@@ -68,8 +69,6 @@ class VarAmbiente(StrEnum):
 
     DATABASE_SQLITE_PATH = "DATABASE_SQLITE_PATH"
     WORKTREES_MANTIDAS = "WORKTREES_MANTIDAS"
-    BITBUCKET_EMAIL = "BITBUCKET_EMAIL"
-    BITBUCKET_TOKEN = "BITBUCKET_TOKEN"
 
 
 def diretorio_dados() -> str:
@@ -161,7 +160,8 @@ class ConfigProjeto:
 
     `tarefas` e opaco ao nucleo, salvo `fonte`: quem le as outras chaves e o
     plugin da fonte de tarefas, que recebe a tabela inteira (`fonte` inclusa).
-    `fonte_tarefas` e o `[tarefas] fonte` com o arquivo que o deu.
+    `fonte_tarefas` e o `[tarefas] fonte` com o arquivo que o deu. `prs` e
+    `fonte_prs` sao o mesmo para o plugin do host de PR (`[prs]`).
     `padrao_referencia` e o `[referencia] padrao` mesclado; `None` quando nenhuma
     camada o define (vale o proposto pelo adapter).
 
@@ -174,6 +174,7 @@ class ConfigProjeto:
     arquivo_piso: str | None = None
     padrao_referencia: str | None = None
     tarefas: Mapping[str, object] = field(default_factory=dict)
+    prs: Mapping[str, object] = field(default_factory=dict)
     arquivos: tuple[str, ...] = ()
     esquema: Escolhido | None = None
     atribuicao: Escolhido | None = None
@@ -181,6 +182,7 @@ class ConfigProjeto:
     branch_versao: Escolhido | None = None
     branch_principal: Escolhido | None = None
     fonte_tarefas: Escolhido | None = None
+    fonte_prs: Escolhido | None = None
     caminho: str | None = None
 
 
@@ -259,6 +261,7 @@ _ESCOLHAS = (
     ("branch_versao", Tabela.BRANCHES, Chave.VERSAO, True),
     ("branch_principal", Tabela.BRANCHES, Chave.PRINCIPAL, False),
     ("fonte_tarefas", Tabela.TAREFAS, Chave.FONTE, False),
+    ("fonte_prs", Tabela.PRS, Chave.FONTE, False),
 )
 
 
@@ -275,6 +278,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
     piso: Escolhido | None = None
     padrao: str | None = None
     tarefas: dict[str, object] = {}
+    prs: dict[str, object] = {}
     escolhas: dict[str, Escolhido] = {}
     for dados, arquivo in camadas:
         if (p := _texto(dados, Tabela.VERSAO, Chave.PISO, arquivo)) is not None:
@@ -282,6 +286,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
         if (r := _padrao_referencia(dados, arquivo)) is not None:
             padrao = r
         tarefas.update(_tabela(dados, Tabela.TAREFAS, arquivo))
+        prs.update(_tabela(dados, Tabela.PRS, arquivo))
         for atributo, tabela, chave, template in _ESCOLHAS:
             ler = _template if template else _texto
             if (valor := ler(dados, tabela, chave, arquivo)) is not None:
@@ -291,6 +296,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
         arquivo_piso=None if piso is None else piso.arquivo,
         padrao_referencia=padrao,
         tarefas=tarefas,
+        prs=prs,
         arquivos=tuple(c for _, c in camadas),
         esquema=escolhas.get("esquema"),
         atribuicao=escolhas.get("atribuicao"),
@@ -298,6 +304,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
         branch_versao=escolhas.get("branch_versao"),
         branch_principal=escolhas.get("branch_principal"),
         fonte_tarefas=escolhas.get("fonte_tarefas"),
+        fonte_prs=escolhas.get("fonte_prs"),
         caminho=caminho,
     )
 
