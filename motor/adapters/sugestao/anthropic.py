@@ -226,6 +226,11 @@ class ProvedorAnthropic:
             ) from e
         except anthropic.APIConnectionError as e:  # inclui o APITimeoutError
             raise BackendIndisponivel(f"API da Anthropic inacessível: {e}") from e
+        finally:
+            # O `close` do SDK fecha também o cliente HTTP injetado, que é de quem o
+            # injetou; só o criado pelo SDK fecha aqui, sem esperar o `__del__`.
+            if self._http_client is None:
+                client.close()
         if resposta.stop_reason == Parada.RECUSA.value:
             raise RespostaInvalida("o modelo recusou o pedido")
         if resposta.stop_reason != Parada.FIM.value:

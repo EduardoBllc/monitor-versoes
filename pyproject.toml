@@ -23,7 +23,7 @@ dev = [
     "httpx2>=2.16.0",
 ]
 anthropic = [
-    "anthropic>=2,<3",
+    "anthropic>=2.8,<3",
 ]
 
 [project.scripts]
