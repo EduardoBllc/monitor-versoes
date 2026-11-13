@@ -56,6 +56,8 @@ const TICKIO_TOKEN = "TICKIO_TOKEN";
 const JIRA_TOKEN = "JIRA_TOKEN";
 const BITBUCKET_EMAIL = "BITBUCKET_EMAIL";
 const BITBUCKET_TOKEN = "BITBUCKET_TOKEN";
+const ANTHROPIC = "anthropic";
+const ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY";
 
 function campo(
   escopo: Escopo,
@@ -109,6 +111,10 @@ const CAMPOS: Campo[] = [
     ...segredo,
   }),
   campo(Escopo.GERAL, TABELA_SEMVER, PREFIXO, plugin(GrupoPlugin.ESQUEMAS, SEMVER)),
+  campo(Escopo.AMBIENTE, TABELA_AMBIENTE, ANTHROPIC_API_KEY, {
+    ...plugin(GrupoPlugin.SUGESTAO, ANTHROPIC),
+    ...segredo,
+  }),
 ];
 
 const lido = (
@@ -224,6 +230,13 @@ describe("linhasDaSecao", () => {
   it("campo de plugin não escolhido com valor no arquivo continua em Avançado ao ser limpo", () => {
     const jiraUrl = chaveDe(null, TABELA_JIRA, URL);
     expect(chaves(linhasDaSecao(CONFIG, formulario({ [jiraUrl]: "" }), Secao.AVANCADO))).toContain(jiraUrl);
+  });
+
+  it("provedor de sugestão escolhido leva a chave dele só para Avançado", () => {
+    const f = formulario({ [chaveDe(null, Tabela.SUGESTAO, Chave.PROVEDOR)]: ANTHROPIC });
+    const todas = Object.values(Secao).flatMap((s) => chaves(linhasDaSecao(CONFIG, f, s)));
+    expect(chaves(linhasDaSecao(CONFIG, f, Secao.AVANCADO))).toContain(ambiente(ANTHROPIC_API_KEY));
+    expect(todas.filter((k) => k === ambiente(ANTHROPIC_API_KEY))).toHaveLength(1);
   });
 
   it("nenhuma linha aparece em duas seções", () => {

@@ -42,6 +42,7 @@ from motor.montagem import (
     GRUPO_ATRIBUICOES,
     GRUPO_ESQUEMAS,
     GRUPO_PRS,
+    GRUPO_SUGESTAO,
     GRUPO_TAREFAS,
     resolver_versionamento,
 )
@@ -59,6 +60,7 @@ class GrupoPlugin(StrEnum):
     PRS = GRUPO_PRS
     ESQUEMAS = GRUPO_ESQUEMAS
     ATRIBUICOES = GRUPO_ATRIBUICOES
+    SUGESTAO = GRUPO_SUGESTAO
 
 
 _GRUPOS = tuple(GrupoPlugin)
@@ -119,6 +121,7 @@ _GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
     (Tabela.VERSAO, Chave.ATRIBUICAO): GrupoPlugin.ATRIBUICOES,
     (Tabela.TAREFAS, Chave.FONTE): GrupoPlugin.TAREFAS,
     (Tabela.PRS, Chave.FONTE): GrupoPlugin.PRS,
+    (Tabela.SUGESTAO, Chave.PROVEDOR): GrupoPlugin.SUGESTAO,
 }
 
 _V = VarAmbiente

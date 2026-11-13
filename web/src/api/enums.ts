@@ -77,6 +77,7 @@ export enum GrupoPlugin {
   PRS = "monitor_versoes.prs",
   ESQUEMAS = "monitor_versoes.esquemas",
   ATRIBUICOES = "monitor_versoes.atribuicoes",
+  SUGESTAO = "monitor_versoes.sugestao",
 }
 
 export enum AcaoAlteracao {
@@ -107,6 +108,7 @@ export enum Tabela {
   REFERENCIA = "referencia",
   TAREFAS = "tarefas",
   PRS = "prs",
+  SUGESTAO = "sugestao",
 }
 
 export enum Chave {
@@ -118,6 +120,7 @@ export enum Chave {
   PADRAO = "padrao",
   FONTE = "fonte",
   PISO = "piso",
+  PROVEDOR = "provedor",
 }
 
 export enum VarAmbiente {

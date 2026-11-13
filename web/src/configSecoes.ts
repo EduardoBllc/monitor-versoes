@@ -45,6 +45,7 @@ const ESCOLHE: Record<GrupoPlugin, TabelaChave> = {
   [GrupoPlugin.PRS]: [Tabela.PRS, Chave.FONTE],
   [GrupoPlugin.ESQUEMAS]: [Tabela.VERSAO, Chave.ESQUEMA],
   [GrupoPlugin.ATRIBUICOES]: [Tabela.VERSAO, Chave.ATRIBUICAO],
+  [GrupoPlugin.SUGESTAO]: [Tabela.SUGESTAO, Chave.PROVEDOR],
 };
 
 const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
@@ -52,6 +53,8 @@ const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
   [GrupoPlugin.PRS]: Secao.PRS,
   [GrupoPlugin.ESQUEMAS]: Secao.VERSOES,
   [GrupoPlugin.ATRIBUICOES]: Secao.VERSOES,
+  // Configurar a sugestão pela interface está fora do escopo da #174: o que existe vai para Avançado.
+  [GrupoPlugin.SUGESTAO]: Secao.AVANCADO,
 };
 
 // Campo do motor fora deste mapa vai para Avançado.

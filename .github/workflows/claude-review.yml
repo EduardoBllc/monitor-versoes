@@ -11,7 +11,7 @@ on:
 jobs:
   revisao:
     # O PR de release (branch release-please--*) é mecânico e aberto pelo App: revisá-lo
-    # acordaria o agente para corrigir um diff que é só número e changelog (decisão 038).
+    # acordaria o agente para corrigir um diff que é só número e changelog (decisão 039).
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
        !startsWith(github.head_ref, 'release-please--') &&

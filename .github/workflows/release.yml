@@ -1,7 +1,7 @@
 name: Release
 
 # Mantém o PR de release (versão no pyproject.toml, CHANGELOG.md e número no README);
-# mergeá-lo cria a tag vX.Y.Z e a GitHub Release. Ver docs/decisoes/038.
+# mergeá-lo cria a tag vX.Y.Z e a GitHub Release. Ver docs/decisoes/039.
 on:
   push:
     branches: [main]

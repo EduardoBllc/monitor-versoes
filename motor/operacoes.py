@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config_repo, repos_configurados
+from motor.domain.conflito import PropostaDeBloco
 from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
@@ -25,6 +26,7 @@ from motor.engine.conflito import (
     ConteudoDoConflito,
     ler_arquivo,
     ler_conflito,
+    propor_resolucao,
     reabrir_arquivo,
     resolver_arquivo,
 )
@@ -72,6 +74,13 @@ class Resolucao:
 
 
 @dataclass(frozen=True)
+class PedidoProposta:
+    caminho: str
+    versao_disco: str
+    ordens: list[int]
+
+
+@dataclass(frozen=True)
 class VersionOption:
     numero: str
     liberada: bool
@@ -89,6 +98,7 @@ LerConflitoRunner = Callable[[RepoOption, str], ConflitoAberto]
 LerArquivoConflitoRunner = Callable[[RepoOption, str, str], ConteudoDoConflito]
 ResolverArquivoRunner = Callable[[RepoOption, str, Resolucao], None]
 ReabrirArquivoRunner = Callable[[RepoOption, str, str], None]
+ProporRunner = Callable[[RepoOption, str, PedidoProposta], list[PropostaDeBloco]]
 
 
 class ContinueRunner(Protocol):
@@ -127,6 +137,7 @@ class Runners:
     ler_arquivo_conflito: LerArquivoConflitoRunner | None = None
     resolver_arquivo_conflito: ResolverArquivoRunner | None = None
     reabrir_arquivo_conflito: ReabrirArquivoRunner | None = None
+    propor_resolucao: ProporRunner | None = None
     listar_orfaos: OrfaosRunner | None = None
     julgar_orfao: JulgarRunner | None = None
 
@@ -297,6 +308,23 @@ def reabrir_arquivo_conflito_repo(
         reabrir_arquivo(_deps_do_repo(repo, sessao, progresso), versao, caminho)
 
 
+def propor_resolucao_repo(
+    repo: RepoOption,
+    versao: str,
+    pedido: PedidoProposta,
+    *,
+    progresso: RelatorProgresso = silencioso,
+) -> list[PropostaDeBloco]:
+    with abrir_sessao() as sessao:
+        return propor_resolucao(
+            _deps_do_repo(repo, sessao, progresso),
+            versao,
+            pedido.caminho,
+            pedido.versao_disco,
+            pedido.ordens,
+        )
+
+
 def criar_repo(
     repo: RepoOption, versao: str, *, progresso: RelatorProgresso = silencioso
 ) -> AtualizarResult:
@@ -382,6 +410,7 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         reabrir_arquivo_conflito=partial(
             reabrir_arquivo_conflito_repo, progresso=relatar
         ),
+        propor_resolucao=partial(propor_resolucao_repo, progresso=relatar),
         listar_orfaos=partial(orfaos_repo, progresso=relatar),
         julgar_orfao=partial(julgar_orfao_repo, progresso=relatar),
     )

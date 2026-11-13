@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
 
-from motor.domain.conflito import Estagios
+from motor.domain.conflito import Estagios, PedidoAoProvedor, PropostaDeBloco
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
@@ -495,4 +495,10 @@ class EstadoRepo(Protocol):
 class Notificador(Protocol):
     def notificar(self, titulo: str, corpo: str, /) -> None:
         """Mostra uma notificação ao usuário. Falha levanta MotorError."""
+        ...
+
+
+class ProvedorSugestao(Protocol):
+    def propor(self, pedido: PedidoAoProvedor, /) -> list[PropostaDeBloco]:
+        """Propõe a resolução dos blocos do pedido. Só levanta MotorError."""
         ...

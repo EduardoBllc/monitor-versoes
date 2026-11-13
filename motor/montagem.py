@@ -57,6 +57,7 @@ from motor.ports import (
     HostPr,
     Notificador,
     PoliticaAtribuicao,
+    ProvedorSugestao,
     TaskSource,
 )
 from motor.progresso import RelatorProgresso, silencioso
@@ -87,6 +88,7 @@ GRUPO_ESQUEMAS = "monitor_versoes.esquemas"
 GRUPO_ATRIBUICOES = "monitor_versoes.atribuicoes"
 #: Grupo de entry points dos hosts de PR. O pacote registra um no pyproject.toml.
 GRUPO_PRS = "monitor_versoes.prs"
+GRUPO_SUGESTAO = "monitor_versoes.sugestao"
 
 
 @contextmanager
@@ -191,6 +193,29 @@ def instanciar_host_pr(config: ConfigProjeto, remote_url: Callable[[], str]) -> 
             f"fonte de PR {escolhido.valor!r}: construtor falhou ({e})"
         ) from e
     return host
+
+
+def instanciar_provedor_sugestao(config: ConfigProjeto) -> ProvedorSugestao | None:
+    """Carrega o plugin de `[sugestao] provedor`; `None` sem ele.
+
+    So argumentos nomeados (o `[sugestao]` inteiro e os arquivos lidos), e erro
+    que nao e `MotorError` vira `ErroDeEntrada`.
+    """
+    escolhido = config.provedor_sugestao
+    if escolhido is None:
+        return None
+    classe = carregar_plugin(GRUPO_SUGESTAO, escolhido.valor)
+    try:
+        provedor: ProvedorSugestao = classe(
+            sugestao=config.sugestao, arquivos=config.arquivos
+        )
+    except MotorError:
+        raise
+    except Exception as e:
+        raise ErroDeEntrada(
+            f"provedor de sugestão {escolhido.valor!r}: construtor falhou ({e})"
+        ) from e
+    return provedor
 
 
 @dataclass
@@ -437,6 +462,10 @@ def montar_deps(
         versionamento=versionamento,
         nomes_abort=nomes_sem_esquema(config),
         referencia=referencia,
+        # Fonte: carregar o plugin e no uso, nao na montagem.
+        sugestao=functools.cache(
+            functools.partial(instanciar_provedor_sugestao, config)
+        ),
         # Fonte: calcula-la exige a proposta do plugin, que montar nao carrega.
         identidade_das_entradas=functools.cache(
             functools.partial(_identidade_das_entradas, fonte_tasks, config)
