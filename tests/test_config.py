@@ -366,6 +366,7 @@ def central(tmp_path, monkeypatch):
     xdg = tmp_path / "xdg"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # o `~` do Windows
     (xdg / "monitor-versoes").mkdir(parents=True)
     return xdg / "monitor-versoes" / "config.toml"
 
@@ -471,7 +472,8 @@ def test_caminho_que_nao_e_diretorio_e_erro(central, tmp_path):
     with pytest.raises(ErroDeEntrada) as e:
         config.carregar_config_repo(NOME)
     assert f"[{SECAO_REPOS}.{NOME}]" in str(e.value)
-    assert str(ausente) in str(e.value)
+    # repr: no Windows a mensagem mostra o caminho com `\\` dobrada.
+    assert repr(str(ausente)) in str(e.value)
 
 
 def test_nome_de_secao_invalido_e_erro(central):
@@ -497,7 +499,10 @@ def test_monitor_versoes_toml_no_clone_e_ignorado(central, tmp_path):
 
 def test_repos_configurados_ordena_e_tolera_sem_caminho(central):
     central.write_text(secao_repo("b", None, "[versao]\n") + secao_repo("a", "/abs"))
-    assert list(config.repos_configurados().items()) == [("a", "/abs"), ("b", None)]
+    assert list(config.repos_configurados().items()) == [
+        ("a", os.path.abspath("/abs")),
+        ("b", None),
+    ]
 
 
 # --- [ambiente] ---

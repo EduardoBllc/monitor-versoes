@@ -127,7 +127,7 @@ def test_procura_o_executavel_que_o_pacote_instala(
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     scripts = tomllib.loads(pyproject.read_text())["project"]["scripts"]
     (instalado_pelo_pacote,) = scripts
-    caminho = str(Path("/opt/bin") / instalado_pelo_pacote)
+    caminho = str(Path("/opt/bin", instalado_pelo_pacote).absolute())
     monkeypatch.setattr(
         shutil, "which", lambda n: caminho if n == instalado_pelo_pacote else None
     )

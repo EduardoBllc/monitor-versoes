@@ -54,7 +54,7 @@ CHAVE_TOKEN = "token"
 def _escrever(texto: str) -> None:
     caminho = caminho_config_global()
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    with open(caminho, "w") as f:
+    with open(caminho, "w", encoding="utf-8") as f:
         f.write(texto)
 
 
