@@ -194,6 +194,23 @@ export function assinaturaDaRecusa(destino: Destino, config: ConfigEditavel, for
   return JSON.stringify([assinatura(destino, config, formulario), alteracoesDe(config, formulario)]);
 }
 
+/** Guarda o resultado do teste de `formulario`; ele substitui o do outro tipo (OK x recusa) do mesmo formulário. */
+export function comTeste(
+  testes: Record<string, ResultadoTeste>,
+  destino: Destino,
+  config: ConfigEditavel,
+  formulario: Formulario,
+  resultado: ResultadoTeste,
+  recusa: boolean,
+): Record<string, ResultadoTeste> {
+  // A recusa também depende do disco (caminho criado depois): o mais recente é o que vale.
+  const daSecao = assinatura(destino, config, formulario);
+  const daRecusa = assinaturaDaRecusa(destino, config, formulario);
+  const novos = { ...testes, [recusa ? daRecusa : daSecao]: resultado };
+  delete novos[recusa ? daSecao : daRecusa];
+  return novos;
+}
+
 /** Resultado de teste que ainda vale para o destino com o formulário atual. */
 export function testeVigente(
   destino: Destino,

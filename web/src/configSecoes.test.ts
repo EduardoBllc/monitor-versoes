@@ -24,6 +24,7 @@ import {
   Secao,
   assinatura,
   assinaturaDaRecusa,
+  comTeste,
   gravarPulados,
   lerPulados,
   linhasDaSecao,
@@ -324,14 +325,21 @@ describe("pendencias", () => {
     expect(marcaDe(Secao.TAREFAS, CONFIG, corrigidoEmOutraSecao, testes, new Set())).toBe(Marca.PRONTA);
   });
 
-  it("recusa nova vence um OK antigo da mesma seção", () => {
+  it("com o mesmo formulário, vale o teste mais recente, seja OK ou recusa", () => {
     const f = formulario({ [esquema]: CALVER });
     const ok: ResultadoTeste = { ...falha, estado: EstadoTeste.OK };
-    const testes = {
-      [assinatura(Secao.TAREFAS, CONFIG, f)]: ok,
-      [assinaturaDaRecusa(Secao.TAREFAS, CONFIG, f)]: falha,
-    };
-    expect(testeVigente(Secao.TAREFAS, CONFIG, f, testes)).toBe(falha);
+    const RECUSA = true;
+    const okDepoisDaRecusa = comTeste(
+      comTeste({}, Secao.TAREFAS, CONFIG, f, falha, RECUSA),
+      Secao.TAREFAS,
+      CONFIG,
+      f,
+      ok,
+      !RECUSA,
+    );
+    expect(testeVigente(Secao.TAREFAS, CONFIG, f, okDepoisDaRecusa)).toBe(ok);
+    const recusaDepoisDoOk = comTeste(okDepoisDaRecusa, Secao.TAREFAS, CONFIG, f, falha, RECUSA);
+    expect(testeVigente(Secao.TAREFAS, CONFIG, f, recusaDepoisDoOk)).toBe(falha);
   });
 });
 

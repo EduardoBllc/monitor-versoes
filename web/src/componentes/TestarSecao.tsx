@@ -5,7 +5,7 @@ import { ErroApi, Metodo, api } from "../api/cliente";
 import { EstadoTeste, TipoErro, type PecaTestavel } from "../api/enums";
 import type { ConfigEditavel, ResultadoTeste } from "../api/tipos";
 import { alteracoesDe, type Formulario } from "../config";
-import { NOME_SECAO, assinatura, assinaturaDaRecusa, type Destino } from "../configSecoes";
+import { NOME_SECAO, type Destino } from "../configSecoes";
 import { notificarErro } from "./notificar";
 
 const ESTILO: Record<ResultadoTeste["estado"], { cor: string; sinal: string }> = {
@@ -31,12 +31,12 @@ export function TestarSecao({
   destino: Destino;
   peca: PecaTestavel;
   resultado: ResultadoTeste | undefined;
-  aoResultado: (assinatura: string, r: ResultadoTeste) => void;
+  aoResultado: (f: Formulario, r: ResultadoTeste, recusa: boolean) => void;
   aoRecusa: () => void;
   children?: ReactNode;
 }) {
   const testar = useMutation({
-    // As chaves vêm do formulário enviado: editar durante o teste não herda o resultado.
+    // O resultado vai com o formulário enviado: editar durante o teste não herda o resultado.
     mutationFn: (f: Formulario) =>
       api<ResultadoTeste>(Metodo.POST, "/api/config/testar", {
         alteracoes: alteracoesDe(config, f),
@@ -44,13 +44,12 @@ export function TestarSecao({
         peca,
         repo: typeof destino === "string" ? null : destino.repo,
       }),
-    onSuccess: (r, f) => aoResultado(assinatura(destino, config, f), r),
+    onSuccess: (r, f) => aoResultado(f, r, false),
     onError: (erro, f) => {
       // O que o salvar recusaria (ex.: caminho inexistente) é falha da seção, não da página;
       // a recusa pode vir de campo de outra seção, então só vale com o rascunho inteiro igual.
       if (erro instanceof ErroApi && erro.tipo === TipoErro.ENTRADA) {
-        const falha = { estado: EstadoTeste.FALHA, detalhe: erro.message, correcao: "" };
-        aoResultado(assinaturaDaRecusa(destino, config, f), falha);
+        aoResultado(f, { estado: EstadoTeste.FALHA, detalhe: erro.message, correcao: "" }, true);
         return;
       }
       if (erro instanceof ErroApi && erro.tipo === TipoErro.RECUSA) aoRecusa();

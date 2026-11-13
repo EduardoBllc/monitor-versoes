@@ -37,6 +37,7 @@ import {
   Marca,
   NOME_SECAO,
   Secao,
+  comTeste,
   gravarPulados,
   lerPulados,
   linhasDaSecao,
@@ -194,7 +195,6 @@ function Editor({
   const { segmentos, proxima } = pendencias(config, formulario, testes, pulados);
   const marca = (d: Destino) => marcaDe(d, config, formulario, testes, pulados);
   const mudar = (k: string, v: Escalar) => setFormulario((f) => ({ ...f, valores: { ...f.valores, [k]: v } }));
-  const guardarTeste = (a: string, r: ResultadoTeste) => setTestes((t) => ({ ...t, [a]: r }));
 
   const repos = [...config.repos, ...formulario.reposCriados].filter((r) => !formulario.reposRemovidos.includes(r));
   const nome = novo.trim();
@@ -230,7 +230,7 @@ function Editor({
       destino={d}
       peca={peca}
       resultado={testeVigente(d, config, formulario, testes)}
-      aoResultado={guardarTeste}
+      aoResultado={(f, r, recusa) => setTestes((t) => comTeste(t, d, config, f, r, recusa))}
       aoRecusa={aoRecusa}
     >
       {extra}
