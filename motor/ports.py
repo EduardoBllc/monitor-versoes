@@ -432,18 +432,22 @@ class EstadoRepo(Protocol):
         """
         ...
 
-    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
-        """Ate quando o indice esta completo. None = nunca varrido, e a proxima
-        varredura baixa o historico inteiro."""
+    def marca_varredura(self, repo: str, host: str, /) -> datetime.datetime | None:
+        """Ate quando o indice do `host` esta completo. None = nunca varrido
+        por esse host, e a proxima varredura baixa o historico inteiro."""
         ...
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+        self, repo: str, host: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         """Indice e marca na MESMA transacao.
 
         A atomicidade e o contrato, nao um detalhe: marca avancada por cima de
         indice incompleto deixa as PRs que faltaram fora de toda janela futura.
+
+        Se a marca gravada e de outro `host`, indice e cache `PR -> commits` do
+        repo sao apagados na mesma transacao: `pr_id` igual em outro host e
+        outra PR, e a marca antiga faria o host novo pular o historico.
         """
         ...
 

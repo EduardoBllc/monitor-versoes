@@ -37,7 +37,8 @@ class FakeEstado:
     # repo -> pr_id -> PrIndex. Dict por pr_id porque o adapter real usa
     # merge: reentregar a mesma PR sobrescreve em vez de somar.
     _prs: dict[str, dict[int, PrIndex]] = field(default_factory=dict)
-    _marca: dict[str, datetime.datetime] = field(default_factory=dict)
+    # repo -> (host, ate): a marca so vale para o host que a gravou.
+    _marca: dict[str, tuple[str, datetime.datetime]] = field(default_factory=dict)
     _verificacoes: dict[tuple[str, str], Verificacao] = field(default_factory=dict)
 
     def garantir_repo(self, nome: str, /) -> None:
@@ -171,18 +172,26 @@ class FakeEstado:
         guardadas = self._prs.get(repo, {})
         return [guardadas[pr_id] for pr_id in sorted(guardadas)]
 
-    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
+    def marca_varredura(self, repo: str, host: str, /) -> datetime.datetime | None:
         self._exigir_repo(repo)
-        return self._marca.get(repo)
+        gravada = self._marca.get(repo)
+        if gravada is None or gravada[0] != host:
+            return None
+        return gravada[1]
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+        self, repo: str, host: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         self._exigir_repo(repo)
+        gravada = self._marca.get(repo)
+        if gravada is not None and gravada[0] != host:
+            self._prs.pop(repo, None)
+            for chave in [k for k in self._pr_commits if k[0] == repo]:
+                del self._pr_commits[chave]
         alvo = self._prs.setdefault(repo, {})
         for pr in prs:
             alvo[pr.pr_id] = pr
-        self._marca[repo] = ate
+        self._marca[repo] = (host, ate)
 
     def gravar_verificacao(self, repo: str, versao: str, v: Verificacao, /) -> None:
         if self.versao(repo, versao) is None:

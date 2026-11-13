@@ -592,7 +592,7 @@ def test_varredura_seguinte_filtra_pela_marca():
     prs, commits = [_pr(7)], {7: [_commit_bruto("c1")]}
 
     _fonte(_handler_pr(prs, commits), g, estado).resolve(["255514"])
-    marca = estado.marca_varredura(REPO_ESTADO)
+    marca = estado.marca_varredura(REPO_ESTADO, "bitbucket")
     assert marca is not None, "primeira varredura tem que gravar a marca"
 
     buscas: list[str] = []
@@ -697,7 +697,7 @@ def test_marca_nao_avanca_se_a_varredura_falhar_no_meio():
     with pytest.raises(MotorError):
         _fonte(handler, _git_com_master("c1"), estado).resolve(["255514"])
 
-    assert estado.marca_varredura(REPO_ESTADO) is None
+    assert estado.marca_varredura(REPO_ESTADO, "bitbucket") is None
 
 
 def test_pr_com_prefixo_em_maiuscula_casa():

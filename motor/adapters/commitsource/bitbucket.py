@@ -209,7 +209,7 @@ class BitbucketPRCommitSource:
         # mergeada DURANTE esta varredura pode nao aparecer nela; com o inicio
         # como marca, o `updated_on` dela e maior e a proxima janela a pega.
         inicio = datetime.datetime.now(datetime.UTC)
-        marca = self.estado.marca_varredura(self.repo_estado)
+        marca = self.estado.marca_varredura(self.repo_estado, "bitbucket")
 
         params: dict[str, object] = {
             "state": "MERGED",
@@ -233,7 +233,7 @@ class BitbucketPRCommitSource:
         prs = [indice for indice in indices if indice.pr_id]
         # Indice e marca na mesma escrita: paginacao que levantou no meio nunca
         # chega aqui, entao a marca nao avanca por cima de um indice furado.
-        self.estado.gravar_varredura(self.repo_estado, prs, inicio)
+        self.estado.gravar_varredura(self.repo_estado, "bitbucket", prs, inicio)
 
     def _prs_url(self) -> str:
         base = self.base_url or _BASE_URL_PADRAO

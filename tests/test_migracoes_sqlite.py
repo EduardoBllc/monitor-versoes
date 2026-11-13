@@ -18,6 +18,7 @@ REV_TIPO_LIVRE_ANTERIOR = "e5a8b1c2d3f4"
 REV_COM_TRACKER = "f6b9c3d2e1a7"
 REV_SEM_TRACKER = "a7c3e9d1f2b4"
 REV_CHECK_COM_NOME_DUPLICADO = "c9d2e4f6a8b0"
+REV_VARREDURA_SEM_HOST = "e50b3d6e40a1"
 
 
 @pytest.fixture
@@ -142,6 +143,29 @@ def test_repo_alias_sai_e_o_repo_fica(url: str) -> None:
         assert "repo_alias" not in inspect(con).get_table_names()
         assert con.execute(text("select nome from repo")).scalar_one() == "webapp"
         assert con.execute(text("select numero from versao")).scalar_one() == "14.1.0"
+    engine.dispose()
+
+
+def test_varredura_anterior_ao_host_fica_com_bitbucket(url: str) -> None:
+    """Bitbucket foi o unico host antes da coluna: sem esse preenchimento, o
+    operador atual perderia a marca e rebaixaria o historico inteiro."""
+    command.upgrade(config_alembic(url), REV_VARREDURA_SEM_HOST)
+    engine = create_engine(url)
+    with engine.begin() as con:
+        con.execute(text("insert into repo (id, nome) values (1, 'webapp')"))
+        con.execute(
+            text(
+                "insert into varredura_pr (repo_id, ate) "
+                "values (1, '2026-04-01 00:00:00+00:00')"
+            )
+        )
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        assert con.execute(text("select host from varredura_pr")).scalar_one() == (
+            "bitbucket"
+        )
     engine.dispose()
 
 
