@@ -27,7 +27,12 @@ import type {
   ConteudoDoConflito,
   Resolucao,
 } from "../api/tipos";
-import { AVISO_DESCARTE, Lado, temMarcadores } from "../conflito";
+import {
+  AVISO_DESCARTE,
+  Lado,
+  proximoPendente,
+  temMarcadores,
+} from "../conflito";
 import { linguagemDe } from "../linguagem";
 import { MergeConteudo } from "./MergeConteudo";
 import { SO_LEITURA } from "./monacoConflito";
@@ -96,12 +101,14 @@ export default function EditorConflito({
   resultado,
   aoSair,
   aoMudar,
+  aoContinuar,
 }: {
   repo: string;
   versao: string;
   resultado: AtualizarResult;
   aoSair: () => void;
   aoMudar: (estado: EstadoConflitoWeb) => void;
+  aoContinuar: () => void;
 }) {
   const cliente = useQueryClient();
   const tema =
@@ -213,6 +220,12 @@ export default function EditorConflito({
     if (await enviar(RotaConflito.RESOLUCAO, corpo)) {
       setEdicao(null);
       notificarOk(`${atual.caminho} resolvido`);
+      // Lista relida: escolher sobre a velha avançaria para o que acabou de resolver.
+      const relida = await conflito.refetch();
+      if (relida.isError || !relida.data) return;
+      const proximo = proximoPendente(relida.data.arquivos, atual.caminho);
+      if (proximo === null) aoContinuar();
+      else setEscolhido(proximo);
     }
   };
 

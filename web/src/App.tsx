@@ -459,6 +459,7 @@ function Tela() {
               resultado={atualizacao.resultado}
               aoSair={() => setResolvendo(null)}
               aoMudar={setConflitoWeb}
+              aoContinuar={() => aplicar(true)}
             />
           </Suspense>
         ) : pendente && atualizacao.resultado ? (
