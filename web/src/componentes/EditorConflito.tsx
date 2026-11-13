@@ -38,6 +38,7 @@ import {
 } from "../conflito";
 import { linguagemDe } from "../linguagem";
 import {
+  type EstadoPropostas,
   SEM_PROPOSTAS,
   descartar,
   falhar,
@@ -163,12 +164,22 @@ export default function EditorConflito({
   const [verBase, setVerBase] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [propostas, setPropostas] = useState(SEM_PROPOSTAS);
+  // O ref é a fonte da verdade, atualizado na hora: dois cliques antes do
+  // render seguinte não partem do mesmo retrato, e o catch vê a geração atual.
+  const propostasAtuais = useRef(propostas);
+  const mudarPropostas = (f: (e: EstadoPropostas) => EstadoPropostas) => {
+    propostasAtuais.current = f(propostasAtuais.current);
+    setPropostas(propostasAtuais.current);
+  };
   // Os blocos ficam no estado (o botão re-renderiza) e num ref, que a
   // resposta assíncrona lê sem pegar a versão da hora do pedido.
   const [estados, setEstados] = useState<EstadoBloco[]>([]);
   const estadosAtuais = useRef(estados);
-  const propostasAtuais = useRef(propostas);
-  propostasAtuais.current = propostas;
+  const mudarEstados = (novos: EstadoBloco[]) => {
+    estadosAtuais.current = novos;
+    setEstados(novos);
+    mudarPropostas((e) => podar(e, novos));
+  };
   const id = `${conflito.data?.commit ?? ""}/${atual?.caminho ?? ""}`;
   // Nova leitura do disco (resolver, reabrir, recarregar) recomeça a tela.
   const chaveMerge =
@@ -187,7 +198,11 @@ export default function EditorConflito({
 
   useEffect(() => aoMudar({ pendente, sujo }), [pendente, sujo, aoMudar]);
 
-  useEffect(() => setPropostas(invalidar), [chaveMerge]);
+  // Sem estados até o editor novo montar: o botão não pede as ordens do anterior.
+  useEffect(() => {
+    mudarPropostas(invalidar);
+    mudarEstados([]);
+  }, [chaveMerge]);
 
   useEffect(() => {
     if (!sujo) return;
@@ -216,7 +231,7 @@ export default function EditorConflito({
 
   const descartando = (acao: () => void) => () => {
     setEdicao(null);
-    setPropostas(invalidar);
+    mudarPropostas(invalidar);
     setDesatualizado(false);
     acao();
   };
@@ -264,17 +279,15 @@ export default function EditorConflito({
     if (caminho !== null) await enviar(RotaConflito.REABERTURA, { caminho });
   };
 
-  const mudarEstados = (novos: EstadoBloco[]) => {
-    estadosAtuais.current = novos;
-    setEstados(novos);
-    setPropostas((e) => podar(e, novos));
-  };
-
   const pedir = async (alvo: number | null) => {
     if (!atual || !dados) return;
-    const inicio = iniciar(propostas, estadosAtuais.current, alvo);
+    const inicio = iniciar(
+      propostasAtuais.current,
+      estadosAtuais.current,
+      alvo,
+    );
     if (inicio === null) return;
-    setPropostas(inicio.estado);
+    mudarPropostas(() => inicio.estado);
     const corpo: PedidoProposta = {
       caminho: atual.caminho,
       versao_disco: edicao?.versao ?? dados.versao_disco,
@@ -286,11 +299,11 @@ export default function EditorConflito({
         `${url}/${RotaConflito.PROPOSTA}`,
         corpo,
       );
-      setPropostas((e) =>
+      mudarPropostas((e) =>
         receber(e, inicio.geracao, recebidas, estadosAtuais.current),
       );
     } catch (erro) {
-      setPropostas((e) => falhar(e, inicio.geracao));
+      mudarPropostas((e) => falhar(e, inicio.geracao));
       // Resposta de outro arquivo ou leitura: o erro já não é desta tela.
       if (vigente(propostasAtuais.current, inicio.geracao)) tratar(erro);
     }
@@ -342,7 +355,7 @@ export default function EditorConflito({
               gatilhos={gatilhos}
               propostas={propostas}
               aoSugerir={(k) => void pedir(k)}
-              aoDescartarProposta={(k) => setPropostas((e) => descartar(e, k))}
+              aoDescartarProposta={(k) => mudarPropostas((e) => descartar(e, k))}
               aoMudarEstados={mudarEstados}
             />
             <Group>

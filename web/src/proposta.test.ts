@@ -68,6 +68,10 @@ describe("iniciar", () => {
     expect(iniciar(SEM_PROPOSTAS, ESTADOS, 1)).toBeNull();
   });
 
+  it("sem os estados do editor novo, o botão não pede nada", () => {
+    expect(iniciar(invalidar(SEM_PROPOSTAS), [], null)).toBeNull();
+  });
+
   it("com um pedido em andamento nenhum gatilho dispara outro", () => {
     const { estado } = pedido();
     expect(iniciar(estado, ESTADOS, null)).toBeNull();
