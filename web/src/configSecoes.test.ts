@@ -323,6 +323,16 @@ describe("pendencias", () => {
     expect(testeVigente(Secao.TAREFAS, CONFIG, corrigidoEmOutraSecao, testes)).toBeUndefined();
     expect(marcaDe(Secao.TAREFAS, CONFIG, corrigidoEmOutraSecao, testes, new Set())).toBe(Marca.PRONTA);
   });
+
+  it("recusa nova vence um OK antigo da mesma seção", () => {
+    const f = formulario({ [esquema]: CALVER });
+    const ok: ResultadoTeste = { ...falha, estado: EstadoTeste.OK };
+    const testes = {
+      [assinatura(Secao.TAREFAS, CONFIG, f)]: ok,
+      [assinaturaDaRecusa(Secao.TAREFAS, CONFIG, f)]: falha,
+    };
+    expect(testeVigente(Secao.TAREFAS, CONFIG, f, testes)).toBe(falha);
+  });
 });
 
 describe("pulados", () => {

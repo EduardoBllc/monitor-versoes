@@ -201,8 +201,9 @@ export function testeVigente(
   formulario: Formulario,
   testes: Record<string, ResultadoTeste>,
 ): ResultadoTeste | undefined {
+  // A recusa cobre o rascunho inteiro: se casa, é mais recente que um resultado só da seção.
   return (
-    testes[assinatura(destino, config, formulario)] ?? testes[assinaturaDaRecusa(destino, config, formulario)]
+    testes[assinaturaDaRecusa(destino, config, formulario)] ?? testes[assinatura(destino, config, formulario)]
   );
 }
 
