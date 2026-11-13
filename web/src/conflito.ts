@@ -5,7 +5,10 @@ export enum Lado {
   THEIRS = "theirs",
   AMBOS = "ambos",
   BASE = "base",
+  PROPOSTA = "proposta",
 }
+
+export type LadoDoBloco = Exclude<Lado, Lado.PROPOSTA>;
 
 enum Marcador {
   INICIO = "<<<<<<<",
@@ -89,7 +92,7 @@ export function blocos(texto: string): Bloco[] {
   return achados;
 }
 
-export function trecho(bloco: Bloco, lado: Lado): string {
+export function trecho(bloco: Bloco, lado: LadoDoBloco): string {
   switch (lado) {
     case Lado.OURS:
       return bloco.ours;

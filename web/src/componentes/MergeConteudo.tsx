@@ -10,6 +10,7 @@ import {
   EstadoBloco,
   type Faixa,
   Lado,
+  type LadoDoBloco,
   aceitouLado,
   blocos,
   estadoDoBloco,
@@ -104,12 +105,12 @@ export function MergeConteudo({
   const registro = useRef<Registro[]>([]);
   const resultado = useRef<monaco.editor.ITextModel | null>(null);
   const [mudou] = useState(() => new monaco.Emitter<void>());
-  const aceitar = useRef<(k: number, lado: Lado) => void>(() => {});
+  const aceitar = useRef<(k: number, lado: LadoDoBloco) => void>(() => {});
 
   useEffect(() => {
     const comando = monaco.editor.addCommand({
       id: COMANDO_ACEITAR,
-      run: (_acesso: unknown, k: number, lado: Lado) =>
+      run: (_acesso: unknown, k: number, lado: LadoDoBloco) =>
         aceitar.current(k, lado),
     });
     return () => comando.dispose();
@@ -330,7 +331,7 @@ export function MergeConteudo({
         registro.current.flatMap((r, k) => {
           const f = modelo.getDecorationRange(r.id);
           if (!f || estado(k) !== EstadoBloco.ABERTO) return [];
-          const acoes: [Lado, string][] = [[Lado.AMBOS, "Ambos"]];
+          const acoes: [LadoDoBloco, string][] = [[Lado.AMBOS, "Ambos"]];
           if (r.original.base !== null) acoes.push([Lado.BASE, "Usar base"]);
           return acoes.map(([lado, title]) => ({
             range: new monaco.Range(f.startLineNumber, 1, f.startLineNumber, 1),
