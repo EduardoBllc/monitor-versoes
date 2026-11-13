@@ -26,6 +26,13 @@ de config mudam com o nome, e quebram plugins de fora. Em `0.x`, uma quebra sobe
 A `1.0` é o momento em que a API de plugin passa a ser promessa, e vem depois do nome
 definitivo.
 
+**Squash merge, com o título do PR em formato convencional.** O release-please escreve
+uma linha de changelog por commit da `main`. Com merge commit, cada commit do branch
+entrava: um PR grande virava uma dúzia de itens, inclusive os `fix:` que só corrigiam a
+revisão e nunca chegaram a uma versão lançada. Com squash, o PR é um commit só, e o título
+dele é a linha do changelog. Os commits por tarefa continuam no PR. O título passa a ser
+contrato: o tipo decide se há release e de que tamanho, e o texto é o que o usuário lê.
+
 **O PR de release é aberto com o token do App do agente.** PR aberto pelo `GITHUB_TOKEN`
 não dispara outros workflows, e a ruleset da `main` exige os checks do CI: o PR de release
 ficaria sem eles. Como o App também é o autor dos PRs do agente, a Revisão IA ignora as

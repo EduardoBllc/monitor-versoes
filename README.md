@@ -63,8 +63,8 @@ uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 --with
 O `uv tool upgrade` não sai de uma tag fixada: para atualizar, rode o mesmo comando com que
 instalou (com o extra e os `--with` que usou), trocando a tag pela da
 [última release](https://github.com/EduardoBllc/monitor-versoes/releases/latest) e
-acrescentando `--reinstall`. As mudanças de cada versão estão no [CHANGELOG.md](CHANGELOG.md). Se o `monitor-versoes serve` estiver rodando,
-reinicie-o.
+acrescentando `--reinstall`. As mudanças de cada versão estão no [CHANGELOG.md](CHANGELOG.md).
+Se o `monitor-versoes serve` estiver rodando, reinicie-o.
 
 Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Se você
 tem inscrições agendadas, rode `monitor-versoes inscricao agendar` de novo depois de atualizar: o

@@ -21,7 +21,8 @@ Fase `fase:execução`.
    dá à tarefa (sem ela, citando a tarefa) e push. A run tem limite
    de turnos; o que teve push o workflow retoma, o resto se perde.
 5. Depois da última tarefa, diga se a integração do `make check` rodou ou pulou e abra o
-   PR com o [template](../../../.github/pull_request_template.md) e `Closes #N`.
+   PR com o [template](../../../.github/pull_request_template.md), `Closes #N` e título
+   no formato convencional do [CONTRIBUTING.md](../../../CONTRIBUTING.md#fluxo).
 6. Comente na issue o link do PR, mencionando o dono: a vez passa a ser dele.
 
 Não edite comentário que já existe, fora o do plano: o corpo do PR vai só por

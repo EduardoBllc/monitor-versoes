@@ -86,7 +86,13 @@ O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
    comentário fixado, e o plano, em comentário. A issue avança pelo [ciclo da issue](#ciclo-da-issue).
 2. **Branch e PR.** A `main` é protegida: toda mudança entra por PR, e o merge exige os
    checks `ruff format`, `ruff check`, `mypy` e `pytest` verdes — para todos, dono
-   incluído.
+   incluído. O merge é sempre **squash**: o título do PR vira o único commit na `main` e
+   a linha do PR no `CHANGELOG.md` ([039](docs/decisoes/039-versionamento-por-tag.md)).
+   Por isso o título segue o formato convencional, com a issue no fim:
+   `feat: …` para o que o usuário ganha, `fix: …` para defeito que chegou a uma versão
+   lançada, e `docs:`, `ci:`, `chore:`, `refactor:` ou `test:` para o que não entra no
+   changelog — por exemplo `feat: versionamento por tag (#146)`. Quebra de compatibilidade
+   leva `!` depois do tipo (`feat!: …`).
 3. **O PR descreve o que foi feito** — e o desvio do plano, quando houver — e fecha a
    issue com `Closes #N`. O [template](.github/pull_request_template.md) traz o
    checklist. O Claude revisa o PR quando ele abre e, no PR do agente, a cada push;
