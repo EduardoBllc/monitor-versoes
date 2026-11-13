@@ -46,3 +46,4 @@ Uma linha por decisão, na ordem em que a narrativa se encadeia.
 33. [033](033-config-editavel-pelas-interfaces.md) — TUI e web editam o `config.toml` central: plugins declaram `campos_config`, escrita com `tomlkit` preserva o arquivo, `[ambiente]` reaplicado sem reiniciar; salvar não consulta o lock do clone.
 34. [034](034-julgamento-de-orfao.md) — o julgamento de órfão tem registro próprio, por versão; o `reconstruir-estado` e o `verificar` o aplicam como commit da tarefa do alvo, sem pôr tarefa no alvo, e a exclusão vence; listar e julgar não tomam o lock do clone.
 35. [035](035-estado-local-em-sqlite.md) — o estado é local e mora só em SQLite; configuração antiga com Postgres dá erro, e a saída é o `migrar-estado` de um commit fixado.
+36. [036](036-fonte-de-pr-plugavel.md) — host de PR plugável em `[prs] fonte`, sem padrão (sem ela, só o grep); o plugin só fala com o host e o pipeline de PR fica no núcleo; o estado de PR é por host e trocar de host o zera.
