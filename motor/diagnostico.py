@@ -197,26 +197,34 @@ def _estado_sem_secao(
     ]
 
 
+_CORRECAO_REPOS = f"conferir [{SECAO_REPOS}.<nome>] no config.toml central"
+
+
+def _caminho_do_repo(nome: str, caminho: str | None) -> Resultado:
+    if caminho is None:
+        detalhe = f"[{SECAO_REPOS}.{nome}] sem caminho"
+    elif not Path(caminho).is_dir():
+        detalhe = f"[{SECAO_REPOS}.{nome}] caminho não é diretório: {caminho}"
+    else:
+        return Resultado(Peca.REPOS, Estado.OK, "caminho encontrado")
+    return Resultado(Peca.REPOS, Estado.FALHA, detalhe, _CORRECAO_REPOS)
+
+
 def _repos(
     abrir_sessao: Callable[..., AbstractContextManager[Session]],
     repos: Callable[[], Mapping[str, str | None]],
     banco_ok: bool,
 ) -> list[Resultado]:
     """Seções `[repos.<nome>]` do config.toml central contra disco e banco."""
-    correcao = f"conferir [{SECAO_REPOS}.<nome>] no config.toml central"
     try:
         configurados = repos()
     except MotorError as e:
-        return [_falha(Peca.REPOS, e, correcao)]
-    linhas = []
-    for nome, caminho in configurados.items():
-        if caminho is None:
-            detalhe = f"[{SECAO_REPOS}.{nome}] sem caminho"
-        elif not Path(caminho).is_dir():
-            detalhe = f"[{SECAO_REPOS}.{nome}] caminho não é diretório: {caminho}"
-        else:
-            continue
-        linhas.append(Resultado(Peca.REPOS, Estado.FALHA, detalhe, correcao))
+        return [_falha(Peca.REPOS, e, _CORRECAO_REPOS)]
+    linhas = [
+        r
+        for nome, caminho in configurados.items()
+        if (r := _caminho_do_repo(nome, caminho)).estado is Estado.FALHA
+    ]
     if banco_ok:
         linhas += _estado_sem_secao(abrir_sessao, set(configurados))
     else:
@@ -297,6 +305,42 @@ def _prs(config_central: Callable[[], ConfigProjeto], onde: str) -> Resultado:
     return _plugin_da_config(Peca.PRS, config_central, onde, Tabela.PRS, instanciar)
 
 
+class PecaTestavel(enum.StrEnum):
+    """As peças que a web testa uma a uma, sobre o rascunho da config."""
+
+    PRS = "prs"
+    TAREFAS = "tarefas"
+    REPO = "repo"
+
+
+PECA_DO_DIAGNOSTICO = {
+    PecaTestavel.PRS: Peca.PRS,
+    PecaTestavel.TAREFAS: Peca.TAREFAS,
+    PecaTestavel.REPO: Peca.REPOS,
+}
+
+
+def diagnosticar_peca(
+    peca: PecaTestavel,
+    *,
+    config_central: Callable[[], ConfigProjeto],
+    repos: Callable[[], Mapping[str, str | None]],
+    onde: str,
+    repo: str | None = None,
+) -> Resultado:
+    """A linha do diagnóstico de uma peça só; `onde` é o que a correção cita."""
+    match peca:
+        case PecaTestavel.PRS:
+            return _prs(config_central, onde)
+        case PecaTestavel.TAREFAS:
+            return _tarefas(config_central, onde)
+        case PecaTestavel.REPO:
+            configurados = repos()
+            if repo is None or repo not in configurados:
+                raise ErroDeEntrada(f"repo {repo!r} não existe")
+            return _caminho_do_repo(repo, configurados[repo])
+
+
 def formatar(resultado: Resultado) -> str:
     linha = f"{resultado.estado.value}  {resultado.peca}"
     if resultado.detalhe:
@@ -309,8 +353,10 @@ def formatar(resultado: Resultado) -> str:
 __all__ = [
     "Estado",
     "Peca",
+    "PecaTestavel",
     "Resultado",
     "diagnosticar",
+    "diagnosticar_peca",
     "falhou",
     "formatar",
 ]

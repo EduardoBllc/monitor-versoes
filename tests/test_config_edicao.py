@@ -30,6 +30,7 @@ from motor.config_edicao import (
     catalogo_campos,
     gravar,
     ler_para_edicao,
+    rascunho,
 )
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.montagem import GRUPO_TAREFAS
@@ -378,3 +379,21 @@ def test_operacao_de_repo_invalida(tmp_path, alteracao):
     _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
     with pytest.raises(ErroDeEntrada):
         gravar([alteracao], ler_para_edicao().versao)
+
+
+def test_rascunho_nao_grava():
+    _escrever('[tarefas]\na = "1"\n')
+    antes = _bytes()
+    texto = rascunho([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
+    assert 'a = "2"' in texto
+    assert _bytes() == antes
+
+
+def test_rascunho_invalido_e_versao_velha(tmp_path):
+    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    versao = ler_para_edicao().versao
+    with pytest.raises(ErroDeEntrada):
+        rascunho([_definir("abc", Chave.PISO, Tabela.VERSAO, "a")], versao)
+    _escrever('[tarefas]\na = "2"\n')
+    with pytest.raises(RecusaDeInvariante, match="recarregue"):
+        rascunho([_definir("3", "a", Tabela.TAREFAS)], versao)

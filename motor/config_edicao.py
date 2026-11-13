@@ -512,8 +512,9 @@ def _gravar_atomico(arquivo: str, conteudo: bytes) -> None:
         raise ErroDeEntrada(f"{arquivo}: não foi possível gravar ({e})") from e
 
 
-def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
-    """Aplica, valida e grava a config central; recusa se ela mudou desde `versao`."""
+def rascunho(alteracoes: list[Alteracao], versao: str) -> str:
+    """A config central com as alterações, validada e sem gravar; recusa se ela
+    mudou desde `versao`."""
     arquivo = caminho_config_global()
     bruto = _ler_bytes(arquivo)
     if hashlib.sha256(bruto).hexdigest() != versao:
@@ -530,6 +531,12 @@ def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
     except tomllib.TOMLDecodeError as e:
         raise ErroDeEntrada(f"{arquivo}: alteração gera TOML inválido ({e})") from e
     _validar(candidato, arquivo)
-    _gravar_atomico(arquivo, texto.encode())
+    return texto
+
+
+def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
+    """Aplica, valida e grava a config central; recusa se ela mudou desde `versao`."""
+    texto = rascunho(alteracoes, versao)
+    _gravar_atomico(caminho_config_global(), texto.encode())
     aplicar_ambiente_central(ambiente_central())
     return ler_para_edicao()
