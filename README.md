@@ -64,7 +64,7 @@ Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md
 
 ### Configurar o ambiente
 
-Banco, Bitbucket e as credenciais da fonte de tarefas ficam na tabela `[ambiente]` do
+Banco e as credenciais das fontes de tarefas e de PR ficam na tabela `[ambiente]` do
 `config.toml` central (`~/.config/monitor-versoes/config.toml`, ou
 `$XDG_CONFIG_HOME/monitor-versoes/config.toml`), no topo do arquivo. Cada chave é o nome de uma
 variável de ambiente, e o motor a exporta no início de todo comando:
@@ -74,7 +74,7 @@ variável de ambiente, e o motor a exporta no início de todo comando:
 # Arquivo do estado (opcional; padrão ~/.local/share/monitor-versoes/estado.db)
 # DATABASE_SQLITE_PATH = "..."
 
-# Bitbucket (opcional — ativa descoberta de commits por PR)
+# Credenciais do host de PR, se houver `[prs] fonte`. O plugin `bitbucket` lê estas:
 # BITBUCKET_TOKEN = "..."
 # BITBUCKET_EMAIL = "..."
 
@@ -101,8 +101,7 @@ valendo como alternativa. Para cada variável vence a primeira fonte que a defin
 | 3 | variável já exportada no shell (ou no agendador) |
 
 O `[ambiente]` vence também o `.env.development`: com ele definido, `--env development` não
-leva a outro banco. Flags explícitas (`--bitbucket-token`, `--bitbucket-email`) vencem o
-`[ambiente]`.
+leva a outro banco.
 
 ### Estado
 
@@ -132,6 +131,9 @@ piso = "13.0.0"   # menor versão cujas tarefas são buscadas; só vale na seç�
 fonte = "minha-fonte"   # fonte de tarefas (entry point instalado); sem ela, só a lista manual
 # sistema = 7           # demais chaves: do plugin da fonte, que as documenta
 
+[prs]
+# fonte = "bitbucket"   # host de PR (entry point instalado); sem ela, os commits saem só do grep
+
 # Nomes: cada chave é opcional; sem ela vale o que o esquema declara, senão o padrão.
 # [liberacao]
 # tag = "v{versao}"         # tag que libera a versão; padrão: o critério do esquema ou `{versao}`
@@ -156,6 +158,13 @@ plugin, que as recebe como estão e as cobra na primeira busca. O plugin só é 
 quando um comando busca tarefas ou precisa da referência: fonte inválida não impede
 `atualizar --abort`, e `reconstruir-estado` roda sem fonte se houver `[referencia] padrao`.
 O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
+
+O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
+ou um `modulo:Classe`, e o pacote traz o `bitbucket`. Não há padrão: sem `fonte`, os commits
+saem só do grep na branch principal. Fora `fonte`, as chaves de `[prs]` são do plugin. Como
+na fonte de tarefas, o plugin e as credenciais só são cobrados na primeira busca de commits.
+Trocar de host zera o que o estado guardou das PRs do repo e a próxima varredura percorre o
+histórico inteiro. O porquê: [036](docs/decisoes/036-fonte-de-pr-plugavel.md).
 Os repos na config: [029](docs/decisoes/029-repos-na-config-central.md).
 
 #### Vindo de uma versão antiga
@@ -163,7 +172,9 @@ Os repos na config: [029](docs/decisoes/029-repos-na-config-central.md).
 Para cada repo que já está no banco, crie `[repos.<nome>]` com o mesmo nome que ele tem lá e
 mova para a seção as chaves do antigo `.monitor-versoes.toml` (o `piso` vai para
 `[repos.<nome>.versao]`). Um `[versao] piso` no topo do `config.toml` também precisa ir para
-as seções: no topo ele é erro de leitura e impede qualquer comando. Confira com
+as seções: no topo ele é erro de leitura e impede qualquer comando. Quem buscava commits por
+PR com `BITBUCKET_TOKEN` adiciona `[prs] fonte = "bitbucket"`: o token sozinho não liga mais
+nada, e as flags `--bitbucket-token`/`--bitbucket-email` saíram (use o `[ambiente]`). Confira com
 `monitor-versoes diagnostico`. Inscrições antigas são descartadas com um aviso: inscreva de novo com o
 nome da seção.
 
@@ -198,7 +209,7 @@ começando por letra ou dígito.
    OK  Migração: revisão e50b3d6e40a1
    OK  Repos: 1 repo(s) configurado(s)
    OK  Tarefas: credenciais aceitas
-   não configurado  Bitbucket: sem BITBUCKET_TOKEN
+   não configurado  Fonte de PR: sem [prs] fonte no config.toml central
    ```
 
    Cada `FALHA` traz a correção na própria linha. Migração pendente se corrige com
@@ -269,7 +280,7 @@ consulta o lock do clone: edite por um lugar de cada vez. O porquê:
 
 #### Para autores de plugin
 
-Para a tela mostrar as chaves do seu plugin (esquema, atribuição ou fonte de tarefas), declare
+Para a tela mostrar as chaves do seu plugin (esquema, atribuição, fonte de tarefas ou host de PR), declare
 `campos_config` na classe, uma tupla de `Campo`:
 
 ```python
@@ -305,13 +316,21 @@ só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao
 web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
 web) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
 
+Um host de PR implementa a porta `HostPr` (`motor/ports.py`): `prs_mergeadas(desde)`, as PRs
+mergeadas desde a data (`None` = histórico inteiro), e `commits_da_pr(pr_id)`, os commits da
+PR sem merge commits. O resto (varredura incremental, casamento com a referência, cache e
+filtro pela principal) é do núcleo. O construtor recebe só nomeados (`prs`, o `[prs]`
+mesclado; `arquivos`, os arquivos lidos; `remote_url`, uma função que devolve a URL do
+`origin`) e não faz I/O: credencial e URL se cobram na primeira chamada. Registre a classe no
+grupo `monitor_versoes.prs`; `verificar_credenciais()` é opcional e o `diagnostico` a usa.
+
 ### Fontes de tasks e de commits
 
 - **Tasks:** a `[tarefas] fonte` da config por padrão. Sem ela, `--task-source manual --lista arquivo.txt` lê um
   id de task por linha (`#` comenta).
-- **Commits:** com `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` (ou `--bitbucket-token` /
-  `--bitbucket-email`), os commits de cada task vêm dos PRs do Bitbucket; o grep pela
-  referência em `origin/<principal>` fica como fallback. Sem credenciais, só o grep.
+- **Commits:** com `[prs] fonte`, os commits de cada task vêm das PRs mergeadas no host
+  (o plugin `bitbucket` usa `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` do `[ambiente]`); o grep
+  pela referência em `origin/<principal>` fica como fallback. Sem `fonte`, só o grep.
 
 ### Worktrees mantidas em disco
 

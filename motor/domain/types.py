@@ -21,7 +21,7 @@ class BaseRef:
     commit: str = ""  # hash
 
 
-# Toda data de commit que vem do git (%cI) ou do Bitbucket tem fuso. A
+# Toda data de commit que vem do git (%cI) ou do host de PR tem fuso. A
 # ausencia de data tem de ter fuso tambem, senao a comparacao com uma data de
 # verdade estoura com TypeError.
 SEM_DATA = datetime.datetime.min.replace(tzinfo=datetime.UTC)
