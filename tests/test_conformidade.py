@@ -37,6 +37,7 @@ from motor.adapters.git.fake import FakeGit
 from motor.adapters.git.subprocess import GitSubprocess
 from motor.adapters.notificador.desktop import NotificadorDesktop
 from motor.adapters.notificador.fake import FakeNotificador
+from motor.adapters.sugestao.fake import FakeProvedorSugestao
 from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.adapters.tasksource.manuallist import ManualList
 from motor.atribuicoes import Composta, Exata
@@ -50,6 +51,7 @@ from motor.ports import (
     HostPr,
     Notificador,
     PoliticaAtribuicao,
+    ProvedorSugestao,
     TaskSource,
 )
 from tests.fontes_falsas import FonteFixa
@@ -77,6 +79,7 @@ _ESQUEMAS: list[type[EsquemaVersao]] = [Semver, Escalonado]
 _ATRIBUICOES: list[type[PoliticaAtribuicao]] = [Exata, Composta]
 
 _NOTIFICADORES: list[type[Notificador]] = [NotificadorDesktop, FakeNotificador]
+_SUGESTAO: list[type[ProvedorSugestao]] = [FakeProvedorSugestao]
 
 
 def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
@@ -92,7 +95,8 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
         len(_ESQUEMAS),
         len(_ATRIBUICOES),
         len(_NOTIFICADORES),
-    ] == [2, 2, 4, 4, 3, 2, 2, 2]
+        len(_SUGESTAO),
+    ] == [2, 2, 4, 4, 3, 2, 2, 2, 1]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:
