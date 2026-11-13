@@ -32,6 +32,7 @@ from motor.errors import ErroDeEntrada
 SEGREDO = "s3nha-nao-salva"
 REPO = "novo"
 HOST_FALSO = "tests.fontes_falsas:HostFalso"
+HOST_SAIDA_BINARIA = "tests.fontes_falsas:HostSaidaBinaria"
 HOST_BITBUCKET = "bitbucket"
 VAR_HOST_FALSO = "HOST_FALSO_TOKEN"
 MODO_DIRETORIO_PRIVADO = 0o700
@@ -131,6 +132,18 @@ def test_detalhe_cita_o_config_real(temporarios):
     assert caminho_config_global() in resultado.detalhe
     (temporario,) = temporarios
     assert temporario not in str(resultado)
+
+
+def test_saida_que_nao_e_utf8_vira_resultado():
+    resultado = teste_config.testar(
+        [_definir(HOST_SAIDA_BINARIA, Chave.FONTE, Tabela.PRS)],
+        ler_para_edicao().versao,
+        PecaTestavel.PRS,
+        None,
+    )
+
+    assert resultado.peca is Peca.PRS
+    assert resultado.estado is Estado.FALHA
 
 
 def test_segredo_do_rascunho_nao_vaza(tmp_path, temporarios):

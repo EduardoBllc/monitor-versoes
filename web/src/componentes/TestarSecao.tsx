@@ -5,7 +5,7 @@ import { ErroApi, Metodo, api } from "../api/cliente";
 import { EstadoTeste, TipoErro, type PecaTestavel } from "../api/enums";
 import type { ConfigEditavel, ResultadoTeste } from "../api/tipos";
 import { alteracoesDe, type Formulario } from "../config";
-import { NOME_SECAO, assinatura, type Destino } from "../configSecoes";
+import { NOME_SECAO, assinatura, assinaturaDaRecusa, type Destino } from "../configSecoes";
 import { notificarErro } from "./notificar";
 
 const ESTILO: Record<ResultadoTeste["estado"], { cor: string; sinal: string }> = {
@@ -36,19 +36,21 @@ export function TestarSecao({
   children?: ReactNode;
 }) {
   const testar = useMutation({
-    // A assinatura é a do formulário enviado: editar durante o teste não herda o resultado.
-    mutationFn: ({ formulario: f }: { formulario: Formulario; assinatura: string }) =>
+    // As chaves vêm do formulário enviado: editar durante o teste não herda o resultado.
+    mutationFn: (f: Formulario) =>
       api<ResultadoTeste>(Metodo.POST, "/api/config/testar", {
         alteracoes: alteracoesDe(config, f),
         versao: config.versao,
         peca,
         repo: typeof destino === "string" ? null : destino.repo,
       }),
-    onSuccess: (r, { assinatura: a }) => aoResultado(a, r),
-    onError: (erro, { assinatura: a }) => {
-      // O que o salvar recusaria (ex.: caminho inexistente) é falha da seção, não da página.
+    onSuccess: (r, f) => aoResultado(assinatura(destino, config, f), r),
+    onError: (erro, f) => {
+      // O que o salvar recusaria (ex.: caminho inexistente) é falha da seção, não da página;
+      // a recusa pode vir de campo de outra seção, então só vale com o rascunho inteiro igual.
       if (erro instanceof ErroApi && erro.tipo === TipoErro.ENTRADA) {
-        aoResultado(a, { estado: EstadoTeste.FALHA, detalhe: erro.message, correcao: "" });
+        const falha = { estado: EstadoTeste.FALHA, detalhe: erro.message, correcao: "" };
+        aoResultado(assinaturaDaRecusa(destino, config, f), falha);
         return;
       }
       if (erro instanceof ErroApi && erro.tipo === TipoErro.RECUSA) aoRecusa();
@@ -61,7 +63,7 @@ export function TestarSecao({
         <Button
           variant="default"
           loading={testar.isPending}
-          onClick={() => testar.mutate({ formulario, assinatura: assinatura(destino, config, formulario) })}
+          onClick={() => testar.mutate(formulario)}
         >
           Testar
         </Button>

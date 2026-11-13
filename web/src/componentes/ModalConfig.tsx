@@ -37,12 +37,12 @@ import {
   Marca,
   NOME_SECAO,
   Secao,
-  assinatura,
   gravarPulados,
   lerPulados,
   linhasDaSecao,
   marcaDe,
   pendencias,
+  testeVigente,
   type Destino,
   type Segmento,
 } from "../configSecoes";
@@ -229,7 +229,7 @@ function Editor({
       formulario={formulario}
       destino={d}
       peca={peca}
-      resultado={testes[assinatura(d, config, formulario)]}
+      resultado={testeVigente(d, config, formulario, testes)}
       aoResultado={guardarTeste}
       aoRecusa={aoRecusa}
     >

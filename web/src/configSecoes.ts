@@ -1,6 +1,6 @@
 import { Chave, Escopo, EstadoTeste, GrupoPlugin, Tabela } from "./api/enums";
 import type { ConfigEditavel, ResultadoTeste } from "./api/tipos";
-import { achaCampo, chaveDe, linhasDe, vazio, type Formulario, type Linha } from "./config";
+import { achaCampo, alteracoesDe, chaveDe, linhasDe, vazio, type Formulario, type Linha } from "./config";
 
 export const CHAVE_CAMINHO = "caminho";
 export const CHAVE_PULADOS = "monitor-versoes:config:pulados";
@@ -189,6 +189,23 @@ export function assinatura(destino: Destino, config: ConfigEditavel, formulario:
   return JSON.stringify([destino, chaves.map((k) => [k, valor(k)])]);
 }
 
+/** Chave da recusa (422): ela vale para o rascunho inteiro, não só para os campos da seção. */
+export function assinaturaDaRecusa(destino: Destino, config: ConfigEditavel, formulario: Formulario): string {
+  return JSON.stringify([assinatura(destino, config, formulario), alteracoesDe(config, formulario)]);
+}
+
+/** Resultado de teste que ainda vale para o destino com o formulário atual. */
+export function testeVigente(
+  destino: Destino,
+  config: ConfigEditavel,
+  formulario: Formulario,
+  testes: Record<string, ResultadoTeste>,
+): ResultadoTeste | undefined {
+  return (
+    testes[assinatura(destino, config, formulario)] ?? testes[assinaturaDaRecusa(destino, config, formulario)]
+  );
+}
+
 const temCaminho = (f: Formulario, repo: string): boolean =>
   !vazio(f.valores[chaveDe(repo, null, CHAVE_CAMINHO)]);
 
@@ -202,7 +219,7 @@ export function marcaDe(
 ): Marca {
   const grupo = typeof destino === "string" ? COBRADAS[destino] : undefined;
   if (typeof destino === "string" && grupo === undefined) return Marca.NENHUMA;
-  if (testes[assinatura(destino, config, formulario)]?.estado === EstadoTeste.FALHA) return Marca.FALHOU;
+  if (testeVigente(destino, config, formulario, testes)?.estado === EstadoTeste.FALHA) return Marca.FALHOU;
   const pronta =
     typeof destino === "string"
       ? pulados.has(destino) || (grupo !== undefined && escolhido(config, formulario, grupo, null) !== "")

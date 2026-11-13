@@ -23,12 +23,14 @@ import {
   Marca,
   Secao,
   assinatura,
+  assinaturaDaRecusa,
   gravarPulados,
   lerPulados,
   linhasDaSecao,
   linhasDoRepo,
   marcaDe,
   pendencias,
+  testeVigente,
 } from "./configSecoes";
 
 const TICKIO = "tickio";
@@ -310,6 +312,16 @@ describe("pendencias", () => {
       destino: { repo: REPO },
       marca: Marca.FALHOU,
     });
+  });
+
+  it("recusa do rascunho vale até qualquer campo do formulário mudar, mesmo de outra seção", () => {
+    const f = formulario();
+    const testes = { [assinaturaDaRecusa(Secao.TAREFAS, CONFIG, f)]: falha };
+    expect(testeVigente(Secao.TAREFAS, CONFIG, f, testes)).toBe(falha);
+    expect(marcaDe(Secao.TAREFAS, CONFIG, f, testes, new Set())).toBe(Marca.FALHOU);
+    const corrigidoEmOutraSecao = formulario({ [esquema]: CALVER });
+    expect(testeVigente(Secao.TAREFAS, CONFIG, corrigidoEmOutraSecao, testes)).toBeUndefined();
+    expect(marcaDe(Secao.TAREFAS, CONFIG, corrigidoEmOutraSecao, testes, new Set())).toBe(Marca.PRONTA);
   });
 });
 

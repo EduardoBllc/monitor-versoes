@@ -57,20 +57,22 @@ def testar(
     with tempfile.TemporaryDirectory() as temporario:
         arquivo = os.path.join(temporario, "monitor-versoes", "config.toml")
         os.mkdir(os.path.dirname(arquivo))
-        with open(arquivo, "w") as f:
+        with open(arquivo, "w", encoding="utf-8") as f:
             f.write(texto)
         try:
+            # stderr descartado: traceback de plugin pode carregar o segredo digitado.
             saida = subprocess.run(
                 comando,
                 env=ambiente_base() | {VAR_XDG_CONFIG_HOME: temporario},
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
+                errors="replace",
                 timeout=TIMEOUT_TESTE,
                 check=False,
             )
         except subprocess.TimeoutExpired:
             return _falha(peca, f"{TEMPO_ESGOTADO} ({TIMEOUT_TESTE} s)")
-    # O stderr fica de fora: traceback de plugin pode carregar o segredo digitado.
     try:
         # Só a última linha: um plugin pode ter escrito no stdout antes.
         dados = json.loads(saida.stdout.strip().rsplit("\n", 1)[-1])
