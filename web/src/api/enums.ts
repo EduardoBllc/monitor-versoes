@@ -99,3 +99,23 @@ export enum EstadoTeste {
   NAO_CONFIGURADO = "não configurado",
   AVISO = "aviso",
 }
+
+export enum Tabela {
+  VERSAO = "versao",
+  LIBERACAO = "liberacao",
+  BRANCHES = "branches",
+  REFERENCIA = "referencia",
+  TAREFAS = "tarefas",
+  PRS = "prs",
+}
+
+export enum Chave {
+  ESQUEMA = "esquema",
+  ATRIBUICAO = "atribuicao",
+  TAG = "tag",
+  VERSAO = "versao",
+  PRINCIPAL = "principal",
+  PADRAO = "padrao",
+  FONTE = "fonte",
+  PISO = "piso",
+}

@@ -1,0 +1,250 @@
+import { Chave, Escopo, EstadoTeste, GrupoPlugin, Tabela } from "./api/enums";
+import type { ConfigEditavel, ResultadoTeste } from "./api/tipos";
+import {
+  EstadoSegredo,
+  achaCampo,
+  chaveDe,
+  estadoSegredo,
+  linhasDe,
+  type Formulario,
+  type Linha,
+} from "./config";
+
+export const CHAVE_CAMINHO = "caminho";
+export const CHAVE_PULADOS = "monitor-versoes:config:pulados";
+
+export enum Secao {
+  PRS = "prs",
+  TAREFAS = "tarefas",
+  VERSOES = "versoes",
+  NOVO_REPO = "novo-repo",
+  AVANCADO = "avancado",
+}
+
+export type Destino = Secao | { repo: string };
+
+export enum GrupoLateral {
+  CONEXOES = "Conexões",
+  COMO_TRABALHA = "Como você trabalha",
+  REPOSITORIOS = "Repositórios",
+  AVANCADO = "Avançado",
+}
+
+// Os itens de repo entram no grupo Repositórios antes de NOVO_REPO.
+export const LATERAL: { grupo: GrupoLateral; secoes: Secao[] }[] = [
+  { grupo: GrupoLateral.CONEXOES, secoes: [Secao.PRS, Secao.TAREFAS] },
+  { grupo: GrupoLateral.COMO_TRABALHA, secoes: [Secao.VERSOES] },
+  { grupo: GrupoLateral.REPOSITORIOS, secoes: [Secao.NOVO_REPO] },
+  { grupo: GrupoLateral.AVANCADO, secoes: [Secao.AVANCADO] },
+];
+
+export const NOME_SECAO: Record<Secao, string> = {
+  [Secao.PRS]: "Fonte de PR",
+  [Secao.TAREFAS]: "Fonte de tarefas",
+  [Secao.VERSOES]: "Versões e branches",
+  [Secao.NOVO_REPO]: "+ Adicionar repo",
+  [Secao.AVANCADO]: "Avançado",
+};
+
+type TabelaChave = [string, string];
+
+const ESCOLHE: Record<GrupoPlugin, TabelaChave> = {
+  [GrupoPlugin.TAREFAS]: [Tabela.TAREFAS, Chave.FONTE],
+  [GrupoPlugin.PRS]: [Tabela.PRS, Chave.FONTE],
+  [GrupoPlugin.ESQUEMAS]: [Tabela.VERSAO, Chave.ESQUEMA],
+  [GrupoPlugin.ATRIBUICOES]: [Tabela.VERSAO, Chave.ATRIBUICAO],
+};
+
+const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
+  [GrupoPlugin.TAREFAS]: Secao.TAREFAS,
+  [GrupoPlugin.PRS]: Secao.PRS,
+  [GrupoPlugin.ESQUEMAS]: Secao.VERSOES,
+  [GrupoPlugin.ATRIBUICOES]: Secao.VERSOES,
+};
+
+// Campo do motor fora deste mapa vai para Avançado.
+const CAMPOS_DO_MOTOR: Partial<Record<Secao, TabelaChave[]>> = {
+  [Secao.PRS]: [ESCOLHE[GrupoPlugin.PRS]],
+  [Secao.TAREFAS]: [ESCOLHE[GrupoPlugin.TAREFAS]],
+  [Secao.VERSOES]: [
+    ESCOLHE[GrupoPlugin.ESQUEMAS],
+    ESCOLHE[GrupoPlugin.ATRIBUICOES],
+    [Tabela.LIBERACAO, Chave.TAG],
+    [Tabela.BRANCHES, Chave.VERSAO],
+    [Tabela.BRANCHES, Chave.PRINCIPAL],
+    [Tabela.REFERENCIA, Chave.PADRAO],
+  ],
+};
+
+// Ordem da barra de progresso, depois de Repositórios.
+const COBRADAS: Partial<Record<Secao, GrupoPlugin>> = {
+  [Secao.PRS]: GrupoPlugin.PRS,
+  [Secao.TAREFAS]: GrupoPlugin.TAREFAS,
+};
+
+const vazio = (v: unknown): boolean => v === undefined || v === null || v === "";
+
+const textoNo = (f: Formulario, repo: string | null, [tabela, chave]: TabelaChave): string => {
+  const v = f.valores[chaveDe(repo, tabela, chave)];
+  return vazio(v) ? "" : String(v);
+};
+
+/** Valor que escolhe o plugin do grupo: o do repo, senão o do topo, senão o padrão. */
+export function escolhido(
+  config: ConfigEditavel,
+  formulario: Formulario,
+  grupo: GrupoPlugin,
+  repo: string | null,
+): string {
+  const tc = ESCOLHE[grupo];
+  return (
+    (repo === null ? "" : textoNo(formulario, repo, tc)) ||
+    textoNo(formulario, null, tc) ||
+    (achaCampo(config.campos, null, ...tc)?.padrao ?? "")
+  );
+}
+
+// Segredo não vem no formulário: ausente vale o que está no arquivo.
+function temValor(l: Linha, f: Formulario): boolean {
+  const v = f.valores[chaveDe(l.repo, l.tabela, l.chave)];
+  if (l.campo?.segredo !== true) return !vazio(v);
+  return !vazio(v) || estadoSegredo(v, l.lido?.definido === true) === EstadoSegredo.DEFINIDO;
+}
+
+// O tipo gerado é a união dos valores; o enum espelha os mesmos.
+const grupoDe = (l: Linha) => (l.campo?.grupo ?? undefined) as GrupoPlugin | undefined;
+
+const doEscolhido = (config: ConfigEditavel, f: Formulario, l: Linha, grupo: GrupoPlugin): boolean =>
+  l.campo?.origem === escolhido(config, f, grupo, l.repo);
+
+// Campo de plugin não escolhido só aparece se ainda tem valor.
+function visivel(config: ConfigEditavel, f: Formulario, l: Linha): boolean {
+  const grupo = grupoDe(l);
+  return grupo === undefined || doEscolhido(config, f, l, grupo) || temValor(l, f);
+}
+
+function secaoDe(config: ConfigEditavel, f: Formulario, l: Linha): Secao | null {
+  if (!visivel(config, f, l)) return null;
+  const grupo = grupoDe(l);
+  if (grupo !== undefined && doEscolhido(config, f, l, grupo)) return SECAO_DO_GRUPO[grupo];
+  const achada = Object.entries(CAMPOS_DO_MOTOR).find(([, tcs]) =>
+    tcs.some(([t, c]) => t === l.tabela && c === l.chave),
+  );
+  return achada ? (achada[0] as Secao) : Secao.AVANCADO;
+}
+
+/** Linhas do topo que moram na seção, segundo o formulário. */
+export function linhasDaSecao(config: ConfigEditavel, formulario: Formulario, secao: Secao): Linha[] {
+  return linhasDe(config, null).filter((l) => secaoDe(config, formulario, l) === secao);
+}
+
+/** Linhas de um repo: as dele, as gerais que ele sobrescreve e as que pode sobrescrever. */
+export function linhasDoRepo(
+  config: ConfigEditavel,
+  formulario: Formulario,
+  repo: string,
+): { proprias: Linha[]; sobrescritas: Linha[]; sobrescreviveis: Linha[] } {
+  const linhas = linhasDe(config, repo).filter((l) => visivel(config, formulario, l));
+  const gerais = linhas.filter((l) => l.campo?.escopo !== Escopo.REPO);
+  return {
+    proprias: linhas.filter((l) => l.campo?.escopo === Escopo.REPO),
+    sobrescritas: gerais.filter((l) => temValor(l, formulario)),
+    sobrescreviveis: gerais.filter((l) => !temValor(l, formulario)),
+  };
+}
+
+export enum Marca {
+  PRONTA = "pronta",
+  PENDENTE = "pendente",
+  FALHOU = "falhou",
+  NENHUMA = "nenhuma",
+}
+
+// Precisa da config: só o catálogo diz a que seção um campo de plugin pertence.
+/** Valores do formulário que pertencem ao destino; o teste só vale com a mesma assinatura. */
+export function assinatura(destino: Destino, config: ConfigEditavel, formulario: Formulario): string {
+  const chaves =
+    typeof destino === "string"
+      ? linhasDaSecao(config, formulario, destino).map((l) => chaveDe(l.repo, l.tabela, l.chave))
+      : Object.keys(formulario.valores).filter((k) => (JSON.parse(k) as [string | null])[0] === destino.repo);
+  return JSON.stringify([destino, chaves.map((k) => [k, formulario.valores[k] ?? ""])]);
+}
+
+const temCaminho = (f: Formulario, repo: string): boolean =>
+  !vazio(f.valores[chaveDe(repo, null, CHAVE_CAMINHO)]);
+
+/** Marca do destino na lateral; teste com falha vigente vence. */
+export function marcaDe(
+  destino: Destino,
+  config: ConfigEditavel,
+  formulario: Formulario,
+  testes: Record<string, ResultadoTeste>,
+  pulados: Set<Secao>,
+): Marca {
+  const grupo = typeof destino === "string" ? COBRADAS[destino] : undefined;
+  if (typeof destino === "string" && grupo === undefined) return Marca.NENHUMA;
+  if (testes[assinatura(destino, config, formulario)]?.estado === EstadoTeste.FALHA) return Marca.FALHOU;
+  const pronta =
+    typeof destino === "string"
+      ? pulados.has(destino) || (grupo !== undefined && escolhido(config, formulario, grupo, null) !== "")
+      : temCaminho(formulario, destino.repo);
+  return pronta ? Marca.PRONTA : Marca.PENDENTE;
+}
+
+export interface Segmento {
+  nome: string;
+  destino: Destino;
+  marca: Marca;
+}
+
+/** Segmentos da barra de progresso, a próxima seção pendente e se a barra some. */
+export function pendencias(
+  config: ConfigEditavel,
+  formulario: Formulario,
+  testes: Record<string, ResultadoTeste>,
+  pulados: Set<Secao>,
+): { segmentos: Segmento[]; proxima: Destino | null; completa: boolean } {
+  const repos = [...config.repos, ...formulario.reposCriados].filter(
+    (r) => !formulario.reposRemovidos.includes(r),
+  );
+  const marcas = repos.map((repo) => marcaDe({ repo }, config, formulario, testes, pulados));
+  const alvo = repos.find((r) => !temCaminho(formulario, r)) ?? repos[0];
+  const segmentos: Segmento[] = [
+    {
+      nome: GrupoLateral.REPOSITORIOS,
+      destino: alvo === undefined ? Secao.NOVO_REPO : { repo: alvo },
+      marca: marcas.includes(Marca.PRONTA)
+        ? Marca.PRONTA
+        : marcas.includes(Marca.FALHOU)
+          ? Marca.FALHOU
+          : Marca.PENDENTE,
+    },
+    ...(Object.keys(COBRADAS) as Secao[]).map((s) => ({
+      nome: NOME_SECAO[s],
+      destino: s,
+      marca: marcaDe(s, config, formulario, testes, pulados),
+    })),
+  ];
+  const proxima = segmentos.find((s) => s.marca !== Marca.PRONTA)?.destino ?? null;
+  return { segmentos, proxima, completa: proxima === null };
+}
+
+/** Seções que este navegador pulou; sem localStorage, nenhuma. */
+export function lerPulados(): Set<Secao> {
+  try {
+    const lidos: unknown = JSON.parse(localStorage.getItem(CHAVE_PULADOS) ?? "[]");
+    const validas: string[] = Object.values(Secao);
+    return new Set(Array.isArray(lidos) ? (lidos.filter((s) => validas.includes(s)) as Secao[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Grava os pulos neste navegador; sem localStorage, não faz nada. */
+export function gravarPulados(pulados: Set<Secao>): void {
+  try {
+    localStorage.setItem(CHAVE_PULADOS, JSON.stringify([...pulados]));
+  } catch {
+    // Aba privada ou bloqueio: o pulo vale só enquanto a modal está aberta.
+  }
+}
