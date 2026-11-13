@@ -27,6 +27,7 @@ torna o renome explicitamente permitido em vez de um risco nao verificado.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
@@ -87,6 +88,35 @@ class CommitSource(Protocol):
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         """Acha os commits de cada chamado."""
+        ...
+
+
+class HostPr(Protocol):
+    """Host de código onde vivem as PRs (plugin de `[prs] fonte`).
+
+    So fala com o host. Varredura incremental, indice, casamento com a
+    referencia, cache `PR -> commits` e filtro pela principal sao do nucleo
+    (`PrCommitSource`), para que host novo herde as correcoes ja feitas
+    (docs/decisoes/036-fonte-de-pr-plugavel.md).
+
+    Opcionais, lidos so se existirem: `verificar_credenciais()`, chamado pelo
+    `monitor-versoes diagnostico`, e `campos_config`, as chaves que o plugin
+    declara para a modal de configuracao.
+    """
+
+    def prs_mergeadas(self, desde: datetime.datetime | None, /) -> Iterable[PrIndex]:
+        """PRs mergeadas com `updated_on >= desde`; None = historico inteiro.
+
+        Titulo e branch crus. Reentregar PR ja conhecida e permitido: o indice
+        faz upsert.
+        """
+        ...
+
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        """Commits da PR, sem merge commits e sem `chamado`.
+
+        O nucleo cacheia o que vier: o filtro de merge commit tem de vir antes.
+        """
         ...
 
 
@@ -432,18 +462,22 @@ class EstadoRepo(Protocol):
         """
         ...
 
-    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
-        """Ate quando o indice esta completo. None = nunca varrido, e a proxima
-        varredura baixa o historico inteiro."""
+    def marca_varredura(self, repo: str, host: str, /) -> datetime.datetime | None:
+        """Ate quando o indice do `host` esta completo. None = nunca varrido
+        por esse host, e a proxima varredura baixa o historico inteiro."""
         ...
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+        self, repo: str, host: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         """Indice e marca na MESMA transacao.
 
         A atomicidade e o contrato, nao um detalhe: marca avancada por cima de
         indice incompleto deixa as PRs que faltaram fora de toda janela futura.
+
+        Se a marca gravada e de outro `host`, indice e cache `PR -> commits` do
+        repo sao apagados na mesma transacao: `pr_id` igual em outro host e
+        outra PR, e a marca antiga faria o host novo pular o historico.
         """
         ...
 

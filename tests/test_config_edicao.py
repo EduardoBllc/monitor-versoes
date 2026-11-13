@@ -8,6 +8,7 @@ from importlib.metadata import EntryPoint, entry_points
 import pytest
 
 from motor import plugins
+from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
@@ -94,9 +95,9 @@ def _ep(nome: str, valor: str) -> EntryPoint:
 
 
 def test_segredo_nunca_sai_na_leitura():
-    _escrever(f'[ambiente]\n{VarAmbiente.BITBUCKET_TOKEN} = "{SEGREDO}"\n')
+    _escrever(f'[ambiente]\n{VarBitbucket.TOKEN} = "{SEGREDO}"\n')
     lido = ler_para_edicao()
-    [v] = [v for v in lido.valores if v.chave == VarAmbiente.BITBUCKET_TOKEN]
+    [v] = [v for v in lido.valores if v.chave == VarBitbucket.TOKEN]
     assert v.valor is None and v.definido is True
     assert SEGREDO not in repr(lido)
 
@@ -201,7 +202,7 @@ CHAVE_LISTA = "filtros"
 @pytest.fixture(autouse=True)
 def _ambiente_base(monkeypatch):
     """Gravar reaplica o `[ambiente]` no processo; o monkeypatch o desfaz no fim."""
-    monkeypatch.setenv(VarAmbiente.BITBUCKET_EMAIL, EMAIL_BASE)
+    monkeypatch.setenv(VarBitbucket.EMAIL, EMAIL_BASE)
 
 
 def _bytes() -> bytes:
@@ -281,7 +282,7 @@ def test_versao_velha_recusada():
 
 def test_gravar_cria_arquivo_e_diretorio():
     gravar(
-        [_definir(EMAIL_CENTRAL, VarAmbiente.BITBUCKET_EMAIL, TABELA_AMBIENTE)],
+        [_definir(EMAIL_CENTRAL, VarBitbucket.EMAIL, TABELA_AMBIENTE)],
         hashlib.sha256(b"").hexdigest(),
     )
     assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_ARQUIVO_NOVO
@@ -305,21 +306,21 @@ def test_chave_nao_editavel_sobrevive():
 
 def test_gravar_reaplica_ambiente():
     definida = gravar(
-        [_definir(EMAIL_CENTRAL, VarAmbiente.BITBUCKET_EMAIL, TABELA_AMBIENTE)],
+        [_definir(EMAIL_CENTRAL, VarBitbucket.EMAIL, TABELA_AMBIENTE)],
         ler_para_edicao().versao,
     )
-    assert os.environ[VarAmbiente.BITBUCKET_EMAIL] == EMAIL_CENTRAL
+    assert os.environ[VarBitbucket.EMAIL] == EMAIL_CENTRAL
     gravar(
         [
             Alteracao(
                 AcaoAlteracao.REMOVER,
                 tabela=TABELA_AMBIENTE,
-                chave=VarAmbiente.BITBUCKET_EMAIL,
+                chave=VarBitbucket.EMAIL,
             )
         ],
         definida.versao,
     )
-    assert os.environ[VarAmbiente.BITBUCKET_EMAIL] == EMAIL_BASE
+    assert os.environ[VarBitbucket.EMAIL] == EMAIL_BASE
 
 
 def test_gravar_segue_symlink(tmp_path):

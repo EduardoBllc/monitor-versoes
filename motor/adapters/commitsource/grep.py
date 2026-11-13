@@ -4,7 +4,7 @@ Move a lógica que vivia no TargetResolver — uma chamada só de `git log`
 com o --grep de todos os chamados juntos (git faz OR entre --grep),
 depois match exato por word-boundary (search_commits só traz candidatos
 brutos). Frágil por natureza: depende do dev ter escrito o ID certo na
-mensagem. É a fonte de fallback; o Bitbucket (PR) é a primária.
+mensagem. É a fonte de fallback; a de PR (host plugável) é a primária.
 """
 
 from __future__ import annotations

@@ -11,9 +11,9 @@ from __future__ import annotations
 import pytest
 
 from motor import montagem
-from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
+from motor.adapters.commitsource.pr import PrCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.atribuicoes import Exata
@@ -28,9 +28,9 @@ from motor.domain.types import RepoInfo
 from motor.errors import ErroDeEntrada
 from motor.esquemas.semver import Semver
 from motor.montagem import (
-    CredenciaisBitbucket,
     FonteDaConfig,
     FonteTasks,
+    HostDaConfig,
     instanciar_fonte_tarefas,
     montar_commit_source,
     montar_deps,
@@ -38,7 +38,7 @@ from motor.montagem import (
 )
 from motor.services.versionamento import Versionamento
 from tests.config_repos import secao_repo
-from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
+from tests.fontes_falsas import REFERENCIA_CH, FonteFixa, HostFalso
 
 
 class GitQueGritaSeUsado(FakeGit):
@@ -54,9 +54,31 @@ class GitQueGritaSeUsado(FakeGit):
 # -- fontes de commit ---------------------------------------------------------
 
 
-def test_sem_token_a_fonte_e_so_o_grep():
+HOST_FALSO = "tests.fontes_falsas:HostFalso"
+HOST_SEM_VERIFICACAO = "tests.fontes_falsas:HostSemVerificacao"
+
+
+def _config_com_host(valor: str = HOST_FALSO, **prs: object) -> ConfigProjeto:
+    return ConfigProjeto(
+        prs={"fonte": valor, **prs},
+        arquivos=("/a.toml", "/b.toml"),
+        fonte_prs=Escolhido(valor, "/a.toml"),
+    )
+
+
+def _estado() -> FakeEstado:
+    return FakeEstado(repos={"r": RepoInfo(nome="r")})
+
+
+def test_sem_fonte_de_pr_so_grep():
     # sem cadeia: um ChainCommitSource de um elemento so seria indireção pura.
-    fonte = montar_commit_source(FakeGit(), referencia=lambda: REFERENCIA_CH)
+    fonte = montar_commit_source(
+        FakeGit(),
+        referencia=lambda: REFERENCIA_CH,
+        config=ConfigProjeto(),
+        estado=_estado(),
+        repo="r",
+    )
 
     assert isinstance(fonte, GrepCommitSource)
 
@@ -65,62 +87,89 @@ def test_sem_estado_nao_monta_a_fonte_de_pr():
     # a fonte de PR le o indice local de PRs, que vive no estado. Sem banco ela
     # nao teria o que ler e devolveria vazio para todo chamado — pior que o grep.
     fonte = montar_commit_source(
-        FakeGit(),
-        referencia=lambda: REFERENCIA_CH,
-        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
+        FakeGit(), referencia=lambda: REFERENCIA_CH, config=_config_com_host()
     )
 
     assert isinstance(fonte, GrepCommitSource)
 
 
-def test_com_token_a_pr_vem_antes_do_grep():
+def test_com_fonte_de_pr_encadeia_pr_e_grep():
     # ordem = prioridade: a PR e mais confiavel que o grep de mensagem, e o
     # grep fica de fallback para o chamado que nenhuma PR casou.
+    estado = _estado()
     fonte = montar_commit_source(
         FakeGit(),
         referencia=lambda: REFERENCIA_CH,
-        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
-        estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
+        config=_config_com_host(),
+        estado=estado,
         repo="r",
     )
 
     assert isinstance(fonte, ChainCommitSource)
-    assert [type(f) for f in fonte.sources] == [
-        BitbucketPRCommitSource,
-        GrepCommitSource,
-    ]
+    pr, grep = fonte.sources
+    assert isinstance(grep, GrepCommitSource)
+    assert isinstance(pr, PrCommitSource)
+    # o nome do host e a chave do estado: troca-lo zera indice, marca e cache.
+    assert (pr.nome_host, pr.estado, pr.repo_estado) == (HOST_FALSO, estado, "r")
 
 
-def test_a_fonte_de_pr_recebe_o_cache_do_estado():
-    # sem o estado e o nome canonico do repo, a fonte roda sem cache e volta a
-    # pedir os commits de toda PR a cada verificar.
-    estado = FakeEstado(repos={"vbweb": RepoInfo(nome="vbweb")})
-
-    fonte = montar_commit_source(
-        FakeGit(),
-        referencia=lambda: REFERENCIA_CH,
-        bitbucket=CredenciaisBitbucket("tok", "dev@x.com"),
-        estado=estado,
-        repo="vbweb",
-    )
-
-    assert isinstance(fonte, ChainCommitSource)
-    pr = fonte.sources[0]
-    assert isinstance(pr, BitbucketPRCommitSource)
-    assert (pr.estado, pr.repo_estado) == (estado, "vbweb")
-
-
-@pytest.mark.parametrize("token", ["", "tok"])
-def test_montar_nao_toca_o_git(token):
-    """`atualizar --abort` monta esta fonte e nunca a usa. Resolver o
-    workspace/repo agora faria todo comando pagar uma chamada de git, e um
-    clone sem `origin` passaria a falhar na montagem em vez de na busca.
+@pytest.mark.parametrize("config", [ConfigProjeto(), _config_com_host("inexistente")])
+def test_montar_nao_toca_o_git(config):
+    """`atualizar --abort` monta esta fonte e nunca a usa. Ler o remote agora
+    faria todo comando pagar uma chamada de git, e um clone sem `origin`
+    passaria a falhar na montagem em vez de na busca.
     """
     montar_commit_source(
         GitQueGritaSeUsado(),
         referencia=lambda: REFERENCIA_CH,
-        bitbucket=CredenciaisBitbucket(token, "dev@x.com"),
+        config=config,
+        estado=_estado(),
+        repo="r",
     )
+
+
+def test_plugin_de_pr_inexistente_nao_derruba_a_montagem():
+    fonte = montar_commit_source(
+        FakeGit(),
+        referencia=lambda: REFERENCIA_CH,
+        config=_config_com_host("inexistente"),
+        estado=_estado(),
+        repo="r",
+    )
+
+    with pytest.raises(ErroDeEntrada, match="plugin 'inexistente' nao encontrado") as e:
+        fonte.resolve(["123456"])
+    # lista os instalados: o Bitbucket vem no pacote.
+    assert "bitbucket" in str(e.value)
+
+
+def test_construtor_do_host_que_levanta_vira_erro_de_entrada():
+    host = HostDaConfig(
+        _config_com_host("tests.fontes_falsas:HostConstrutorComBug"), lambda: ""
+    )
+
+    for _ in range(2):  # a carga que falhou nao fica em cache
+        with pytest.raises(ErroDeEntrada, match=r"fonte de PR .* construtor falhou"):
+            host.prs_mergeadas(None)
+
+
+def test_host_recebe_prs_arquivos_e_remote_nomeados():
+    remotes: list[int] = []
+
+    def remote_url() -> str:
+        remotes.append(1)
+        return "git@host:a/b.git"
+
+    host = HostDaConfig(_config_com_host(sistema=7), remote_url)
+    host.commits_da_pr(1)
+    host.commits_da_pr(2)
+
+    recebido = HostFalso.recebidos[-1]
+    assert set(recebido) == {"prs", "arquivos", "remote_url"}
+    assert recebido["prs"] == {"fonte": HOST_FALSO, "sistema": 7}
+    assert recebido["arquivos"] == ("/a.toml", "/b.toml")
+    assert recebido["remote_url"] is remote_url
+    assert remotes == [], "a URL e do host, que a le quando precisar"
 
 
 def test_o_grep_varre_a_principal_do_versionamento():
@@ -138,7 +187,10 @@ def test_o_grep_varre_a_principal_do_versionamento():
         return Versionamento(esquema=Semver(), politica=Exata(), principal="dev")
 
     fonte = montar_commit_source(
-        git, referencia=lambda: REFERENCIA_CH, versionamento=versionamento
+        git,
+        referencia=lambda: REFERENCIA_CH,
+        config=ConfigProjeto(),
+        versionamento=versionamento,
     )
     assert chamadas == []
 
@@ -332,17 +384,11 @@ def test_lista_manual_com_padrao_usa_o_alfabeto_default(repo_montavel):
     assert deps.referencia() == Referencia("ch{id}", ALFABETO_PADRAO)
 
 
-@pytest.fixture
-def sem_bitbucket_no_ambiente(monkeypatch):
-    monkeypatch.setenv("BITBUCKET_TOKEN", "")
-    monkeypatch.setenv("BITBUCKET_EMAIL", "")
-
-
 def _entradas(raiz, **kwargs) -> str:
     return montar_deps(NOME_REPO, None, **kwargs).identidade_das_entradas()  # type: ignore[arg-type]
 
 
-def test_identidade_muda_com_a_fonte(repo_montavel, sem_bitbucket_no_ambiente):
+def test_identidade_muda_com_a_fonte(repo_montavel):
     _fonte_central(repo_montavel, FONTE_FIXA)
     antes = _entradas(repo_montavel)
     _fonte_central(repo_montavel, "tests.fontes_falsas:FonteComCredencial")
@@ -350,15 +396,13 @@ def test_identidade_muda_com_a_fonte(repo_montavel, sem_bitbucket_no_ambiente):
     assert _entradas(repo_montavel) != antes
 
 
-def test_entradas_mudam_com_a_fonte_de_tasks(repo_montavel, sem_bitbucket_no_ambiente):
+def test_entradas_mudam_com_a_fonte_de_tasks(repo_montavel):
     assert _entradas(repo_montavel) != _entradas(
         repo_montavel, tasks=_lista(repo_montavel)
     )
 
 
-def test_entradas_mudam_com_o_conteudo_da_lista(
-    repo_montavel, sem_bitbucket_no_ambiente
-):
+def test_entradas_mudam_com_o_conteudo_da_lista(repo_montavel):
     fonte = _lista(repo_montavel)
     antes = _entradas(repo_montavel, tasks=fonte)
     with open(fonte.lista_manual, "a", encoding="utf-8") as f:
@@ -367,25 +411,48 @@ def test_entradas_mudam_com_o_conteudo_da_lista(
     assert _entradas(repo_montavel, tasks=fonte) != antes
 
 
-def test_entradas_mudam_com_a_fonte_de_commits(
-    repo_montavel, sem_bitbucket_no_ambiente
-):
-    com_pr = CredenciaisBitbucket(token="t", email="e")
-    assert _entradas(repo_montavel) != _entradas(repo_montavel, bitbucket=com_pr)
+def test_trocar_fonte_de_pr_invalida_o_carimbo(repo_montavel):
+    antes = _entradas(repo_montavel)
+    _escrever_central(repo_montavel, topo=f'[prs]\nfonte = "{HOST_FALSO}"\n')
+    com_pr = _entradas(repo_montavel)
+    _escrever_central(repo_montavel, topo=f'[prs]\nfonte = "{HOST_SEM_VERIFICACAO}"\n')
+
+    assert len({antes, com_pr, _entradas(repo_montavel)}) == 3
 
 
-def test_entradas_mudam_com_a_config_de_referencia_e_piso(
-    repo_montavel, sem_bitbucket_no_ambiente
-):
+def test_entradas_mudam_com_o_resto_de_prs(repo_montavel):
+    _escrever_central(repo_montavel, topo=f'[prs]\nfonte = "{HOST_FALSO}"\nx = 1\n')
+    antes = _entradas(repo_montavel)
+    _escrever_central(repo_montavel, topo=f'[prs]\nfonte = "{HOST_FALSO}"\nx = 2\n')
+
+    assert _entradas(repo_montavel) != antes
+
+
+def test_fonte_definida_sem_credencial_so_falha_na_busca(repo_montavel, monkeypatch):
+    """Montar nao e usar: `atualizar --abort` e `reconstruir-estado` montam o
+    Deps com `[prs] fonte` definida e nunca buscam commit."""
+    monkeypatch.delenv("BITBUCKET_TOKEN", raising=False)
+    monkeypatch.delenv("BITBUCKET_EMAIL", raising=False)
+    _escrever_central(
+        repo_montavel,
+        topo=f'[tarefas]\nfonte = "{FONTE_FIXA}"\n[prs]\nfonte = "bitbucket"\n',
+    )
+
+    deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
+
+    assert deps.commit_source is not None
+    with pytest.raises(ErroDeEntrada, match="sem BITBUCKET_"):
+        deps.commit_source.resolve(["123456"])
+
+
+def test_entradas_mudam_com_a_config_de_referencia_e_piso(repo_montavel):
     antes = _entradas(repo_montavel)
     _escrever_central(repo_montavel, do_repo='[referencia]\npadrao = "ch{id}"\n')
 
     assert _entradas(repo_montavel) != antes
 
 
-def test_entradas_mudam_com_o_sistema_de_tarefas(
-    repo_montavel, sem_bitbucket_no_ambiente
-):
+def test_entradas_mudam_com_o_sistema_de_tarefas(repo_montavel):
     _escrever_central(repo_montavel, do_repo="[tarefas]\nsistema = 7\n")
     antes = _entradas(repo_montavel)
     _escrever_central(repo_montavel, do_repo="[tarefas]\nsistema = 8\n")
@@ -393,9 +460,7 @@ def test_entradas_mudam_com_o_sistema_de_tarefas(
     assert _entradas(repo_montavel) != antes
 
 
-def test_entradas_iguais_para_a_mesma_invocacao(
-    repo_montavel, sem_bitbucket_no_ambiente
-):
+def test_entradas_iguais_para_a_mesma_invocacao(repo_montavel):
     assert _entradas(repo_montavel) == _entradas(repo_montavel)
 
 

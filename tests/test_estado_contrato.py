@@ -129,9 +129,9 @@ def test_listar_repos_devolve_em_ordem(estado):
         ),
         pytest.param(lambda e: e.commits_de_pr("outro", [7]), id="commits_de_pr"),
         pytest.param(lambda e: e.prs_indexadas("outro"), id="prs_indexadas"),
-        pytest.param(lambda e: e.marca_varredura("outro"), id="marca_varredura"),
+        pytest.param(lambda e: e.marca_varredura("outro", HOST), id="marca_varredura"),
         pytest.param(
-            lambda e: e.gravar_varredura("outro", [], QUANDO),
+            lambda e: e.gravar_varredura("outro", HOST, [], QUANDO),
             id="gravar_varredura",
         ),
         pytest.param(
@@ -385,6 +385,8 @@ def test_nenhuma_assercao_casa_substring_de_mensagem():
 
 # -- indice de PRs e marca da varredura ----------------------------------------
 
+HOST = "a"
+
 
 def _pr(
     pr_id: int, titulo: str = "ch1 fix", branch: str = "b", dia: int = 1
@@ -400,48 +402,77 @@ def _pr(
 def test_marca_varredura_de_repo_nunca_varrido_e_none(estado):
     # None e o sinal de "nunca varri": e ele que dispara o backfill completo.
     # Uma data-zero no lugar faria o backfill ser pulado e o indice nascer furado.
-    assert estado.marca_varredura(REPO) is None
+    assert estado.marca_varredura(REPO, HOST) is None
 
 
 def test_gravar_varredura_grava_indice_e_marca(estado):
-    estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
+    estado.gravar_varredura(REPO, HOST, [_pr(7)], QUANDO)
     assert estado.prs_indexadas(REPO) == [_pr(7)]
-    assert estado.marca_varredura(REPO) == QUANDO
+    assert estado.marca_varredura(REPO, HOST) == QUANDO
 
 
 def test_prs_indexadas_vem_ordenadas_por_pr_id(estado):
-    estado.gravar_varredura(REPO, [_pr(9), _pr(7)], QUANDO)
+    estado.gravar_varredura(REPO, HOST, [_pr(9), _pr(7)], QUANDO)
     assert [p.pr_id for p in estado.prs_indexadas(REPO)] == [7, 9]
 
 
 def test_gravar_varredura_faz_upsert_da_pr(estado):
     # PR mergeada nao muda de commits, mas o titulo e editavel e a varredura
     # incremental reentrega quem foi atualizado. Somar linha duplicaria a PR.
-    estado.gravar_varredura(REPO, [_pr(7, titulo="ch1 fix")], QUANDO)
-    estado.gravar_varredura(REPO, [_pr(7, titulo="ch2 outro")], DEPOIS)
+    estado.gravar_varredura(REPO, HOST, [_pr(7, titulo="ch1 fix")], QUANDO)
+    estado.gravar_varredura(REPO, HOST, [_pr(7, titulo="ch2 outro")], DEPOIS)
     assert [(p.pr_id, p.titulo) for p in estado.prs_indexadas(REPO)] == [
         (7, "ch2 outro")
     ]
 
 
 def test_gravar_varredura_avanca_a_marca(estado):
-    estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
-    estado.gravar_varredura(REPO, [], DEPOIS)
-    assert estado.marca_varredura(REPO) == DEPOIS
+    estado.gravar_varredura(REPO, HOST, [_pr(7)], QUANDO)
+    estado.gravar_varredura(REPO, HOST, [], DEPOIS)
+    assert estado.marca_varredura(REPO, HOST) == DEPOIS
 
 
 def test_gravar_varredura_sem_pr_nenhuma_ainda_avanca_a_marca(estado):
     # varredura que nao achou nada e varredura bem-sucedida: nao avancar a marca
     # faria a proxima refazer a mesma janela para sempre.
-    estado.gravar_varredura(REPO, [], QUANDO)
-    assert estado.marca_varredura(REPO) == QUANDO
+    estado.gravar_varredura(REPO, HOST, [], QUANDO)
+    assert estado.marca_varredura(REPO, HOST) == QUANDO
 
 
 def test_indice_de_pr_e_por_repo(estado):
     estado.garantir_repo("outro")
-    estado.gravar_varredura(REPO, [_pr(7)], QUANDO)
+    estado.gravar_varredura(REPO, HOST, [_pr(7)], QUANDO)
     assert estado.prs_indexadas("outro") == []
-    assert estado.marca_varredura("outro") is None
+    assert estado.marca_varredura("outro", HOST) is None
+
+
+def test_marca_de_outro_host_e_none(estado):
+    # A marca do host antigo faria o novo pedir so o que mudou desde ela e
+    # pular o historico inteiro.
+    estado.gravar_varredura(REPO, "a", [], QUANDO)
+    assert estado.marca_varredura(REPO, "b") is None
+    assert estado.marca_varredura(REPO, "a") == QUANDO
+
+
+def test_trocar_de_host_zera_indice_e_cache(estado):
+    # `pr_id` igual em outro host e outra PR: o cache do antigo daria os
+    # commits errados ao chamado.
+    commit = _cr("h7")
+    estado.gravar_varredura(REPO, "a", [_pr(7)], QUANDO)
+    estado.gravar_commits_de_pr(REPO, {7: [commit]})
+    estado.gravar_varredura(REPO, "b", [_pr(8)], DEPOIS)
+    assert estado.prs_indexadas(REPO) == [_pr(8)]
+    assert estado.commits_de_pr(REPO, [7]) == {}
+    assert estado.marca_varredura(REPO, "b") == DEPOIS
+
+
+def test_mesmo_host_nao_zera(estado):
+    commit = _cr("h7")
+    estado.gravar_varredura(REPO, "a", [_pr(7)], QUANDO)
+    estado.gravar_commits_de_pr(REPO, {7: [commit]})
+    estado.gravar_varredura(REPO, "a", [_pr(8)], DEPOIS)
+    assert [p.pr_id for p in estado.prs_indexadas(REPO)] == [7, 8]
+    assert estado.commits_de_pr(REPO, [7]) == {7: [commit]}
 
 
 # -- carimbo da verificacao ---------------------------------------------------

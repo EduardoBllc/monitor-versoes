@@ -201,8 +201,7 @@ def _deps_do_repo(
 ) -> Deps:
     if repo.caminho is None:
         raise NaoEncontrado("checkout local não encontrado")
-    # Sem flags: token e email do Bitbucket saem do ambiente dentro do
-    # montar_deps, e a fonte de tasks e sempre a da config.
+    # Sem flags: a fonte de PR e a de tasks sao sempre as da config.
     return montar_deps(repo.nome, sessao, progresso=progresso)
 
 

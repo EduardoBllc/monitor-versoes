@@ -102,21 +102,6 @@ def test_xdg_do_env_nao_muda_o_central_lido(tmp_path, monkeypatch, cwd):
     assert os.environ["XDG_CONFIG_HOME"] == str(herdado)
 
 
-@pytest.mark.parametrize(
-    ("flag", "esperado"), [([], "do-central"), (["--bitbucket-token", "flag"], "flag")]
-)
-def test_bitbucket_token_do_central_e_default_da_flag(
-    tmp_path, monkeypatch, cwd, flag, esperado
-):
-    monkeypatch.setenv("BITBUCKET_TOKEN", "")
-    _central(tmp_path, monkeypatch, '[ambiente]\nBITBUCKET_TOKEN = "do-central"\n')
-
-    cli._carregar_ambiente([])
-    args = cli._build_parser().parse_args(["verificar", "1.0.0", "--repo", "r", *flag])
-
-    assert args.bitbucket_token == esperado
-
-
 def test_inscricao_executar_ignora_o_env_do_diretorio(tmp_path, monkeypatch, cwd):
     _limpar_no_fim(monkeypatch, CHAVE)
     monkeypatch.setenv("WORKTREES_MANTIDAS", "")

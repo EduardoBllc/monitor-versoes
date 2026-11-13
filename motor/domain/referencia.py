@@ -82,7 +82,7 @@ def _conjunto(ref: Referencia, so_alfabeto: bool) -> str:
     """O conjunto *S* da fronteira (006), como classe de regex.
 
     No domínio, caracteres de palavra mais o alfabeto: com `ch{id}`, é o `\\b`
-    de sempre. No Bitbucket, só o alfabeto: `ch` colado a uma letra no começo
+    de sempre. No título e na branch da PR, só o alfabeto: `ch` colado a uma letra no começo
     da branch casa, como sempre casou.
     """
     return f"[{ref.alfabeto}]" if so_alfabeto else f"[\\w{ref.alfabeto}]"

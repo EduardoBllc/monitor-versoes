@@ -21,7 +21,6 @@ from motor.operacoes import (
 from motor.ports import GitRepo
 from motor.progresso import Progresso, SlotProgresso
 from motor.services.versionamento import versionamento_padrao
-from motor.tui import renderizar_status
 from tests.config_repos import secao_repo
 from tests.fontes_falsas import FonteFixa
 
@@ -170,21 +169,14 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
     monkeypatch.setattr(FonteFixa, "recebidos", [])
 
     def verificar_spy(deps, versao, auditar=False):
-        # a TUI nao tem flag de credencial: token e email chegam do ambiente,
-        # dentro da fonte de PR que o montar_commit_source encadeia.
-        pr = deps.commit_source.sources[0]
         capturado.update(
             repo=deps.repo,
             versao=versao,
             auditar=auditar,
             sistema=_sistema_recebido(deps),
-            bitbucket_token=pr.token,
-            bitbucket_email=pr.email,
         )
         return VersionStatus(verde=True, estado_integro=True)
 
-    monkeypatch.setenv("BITBUCKET_TOKEN", "tok-secreto")
-    monkeypatch.setenv("BITBUCKET_EMAIL", "dev@example.com")
     monkeypatch.setattr(operacoes, "abrir_sessao", lambda: contextlib.nullcontext(None))
     monkeypatch.setattr(montagem, "Estado", lambda sessao: estado)
     monkeypatch.setattr(montagem, "new_git_subprocess", lambda caminho, **_: object())
@@ -199,12 +191,8 @@ def test_verificar_repo_monta_deps_canonica_e_propaga_auditoria(
         "versao": "14.0.0",
         "auditar": True,
         "sistema": 7,
-        "bitbucket_token": "tok-secreto",
-        "bitbucket_email": "dev@example.com",
     }
-    texto = _texto(renderizar_status(status))
-    assert "tok-secreto" not in texto
-    assert "dev@example.com" not in texto
+    assert status.verde
 
 
 def test_atualizar_repo_reutiliza_as_bordas_do_repo(tmp_path, monkeypatch, xdg_isolado):

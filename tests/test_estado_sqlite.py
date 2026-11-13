@@ -4,10 +4,10 @@ import datetime
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DatabaseError
+from sqlalchemy.exc import DatabaseError, OperationalError
 
 from motor.adapters.estado.sqlite import Estado
-from motor.domain.types import Atribuicao, Exclusion, VersaoInfo
+from motor.domain.types import Atribuicao, CommitRef, Exclusion, PrIndex, VersaoInfo
 from motor.errors import MotorError
 
 
@@ -267,7 +267,8 @@ def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_sqlite):
     )
     sessao_sqlite.execute(
         text(
-            "insert into varredura_pr (repo_id, ate) select id, CURRENT_TIMESTAMP from repo"
+            "insert into varredura_pr (repo_id, host, ate) "
+            "select id, 'bitbucket', CURRENT_TIMESTAMP from repo"
         )
     )
     sessao_sqlite.commit()
@@ -291,3 +292,29 @@ def test_migracao_de_nomes_neutros_preserva_as_linhas(sessao_sqlite):
         for t in ("pr_mergeada", "varredura_pr")
     ]
     assert novos == [1, 1]
+
+
+def test_troca_de_host_que_falha_no_commit_nao_zera_nada(sessao_sqlite, monkeypatch):
+    """O reset da troca de host e a gravacao do indice novo saem juntos: se o
+    commit falha, o indice, o cache e a marca do host antigo continuam la.
+    Apagar sem gravar a marca nova deixaria o host antigo com indice vazio e
+    marca avancada, e as PRs dele sumiriam de toda janela futura."""
+    _semear_repo(sessao_sqlite)
+    estado = Estado(sessao=sessao_sqlite)
+    quando = datetime.datetime(2026, 4, 1, tzinfo=datetime.UTC)
+    pr = PrIndex(pr_id=7, titulo="ch1", branch="b", updated_on=quando)
+    commit = CommitRef(hash_origem="h7", parent="p", commit_date=quando, msg="m")
+    estado.gravar_varredura("webapp", "a", [pr], quando)
+    estado.gravar_commits_de_pr("webapp", {7: [commit]})
+
+    def commit_que_falha() -> None:
+        raise OperationalError("commit", None, Exception("disco cheio"))
+
+    monkeypatch.setattr(sessao_sqlite, "commit", commit_que_falha)
+    with pytest.raises(MotorError):
+        estado.gravar_varredura("webapp", "b", [], quando)
+    monkeypatch.undo()
+
+    assert estado.prs_indexadas("webapp") == [pr]
+    assert estado.commits_de_pr("webapp", [7]) == {7: [commit]}
+    assert estado.marca_varredura("webapp", "a") == quando

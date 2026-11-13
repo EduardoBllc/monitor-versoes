@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Input, Label, OptionList, Select, TabbedContent
 
+from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
@@ -37,7 +38,7 @@ from motor.tui_config import (
 )
 
 SEGREDO = "s3nha"
-SENHA = VarAmbiente.BITBUCKET_TOKEN
+SENHA = VarBitbucket.TOKEN
 CHAVE_PRINCIPAL = (None, Tabela.BRANCHES, Chave.PRINCIPAL)
 CHAVE_SENHA = (None, TABELA_AMBIENTE, SENHA)
 CHAVE_LIVRE = (None, Tabela.TAREFAS, "lista")

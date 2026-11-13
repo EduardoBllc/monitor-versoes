@@ -355,16 +355,16 @@ class Estado:
             )
         ]
 
-    def marca_varredura(self, repo: str, /) -> datetime.datetime | None:
+    def marca_varredura(self, repo: str, host: str, /) -> datetime.datetime | None:
         linha = self._scalar(
             select(models.VarreduraPr).where(
                 models.VarreduraPr.repo_id == self._repo_id(repo)
             )
         )
-        return None if linha is None else linha.ate
+        return None if linha is None or linha.host != host else linha.ate
 
     def gravar_varredura(
-        self, repo: str, prs: list[PrIndex], ate: datetime.datetime, /
+        self, repo: str, host: str, prs: list[PrIndex], ate: datetime.datetime, /
     ) -> None:
         """Indice e marca na MESMA transacao.
 
@@ -372,6 +372,27 @@ class Estado:
         PRs que faltaram ficariam fora da proxima janela e sumiriam para sempre.
         """
         repo_id = self._repo_id(repo)
+        gravada = self._scalar(
+            select(models.VarreduraPr).where(models.VarreduraPr.repo_id == repo_id)
+        )
+        if gravada is not None and gravada.host != host:
+            # Sem commit intermediario: o apagar e o gravar saem no mesmo
+            # `_commit`, e uma falha no meio nao deixa indice zerado com a
+            # marca antiga. Os deletes vao na hora, entao o erro deles tambem
+            # precisa da traducao.
+            try:
+                self.sessao.execute(
+                    delete(models.PrMergeada).where(
+                        models.PrMergeada.repo_id == repo_id
+                    )
+                )
+                self.sessao.execute(
+                    delete(models.PrCommitCache).where(
+                        models.PrCommitCache.repo_id == repo_id
+                    )
+                )
+            except DBAPIError as e:
+                self._traduzir_erro(e)
         for pr in prs:
             # merge: a varredura incremental reentrega PR que so mudou de
             # titulo, e um add duplicaria a chave.
@@ -384,7 +405,7 @@ class Estado:
                     updated_on=pr.updated_on,
                 )
             )
-        self.sessao.merge(models.VarreduraPr(repo_id=repo_id, ate=ate))
+        self.sessao.merge(models.VarreduraPr(repo_id=repo_id, host=host, ate=ate))
         self._commit()
 
     def gravar_verificacao(self, repo: str, versao: str, v: Verificacao, /) -> None:

@@ -1,14 +1,11 @@
-"""BitbucketPRCommitSource: descobre commits de uma tarefa via PRs do Bitbucket Cloud.
+"""BitbucketPrs: plugin `HostPr` do Bitbucket Cloud (`[prs] fonte = "bitbucket"`).
 
-Mais robusto que o grep de mensagem: associa commit->chamado pela PR (título
-que começa com a referência da tarefa, ou nome da branch de origem que a
-contém — caixa ignorada nos dois), não pela formatação do trailer que o dev
-pode errar.
-Considera só PRs MERGED e só commits que já estão em `origin/<principal>`
-(is_ancestor) — commit fora dela não entra.
+Só fala com a API: varredura, índice, casamento com a referência, cache e
+filtro pela principal são do núcleo (`PrCommitSource`,
+docs/decisoes/036-fonte-de-pr-plugavel.md).
 
-O `workspace/repo` sai da URL do remote `origin` na primeira busca — construir
-esta fonte nao toca o git.
+Montar não é usar: o construtor não lê credencial nem toca o git. Token,
+e-mail e o `workspace/repo` (da URL do `origin`) saem na primeira chamada.
 
 API Bitbucket Cloud 2.0:
   GET /2.0/repositories/{ws}/{repo}/pullrequests?q=...&state=MERGED&pagelen=50
@@ -21,21 +18,21 @@ from __future__ import annotations
 import base64
 import contextlib
 import datetime
+import os
 import re
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field, replace
+from collections.abc import Callable, Iterator, Mapping
+from enum import StrEnum
 from typing import Any
 
 import httpx
 
-from motor.domain.referencia import FonteReferencia, Referencia, regex_do_chamado
+from motor.config import TABELA_AMBIENTE
+from motor.config_edicao import Campo, Escopo, TipoCampo
 from motor.domain.types import SEM_DATA, CommitRef, PrIndex
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
-from motor.ports import EstadoRepo, GitRepo
-from motor.progresso import Progresso, RelatorProgresso, silencioso
 
-# Corpo de JSON da API: dict de chaves str para qualquer coisa. Nao e um dict
-# tipado — a issue #42 registra que o contrato ainda nao foi observado.
+# Corpo de JSON da API: dict de chaves str para qualquer coisa. Não é um dict
+# tipado — a issue #42 registra que o contrato ainda não foi observado.
 JSON = dict[str, Any]
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
@@ -44,27 +41,11 @@ _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 _PADRAO_REMOTE = re.compile(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$")
 
 
-def _padrao_do_chamado(ref: Referencia, chamado: str) -> re.Pattern[str]:
-    """A referencia do chamado com fronteira so pelo alfabeto, sem olhar caixa.
+class Var(StrEnum):
+    """Variáveis do `[ambiente]` que este plugin lê."""
 
-    A fronteira e o conserto de um bug antigo: com `startswith`/`in` crus, o
-    chamado 255514 casava com a PR de 2555145 — nada via onde o ID terminava,
-    e o chamado curto roubava a entrega do longo. So pelo alfabeto (e nao pelo
-    `\\w` do dominio) porque branch cola a referencia em letra: com `ch{id}`, a
-    ponta `c` de `ch` fica livre e a direita vira o `(?!\\d)` de sempre.
-
-    `IGNORECASE` e o conserto do segundo: a PR "CH254473 - ..." nao casava, e
-    como a PR anterior do mesmo chamado casava, a cadeia (§ChainCommitSource)
-    dava o chamado por resolvido e nem o grep via a segunda entrega. A
-    referencia e digitada a mao; a caixa dela nao e dado.
-    """
-    return regex_do_chamado(ref, chamado, so_alfabeto=True)
-
-
-def _casa(pr: PrIndex, padrao: re.Pattern[str]) -> bool:
-    # match no titulo (ancorado, como o startswith de antes) e search na branch,
-    # onde o termo pode estar em qualquer posicao.
-    return padrao.match(pr.titulo) is not None or padrao.search(pr.branch) is not None
+    TOKEN = "BITBUCKET_TOKEN"
+    EMAIL = "BITBUCKET_EMAIL"
 
 
 def _cabecalho_basic(email: str, token: str) -> str:
@@ -72,30 +53,103 @@ def _cabecalho_basic(email: str, token: str) -> str:
     return f"Basic {credenciais}"
 
 
-def verificar_credenciais(
-    token: str,
-    email: str,
-    *,
-    base_url: str = "",
-    client: httpx.Client | None = None,
-) -> None:
-    """Chamada autenticada de leitura (`GET /user`), independente de repositório.
+def parse_workspace_repo(url: str) -> tuple[str, str]:
+    """Extrai (workspace, repo) da URL do remote origin."""
+    # pega os dois últimos segmentos de path (ws/repo), com ou sem host embutido.
+    m = _PADRAO_REMOTE.search(url.strip())
+    if m is None:
+        raise RespostaInvalida(f"nao consegui extrair workspace/repo de {url!r}")
+    return m.group(1), m.group(2)
 
-    O endpoint exige escopo de leitura de conta no token. Usado pelo
-    `monitor-versoes diagnostico`.
-    """
-    if not email:
-        raise ErroDeEntrada("BITBUCKET_TOKEN configurado sem BITBUCKET_EMAIL")
-    url = f"{base_url or _BASE_URL_PADRAO}/user"
-    with contextlib.ExitStack() as pilha:
-        if client is None:
-            client = pilha.enter_context(httpx.Client())
-        try:
-            resp = client.get(
-                url, headers={"Authorization": _cabecalho_basic(email, token)}
+
+class BitbucketPrs:
+    """`HostPr` do Bitbucket Cloud."""
+
+    campos_config = (
+        Campo(
+            Escopo.AMBIENTE,
+            TABELA_AMBIENTE,
+            Var.EMAIL,
+            TipoCampo.TEXTO,
+            "E-mail do Bitbucket",
+            descricao="E-mail da conta do Bitbucket",
+            exemplo="voce@empresa.com",
+        ),
+        Campo(
+            Escopo.AMBIENTE,
+            TABELA_AMBIENTE,
+            Var.TOKEN,
+            TipoCampo.TEXTO,
+            "Token do Bitbucket",
+            segredo=True,
+            descricao="API token da conta do Bitbucket",
+        ),
+    )
+
+    def __init__(
+        self,
+        *,
+        prs: Mapping[str, object],
+        arquivos: tuple[str, ...],
+        remote_url: Callable[[], str],
+        client: httpx.Client | None = None,
+        base_url: str = "",
+    ) -> None:
+        self._prs = prs
+        self._arquivos = arquivos
+        self._remote_url = remote_url
+        # Cliente injetado pertence a quem injetou; sem ele, um por requisição.
+        self._client = client
+        self._base_url = base_url or _BASE_URL_PADRAO
+        self._workspace_repo: tuple[str, str] | None = None
+
+    def __repr__(self) -> str:
+        # Sem credencial: o repr aparece com --debug e em exceção.
+        return f"BitbucketPrs(base_url={self._base_url!r})"
+
+    def _credencial(self, var: Var) -> str:
+        valor = os.environ.get(var, "").strip()
+        if not valor:
+            lida = " e ".join(self._arquivos) or "nenhuma"
+            raise ErroDeEntrada(
+                f'[prs] fonte = "bitbucket" sem {var}: defina-a no [ambiente] do '
+                f"config.toml central ou no shell (config lida: {lida})"
             )
-        except httpx.HTTPError as e:
-            raise BackendIndisponivel(f"consultando o Bitbucket: {e}") from e
+        return valor
+
+    def _auth_header(self) -> str:
+        return _cabecalho_basic(
+            self._credencial(Var.EMAIL), self._credencial(Var.TOKEN)
+        )
+
+    def _prs_url(self) -> str:
+        if self._workspace_repo is None:
+            self._workspace_repo = parse_workspace_repo(self._remote_url())
+        workspace, repo = self._workspace_repo
+        return f"{self._base_url}/repositories/{workspace}/{repo}/pullrequests"
+
+    @contextlib.contextmanager
+    def _cliente(self) -> Iterator[httpx.Client]:
+        if self._client is not None:
+            yield self._client
+            return
+        with httpx.Client() as client:
+            yield client
+
+    def verificar_credenciais(self) -> None:
+        """Chamada autenticada de leitura (`GET /user`), independente de repo.
+
+        O endpoint exige escopo de leitura de conta no token. Usado pelo
+        `monitor-versoes diagnostico`.
+        """
+        auth = self._auth_header()
+        with self._cliente() as client:
+            try:
+                resp = client.get(
+                    f"{self._base_url}/user", headers={"Authorization": auth}
+                )
+            except httpx.HTTPError as e:
+                raise BackendIndisponivel(f"consultando o Bitbucket: {e}") from e
         if resp.status_code != httpx.codes.OK:
             raise BackendIndisponivel(
                 f"Bitbucket respondeu {resp.status_code} ao validar a credencial"
@@ -105,193 +159,40 @@ def verificar_credenciais(
         except ValueError as e:
             raise RespostaInvalida(f"decodificando resposta do Bitbucket: {e}") from e
 
-
-def parse_workspace_repo(url: str) -> tuple[str, str]:
-    """Extrai (workspace, repo) da URL do remote origin."""
-    # remove o penúltimo segmento so quando ha host embutido: pega os dois
-    # ultimos segmentos de path (ws/repo).
-    m = _PADRAO_REMOTE.search(url.strip())
-    if m is None:
-        raise RespostaInvalida(f"nao consegui extrair workspace/repo de {url!r}")
-    return m.group(1), m.group(2)
-
-
-@dataclass
-class BitbucketPRCommitSource:
-    # repr=False: token e email formam o Basic auth — um repr desta dataclass
-    # (com --debug, ou no repr de uma excecao) vazaria a credencial inteira.
-    token: str = field(repr=False)
-    email: str = field(repr=False)
-    git: GitRepo
-    # Vazios = derivados do remote na primeira busca, nao na construcao. Montar
-    # nao e usar: resolver aqui faria `atualizar --abort` e `reconstruir-estado`
-    # — que nunca chamam esta fonte — pagarem uma chamada de git, e quebrarem
-    # num clone sem `origin`.
-    workspace: str = ""
-    repo: str = ""
-    remote: str = "origin"
-    base_url: str = ""
-    client: httpx.Client | None = None
-    progresso: RelatorProgresso = silencioso
-    # Obrigatorios: o indice local de PRs vive no estado, e sem ele esta fonte
-    # nao tem o que ler. Quem nao tem banco monta so o grep (ver montagem.py).
-    # `repo_estado` e o nome canonico no banco, que nao e necessariamente o
-    # `repo` do Bitbucket.
-    estado: EstadoRepo = field(kw_only=True)
-    repo_estado: str = field(kw_only=True)
-    referencia: FonteReferencia = field(kw_only=True)
-    # `origin/<principal>`, nao o head local: `git fetch` avanca a ref de
-    # rastreamento e NUNCA o head local, entao filtrar pela principal local
-    # esconderia toda PR mergeada depois do ultimo checkout+pull da maquina
-    # (chamado 257270, PR 1174). E a mesma ref que o GrepCommitSource le.
-    # Fonte, nao valor: a principal sai do esquema, que so se resolve na
-    # primeira busca — montar nao e usar.
-    ref_principal: Callable[[], str] = field(kw_only=True)
-    _principal: str = field(default="", init=False, repr=False)
-
-    def _ref_principal(self) -> str:
-        """Avaliada uma vez por instancia, na primeira busca."""
-        if not self._principal:
-            self._principal = self.ref_principal()
-        return self._principal
-
-    def _workspace_repo(self) -> tuple[str, str]:
-        """Resolve (workspace, repo) do remote uma vez por instancia."""
-        if not self.workspace or not self.repo:
-            self.workspace, self.repo = parse_workspace_repo(
-                self.git.remote_url(self.remote)
-            )
-        return self.workspace, self.repo
-
-    def _auth_header(self) -> str:
-        return _cabecalho_basic(self.email, self.token)
-
-    def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
-        resultado: dict[str, list[CommitRef]] = {}
-        # Antes da varredura: a falta de padrao nao pode custar rede nem
-        # escrita no indice. Sem chamado a casar, nao ha o que exigir.
-        ref = self.referencia() if any(chamados) else None
-        # Fecha so o que criamos: cliente injetado pertence a quem injetou.
-        with contextlib.ExitStack() as pilha:
-            client = self.client
-            if client is None:
-                client = pilha.enter_context(httpx.Client())
-
-            self.progresso(Progresso("varrendo PRs do Bitbucket"))
-            self._varrer(client)
-            indice = self.estado.prs_indexadas(self.repo_estado)
-
-            for posicao, chamado in enumerate(chamados, start=1):
-                # Relata antes de filtrar: o total e o tamanho do lote pedido, e
-                # uma barra que pula numeros por causa de chamado vazio confunde
-                # mais do que informa.
-                self.progresso(
-                    Progresso(
-                        "commits dos chamados no Bitbucket", posicao, len(chamados)
-                    )
-                )
-                if not chamado:  # sem ID nao tem como casar PR
-                    continue
-                assert ref is not None  # algum chamado nao vazio existe
-                commits = self._commits_do_chamado(client, ref, chamado, indice)
-                if commits:
-                    resultado[chamado] = commits
-        return resultado
-
-    def _varrer(self, client: httpx.Client) -> None:
-        """Uma passada que descobre tudo que mergeou desde a ultima.
-
-        Substitui uma busca por chamado (27 requests numa versao real) por uma
-        pergunta so. O que responde "quais PRs casam com ch1234" passa a ser o
-        indice local, nao a API.
-        """
-        # Marca = inicio da varredura, nao o maior `updated_on` visto. PR
-        # mergeada DURANTE esta varredura pode nao aparecer nela; com o inicio
-        # como marca, o `updated_on` dela e maior e a proxima janela a pega.
-        inicio = datetime.datetime.now(datetime.UTC)
-        marca = self.estado.marca_varredura(self.repo_estado)
-
+    def prs_mergeadas(self, desde: datetime.datetime | None, /) -> list[PrIndex]:
         params: dict[str, object] = {
             "state": "MERGED",
             "sort": "updated_on",
             "pagelen": 50,
         }
-        if marca is not None:
-            # `>=` e nao `>`: reentregar PR ja conhecida e upsert, e a sobreposicao
-            # e o que cobre quem mergeou no meio da varredura anterior.
-            params["q"] = f'updated_on >= "{marca.isoformat()}"'
-        # Sem marca = nunca varrido: baixa o historico inteiro. Filtrar por data
-        # aqui deixaria de fora toda PR anterior, e o chamado com PR antiga
-        # apareceria como sem entrega.
+        if desde is not None:
+            params["q"] = f'updated_on >= "{desde.isoformat()}"'
+        # Lista, não gerador: a paginação inteira acontece aqui, dentro do
+        # cliente aberto. Extrai (e valida a forma) antes de filtrar: `.get` num
+        # item que não é dict estouraria AttributeError cru.
+        # Credencial antes do remote: a falta dela é o erro que o operador
+        # precisa ver primeiro.
+        auth = self._auth_header()
+        with self._cliente() as client:
+            indices = [
+                self._para_pr_index(pr)
+                for pr in self._paginar(client, auth, self._prs_url(), params)
+            ]
+        return [indice for indice in indices if indice.pr_id]
 
-        # Extrai (e valida a forma) antes de filtrar: `pr.get("id")` num item
-        # que nao e dict estouraria AttributeError cru, escapando do contrato.
-        indices = [
-            self._para_pr_index(pr)
-            for pr in self._paginar(client, self._prs_url(), params)
-        ]
-        prs = [indice for indice in indices if indice.pr_id]
-        # Indice e marca na mesma escrita: paginacao que levantou no meio nunca
-        # chega aqui, entao a marca nao avanca por cima de um indice furado.
-        self.estado.gravar_varredura(self.repo_estado, prs, inicio)
-
-    def _prs_url(self) -> str:
-        base = self.base_url or _BASE_URL_PADRAO
-        workspace, repo = self._workspace_repo()
-        return f"{base}/repositories/{workspace}/{repo}/pullrequests"
-
-    def _commits_do_chamado(
-        self,
-        client: httpx.Client,
-        ref: Referencia,
-        chamado: str,
-        indice: list[PrIndex],
-    ) -> list[CommitRef]:
-        padrao = _padrao_do_chamado(ref, chamado)
-        pr_ids = [pr.pr_id for pr in indice if _casa(pr, padrao)]
-
-        por_pr = self.estado.commits_de_pr(self.repo_estado, pr_ids)
-        # So as PRs que casam com um chamado pedido vao na API. O indice tem
-        # 1118 PRs num repo real; buscar os commits de todas encostaria no limite
-        # de taxa para responder pergunta que ninguem fez.
-        novas = {
-            pr_id: self._buscar_commits(client, pr_id)
-            for pr_id in pr_ids
-            if pr_id not in por_pr
-        }
-        # ponytail: PR cujos commits sao todos merge commit grava vazio e vira
-        # miss em todo run. Custa 1 request por run e nao tem PR assim na
-        # pratica; se aparecer, o conserto e uma linha-sentinela por PR.
-        if novas:
-            self.estado.gravar_commits_de_pr(self.repo_estado, novas)
-        por_pr |= novas
-
-        vistos: set[str] = set()
-        commits: list[CommitRef] = []
-        for pr_id in pr_ids:
-            for c in por_pr.get(pr_id, []):
-                if c.hash_origem in vistos:
-                    continue
-                # is_ancestor fica FORA do cache: e volatil. PR mergeada numa
-                # branch que ainda nao chegou na principal viraria commit escondido
-                # para sempre se o filtro fosse gravado junto.
-                if not self.git.is_ancestor(c.hash_origem, self._ref_principal()):
-                    continue
-                vistos.add(c.hash_origem)
-                # o chamado vem do casamento, nao da PR: duas tarefas podem
-                # apontar para a mesma PR, entao ele e carimbado aqui.
-                commits.append(replace(c, chamado=chamado))
-        return commits
-
-    def _buscar_commits(self, client: httpx.Client, pr_id: int) -> list[CommitRef]:
-        return [
-            self._para_commit_ref(c)
-            for c in self._paginar(client, f"{self._prs_url()}/{pr_id}/commits", None)
-            # merge commit: cherry-pick -x nao aceita sem -m, e o conteudo ja vem
-            # pelos pais individuais. Numero de pais e propriedade do commit,
-            # nunca muda — por isso filtra antes de cachear.
-            if c.get("hash") and len(c.get("parents") or []) <= 1
-        ]
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        auth = self._auth_header()
+        with self._cliente() as client:
+            return [
+                self._para_commit_ref(c)
+                for c in self._paginar(
+                    client, auth, f"{self._prs_url()}/{pr_id}/commits", None
+                )
+                # merge commit: cherry-pick -x não aceita sem -m, e o conteúdo
+                # já vem pelos pais individuais. O núcleo cacheia o que vier,
+                # então o filtro tem de ser aqui.
+                if c.get("hash") and len(c.get("parents") or []) <= 1
+            ]
 
     @staticmethod
     def _para_pr_index(pr: JSON) -> PrIndex:
@@ -315,7 +216,7 @@ class BitbucketPRCommitSource:
             quando = SEM_DATA
         return PrIndex(
             # get com default 0, nao pr["id"]: PR sem id e descartada pelo
-            # filtro de pr_id em `_varrer`, nao um erro de forma.
+            # filtro de pr_id em `prs_mergeadas`, nao um erro de forma.
             pr_id=pr.get("id") or 0,
             titulo=titulo,
             branch=((pr.get("source") or {}).get("branch") or {}).get("name") or "",
@@ -343,15 +244,14 @@ class BitbucketPRCommitSource:
             msg=c.get("message", ""),
         )
 
+    @staticmethod
     def _paginar(
-        self, client: httpx.Client, url: str, params: JSON | None
+        client: httpx.Client, auth: str, url: str, params: JSON | None
     ) -> Iterator[JSON]:
         """Itera os `values` de uma resposta paginada, seguindo `next`."""
         while url:
             try:
-                resp = client.get(
-                    url, params=params, headers={"Authorization": self._auth_header()}
-                )
+                resp = client.get(url, params=params, headers={"Authorization": auth})
             except httpx.InvalidURL as e:
                 raise ErroDeEntrada(f"URL do Bitbucket invalida: {url!r}: {e}") from e
             except httpx.HTTPError as e:

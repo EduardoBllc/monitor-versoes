@@ -12,9 +12,9 @@ import io
 from rich.console import Console
 
 from motor.__main__ import _escrever_progresso, _relator_do_cli
-from motor.adapters.commitsource.bitbucket import BitbucketPRCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource
 from motor.adapters.commitsource.grep import GrepCommitSource
+from motor.adapters.commitsource.pr import PrCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.tasksource.fake import FakeTaskSource
@@ -89,28 +89,20 @@ def test_grep_relata_a_varredura_sem_contagem():
     assert _fases(relatos) == [("commits dos chamados no histórico", 0, 0)]
 
 
-def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
+def test_fonte_de_pr_relata_a_varredura_e_depois_os_chamados():
     """A varredura e a unica espera de rede que sobrou — e ela nao tem total
     conhecido antes, entao vem como fase sem contagem. Os chamados continuam
     contados: e o que o operador usa para saber quanto falta.
     """
-    import httpx
-
+    from motor.adapters.commitsource.fake import FakeHostPr
     from motor.adapters.estado.fake import FakeEstado
     from motor.domain.types import RepoInfo
 
-    def sem_prs(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"values": [], "next": ""})
-
     relatos: list[Progresso] = []
-    fonte = BitbucketPRCommitSource(
-        base_url="http://testserver",
-        token="t",
-        email="e@x",
-        workspace="acme",
-        repo="monitor",
-        git=FakeGit(),
-        client=httpx.Client(transport=httpx.MockTransport(sem_prs)),
+    fonte = PrCommitSource(
+        FakeHostPr(prs=[], commits={}),
+        "fake",
+        FakeGit(),
         progresso=relatos.append,
         estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
         repo_estado="r",
@@ -121,10 +113,10 @@ def test_bitbucket_relata_a_varredura_e_depois_os_chamados():
     fonte.resolve(["1", "2", "3"])
 
     assert _fases(relatos) == [
-        ("varrendo PRs do Bitbucket", 0, 0),
-        ("commits dos chamados no Bitbucket", 1, 3),
-        ("commits dos chamados no Bitbucket", 2, 3),
-        ("commits dos chamados no Bitbucket", 3, 3),
+        ("varrendo PRs", 0, 0),
+        ("commits dos chamados nas PRs", 1, 3),
+        ("commits dos chamados nas PRs", 2, 3),
+        ("commits dos chamados nas PRs", 3, 3),
     ]
 
 

@@ -83,7 +83,6 @@ from motor.inscricoes import (
 )
 from motor.migracoes import head, migrar
 from motor.montagem import (
-    CredenciaisBitbucket,
     FonteTasks,
     abrir_sessao,
     montar_deps,
@@ -369,18 +368,6 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="sem_progresso",
         action="store_true",
         help="nao mostra a barra de progresso (ligada por default em terminal)",
-    )
-    comum.add_argument(
-        "--bitbucket-token",
-        dest="bitbucket_token",
-        default=os.environ.get("BITBUCKET_TOKEN", ""),
-        help="token Bitbucket Cloud (default: $BITBUCKET_TOKEN); ativa descoberta de commits por PR",
-    )
-    comum.add_argument(
-        "--bitbucket-email",
-        dest="bitbucket_email",
-        default=os.environ.get("BITBUCKET_EMAIL", ""),
-        help="email da conta dona do token Bitbucket (default: $BITBUCKET_EMAIL)",
     )
     # No parser pai, nao no 'criar': todos os comandos montam a fonte de tasks
     # (o Deps e um so), e uma flag exclusiva do 'criar' viraria AttributeError
@@ -699,7 +686,7 @@ def _escrever_progresso(progresso: Progresso, saida: TextIO) -> None:
     consulta | grep`) — barra no meio do pipe quebraria quem consome.
 
     O `\x1b[K` apaga o resto da linha: sem ele, uma fase curta depois de uma
-    longa ("gravando estado" depois de "commits dos chamados no Bitbucket
+    longa ("gravando estado" depois de "commits dos chamados nas PRs
     12/48") deixa o rabo da anterior na tela.
     """
     contagem = f" {progresso.feito}/{progresso.total}" if progresso.total else ""
@@ -856,10 +843,6 @@ def main(argv: list[str] | None = None) -> None:
                 args.repo,
                 sessao,
                 tasks=FonteTasks(args.fonte_flag, args.lista_manual),
-                bitbucket=CredenciaisBitbucket(
-                    getattr(args, "bitbucket_token", ""),
-                    getattr(args, "bitbucket_email", ""),
-                ),
                 progresso=relator,
             )
             try:

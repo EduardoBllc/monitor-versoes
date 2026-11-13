@@ -441,7 +441,7 @@ class GitSubprocess:
         # commit, e "quando essa versao saiu" e quando o commit entrou nesta
         # branch). Num cherry-pick a data do autor e a da escrita original, que
         # pode ser de meses antes. As varreduras seguem em %aI, a mesma data
-        # que o Bitbucket devolve.
+        # que o host de PR devolve.
         out = self._output(
             self.repo_path,
             "show",
@@ -565,7 +565,7 @@ class GitSubprocess:
     def use_worktree(self, branch: str, /) -> None:
         """Se a worktree ja existe em disco, so usa. Senao, tenta adotar uma
         branch ja existente (local ou remota) - caso de branch de versao
-        criada manualmente (ex: Bitbucket) sem passar por `criar`."""
+        criada manualmente (ex: pela interface do host) sem passar por `criar`."""
         dir_ = self._worktree_dir(branch)
         if not os.path.exists(dir_):
             try:

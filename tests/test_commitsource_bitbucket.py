@@ -1,9 +1,8 @@
-"""BitbucketPRCommitSource: acha commits do chamado via PR merged do Bitbucket Cloud.
+"""BitbucketPrs: o plugin `HostPr` do Bitbucket Cloud, só a parte de HTTP.
 
-Regra: PR MERGED cujo titulo COMECA com `ch<chamado>`, OU cuja
-source.branch.name CONTEM `ch<chamado>` — sem olhar caixa. So conta commit que esta na master
-(is_ancestor) — commit fora da master nao entra. httpx.MockTransport no
-lugar de servidor real.
+Casamento, cache, marca e filtro pela principal são do núcleo e são testados em
+`test_commitsource_pr.py`. Aqui: forma do JSON, URL, paginação, credencial e
+filtro de merge commit. httpx.MockTransport no lugar de servidor real.
 """
 
 from __future__ import annotations
@@ -14,27 +13,20 @@ from typing import Any
 import httpx
 import pytest
 
-from motor.adapters.commitsource.bitbucket import (
-    BitbucketPRCommitSource,
-    parse_workspace_repo,
-    verificar_credenciais,
-)
-from motor.adapters.estado.fake import FakeEstado
-from motor.adapters.git.fake import FakeGit
-from motor.domain.referencia import Referencia
-from motor.domain.types import RepoInfo
-from motor.errors import (
-    BackendIndisponivel,
-    ErroDeEntrada,
-    MotorError,
-    RespostaInvalida,
-)
-from tests.fontes_falsas import REFERENCIA_CH
+from motor.adapters.commitsource.bitbucket import BitbucketPrs, parse_workspace_repo
+from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
 
-REPO_ESTADO = "monitor"
+TOKEN, EMAIL = "tok123", "dev@x.com"
+REMOTE = "git@bitbucket.org:acme/monitor.git"
+
+
+@pytest.fixture(autouse=True)
+def credenciais(monkeypatch):
+    monkeypatch.setenv("BITBUCKET_TOKEN", TOKEN)
+    monkeypatch.setenv("BITBUCKET_EMAIL", EMAIL)
 
 
 @pytest.mark.parametrize(
@@ -49,765 +41,244 @@ def test_parse_workspace_repo(url, esperado):
     assert parse_workspace_repo(url) == esperado
 
 
-def _git_com_master(*hashes_na_master: str, classe: type[FakeGit] = FakeGit) -> FakeGit:
-    # encadeia os hashes numa branch master (o primeiro e a raiz). As duas refs
-    # no mesmo tip: e o que um clone recem-fetchado tem, e a fonte le a de
-    # rastreamento.
-    g = classe()
-    t0 = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
-    anterior = ""
-    for h in hashes_na_master:
-        g.add_commit(h, anterior, f"commit {h}", t0)
-        anterior = h
-    g.set_branch("origin/master", anterior)
-    g.set_branch("master", anterior)
-    return g
-
-
-def _fonte(
-    handler, git: FakeGit, estado=None, referencia=REFERENCIA_CH
-) -> BitbucketPRCommitSource:
-    estado = _estado_vazio() if estado is None else estado
-    client = httpx.Client(
-        transport=httpx.MockTransport(handler), base_url="http://testserver"
+def _host(handler, remote_url=lambda: REMOTE, base_url="http://testserver"):
+    return BitbucketPrs(
+        prs={"fonte": "bitbucket"},
+        arquivos=("/cfg/config.toml",),
+        remote_url=remote_url,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        base_url=base_url,
     )
-    return BitbucketPRCommitSource(
-        base_url="http://testserver",
-        token="tok123",
-        email="dev@x.com",
-        workspace="acme",
-        repo="monitor",
-        git=git,
-        client=client,
-        estado=estado,
-        repo_estado=REPO_ESTADO,
-        referencia=lambda: referencia,
-        ref_principal=lambda: "origin/master",
-    )
-
-
-def _estado_vazio() -> FakeEstado:
-    return FakeEstado(repos={REPO_ESTADO: RepoInfo(nome=REPO_ESTADO)})
 
 
 def _handler_pr(
     prs: list[JSON],
-    commits_por_pr: dict[int, list[JSON]],
-    pedidos: list[int] | None = None,
-    buscas: list[str] | None = None,
+    commits_por_pr: dict[int, list[JSON]] | None = None,
+    buscas: list[httpx.Request] | None = None,
 ):
-    """`pedidos` acumula o id de cada PR cujos commits foram pedidos — e assim
-    que os testes de cache veem a request que deveria ter sido evitada.
-    `buscas` acumula o `q` de cada varredura, que e como se ve o filtro por
-    marca d'agua."""
-
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Basic ZGV2QHguY29tOnRvazEyMw=="
+        if buscas is not None:
+            buscas.append(request)
         path = request.url.path
         if path.endswith("/pullrequests"):
-            if buscas is not None:
-                buscas.append(request.url.params.get("q", ""))
             return httpx.Response(200, json={"values": prs})
-        # .../pullrequests/{id}/commits
         pr_id = int(path.split("/pullrequests/")[1].split("/")[0])
-        if pedidos is not None:
-            pedidos.append(pr_id)
-        return httpx.Response(200, json={"values": commits_por_pr.get(pr_id, [])})
+        return httpx.Response(
+            200, json={"values": (commits_por_pr or {}).get(pr_id, [])}
+        )
 
     return handler
 
 
-def test_pr_titulo_prefixo_so_commits_na_master():
-    g = _git_com_master("c1")  # c1 na master, c2 nao
-    prs = [
-        {
-            "id": 1,
-            "title": "ch255514 corrige logs",
-            "source": {"branch": {"name": "feature/x"}},
-        }
-    ]
-    commits = {
-        1: [
-            {
-                "hash": "c1",
-                "date": "2024-01-02T10:00:00+00:00",
-                "message": "fix logs",
-                "parents": [{"hash": "p1"}],
-            },
-            {
-                "hash": "c2",
-                "date": "2024-01-03T10:00:00+00:00",
-                "message": "wip",
-                "parents": [{"hash": "c1"}],
-            },
-        ]
-    }
-    fonte = _fonte(_handler_pr(prs, commits), g)
-
-    resultado = fonte.resolve(["255514"])
-
-    commits_achados = resultado.get("255514")
-    assert commits_achados is not None, f"esperava o chamado: {resultado!r}"
-    hashes = [c.hash_origem for c in commits_achados]
-    assert hashes == ["c1"], f"so c1 esta na master, veio {hashes}"
-    assert commits_achados[0].chamado == "255514", "faltou carimbar"
-
-
-def test_pr_conta_commit_que_so_chegou_no_origin_master():
-    """Regressao (chamado 257270, PR 1174): `git fetch` avanca origin/master e
-    nunca o head local, entao filtrar por `master` escondia entrega mergeada
-    depois do ultimo checkout+pull da maquina. O chamado tinha uma entrega
-    antiga, essa sim no head local, e com ela a fonte de PR devolvia commits —
-    a cadeia (ChainCommitSource) dava o chamado por resolvido e nem o grep, que
-    le origin/master, via a segunda.
-    """
-    g = _git_com_master("c1")
-    g.add_commit(
-        "c2",
-        "c1",
-        "commit c2",
-        datetime.datetime(2024, 1, 2, tzinfo=datetime.UTC),
-    )
-    g.set_branch("origin/master", "c2")  # local `master` fica em c1
-    prs = [
-        {
-            "id": 1174,
-            "title": "ch257270 - ajusta",
-            "source": {"branch": {"name": "feature/x"}},
-        }
-    ]
-    commits = {
-        1174: [
-            {
-                "hash": "c2",
-                "date": "2024-01-02T10:00:00+00:00",
-                "message": "ajusta",
-                "parents": [{"hash": "c1"}],
-            },
-        ]
-    }
-    fonte = _fonte(_handler_pr(prs, commits), g)
-
-    resultado = fonte.resolve(["257270"])
-
-    assert [c.hash_origem for c in resultado.get("257270", [])] == ["c2"]
-
-
-def test_pr_casa_por_nome_da_branch():
-    g = _git_com_master("c1")
-    prs = [
-        {
-            "id": 7,
-            "title": "corrige logs",
-            "source": {"branch": {"name": "bugfix/ch255514-logs"}},
-        }
-    ]
-    commits = {
-        7: [
-            {
-                "hash": "c1",
-                "date": "2024-01-02T10:00:00+00:00",
-                "message": "fix",
-                "parents": [],
-            }
-        ]
-    }
-    fonte = _fonte(_handler_pr(prs, commits), g)
-
-    resultado = fonte.resolve(["255514"])
-
-    assert "255514" in resultado and resultado["255514"][0].hash_origem == "c1"
-
-
-def test_pr_titulo_que_nao_comeca_com_o_termo_e_ignorado():
-    # titulo CONTEM ch255514 mas nao COMECA com ele, e branch nao bate: ignora.
-    g = _git_com_master("c1")
-    prs = [
-        {
-            "id": 3,
-            "title": "fix relacionado a ch255514",
-            "source": {"branch": {"name": "feature/x"}},
-        }
-    ]
-    commits = {
-        3: [
-            {
-                "hash": "c1",
-                "date": "2024-01-02T10:00:00+00:00",
-                "message": "fix",
-                "parents": [],
-            }
-        ]
-    }
-    fonte = _fonte(_handler_pr(prs, commits), g)
-
-    resultado = fonte.resolve(["255514"])
-
-    assert resultado == {}, (
-        f"PR sem prefixo/branch batendo nao deveria contar: {resultado!r}"
-    )
-
-
-def test_pr_ignora_merge_commit():
-    # commit com 2 pais e merge: cherry-pick -x sem -m falha, entao nao entra na lista.
-    g = _git_com_master("c1")
-    prs = [
-        {
-            "id": 1,
-            "title": "ch255514 corrige logs",
-            "source": {"branch": {"name": "feature/x"}},
-        }
-    ]
-    commits = {
-        1: [
-            {
-                "hash": "merge1",
-                "date": "2024-01-02T10:00:00+00:00",
-                "message": "merge",
-                "parents": [{"hash": "a"}, {"hash": "b"}],
-            },
-            {
-                "hash": "c1",
-                "date": "2024-01-03T10:00:00+00:00",
-                "message": "fix",
-                "parents": [{"hash": "p1"}],
-            },
-        ]
-    }
-    fonte = _fonte(_handler_pr(prs, commits), g)
-
-    resultado = fonte.resolve(["255514"])
-
-    hashes = [c.hash_origem for c in resultado["255514"]]
-    assert hashes == ["c1"], f"merge commit nao deveria entrar: {hashes}"
-
-
-def test_chamado_sem_pr_correspondente_e_omitido():
-    fonte = _fonte(_handler_pr([], {}), _git_com_master("c1"))
-
-    resultado = fonte.resolve(["255514"])
-
-    assert resultado == {}, (
-        "chamado sem PR correspondente nao deveria aparecer no resultado"
-    )
-
-
-# -- JSON fora de forma nao pode escapar como AttributeError -----------------
-#
-# O contrato de motor/ports.py promete "MotorError ou subclasse, e nada mais".
-# Antes destes casos estourava AttributeError puro, que sobe como traceback
-# onde antes (com o `except Exception` largo dos services) havia degradacao
-# graciosa.
-
-
-def test_resposta_de_pullrequests_fora_de_forma_vira_respostainvalida():
-    def handler(request: httpx.Request) -> httpx.Response:
-        # servidor respondeu uma lista crua em vez do envelope {"values": [...]}
-        return httpx.Response(200, json=["nao", "e", "um", "objeto"])
-
-    fonte = _fonte(handler, _git_com_master("c1"))
-
-    with pytest.raises(RespostaInvalida):
-        fonte.resolve(["255514"])
-
-
-def test_pr_fora_de_forma_vira_respostainvalida():
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"values": ["nao-e-um-dict"]})
-
-    fonte = _fonte(handler, _git_com_master("c1"))
-
-    with pytest.raises(RespostaInvalida):
-        fonte.resolve(["255514"])
-
-
-def test_titulo_de_pr_fora_de_forma_vira_respostainvalida():
-    prs = [{"id": 1, "title": 12345, "source": {"branch": {"name": "feature/x"}}}]
-    fonte = _fonte(_handler_pr(prs, {}), _git_com_master("c1"))
-
-    with pytest.raises(RespostaInvalida):
-        fonte.resolve(["255514"])
-
-
-def test_parent_de_commit_fora_de_forma_vira_respostainvalida():
-    prs = [_pr(7)]
-    commits = {
-        7: [
-            {
-                "hash": "c1",
-                "date": "2024-01-02T10:00:00+00:00",
-                "message": "fix",
-                "parents": ["nao-e-um-dict"],
-            }
-        ]
-    }
-    fonte = _fonte(_handler_pr(prs, commits), _git_com_master("c1"))
-
-    with pytest.raises(RespostaInvalida):
-        fonte.resolve(["255514"])
-
-
-def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
-    """httpx.InvalidURL nao herda de httpx.HTTPError (verificado em 0.28.1) — sem
-    a captura extra isto escapava do `except httpx.HTTPError` como traceback.
-    """
-    fonte = BitbucketPRCommitSource(
-        token="tok",
-        email="dev@x.com",
-        git=_git_com_master("c1"),
-        workspace="acme",
-        repo="monitor",
-        base_url="http://h:porta",
-        estado=_estado_vazio(),
-        repo_estado=REPO_ESTADO,
-        referencia=lambda: REFERENCIA_CH,
-        ref_principal=lambda: "origin/master",
-    )
-
-    with pytest.raises(ErroDeEntrada):
-        fonte.resolve(["255514"])
-
-
-# -- workspace/repo derivados do remote ---------------------------------------
-
-
-def test_workspace_e_repo_saem_do_remote_na_primeira_busca():
-    """Construir nao resolve: quem monta a fonte (motor.montagem) nao tem de
-    pagar uma chamada de git, e `atualizar --abort` num clone sem `origin`
-    continua rodando.
-    """
-    urls_pedidas: list[str] = []
-
-    class GitQueContaOsRemotes(FakeGit):
-        def remote_url(self, remote: str) -> str:
-            urls_pedidas.append(remote)
-            return super().remote_url(remote)
-
-    git = _git_com_master("c1", classe=GitQueContaOsRemotes)
-    git.remote_urls["origin"] = "git@bitbucket.org:acme/monitor.git"
-    caminhos: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        caminhos.append(request.url.path)
-        return httpx.Response(200, json={"values": [], "next": ""})
-
-    fonte = BitbucketPRCommitSource(
-        base_url="http://testserver",
-        token="tok",
-        email="dev@x.com",
-        git=git,
-        client=httpx.Client(transport=httpx.MockTransport(handler)),
-        estado=_estado_vazio(),
-        repo_estado=REPO_ESTADO,
-        referencia=lambda: REFERENCIA_CH,
-        ref_principal=lambda: "origin/master",
-    )
-    assert urls_pedidas == [], "construir nao pode tocar o git"
-
-    fonte.resolve(["255514", "255515"])
-
-    assert urls_pedidas == ["origin"], "resolvido uma vez por instancia"
-    # UMA varredura atende os dois chamados. Antes era uma busca por chamado.
-    assert caminhos == ["/repositories/acme/monitor/pullrequests"]
-
-
-def test_workspace_explicito_ganha_do_remote():
-    # o teste (e um repo cujo remote nao e o Bitbucket) passa o par direto.
-    git = _git_com_master("c1")
-    git.remote_urls["origin"] = "git@bitbucket.org:outro/outro.git"
-    fonte = _fonte(_handler_pr([], {}), git)
-
-    assert fonte._workspace_repo() == ("acme", "monitor")
-
-
-def test_repr_nao_vaza_credencial():
-    """token e email formam o Basic auth: um repr desta dataclass (com --debug,
-    ou no repr de uma excecao) vazaria a credencial inteira."""
-    fonte = _fonte(_handler_pr([], {}), _git_com_master("c1"))
-
-    # os valores estao no objeto — sem isto o teste passaria por vazio
-    assert (fonte.token, fonte.email) == ("tok123", "dev@x.com")
-    assert "tok123" not in repr(fonte)
-    assert "dev@x.com" not in repr(fonte)
-
-
-# -- cache de commits por PR ---------------------------------------------------
-#
-# O cache guarda so `PR -> commits`, que e imutavel porque PR mergeada nao ganha
-# nem perde commit. A BUSCA das PRs do chamado continua batendo na API a cada
-# run: e ela que descobre PR de correcao aberta depois, e cachea-la esconderia
-# esse commit — falso-verde, o modo de falha que o motor existe para evitar.
-
-
-def _pr(
-    pr_id: int, chamado: str = "255514", branch: str = "feature/x", dia: int = 1
-) -> JSON:
+def _pr(pr_id: int) -> JSON:
     return {
         "id": pr_id,
-        "title": f"ch{chamado} corrige logs",
-        "source": {"branch": {"name": branch}},
-        # updated_on alimenta o indice e a marca d'agua da varredura.
-        "updated_on": f"2026-08-{dia:02d}T10:00:00+00:00",
+        "title": "ch255514 corrige logs",
+        "source": {"branch": {"name": "feature/x"}},
+        "updated_on": "2026-08-01T10:00:00+00:00",
     }
 
 
-def _commit_bruto(hash_: str, dia: int = 2, parents: list[str] | None = None) -> JSON:
+def _commit_bruto(hash_: str, parents: list[str] | None = None) -> JSON:
     return {
         "hash": hash_,
-        "date": f"2024-01-{dia:02d}T10:00:00+00:00",
+        "date": "2024-01-02T10:00:00+00:00",
         "message": f"fix {hash_}",
         "parents": [{"hash": p} for p in (parents or ["p1"])],
     }
 
 
-def test_pr_nova_e_gravada_no_cache():
-    estado = _estado_vazio()
-    fonte = _fonte(
-        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"), estado
-    )
+def test_prs_mergeadas_converte_o_json():
+    [pr] = _host(_handler_pr([_pr(7)])).prs_mergeadas(None)
 
-    fonte.resolve(["255514"])
-
-    guardados = estado.commits_de_pr(REPO_ESTADO, [7])
-    assert [c.hash_origem for c in guardados.get(7, [])] == ["c1"]
+    assert (pr.pr_id, pr.titulo, pr.branch) == (7, "ch255514 corrige logs", "feature/x")
+    assert pr.updated_on == datetime.datetime(2026, 8, 1, 10, tzinfo=datetime.UTC)
 
 
-def test_chamado_fica_fora_do_cache():
-    # o chamado vem da BUSCA, nao da PR: duas tarefas podem apontar para a mesma
-    # PR, e carimbar o chamado na linha faria a segunda ler o chamado da primeira.
-    estado = _estado_vazio()
-    fonte = _fonte(
-        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1"), estado
-    )
-
-    fonte.resolve(["255514"])
-
-    assert estado.commits_de_pr(REPO_ESTADO, [7])[7][0].chamado == ""
+def test_pr_sem_id_e_descartada():
+    sem_id = {**_pr(7), "id": None}
+    prs = _host(_handler_pr([sem_id, _pr(8)])).prs_mergeadas(None)
+    assert [p.pr_id for p in prs] == [8]
 
 
-def test_pr_em_cache_nao_pede_os_commits_de_novo():
-    estado = _estado_vazio()
-    g = _git_com_master("c1")
-    pedidos: list[int] = []
-    handler = _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}, pedidos)
+def test_desde_vira_filtro_updated_on():
+    buscas: list[httpx.Request] = []
+    host = _host(_handler_pr([], buscas=buscas))
+    desde = datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC)
 
-    _fonte(handler, g, estado).resolve(["255514"])
-    assert pedidos == [7], "primeira passada tem que ir na API"
+    host.prs_mergeadas(None)
+    host.prs_mergeadas(desde)
 
-    pedidos.clear()
-    resultado = _fonte(handler, g, estado).resolve(["255514"])
-
-    assert pedidos == [], "PR ja em cache nao deveria gerar request de commits"
-    assert [c.hash_origem for c in resultado["255514"]] == ["c1"]
-    assert resultado["255514"][0].chamado == "255514", "faltou carimbar na leitura"
+    # sem marca, o histórico inteiro: filtrar por data deixaria de fora toda PR
+    # anterior, e o chamado com PR antiga apareceria como sem entrega.
+    assert "q" not in buscas[0].url.params
+    assert buscas[1].url.params["q"] == f'updated_on >= "{desde.isoformat()}"'
+    assert buscas[1].url.params["state"] == "MERGED"
 
 
-def test_pr_nova_no_mesmo_chamado_ainda_e_buscada():
-    # o buraco que este desenho evita: cache por PR, nao por chamado.
-    estado = _estado_vazio()
-    g = _git_com_master("c1", "c2")
-    commits = {
-        7: [_commit_bruto("c1")],
-        9: [_commit_bruto("c2", dia=5, parents=["c1"])],
+def test_paginacao_segue_next():
+    paginas = {
+        "/repositories/acme/monitor/pullrequests": {
+            "values": [_pr(1)],
+            "next": "http://testserver/pagina2",
+        },
+        "/pagina2": {"values": [_pr(2)]},
     }
-
-    _fonte(_handler_pr([_pr(7)], commits), g, estado).resolve(["255514"])
-    # PR 9 mergeada depois, no MESMO chamado
-    resultado = _fonte(_handler_pr([_pr(7), _pr(9)], commits), g, estado).resolve(
-        ["255514"]
-    )
-
-    assert [c.hash_origem for c in resultado["255514"]] == ["c1", "c2"]
-
-
-def test_commit_do_cache_ainda_passa_pelo_is_ancestor():
-    # is_ancestor fica FORA do cache porque e volatil: PR mergeada numa branch
-    # que ainda nao chegou na master viraria commit escondido para sempre.
-    estado = _estado_vazio()
-    handler = _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]})
-
-    fora = _fonte(handler, _git_com_master("outro"), estado).resolve(["255514"])
-    assert fora == {}, "c1 nao esta na master ainda"
-    assert 7 in estado.commits_de_pr(REPO_ESTADO, [7]), "mas foi cacheado"
-
-    dentro = _fonte(handler, _git_com_master("c1"), estado).resolve(["255514"])
-
-    assert [c.hash_origem for c in dentro["255514"]] == ["c1"]
-
-
-def test_merge_commit_nao_entra_no_cache():
-    # numero de pais e propriedade do commit, nunca muda: filtra antes de gravar.
-    estado = _estado_vazio()
-    fonte = _fonte(
-        _handler_pr(
-            [_pr(7)],
-            {7: [_commit_bruto("m1", parents=["a", "b"]), _commit_bruto("c1", dia=3)]},
-        ),
-        _git_com_master("c1"),
-        estado,
-    )
-
-    fonte.resolve(["255514"])
-
-    assert [c.hash_origem for c in estado.commits_de_pr(REPO_ESTADO, [7])[7]] == ["c1"]
-
-
-def _removido_sem_estado_a_fonte_funciona_igual():
-    # `estado=None` e o caminho de quem monta a fonte sem banco: sem cache,
-    # mesmo resultado.
-    fonte = _fonte(
-        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}), _git_com_master("c1")
-    )
-
-    assert [c.hash_origem for c in fonte.resolve(["255514"])["255514"]] == ["c1"]
-
-
-# -- varredura incremental -----------------------------------------------------
-#
-# Em vez de uma busca por chamado (27 requests numa versao real), uma varredura
-# que pergunta "o que mergeou desde a ultima vez" e responde os chamados a partir
-# de um indice local.
-
-
-def test_primeira_varredura_nao_filtra_por_data():
-    # sem marca d'agua o indice esta vazio: filtrar por data deixaria de fora
-    # toda PR anterior, e o chamado com PR antiga apareceria como sem entrega.
-    estado = _estado_vazio()
-    buscas: list[str] = []
-    fonte = _fonte(
-        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}, buscas=buscas),
-        _git_com_master("c1"),
-        estado,
-    )
-
-    fonte.resolve(["255514"])
-
-    assert len(buscas) == 1, f"esperava uma varredura so, veio {buscas}"
-    assert "updated_on" not in buscas[0], f"backfill nao pode filtrar: {buscas[0]}"
-
-
-def test_varredura_seguinte_filtra_pela_marca():
-    estado = _estado_vazio()
-    g = _git_com_master("c1")
-    prs, commits = [_pr(7)], {7: [_commit_bruto("c1")]}
-
-    _fonte(_handler_pr(prs, commits), g, estado).resolve(["255514"])
-    marca = estado.marca_varredura(REPO_ESTADO)
-    assert marca is not None, "primeira varredura tem que gravar a marca"
-
-    buscas: list[str] = []
-    _fonte(_handler_pr(prs, commits, buscas=buscas), g, estado).resolve(["255514"])
-
-    assert "updated_on" in buscas[0], f"segunda varredura tem que filtrar: {buscas[0]}"
-    assert marca.isoformat() in buscas[0]
-
-
-def test_uma_varredura_atende_todos_os_chamados():
-    # o ganho inteiro: 3 chamados, 1 request de varredura — nao 3 buscas.
-    estado = _estado_vazio()
-    buscas: list[str] = []
-    fonte = _fonte(
-        _handler_pr([_pr(7)], {7: [_commit_bruto("c1")]}, buscas=buscas),
-        _git_com_master("c1"),
-        estado,
-    )
-
-    fonte.resolve(["255514", "999888", "777666"])
-
-    assert len(buscas) == 1, f"uma varredura por resolve, veio {len(buscas)}"
-
-
-def test_chamado_com_prefixo_maior_nao_casa_no_titulo():
-    # ch255514 NAO pode casar com a PR do chamado 2555145: `startswith` e `in`
-    # nao viam a fronteira do numero, entao o chamado curto roubava a PR do longo.
-    estado = _estado_vazio()
-    fonte = _fonte(
-        _handler_pr([_pr(7, chamado="2555145")], {7: [_commit_bruto("c1")]}),
-        _git_com_master("c1"),
-        estado,
-    )
-
-    assert fonte.resolve(["255514"]) == {}
-
-
-def test_chamado_com_prefixo_maior_nao_casa_na_branch():
-    estado = _estado_vazio()
-    fonte = _fonte(
-        _handler_pr(
-            [_pr(7, chamado="000", branch="bugfix/ch2555145-logs")],
-            {7: [_commit_bruto("c1")]},
-        ),
-        _git_com_master("c1"),
-        estado,
-    )
-
-    assert fonte.resolve(["255514"]) == {}
-
-
-def test_pr_nova_aparece_na_varredura_seguinte():
-    estado = _estado_vazio()
-    g = _git_com_master("c1", "c2")
-    commits = {
-        7: [_commit_bruto("c1")],
-        9: [_commit_bruto("c2", dia=5, parents=["c1"])],
-    }
-
-    _fonte(_handler_pr([_pr(7)], commits), g, estado).resolve(["255514"])
-    resultado = _fonte(_handler_pr([_pr(9, dia=20)], commits), g, estado).resolve(
-        ["255514"]
-    )
-
-    # a PR 7 vem do indice, a 9 chega nesta varredura
-    assert [c.hash_origem for c in resultado["255514"]] == ["c1", "c2"]
-
-
-def test_commits_so_das_prs_que_casam_com_algum_chamado():
-    # o indice tem 1118 PRs num repo real; buscar os commits de todas encostaria
-    # no limite de taxa da API para responder perguntas que ninguem fez.
-    estado = _estado_vazio()
-    pedidos: list[int] = []
-    fonte = _fonte(
-        _handler_pr(
-            [_pr(7), _pr(8, chamado="999999")],
-            {7: [_commit_bruto("c1")], 8: [_commit_bruto("c9")]},
-            pedidos=pedidos,
-        ),
-        _git_com_master("c1", "c9"),
-        estado,
-    )
-
-    fonte.resolve(["255514"])
-
-    assert pedidos == [7], f"so a PR do chamado pedido, veio {pedidos}"
-    assert [p.pr_id for p in estado.prs_indexadas(REPO_ESTADO)] == [7, 8], (
-        "mas as duas entram no indice"
-    )
-
-
-def test_marca_nao_avanca_se_a_varredura_falhar_no_meio():
-    # marca avancada com indice incompleto e perda permanente: as PRs que
-    # faltaram ficam fora de toda janela futura.
-    estado = _estado_vazio()
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/pullrequests"):
-            return httpx.Response(500, text="boom")
+        return httpx.Response(200, json=paginas[request.url.path])
+
+    assert [p.pr_id for p in _host(handler).prs_mergeadas(None)] == [1, 2]
+
+
+def test_commits_da_pr_descarta_merge_commit():
+    # merge commit: cherry-pick -x sem -m falha, e o núcleo cacheia o que vier.
+    commits = {7: [_commit_bruto("merge1", ["a", "b"]), _commit_bruto("c1")]}
+
+    [c] = _host(_handler_pr([], commits)).commits_da_pr(7)
+
+    assert (c.hash_origem, c.parent, c.msg, c.chamado) == ("c1", "p1", "fix c1", "")
+
+
+def test_resposta_de_pullrequests_fora_de_forma_vira_respostainvalida():
+    def handler(request: httpx.Request) -> httpx.Response:
+        # lista crua em vez do envelope {"values": [...]}
+        return httpx.Response(200, json=["nao", "e", "um", "objeto"])
+
+    with pytest.raises(RespostaInvalida):
+        _host(handler).prs_mergeadas(None)
+
+
+@pytest.mark.parametrize(
+    "pr", ["nao-e-um-dict", {"id": 1, "title": 12345, "source": {}}]
+)
+def test_pr_fora_de_forma_vira_respostainvalida(pr):
+    with pytest.raises(RespostaInvalida):
+        _host(_handler_pr([pr])).prs_mergeadas(None)
+
+
+def test_parent_de_commit_fora_de_forma_vira_respostainvalida():
+    commits = {7: [{**_commit_bruto("c1"), "parents": ["nao-e-um-dict"]}]}
+
+    with pytest.raises(RespostaInvalida):
+        _host(_handler_pr([], commits)).commits_da_pr(7)
+
+
+def test_resposta_nao_ok_vira_backendindisponivel():
+    with pytest.raises(BackendIndisponivel):
+        _host(lambda r: httpx.Response(500)).prs_mergeadas(None)
+
+
+def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
+    """httpx.InvalidURL não herda de httpx.HTTPError (verificado em 0.28.1) — sem
+    a captura extra isto escapava do `except httpx.HTTPError` como traceback.
+    """
+    host = BitbucketPrs(
+        prs={}, arquivos=(), remote_url=lambda: REMOTE, base_url="http://h:porta"
+    )
+
+    with pytest.raises(ErroDeEntrada):
+        host.prs_mergeadas(None)
+
+
+def test_construir_nao_le_remote_nem_credencial(monkeypatch):
+    """Montar não é usar: `atualizar --abort` e `reconstruir-estado` constroem a
+    fonte e nunca a chamam."""
+    monkeypatch.delenv("BITBUCKET_TOKEN")
+    remotes: list[int] = []
+
+    def remote_url() -> str:
+        remotes.append(1)
+        return REMOTE
+
+    _host(_handler_pr([]), remote_url=remote_url)
+
+    assert remotes == []
+
+
+def test_workspace_e_repo_saem_do_remote_uma_vez():
+    remotes: list[int] = []
+    caminhos: list[str] = []
+
+    def remote_url() -> str:
+        remotes.append(1)
+        return REMOTE
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        caminhos.append(request.url.path)
         return httpx.Response(200, json={"values": []})
 
-    with pytest.raises(MotorError):
-        _fonte(handler, _git_com_master("c1"), estado).resolve(["255514"])
+    host = _host(handler, remote_url=remote_url)
+    host.prs_mergeadas(None)
+    host.commits_da_pr(7)
 
-    assert estado.marca_varredura(REPO_ESTADO) is None
-
-
-def test_pr_com_prefixo_em_maiuscula_casa():
-    """A 2a PR de um chamado com o titulo em caixa alta ("CH255514 - ...") nao
-    casava, e o buraco era silencioso: a 1a PR casava, a cadeia dava o chamado
-    por resolvido e o grep — que teria achado o commit — nunca rodava. A versao
-    ficava verde sem a segunda entrega.
-    """
-    g = _git_com_master("c1", "c2")
-    prs = [
-        _pr(7, branch="VB-2458"),
-        {
-            "id": 9,
-            "title": "CH255514 - Ajuste para adicionar mais horarios",
-            "source": {"branch": {"name": "VB-2458"}},
-            "updated_on": "2026-08-25T10:00:00+00:00",
-        },
+    assert remotes == [1]
+    assert caminhos == [
+        "/repositories/acme/monitor/pullrequests",
+        "/repositories/acme/monitor/pullrequests/7/commits",
     ]
-    commits = {
-        7: [_commit_bruto("c1")],
-        9: [_commit_bruto("c2", dia=5, parents=["c1"])],
-    }
-    fonte = _fonte(_handler_pr(prs, commits), g)
 
-    resultado = fonte.resolve(["255514"])
 
-    hashes = [c.hash_origem for c in resultado.get("255514", [])]
-    assert hashes == ["c1", "c2"], f"faltou a PR de titulo em caixa alta: {hashes}"
+@pytest.mark.parametrize("falta", ["BITBUCKET_TOKEN", "BITBUCKET_EMAIL"])
+def test_sem_credencial_falha_na_primeira_busca_nao_no_construtor(monkeypatch, falta):
+    monkeypatch.delenv(falta)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("não deveria chamar a rede")
+
+    host = _host(handler)
+
+    with pytest.raises(ErroDeEntrada) as e:
+        host.prs_mergeadas(None)
+    assert falta in str(e.value)
+    assert "/cfg/config.toml" in str(e.value)
+
+
+def test_repr_nao_vaza_credencial():
+    host = _host(_handler_pr([]))
+    host.prs_mergeadas(None)  # a credencial já foi lida
+
+    assert TOKEN not in repr(host)
+    assert EMAIL not in repr(host)
 
 
 # -- verificar_credenciais (monitor-versoes diagnostico) ----------------------
 
 
-def _cliente(handler) -> httpx.Client:
-    return httpx.Client(transport=httpx.MockTransport(handler))
-
-
 def test_verificar_credenciais_aceita_e_manda_basic():
-    vistos = []
+    vistos: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         vistos.append(request)
         return httpx.Response(200, json={"uuid": "x"})
 
-    verificar_credenciais(
-        "tok", "a@b.c", base_url="http://bb/2.0", client=_cliente(handler)
-    )
+    _host(handler, base_url="http://bb/2.0").verificar_credenciais()
 
     assert len(vistos) == 1
     assert str(vistos[0].url) == "http://bb/2.0/user"
-    assert vistos[0].headers["Authorization"] == "Basic YUBiLmM6dG9r"
+    assert vistos[0].headers["Authorization"] == "Basic ZGV2QHguY29tOnRvazEyMw=="
 
 
 def test_verificar_credenciais_recusada():
     with pytest.raises(BackendIndisponivel):
-        verificar_credenciais(
-            "tok",
-            "a@b.c",
-            base_url="http://bb/2.0",
-            client=_cliente(lambda r: httpx.Response(401)),
-        )
+        _host(lambda r: httpx.Response(401)).verificar_credenciais()
 
 
-def test_verificar_credenciais_sem_email_nao_faz_requisicao():
+def test_verificar_credenciais_sem_email_nao_faz_requisicao(monkeypatch):
+    monkeypatch.delenv("BITBUCKET_EMAIL")
+
     def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("nao deveria chamar a rede")
+        raise AssertionError("não deveria chamar a rede")
 
     with pytest.raises(ErroDeEntrada):
-        verificar_credenciais(
-            "tok", "", base_url="http://bb/2.0", client=_cliente(handler)
-        )
+        _host(handler).verificar_credenciais()
 
 
-# -- referencia configuravel ---------------------------------------------------
+def test_verificar_credenciais_nao_precisa_de_repo():
+    def sem_repo() -> str:
+        raise ErroDeEntrada("sem repo")
 
+    host = _host(lambda r: httpx.Response(200, json={}), remote_url=sem_repo)
 
-def _pr_ref(pr_id: int, titulo: str, branch: str) -> JSON:
-    return {"id": pr_id, "title": titulo, "source": {"branch": {"name": branch}}}
-
-
-def _commit_da_pr(hash_: str) -> list[JSON]:
-    return [
-        {
-            "hash": hash_,
-            "date": "2024-01-02T10:00:00+00:00",
-            "message": "x",
-            "parents": [{"hash": "c1"}],
-        }
-    ]
-
-
-def _casadas(prs: list[JSON], referencia: Referencia, chamado: str) -> list[str]:
-    """Hashes achados para `chamado`; a PR `n` entrega o commit `c<n+1>`."""
-    g = _git_com_master("c1", *(f"c{pr['id'] + 1}" for pr in prs))
-    commits = {pr["id"]: _commit_da_pr(f"c{pr['id'] + 1}") for pr in prs}
-    fonte = _fonte(_handler_pr(prs, commits), g, referencia=referencia)
-    return [c.hash_origem for c in fonte.resolve([chamado]).get(chamado, [])]
-
-
-def test_pr_com_padrao_id_casa_pelo_titulo_e_protege_os_dois_lados_da_branch():
-    ref = Referencia("{id}")
-    assert _casadas([_pr_ref(1, "PAY-123 corrige", "feature/x")], ref, "PAY-123") == [
-        "c2"
-    ]
-    # Fronteira nos dois lados pelo alfabeto: nem prefixo nem sufixo do ID.
-    prs = [_pr_ref(1, "outra", "x-PAY-12"), _pr_ref(2, "outra", "XPAY-1")]
-    assert _casadas(prs, ref, "PAY-1") == []
-
-
-def test_pr_com_padrao_entre_colchetes_casa_na_branch_colada():
-    # A ponta `]` nao e do alfabeto: o lado direito fica livre.
-    prs = [_pr_ref(1, "outra", "[PAY-12]x")]
-    assert _casadas(prs, Referencia("[{id}]"), "PAY-12") == ["c2"]
+    host.verificar_credenciais()

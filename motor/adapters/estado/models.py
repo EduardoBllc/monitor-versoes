@@ -240,9 +240,13 @@ class VarreduraPr(Base):
     Guarda o INICIO da varredura, nao o maior `updated_on` visto: PR mergeada
     durante a propria varredura pode nao aparecer nela, e so cai na proxima
     porque o `updated_on` dela e maior que este inicio.
+
+    `host` e o `[prs] fonte` que varreu: a marca, o indice e o cache so valem
+    para ele, e a troca de host zera os tres.
     """
 
     __tablename__ = "varredura_pr"
 
     repo_id: Mapped[int] = mapped_column(ForeignKey("repo.id"), primary_key=True)
+    host: Mapped[str]
     ate: Mapped[datetime.datetime] = mapped_column(DataComFuso())

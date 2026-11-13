@@ -49,7 +49,7 @@ class BackendIndisponivel(MotorError):
     """O servico nao respondeu, ou respondeu que nao da.
 
     Banco fora do ar, binario do git ausente ou velho demais, HTTP do rastreador ou
-    do Bitbucket. E o unico ramo em que o CLI imprime dica de conserto de
+    do host de PR. E o unico ramo em que o CLI imprime dica de conserto de
     ambiente (por exemplo, conferir `DATABASE_SQLITE_PATH`).
     """
 
