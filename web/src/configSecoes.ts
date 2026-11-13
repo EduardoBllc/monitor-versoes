@@ -47,6 +47,10 @@ const ESCOLHE: Record<GrupoPlugin, TabelaChave> = {
   [GrupoPlugin.ATRIBUICOES]: [Tabela.VERSAO, Chave.ATRIBUICAO],
 };
 
+/** Grupo de plugin cuja escolha a linha guarda, se for uma. */
+export const grupoEscolhidoPor = (l: Linha): GrupoPlugin | undefined =>
+  (Object.keys(ESCOLHE) as GrupoPlugin[]).find((g) => ESCOLHE[g][0] === l.tabela && ESCOLHE[g][1] === l.chave);
+
 const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
   [GrupoPlugin.TAREFAS]: Secao.TAREFAS,
   [GrupoPlugin.PRS]: Secao.PRS,
