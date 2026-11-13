@@ -29,6 +29,7 @@ from motor.daemon.erros import (
 )
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
+from motor.domain.conflito import PropostaDeBloco
 from motor.domain.inscricao import UltimaExecucao
 from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult
@@ -37,6 +38,7 @@ from motor.engine.consultar import ChamadoConsultado
 from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.operacoes import (
+    PedidoProposta,
     RepoOption,
     Resolucao,
     Runners,
@@ -318,6 +320,12 @@ def _rotas_conflito(app: FastAPI, ctx: _Contexto) -> None:
         return _exigir(ctx.leitura().ler_arquivo_conflito)(
             ctx.achar(repo), versao, caminho
         )
+
+    @app.post(f"{base}/proposta")
+    def propor(repo: str, versao: str, corpo: PedidoProposta) -> list[PropostaDeBloco]:
+        # Sem trava (032): só lê, e a espera do provedor não pode segurar o repo.
+        # `def` roda na threadpool, então a espera não bloqueia o event loop.
+        return _exigir(ctx.leitura().propor_resolucao)(ctx.achar(repo), versao, corpo)
 
     @app.post(f"{base}/resolucao", status_code=sem_corpo)
     def resolver(repo: str, versao: str, corpo: Resolucao) -> None:

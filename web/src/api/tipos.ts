@@ -20,3 +20,5 @@ export type ConflitoAberto = Esquemas["ConflitoAberto"];
 export type ArquivoDoConflito = Esquemas["ArquivoDoConflito"];
 export type ConteudoDoConflito = Esquemas["ConteudoDoConflito"];
 export type Resolucao = Esquemas["Resolucao"];
+export type PedidoProposta = Esquemas["PedidoProposta"];
+export type PropostaDeBloco = Esquemas["PropostaDeBloco"];

@@ -755,6 +755,68 @@
         }
       }
     },
+    "/api/repos/{repo}/versoes/{versao}/conflito/proposta": {
+      "post": {
+        "summary": "Propor",
+        "operationId": "propor_api_repos__repo__versoes__versao__conflito_proposta_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoProposta"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PropostaDeBloco"
+                  },
+                  "title": "Response Propor Api Repos  Repo  Versoes  Versao  Conflito Proposta Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/repos/{repo}/versoes/{versao}/conflito/resolucao": {
       "post": {
         "summary": "Resolver",
@@ -1950,6 +2012,32 @@
         ],
         "title": "PedidoJulgamento"
       },
+      "PedidoProposta": {
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "title": "Caminho"
+          },
+          "versao_disco": {
+            "type": "string",
+            "title": "Versao Disco"
+          },
+          "ordens": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Ordens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "caminho",
+          "versao_disco",
+          "ordens"
+        ],
+        "title": "PedidoProposta"
+      },
       "PedidoReabertura": {
         "properties": {
           "caminho": {
@@ -2033,6 +2121,29 @@
         ],
         "title": "Progresso",
         "description": "Onde o comando esta agora.\n\n`total == 0` significa fase sem contagem (spinner, nao barra): e o caso de\nquase toda borda de I/O — um `fetch` nao sabe dizer quanto falta."
+      },
+      "PropostaDeBloco": {
+        "properties": {
+          "ordem": {
+            "type": "integer",
+            "title": "Ordem"
+          },
+          "conteudo": {
+            "type": "string",
+            "title": "Conteudo"
+          },
+          "justificativa": {
+            "type": "string",
+            "title": "Justificativa"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ordem",
+          "conteudo",
+          "justificativa"
+        ],
+        "title": "PropostaDeBloco"
       },
       "RepoOption": {
         "properties": {
