@@ -16,9 +16,13 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from motor.adapters.estado import sqlite as estado_sqlite
-from motor.config import SECAO_REPOS, ConfigProjeto, Tabela, checar_backend
+from motor.config import SECAO_REPOS, Chave, ConfigProjeto, Tabela, checar_backend
 from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
-from motor.montagem import instanciar_fonte_tarefas, instanciar_host_pr
+from motor.montagem import (
+    instanciar_fonte_tarefas,
+    instanciar_host_pr,
+    instanciar_provedor_sugestao,
+)
 
 
 class Peca(enum.StrEnum):
@@ -29,6 +33,7 @@ class Peca(enum.StrEnum):
     REPOS = "Repos"
     TAREFAS = "Tarefas"
     PRS = "Fonte de PR"
+    SUGESTAO = "Sugestão"
 
 
 class Estado(enum.Enum):
@@ -113,6 +118,7 @@ def diagnosticar(  # noqa: PLR0913
     resultados += _repos(abrir_sessao, repos, banco_ok)
     resultados.append(_tarefas(config_central, onde))
     resultados.append(_prs(config_central, onde))
+    resultados += _sugestao(config_central, onde)
     return resultados
 
 
@@ -236,19 +242,21 @@ def _repos(
     return linhas
 
 
-def _plugin_da_config(
+# Seis parâmetros: cada um é uma peça da linha (peça, config, tabela, chave...).
+def _plugin_da_config(  # noqa: PLR0913
     peca: Peca,
     config_central: Callable[[], ConfigProjeto],
     onde: str,
     tabela: Tabela,
     instanciar: Callable[[ConfigProjeto], object | None],
+    chave: str = Chave.FONTE,
 ) -> Resultado:
     """O plugin de `[tabela] fonte` do `config.toml` central: o diagnóstico não
     tem repo. `instanciar` devolve `None` quando a `fonte` não está definida.
 
     Credencial só é conferida se o plugin oferece `verificar_credenciais`.
     """
-    plugins = f"conferir [{tabela}] fonte e os plugins instalados"
+    plugins = f"conferir [{tabela}] {chave} e os plugins instalados"
     try:
         plugin = instanciar(config_central())
     except MotorError as e:
@@ -257,8 +265,8 @@ def _plugin_da_config(
         return Resultado(
             peca,
             Estado.NAO_CONFIGURADO,
-            f"sem [{tabela}] fonte no config.toml central",
-            f"definir [{tabela}] fonte no config.toml central",
+            f"sem [{tabela}] {chave} no config.toml central",
+            f"definir [{tabela}] {chave} no config.toml central",
         )
     verificar = getattr(plugin, "verificar_credenciais", None)
     if not callable(verificar):
@@ -295,6 +303,21 @@ def _prs(config_central: Callable[[], ConfigProjeto], onde: str) -> Resultado:
         return instanciar_host_pr(config, _sem_repo)
 
     return _plugin_da_config(Peca.PRS, config_central, onde, Tabela.PRS, instanciar)
+
+
+def _sugestao(
+    config_central: Callable[[], ConfigProjeto], onde: str
+) -> list[Resultado]:
+    """Só existe linha com `[sugestao] provedor`; sem ele, nada a dizer."""
+    resultado = _plugin_da_config(
+        Peca.SUGESTAO,
+        config_central,
+        onde,
+        Tabela.SUGESTAO,
+        instanciar_provedor_sugestao,
+        Chave.PROVEDOR,
+    )
+    return [] if resultado.estado is Estado.NAO_CONFIGURADO else [resultado]
 
 
 def formatar(resultado: Resultado) -> str:

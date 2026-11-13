@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import sys
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -407,9 +408,10 @@ def test_config_central_invalida_falha_so_nas_linhas_de_plugin():
     def invalida() -> ConfigProjeto:
         raise ErroDeEntrada("config.toml: TOML invalido")
 
+    PLUGINS = (Peca.TAREFAS, Peca.PRS, Peca.SUGESTAO)
     por_peca, resultados = _rodar(config_central=invalida)
 
-    for peca in (Peca.TAREFAS, Peca.PRS):
+    for peca in PLUGINS:
         assert por_peca[peca].estado is Estado.FALHA
         assert "TOML invalido" in por_peca[peca].detalhe
     assert [r.peca for r in resultados] == [
@@ -419,8 +421,9 @@ def test_config_central_invalida_falha_so_nas_linhas_de_plugin():
         Peca.REPOS,
         Peca.TAREFAS,
         Peca.PRS,
+        Peca.SUGESTAO,
     ]
-    outras = [r for r in resultados if r.peca not in (Peca.TAREFAS, Peca.PRS)]
+    outras = [r for r in resultados if r.peca not in PLUGINS]
     assert all(r.estado is not Estado.FALHA for r in outras)
 
 
@@ -510,3 +513,64 @@ def test_estado_sem_secao_avisa_no_sqlite(tmp_path):
     (linha,) = _repos_de(resultados)
     assert linha.estado is Estado.AVISO
     assert "'orfao'" in linha.detalhe
+
+
+def _central_com(tmp_path, monkeypatch, texto):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text(texto)
+
+
+def test_sem_sugestao_nenhuma_linha(tmp_path, monkeypatch):
+    _central_com(tmp_path, monkeypatch, "")
+
+    por_peca, _ = _rodar(config_central=carregar_config_global)
+
+    assert Peca.SUGESTAO not in por_peca
+
+
+def test_provedor_nao_instalado_lista_os_instalados(tmp_path, monkeypatch):
+    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "inexistente"\n')
+
+    por_peca, resultados = _rodar(config_central=carregar_config_global)
+
+    linha = por_peca[Peca.SUGESTAO]
+    assert linha.estado is Estado.FALHA
+    assert "anthropic" in linha.detalhe
+    assert linha.correcao == "conferir [sugestao] provedor e os plugins instalados"
+    assert falhou(resultados)
+
+
+def test_anthropic_sem_chave_cita_o_ambiente(tmp_path, monkeypatch):
+    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "anthropic"\n')
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+
+    linha = _rodar(config_central=carregar_config_global)[0][Peca.SUGESTAO]
+
+    assert linha.estado is Estado.FALHA
+    assert linha.correcao == (
+        f"conferir as credenciais da fonte em [ambiente] de {CONFIG_EM} (ou no .env)"
+    )
+
+
+def test_anthropic_com_chave_ok_sem_imprimir_a_chave(tmp_path, monkeypatch):
+    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "anthropic"\n')
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-segredo")
+
+    linha = _rodar(config_central=carregar_config_global)[0][Peca.SUGESTAO]
+
+    assert linha.estado is Estado.OK
+    assert "sk-segredo" not in str(linha)
+
+
+def test_anthropic_sem_sdk_pede_o_extra(tmp_path, monkeypatch):
+    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "anthropic"\n')
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-segredo")
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+
+    linha = _rodar(config_central=carregar_config_global)[0][Peca.SUGESTAO]
+
+    assert linha.estado is Estado.FALHA
+    assert "monitor-versoes[anthropic]" in linha.detalhe
+    assert linha.correcao == "conferir [sugestao] provedor e os plugins instalados"
