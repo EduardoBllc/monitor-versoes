@@ -27,6 +27,7 @@ torna o renome explicitamente permitido em vez de um risco nao verificado.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Protocol
@@ -87,6 +88,35 @@ class CommitSource(Protocol):
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
         """Acha os commits de cada chamado."""
+        ...
+
+
+class HostPr(Protocol):
+    """Host de código onde vivem as PRs (plugin de `[prs] fonte`).
+
+    So fala com o host. Varredura incremental, indice, casamento com a
+    referencia, cache `PR -> commits` e filtro pela principal sao do nucleo
+    (`PrCommitSource`), para que host novo herde as correcoes ja feitas
+    (docs/decisoes/036-fonte-de-pr-plugavel.md).
+
+    Opcionais, lidos so se existirem: `verificar_credenciais()`, chamado pelo
+    `monitor-versoes diagnostico`, e `campos_config`, as chaves que o plugin
+    declara para a modal de configuracao.
+    """
+
+    def prs_mergeadas(self, desde: datetime.datetime | None, /) -> Iterable[PrIndex]:
+        """PRs mergeadas com `updated_on >= desde`; None = historico inteiro.
+
+        Titulo e branch crus. Reentregar PR ja conhecida e permitido: o indice
+        faz upsert.
+        """
+        ...
+
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        """Commits da PR, sem merge commits e sem `chamado`.
+
+        O nucleo cacheia o que vier: o filtro de merge commit tem de vir antes.
+        """
         ...
 
 
