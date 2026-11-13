@@ -371,8 +371,10 @@ function Tela() {
       <AppShell.Header>
         <Barra
           repos={repos.data ?? []}
+          carregandoRepos={repos.isLoading}
           {...(repo && { repo })}
           versoes={versoes.data ?? []}
+          carregandoVersoes={versoes.isLoading}
           {...(versao && { versao })}
           ocupado={ocupado}
           bloqueadas={bloqueadas}

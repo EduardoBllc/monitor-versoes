@@ -2,6 +2,7 @@ import {
   Alert,
   Button,
   Group,
+  Loader,
   Modal,
   NumberInput,
   PasswordInput,
@@ -382,6 +383,7 @@ export function ModalConfig({
 
   return (
     <Modal opened={aberto} onClose={aoFechar} title="Configuração" size="xl">
+      {config.isLoading && <Loader mx="auto" display="block" />}
       {config.error && <Alert color="red">{config.error.message}</Alert>}
       {dados && (
         <Editor
