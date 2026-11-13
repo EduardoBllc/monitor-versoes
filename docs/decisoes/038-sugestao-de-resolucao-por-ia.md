@@ -16,17 +16,15 @@ trava outras operações do repo.
 
 ## O que sai da máquina
 
-Vai ao provedor o caminho do arquivo, os lados (base, ours e theirs) só dos blocos pedidos,
-a mensagem do commit aplicado e o identificador da tarefa que ela cita (sem tarefa citada, o
-campo não vai). Não vai outro arquivo, bloco não pedido, o trecho que mesclou sem conflito,
-histórico, diff de outros commits nem dado da fonte de tarefas além do identificador. A
-tabela está no [README](../../README.md#sugestão-de-resolução-por-ia).
+Sai da máquina só o necessário para propor os blocos pedidos — os lados desses blocos e o
+contexto do commit que os trouxe, nunca o resto do repo; o que vai e o que não vai está na
+tabela do [README](../../README.md#sugestão-de-resolução-por-ia).
 
 ## Provedor plugável, sem padrão
 
 O provedor é plugin do grupo `monitor_versoes.sugestao`, escolhido por `[sugestao] provedor`,
 com o carregador e o contrato de construtor da [027](027-fonte-de-tarefas-plugavel.md).
-Sem a chave não há sugestão, e `[sugestao]` vale só no topo do central, como o `[ambiente]`:
+Sem `[sugestao] provedor` não há sugestão, e `[sugestao]` vale só no topo do central, como o `[ambiente]`:
 a sugestão é da instalação, não do repo. Montar não é usar: plugin ausente ou credencial
 faltando não impedem o daemon de subir; o plugin ausente esconde os gatilhos, e a credencial
 faltando aparece como erro ao pedir. Falha do provedor vira erro da API pela tabela da

@@ -19,6 +19,7 @@ from motor.adapters.git.fake import FakeGit
 from motor.adapters.sugestao.fake import FakeProvedorSugestao
 from motor.atribuicoes import Exata
 from motor.config import (
+    Chave,
     ConfigProjeto,
     Escolhido,
     carregar_config_repo,
@@ -538,5 +539,5 @@ def test_provedor_recebe_sugestao_e_arquivos_nomeados(repo_montavel):
     deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
     instancia = deps.sugestao()
     assert isinstance(instancia, FakeProvedorSugestao)
-    assert instancia.sugestao == {"provedor": provedor, "modelo": "m"}
+    assert instancia.sugestao == {Chave.PROVEDOR: provedor, "modelo": "m"}
     assert instancia.arquivos == (carregar_config_repo(NOME_REPO).arquivos)

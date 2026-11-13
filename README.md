@@ -315,15 +315,15 @@ consulta o lock do clone: edite por um lugar de cada vez. O porquê:
 [033](docs/decisoes/033-config-editavel-pelas-interfaces.md).
 
 Na web, as seções ficam numa lateral por assunto, e os campos de um plugin, na seção que o
-escolhe. A barra no topo mostra o que falta (um repo com caminho, a fonte de PR e a de tarefas),
-e **Continuar** leva à próxima pendência; a fonte que você não usa pode ser pulada neste
-navegador. **Testar**, nas fontes e em cada repo, roda a checagem do `diagnostico` sobre o
+escolhe (os do provedor de sugestão, que não tem seção, em Avançado). A barra no topo mostra
+o que falta (um repo com caminho, a fonte de PR e a de tarefas), e **Continuar** leva à
+próxima pendência; a fonte que você não usa pode ser pulada neste navegador. **Testar**, nas fontes e em cada repo, roda a checagem do `diagnostico` sobre o
 formulário, sem gravar nada.
 
 #### Para autores de plugin
 
-Para a tela mostrar as chaves do seu plugin (esquema, atribuição, fonte de tarefas ou host de PR), declare
-`campos_config` na classe, uma tupla de `Campo`:
+Para a tela mostrar as chaves do seu plugin (esquema, atribuição, fonte de tarefas, host de PR
+ou provedor de sugestão), declare `campos_config` na classe, uma tupla de `Campo`:
 
 ```python
 from motor.config import TABELA_AMBIENTE

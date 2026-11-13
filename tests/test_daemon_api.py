@@ -784,16 +784,14 @@ def test_escrita_de_conflito_solta_o_repo_depois_de_erro_do_runner(
     assert r.status_code == HTTPStatus.NO_CONTENT
 
 
-def _proposta(
-    amb: Ambiente, *, versao_disco: str | None = None, ordens: list[int] | None = None
-) -> dict[str, Any]:
-    disco = versao_disco
-    if disco is None:
-        disco = hashlib.sha256(conflito_falso.DISCO_DOIS.encode()).hexdigest()
+VERSAO_DISCO_VELHA = "leitura-velha"
+
+
+def _proposta() -> dict[str, Any]:
     return {
         "caminho": conflito_falso.DOIS,
-        "versao_disco": disco,
-        "ordens": [1] if ordens is None else ordens,
+        "versao_disco": hashlib.sha256(conflito_falso.DISCO_DOIS.encode()).hexdigest(),
+        "ordens": [1],
     }
 
 
@@ -805,7 +803,7 @@ def test_proposta_devolve_conteudo_e_justificativa(
     cliente: TestClient, amb: Ambiente
 ) -> None:
     amb.soltar_proposta.set()
-    r = cliente.post(f"{BASE_CONFLITO}/proposta", json=_proposta(amb))
+    r = cliente.post(f"{BASE_CONFLITO}/proposta", json=_proposta())
     assert r.status_code == HTTPStatus.OK
     assert r.json() == [
         {"ordem": 1, "conteudo": "A2\nB2\n", "justificativa": JUSTIFICATIVA}
@@ -816,7 +814,7 @@ def test_proposta_devolve_conteudo_e_justificativa(
     ("corpo", "status", "tipo"),
     [
         (
-            {"versao_disco": "velha"},
+            {"versao_disco": VERSAO_DISCO_VELHA},
             HTTPStatus.CONFLICT,
             TipoErro.DESATUALIZADO,
         ),
@@ -832,7 +830,7 @@ def test_proposta_recusa_leitura_velha_e_ordem_inexistente(
     tipo: TipoErro,
 ) -> None:
     amb.soltar_proposta.set()
-    r = cliente.post(f"{BASE_CONFLITO}/proposta", json={**_proposta(amb), **corpo})
+    r = cliente.post(f"{BASE_CONFLITO}/proposta", json={**_proposta(), **corpo})
     assert (r.status_code, r.json()["tipo"]) == (status, tipo)
 
 
@@ -865,7 +863,7 @@ def test_erro_do_provedor_vira_erro_da_api_sem_traceback(
 ) -> None:
     amb.soltar_proposta.set()
     amb.erro_provedor = erro
-    r = cliente.post(f"{BASE_CONFLITO}/proposta", json=_proposta(amb))
+    r = cliente.post(f"{BASE_CONFLITO}/proposta", json=_proposta())
     assert (r.status_code, r.json()["tipo"]) == (status, tipo)
     assert str(erro) in r.json()["mensagem"]
     assert "Traceback" not in r.text
@@ -878,7 +876,7 @@ def test_proposta_nao_trava_o_repo(cliente: TestClient, amb: Ambiente) -> None:
     pedido = threading.Thread(
         target=lambda: respostas.append(
             TestClient(cliente.app, base_url=str(cliente.base_url))
-            .post(f"{BASE_CONFLITO}/proposta", json=_proposta(amb))
+            .post(f"{BASE_CONFLITO}/proposta", json=_proposta())
             .status_code
         )
     )

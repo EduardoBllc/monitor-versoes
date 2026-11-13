@@ -17,6 +17,7 @@ export enum ClasseProposta {
   CONTEUDO = "cf-proposta-conteudo",
   PORQUE = "cf-proposta-porque",
   ACOES = "cf-proposta-acoes",
+  ICONE = "codicon codicon-sparkle",
 }
 
 export const SO_LEITURA = { readOnly: true, minimap: { enabled: false } };
@@ -160,7 +161,7 @@ export function noDaProposta(
 ): HTMLElement {
   const titulo = elemento("div", ClasseProposta.TITULO);
   titulo.append(
-    elemento("span", "codicon codicon-sparkle"),
+    elemento("span", ClasseProposta.ICONE),
     "Proposta para este bloco",
   );
   const acoes = elemento("div", ClasseProposta.ACOES);

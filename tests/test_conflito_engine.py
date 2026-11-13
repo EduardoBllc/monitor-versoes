@@ -29,6 +29,7 @@ from motor.engine.conflito import (
 from motor.errors import (
     BackendIndisponivel,
     ErroDeEntrada,
+    MotorError,
     NaoEncontrado,
     RespostaInvalida,
     VersaoDesatualizada,
@@ -143,6 +144,7 @@ def _levanta(erro: Exception) -> Callable[[], ProvedorSugestao | None]:
         (FakeProvedorSugestao, True),
         (lambda: None, False),
         (_levanta(ErroDeEntrada("provedor não instalado")), False),
+        (_levanta(MotorError("construtor fora do contrato")), False),
     ],
 )
 def test_disponibilidade_da_sugestao_no_conflito_aberto(fonte, esperado: bool):

@@ -283,11 +283,13 @@ def _plugin_da_config(  # noqa: PLR0913
         )
     verificar = getattr(plugin, "verificar_credenciais", None)
     if not callable(verificar):
-        return Resultado(peca, Estado.NAO_VERIFICADA, "a fonte não oferece verificação")
+        return Resultado(
+            peca, Estado.NAO_VERIFICADA, "o plugin não oferece verificação"
+        )
     try:
         verificar()
     except MotorError as e:
-        return _falha(peca, e, f"conferir as credenciais da fonte em {onde}")
+        return _falha(peca, e, f"conferir as credenciais do plugin em {onde}")
     return Resultado(peca, Estado.OK, "credenciais aceitas")
 
 

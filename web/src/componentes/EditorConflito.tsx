@@ -50,7 +50,7 @@ import {
   vigente,
 } from "../proposta";
 import { MergeConteudo } from "./MergeConteudo";
-import { SO_LEITURA } from "./monacoConflito";
+import { ClasseProposta, SO_LEITURA } from "./monacoConflito";
 import { ModalReabrir } from "./ModalReabrir";
 import { notificarErro, notificarOk } from "./notificar";
 import { TAMANHO_HASH } from "./PainelBloqueio";
@@ -352,7 +352,7 @@ export default function EditorConflito({
               resolvido={atual.resolvido}
               tema={tema}
               aoMudar={editar}
-              gatilhos={gatilhos}
+              gatilhos={gatilhos && !enviando}
               propostas={propostas}
               aoSugerir={(k) => void pedir(k)}
               aoDescartarProposta={(k) => mudarPropostas((e) => descartar(e, k))}
@@ -377,8 +377,8 @@ export default function EditorConflito({
               {gatilhos && (
                 <Button
                   variant="default"
-                  leftSection={<span className="codicon codicon-sparkle" />}
-                  disabled={iniciar(propostas, estados, null) === null}
+                  leftSection={<span className={ClasseProposta.ICONE} />}
+                  disabled={enviando || iniciar(propostas, estados, null) === null}
                   onClick={() => void pedir(null)}
                 >
                   Sugerir blocos abertos

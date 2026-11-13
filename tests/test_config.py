@@ -12,6 +12,7 @@ from motor.config import (
     TABELA_AMBIENTE,
     ULTIMO_COMMIT_COM_POSTGRES,
     VAR_XDG_CONFIG_HOME,
+    Chave,
     Escolhido,
     Tabela,
     VarAmbiente,
@@ -507,7 +508,7 @@ def test_sugestao_do_topo_chega_inteira(central):
     central.write_text('[sugestao]\nprovedor = "x"\nmodelo = "m"\n')
     cfg = config.carregar_config_global()
     assert cfg.provedor_sugestao == Escolhido("x", str(central))
-    assert cfg.sugestao == {"provedor": "x", "modelo": "m"}
+    assert cfg.sugestao == {Chave.PROVEDOR: "x", "modelo": "m"}
 
 
 def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):

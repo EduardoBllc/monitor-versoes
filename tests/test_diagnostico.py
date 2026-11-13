@@ -11,8 +11,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from motor.adapters.sugestao.anthropic import EXTRA
+from motor.adapters.sugestao.anthropic import Var as VarAnthropic
 from motor.config import (
     SECAO_REPOS,
+    VAR_XDG_CONFIG_HOME,
     Chave,
     ConfigProjeto,
     Tabela,
@@ -297,7 +300,7 @@ _PLUGINS = "conferir [tarefas] fonte e os plugins instalados"
             "tests.fontes_falsas:FonteComCredencial",
             "errado",
             Estado.FALHA,
-            f"conferir as credenciais da fonte em [ambiente] de {CONFIG_EM} "
+            f"conferir as credenciais do plugin em [ambiente] de {CONFIG_EM} "
             "(ou no .env)",
         ),
     ],
@@ -362,7 +365,7 @@ _PLUGINS_PR = "conferir [prs] fonte e os plugins instalados"
             "tests.fontes_falsas:HostFalso",
             "errado",
             Estado.FALHA,
-            f"conferir as credenciais da fonte em [ambiente] de {CONFIG_EM} "
+            f"conferir as credenciais do plugin em [ambiente] de {CONFIG_EM} "
             "(ou no .env)",
         ),
     ],
@@ -519,8 +522,15 @@ def test_estado_sem_secao_avisa_no_sqlite(tmp_path):
     assert "'orfao'" in linha.detalhe
 
 
+ANTHROPIC = "anthropic"
+_SUGESTAO_ANTHROPIC = f'[{Tabela.SUGESTAO}]\n{Chave.PROVEDOR} = "{ANTHROPIC}"\n'
+_PLUGINS_SUGESTAO = (
+    f"conferir [{Tabela.SUGESTAO}] {Chave.PROVEDOR} e os plugins instalados"
+)
+
+
 def _central_com(tmp_path, monkeypatch, texto):
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv(VAR_XDG_CONFIG_HOME, str(tmp_path))
     central = tmp_path / "monitor-versoes" / "config.toml"
     central.parent.mkdir()
     central.write_text(texto)
@@ -541,26 +551,26 @@ def test_provedor_nao_instalado_lista_os_instalados(tmp_path, monkeypatch):
 
     linha = por_peca[Peca.SUGESTAO]
     assert linha.estado is Estado.FALHA
-    assert "anthropic" in linha.detalhe
-    assert linha.correcao == "conferir [sugestao] provedor e os plugins instalados"
+    assert ANTHROPIC in linha.detalhe
+    assert linha.correcao == _PLUGINS_SUGESTAO
     assert falhou(resultados)
 
 
 def test_anthropic_sem_chave_cita_o_ambiente(tmp_path, monkeypatch):
-    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "anthropic"\n')
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    _central_com(tmp_path, monkeypatch, _SUGESTAO_ANTHROPIC)
+    monkeypatch.setenv(VarAnthropic.CHAVE, "")
 
     linha = _rodar(config_central=carregar_config_global)[0][Peca.SUGESTAO]
 
     assert linha.estado is Estado.FALHA
     assert linha.correcao == (
-        f"conferir as credenciais da fonte em [ambiente] de {CONFIG_EM} (ou no .env)"
+        f"conferir as credenciais do plugin em [ambiente] de {CONFIG_EM} (ou no .env)"
     )
 
 
 def test_anthropic_com_chave_ok_sem_imprimir_a_chave(tmp_path, monkeypatch):
-    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "anthropic"\n')
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-segredo")
+    _central_com(tmp_path, monkeypatch, _SUGESTAO_ANTHROPIC)
+    monkeypatch.setenv(VarAnthropic.CHAVE, "sk-segredo")
 
     linha = _rodar(config_central=carregar_config_global)[0][Peca.SUGESTAO]
 
@@ -569,15 +579,15 @@ def test_anthropic_com_chave_ok_sem_imprimir_a_chave(tmp_path, monkeypatch):
 
 
 def test_anthropic_sem_sdk_pede_o_extra(tmp_path, monkeypatch):
-    _central_com(tmp_path, monkeypatch, '[sugestao]\nprovedor = "anthropic"\n')
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-segredo")
-    monkeypatch.setitem(sys.modules, "anthropic", None)
+    _central_com(tmp_path, monkeypatch, _SUGESTAO_ANTHROPIC)
+    monkeypatch.setenv(VarAnthropic.CHAVE, "sk-segredo")
+    monkeypatch.setitem(sys.modules, ANTHROPIC, None)
 
     linha = _rodar(config_central=carregar_config_global)[0][Peca.SUGESTAO]
 
     assert linha.estado is Estado.FALHA
-    assert "monitor-versoes[anthropic]" in linha.detalhe
-    assert linha.correcao == "conferir [sugestao] provedor e os plugins instalados"
+    assert EXTRA in linha.detalhe
+    assert linha.correcao == _PLUGINS_SUGESTAO
 
 
 # -- uma peça só (Testar da web) ------------------------------------------------

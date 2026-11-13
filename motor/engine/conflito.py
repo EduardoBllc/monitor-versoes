@@ -17,6 +17,7 @@ from motor.domain.conflito import (
 from motor.engine.deps import Deps
 from motor.errors import (
     ErroDeEntrada,
+    MotorError,
     NaoEncontrado,
     RespostaInvalida,
     VersaoDesatualizada,
@@ -75,7 +76,7 @@ def _resolvido(deps: Deps, versao: str, caminho: str) -> bool:
 def _sugestao_disponivel(deps: Deps) -> bool:
     try:
         return deps.sugestao() is not None
-    except ErroDeEntrada:
+    except MotorError:  # plugin fora do contrato esconde os gatilhos, não o editor
         return False
 
 
