@@ -42,7 +42,7 @@ sem adaptação:
 Em um diretório de trabalho qualquer (não precisa clonar o repositório):
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 # x-release-please-version
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0 # x-release-please-version
 ```
 
 O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração a rodar (veja
@@ -51,13 +51,13 @@ O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração
 Com a sugestão de resolução por IA (provedor `anthropic`, veja "Sugestão de resolução por IA"):
 
 ```bash
-uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0' # x-release-please-version
+uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0' # x-release-please-version
 ```
 
 Com plugins:
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 --with <plugin> # x-release-please-version
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0 --with <plugin> # x-release-please-version
 ```
 
 O `uv tool upgrade` não sai de uma tag fixada: para atualizar, rode o mesmo comando com que
