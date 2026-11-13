@@ -1,0 +1,31 @@
+name: Release
+
+# Mantém o PR de release (versão no pyproject.toml, CHANGELOG.md e número no README);
+# mergeá-lo cria a tag vX.Y.Z e a GitHub Release. Ver docs/decisoes/039.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-26.04
+    steps:
+      # Token do App, não o GITHUB_TOKEN: PR aberto pelo GITHUB_TOKEN não dispara o CI,
+      # e a ruleset da main exige os checks dele para mergear o PR de release.
+      - uses: actions/create-github-app-token@v3.3.0
+        id: app
+        with:
+          client-id: ${{ secrets.AGENTE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AGENTE_APP_PRIVATE_KEY }}
+      - uses: googleapis/release-please-action@v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
