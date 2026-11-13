@@ -16,6 +16,7 @@ from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.commitsource.pr import PrCommitSource
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.adapters.sugestao.fake import FakeProvedorSugestao
 from motor.atribuicoes import Exata
 from motor.config import (
     ConfigProjeto,
@@ -32,6 +33,7 @@ from motor.montagem import (
     FonteTasks,
     HostDaConfig,
     instanciar_fonte_tarefas,
+    instanciar_provedor_sugestao,
     montar_commit_source,
     montar_deps,
     montar_task_source,
@@ -515,3 +517,26 @@ def test_diagnostico_nao_cria_esquema(monkeypatch, tmp_path):
 
     with abrir_sessao(garantir=False) as sessao:
         assert Estado(sessao=sessao).revisao_migracao() is None
+
+
+def test_sem_provedor_de_sugestao_nao_ha_provedor():
+    assert instanciar_provedor_sugestao(ConfigProjeto()) is None
+
+
+def test_provedor_de_sugestao_inexistente_nao_derruba_a_montagem(repo_montavel):
+    _escrever_central(repo_montavel, topo='[sugestao]\nprovedor = "inexistente"\n')
+    deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
+    with pytest.raises(ErroDeEntrada):
+        deps.sugestao()
+
+
+def test_provedor_recebe_sugestao_e_arquivos_nomeados(repo_montavel):
+    provedor = "motor.adapters.sugestao.fake:FakeProvedorSugestao"
+    _escrever_central(
+        repo_montavel, topo=f'[sugestao]\nprovedor = "{provedor}"\nmodelo = "m"\n'
+    )
+    deps = montar_deps(NOME_REPO, None)  # type: ignore[arg-type]
+    instancia = deps.sugestao()
+    assert isinstance(instancia, FakeProvedorSugestao)
+    assert instancia.sugestao == {"provedor": provedor, "modelo": "m"}
+    assert instancia.arquivos == (carregar_config_repo(NOME_REPO).arquivos)

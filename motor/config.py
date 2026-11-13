@@ -51,6 +51,7 @@ class Tabela(StrEnum):
     REFERENCIA = "referencia"
     TAREFAS = "tarefas"
     PRS = "prs"
+    SUGESTAO = "sugestao"
 
 
 class Chave(StrEnum):
@@ -62,6 +63,7 @@ class Chave(StrEnum):
     PADRAO = "padrao"
     FONTE = "fonte"
     PISO = "piso"
+    PROVEDOR = "provedor"
 
 
 class VarAmbiente(StrEnum):
@@ -144,6 +146,8 @@ AMBIENTE_PADRAO = "production"
 SECAO_REPOS = "repos"
 TABELA_AMBIENTE = "ambiente"
 CHAVE_CAMINHO = "caminho"
+#: Tabelas que valem só no topo do central: são da instalação, não do repo.
+_SO_NO_TOPO = (TABELA_AMBIENTE, Tabela.SUGESTAO)
 
 
 @dataclass(frozen=True)
@@ -161,7 +165,8 @@ class ConfigProjeto:
     `tarefas` e opaco ao nucleo, salvo `fonte`: quem le as outras chaves e o
     plugin da fonte de tarefas, que recebe a tabela inteira (`fonte` inclusa).
     `fonte_tarefas` e o `[tarefas] fonte` com o arquivo que o deu. `prs` e
-    `fonte_prs` sao o mesmo para o plugin do host de PR (`[prs]`).
+    `fonte_prs` sao o mesmo para o plugin do host de PR (`[prs]`). `sugestao` e
+    `provedor_sugestao` (`[sugestao] provedor`), para o provedor de sugestao.
     `padrao_referencia` e o `[referencia] padrao` mesclado; `None` quando nenhuma
     camada o define (vale o proposto pelo adapter).
 
@@ -175,6 +180,7 @@ class ConfigProjeto:
     padrao_referencia: str | None = None
     tarefas: Mapping[str, object] = field(default_factory=dict)
     prs: Mapping[str, object] = field(default_factory=dict)
+    sugestao: Mapping[str, object] = field(default_factory=dict)
     arquivos: tuple[str, ...] = ()
     esquema: Escolhido | None = None
     atribuicao: Escolhido | None = None
@@ -183,6 +189,7 @@ class ConfigProjeto:
     branch_principal: Escolhido | None = None
     fonte_tarefas: Escolhido | None = None
     fonte_prs: Escolhido | None = None
+    provedor_sugestao: Escolhido | None = None
     caminho: str | None = None
 
 
@@ -262,6 +269,7 @@ _ESCOLHAS = (
     ("branch_principal", Tabela.BRANCHES, Chave.PRINCIPAL, False),
     ("fonte_tarefas", Tabela.TAREFAS, Chave.FONTE, False),
     ("fonte_prs", Tabela.PRS, Chave.FONTE, False),
+    ("provedor_sugestao", Tabela.SUGESTAO, Chave.PROVEDOR, False),
 )
 
 
@@ -279,6 +287,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
     padrao: str | None = None
     tarefas: dict[str, object] = {}
     prs: dict[str, object] = {}
+    sugestao: dict[str, object] = {}
     escolhas: dict[str, Escolhido] = {}
     for dados, arquivo in camadas:
         if (p := _texto(dados, Tabela.VERSAO, Chave.PISO, arquivo)) is not None:
@@ -287,6 +296,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
             padrao = r
         tarefas.update(_tabela(dados, Tabela.TAREFAS, arquivo))
         prs.update(_tabela(dados, Tabela.PRS, arquivo))
+        sugestao.update(_tabela(dados, Tabela.SUGESTAO, arquivo))
         for atributo, tabela, chave, template in _ESCOLHAS:
             ler = _template if template else _texto
             if (valor := ler(dados, tabela, chave, arquivo)) is not None:
@@ -297,6 +307,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
         padrao_referencia=padrao,
         tarefas=tarefas,
         prs=prs,
+        sugestao=sugestao,
         arquivos=tuple(c for _, c in camadas),
         esquema=escolhas.get("esquema"),
         atribuicao=escolhas.get("atribuicao"),
@@ -305,6 +316,7 @@ def _mesclar(camadas: list[Camada], caminho: str | None = None) -> ConfigProjeto
         branch_principal=escolhas.get("branch_principal"),
         fonte_tarefas=escolhas.get("fonte_tarefas"),
         fonte_prs=escolhas.get("fonte_prs"),
+        provedor_sugestao=escolhas.get("provedor_sugestao"),
         caminho=caminho,
     )
 
@@ -327,13 +339,14 @@ def _secoes(
         except ErroDeEntrada as e:
             raise ErroDeEntrada(f"{caminho}: [{SECAO_REPOS}.{nome!r}] {e}") from e
         secoes[nome] = _tabela(brutas, nome, caminho)
-        if TABELA_AMBIENTE in secoes[nome]:
-            # Banco e credenciais sao da instalacao: um [ambiente] por repo
-            # sugeriria que cada repo pode ter o seu, e nao pode.
-            raise ErroDeEntrada(
-                f"{caminho}: [{SECAO_REPOS}.{nome}.{TABELA_AMBIENTE}] não vale; "
-                f"[{TABELA_AMBIENTE}] só no topo"
-            )
+        for tabela in _SO_NO_TOPO:
+            if tabela in secoes[nome]:
+                # Banco, credenciais e provedor sao da instalacao: um por repo
+                # sugeriria que cada repo pode ter o seu, e nao pode.
+                raise ErroDeEntrada(
+                    f"{caminho}: [{SECAO_REPOS}.{nome}.{tabela}] não vale; "
+                    f"[{tabela}] só no topo"
+                )
     return secoes
 
 

@@ -17,6 +17,8 @@ class FakeProvedorSugestao:
         arquivos: tuple[str, ...] = (),
         responder: Callable[[PedidoAoProvedor], list[PropostaDeBloco]] | None = None,
     ) -> None:
+        self.sugestao = sugestao
+        self.arquivos = arquivos
         self.pedidos: list[PedidoAoProvedor] = []
         self._responder = responder
 
