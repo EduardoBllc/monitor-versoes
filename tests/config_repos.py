@@ -12,7 +12,9 @@ def secao_repo(nome: str, caminho: str | Path | None, relativo: str = "") -> str
     """`[repos.<nome>]` com o caminho. `relativo` usa cabeçalhos relativos à
     seção: `[tarefas]` vira `[repos.<nome>.tarefas]`."""
     relativo = re.sub(r"^\[", f"[{SECAO_REPOS}.{nome}.", relativo, flags=re.M)
-    linha_caminho = "" if caminho is None else f'{CHAVE_CAMINHO} = "{caminho}"\n'
+    # Aspas simples: string literal do TOML, onde o `\` de um caminho do Windows
+    # não é escape.
+    linha_caminho = "" if caminho is None else f"{CHAVE_CAMINHO} = '{caminho}'\n"
     return f"[{SECAO_REPOS}.{nome}]\n{linha_caminho}{relativo}"
 
 

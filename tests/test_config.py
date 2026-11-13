@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -41,6 +42,7 @@ def _ambiente(monkeypatch, valores):
         monkeypatch.setenv(chave, valor)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="caminho do Linux/macOS")
 def test_sem_configuracao_usa_sqlite_no_caminho_padrao(monkeypatch, tmp_path, capsys):
     _ambiente(monkeypatch, {})
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -165,6 +167,7 @@ def test_xdg_config_home_e_respeitado(tmp_path, monkeypatch):
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="caminho do Linux/macOS")
 @pytest.mark.parametrize("xdg", [None, ""])
 def test_sem_xdg_cai_em_config_do_home(tmp_path, monkeypatch, xdg):
     if xdg is None:
@@ -175,6 +178,41 @@ def test_sem_xdg_cai_em_config_do_home(tmp_path, monkeypatch, xdg):
     assert config.caminho_config_global() == str(
         tmp_path / ".config" / "monitor-versoes" / "config.toml"
     )
+
+
+def test_no_windows_dados_e_config_moram_no_appdata(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+    assert config.diretorio_dados() == str(tmp_path / "local" / "monitor-versoes")
+    assert config.caminho_config_global() == str(
+        tmp_path / "roaming" / "monitor-versoes" / "config.toml"
+    )
+
+
+def test_no_windows_xdg_config_home_continua_valendo(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("APPDATA", "")
+    assert config.caminho_config_global() == str(
+        tmp_path / "monitor-versoes" / "config.toml"
+    )
+
+
+@pytest.mark.parametrize(
+    ("variavel", "funcao"),
+    [
+        ("LOCALAPPDATA", config.diretorio_dados),
+        ("APPDATA", config.caminho_config_global),
+    ],
+)
+def test_no_windows_sem_appdata_e_erro_e_nao_o_home(monkeypatch, variavel, funcao):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    monkeypatch.setenv(variavel, "")
+    with pytest.raises(ErroDeEntrada):
+        funcao()
 
 
 def _escrever(central, tmp_path, do_repo: str = "", topo: str = "") -> None:

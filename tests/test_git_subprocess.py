@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import replace
 
 import pytest
@@ -1144,19 +1145,22 @@ def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
 
     O git normaliza mensagem de commit para UTF-8 ao gravar, e o APFS recusa
     nome de arquivo com byte invalido — entao nao da para reproduzir com git de
-    verdade nesta maquina. Um `git` falso no PATH exercita exatamente o mesmo
-    caminho de decode, que e o que esta sendo consertado.
+    verdade nesta maquina. Um `git` falso exercita exatamente o mesmo caminho de
+    decode, que e o que esta sendo consertado. Falso em Python, e nao no PATH:
+    o Windows so acha `git` como `.exe`.
     """
-    falso = tmp_path / "bin"
-    falso.mkdir()
-    git_falso = falso / "git"
+    git_falso = tmp_path / "git_falso.py"
+    # \xe7\xe3 nao e UTF-8 valido: os bytes crus vao direto para o stdout.
     git_falso.write_text(
-        "#!/bin/sh\n"
-        # \xe7\xe3 nao e UTF-8 valido. printf escreve os bytes crus.
-        "printf 'refs/tags/13.34.0\\nacentua\\347\\343o\\n'\n"
+        "import sys\n"
+        "sys.stdout.buffer.write(b'refs/tags/13.34.0\\nacentua\\xe7\\xe3o\\n')\n"
     )
-    git_falso.chmod(0o755)
-    monkeypatch.setenv("PATH", str(falso), prepend=False)
+    rodar = subprocess.run
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda args, **kw: rodar([sys.executable, git_falso, *args[1:]], **kw),
+    )
 
     g = GitSubprocess(repo_path=str(tmp_path))
 
@@ -1164,6 +1168,20 @@ def test_saida_do_git_fora_de_utf8_nao_derruba_o_comando(tmp_path, monkeypatch):
     resultado = g.listar_tags()
 
     assert "13.34.0" in resultado, "a linha valida tem de sobreviver"
+
+
+def test_saida_utf8_do_git_e_lida_como_utf8_em_qualquer_sistema(tmp_path):
+    """Sem `encoding`, o `text=True` do Windows decodifica em cp1252: `ação`
+    viraria `aÃ§Ã£o` em tag, branch e mensagem de commit."""
+    dir_ = str(tmp_path)
+    _run_git(dir_, "init", "-b", "master")
+    _config_identidade_local(dir_)
+    (tmp_path / "arquivo.txt").write_text("v1\n")
+    _run_git(dir_, "add", "arquivo.txt")
+    _run_git(dir_, "commit", "-m", "base")
+    _run_git(dir_, "tag", "ação")
+
+    assert new_git_subprocess(dir_).listar_tags() == ["ação"]
 
 
 def _log_topo(dir_: str) -> str:

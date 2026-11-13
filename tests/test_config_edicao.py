@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import sys
 from importlib.metadata import EntryPoint, entry_points
 
 import pytest
@@ -243,7 +244,7 @@ def test_gravar_preserva_comentarios_e_ordem(tmp_path):
     _escrever(
         "# topo\n"
         '[branches]\nversao = "v/{versao}"\n'
-        f'[repos.a]\n# do repo\ncaminho = "{tmp_path}"\n'
+        f"[repos.a]\n# do repo\ncaminho = '{tmp_path}'\n"
     )
     gravar(
         [_definir("1.2.0", Chave.PISO, Tabela.VERSAO, "a")], ler_para_edicao().versao
@@ -290,7 +291,7 @@ def test_repo_com_ponto_no_nome(tmp_path):
     ],
 )
 def test_valor_invalido_nao_muda_o_arquivo(tmp_path, alteracao):
-    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    _escrever(f"[repos.a]\ncaminho = '{tmp_path}'\n")
     antes = _bytes()
     with pytest.raises(ErroDeEntrada):
         gravar([alteracao], ler_para_edicao().versao)
@@ -305,6 +306,7 @@ def test_versao_velha_recusada():
         gravar([_definir("3", "a", Tabela.TAREFAS)], versao)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="o Windows não tem modo POSIX")
 def test_gravar_cria_arquivo_e_diretorio():
     gravar(
         [_definir(EMAIL_CENTRAL, VarBitbucket.EMAIL, TABELA_AMBIENTE)],
@@ -313,6 +315,7 @@ def test_gravar_cria_arquivo_e_diretorio():
     assert stat.S_IMODE(os.stat(caminho_config_global()).st_mode) == MODO_ARQUIVO_NOVO
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="o Windows não tem modo POSIX")
 def test_gravar_mantem_permissao():
     _escrever('[tarefas]\na = "1"\n')
     os.chmod(caminho_config_global(), MODO_GRUPO)
@@ -361,7 +364,9 @@ def test_gravar_segue_symlink(tmp_path):
 
 
 def test_remover_ausente_e_noop_e_tabela_vazia_some(tmp_path):
-    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n[repos.a.versao]\npiso = "1.0.0"\n')
+    _escrever(
+        f"[repos.a]\ncaminho = '{tmp_path}'\n[repos.a.versao]\npiso = \"1.0.0\"\n"
+    )
     antes = _bytes()
     remover_ausente = Alteracao(AcaoAlteracao.REMOVER, "a", Tabela.TAREFAS, "x")
     gravar([remover_ausente], ler_para_edicao().versao)
@@ -383,7 +388,7 @@ def test_remover_ausente_e_noop_e_tabela_vazia_some(tmp_path):
     ],
 )
 def test_operacao_de_repo_invalida(tmp_path, alteracao):
-    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    _escrever(f"[repos.a]\ncaminho = '{tmp_path}'\n")
     with pytest.raises(ErroDeEntrada):
         gravar([alteracao], ler_para_edicao().versao)
 
@@ -397,7 +402,7 @@ def test_rascunho_nao_grava():
 
 
 def test_rascunho_invalido_e_versao_velha(tmp_path):
-    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    _escrever(f"[repos.a]\ncaminho = '{tmp_path}'\n")
     versao = ler_para_edicao().versao
     with pytest.raises(ErroDeEntrada):
         rascunho([_definir("abc", Chave.PISO, Tabela.VERSAO, "a")], versao)

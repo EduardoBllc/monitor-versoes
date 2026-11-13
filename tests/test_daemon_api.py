@@ -901,7 +901,7 @@ def test_daemon_sobe_com_provedor_inexistente(
     central = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
     central.parent.mkdir(parents=True)
     central.write_text(
-        f'[sugestao]\nprovedor = "inexistente"\n\n[repos.r]\ncaminho = "{tmp_path}"\n'
+        f"[sugestao]\nprovedor = \"inexistente\"\n\n[repos.r]\ncaminho = '{tmp_path}'\n"
     )
     app = criar_app(
         operacoes.runners_com_progresso,

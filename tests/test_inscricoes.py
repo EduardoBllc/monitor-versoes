@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import re
 import subprocess
 import sys
 from enum import StrEnum
@@ -134,7 +135,7 @@ def test_arquivo_ausente_da_lista_vazia(arq: Path) -> None:
 def test_arquivo_corrompido_da_resposta_invalida(arq: Path, conteudo: str) -> None:
     arq.parent.mkdir(parents=True)
     arq.write_text(conteudo)
-    with pytest.raises(RespostaInvalida, match=str(arq)):
+    with pytest.raises(RespostaInvalida, match=re.escape(str(arq))):
         carregar(arq)
     assert arq.read_text() == conteudo
 
@@ -144,7 +145,7 @@ def test_campo_com_tipo_errado_da_resposta_invalida(arq: Path) -> None:
     dados = json.loads(arq.read_text())
     dados[0][Campo.ULTIMA][Campo.HORA] = "ontem"
     arq.write_text(json.dumps(dados))
-    with pytest.raises(RespostaInvalida, match=str(arq)):
+    with pytest.raises(RespostaInvalida, match=re.escape(str(arq))):
         carregar(arq)
 
 
@@ -316,7 +317,7 @@ def test_rodar_tempo_esgotado_grava_erro_e_segue(arq: Path) -> None:
 def test_arquivo_binario_da_resposta_invalida(arq: Path) -> None:
     arq.parent.mkdir(parents=True)
     arq.write_bytes(b"\xff\xfe\x00\x80")
-    with pytest.raises(RespostaInvalida, match=str(arq)):
+    with pytest.raises(RespostaInvalida, match=re.escape(str(arq))):
         carregar(arq)
 
 

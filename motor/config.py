@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -40,6 +41,10 @@ ARQUIVO_SQLITE = "estado.db"
 
 #: Variável que localiza a config central; nunca vem do `[ambiente]`.
 VAR_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
+#: No Windows: dados em `%LOCALAPPDATA%`, config em `%APPDATA%`.
+VAR_LOCALAPPDATA = "LOCALAPPDATA"
+VAR_APPDATA = "APPDATA"
+DIRETORIO_APP = "monitor-versoes"
 
 
 class Tabela(StrEnum):
@@ -75,7 +80,19 @@ class VarAmbiente(StrEnum):
 
 def diretorio_dados() -> str:
     """Diretorio de dados do usuario (estado.db, inscricoes.json)."""
-    return os.path.join(os.path.expanduser("~"), ".local", "share", "monitor-versoes")
+    # Comparação literal, como em `motor.trava`, por coerência entre os ramos de SO.
+    if sys.platform == "win32":
+        return os.path.join(_variavel_windows(VAR_LOCALAPPDATA), DIRETORIO_APP)
+    return os.path.join(os.path.expanduser("~"), ".local", "share", DIRETORIO_APP)
+
+
+def _variavel_windows(nome: str) -> str:
+    # Sem fallback para o home: dados ou config num lugar inesperado sumiriam
+    # da vista de quem os procura no lugar documentado.
+    valor = os.environ.get(nome, "").strip()
+    if not valor:
+        raise ErroDeEntrada(f"variável {nome} não definida: o Windows sempre a define")
+    return valor
 
 
 def _caminho_sqlite() -> str:
@@ -205,11 +222,16 @@ def validar_nome_repo(valor: str) -> str:
 
 
 def caminho_config_global() -> str:
-    """`$XDG_CONFIG_HOME/monitor-versoes/config.toml`, ou `~/.config/...`."""
+    """`$XDG_CONFIG_HOME/monitor-versoes/config.toml`; sem ele, `~/.config/...`
+    ou, no Windows, `%APPDATA%\\monitor-versoes\\config.toml`."""
     base = os.environ.get(VAR_XDG_CONFIG_HOME, "").strip()
     if not base:
-        base = os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "monitor-versoes", "config.toml")
+        # Comparação literal, como em `motor.trava`.
+        if sys.platform == "win32":
+            base = _variavel_windows(VAR_APPDATA)
+        else:
+            base = os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, DIRETORIO_APP, "config.toml")
 
 
 def _ler_toml(caminho: str) -> dict[str, object]:

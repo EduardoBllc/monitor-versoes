@@ -50,7 +50,10 @@ def sistema_atual() -> Sistema:
     try:
         return Sistema(sys.platform)
     except ValueError:
-        raise ErroDeEntrada(f"agendador não suportado em {sys.platform}") from None
+        raise ErroDeEntrada(
+            f"agendador automático não suportado em {sys.platform}: crie a tarefa "
+            "agendada à mão, como na seção Windows do README"
+        ) from None
 
 
 def executavel_motor() -> str:
