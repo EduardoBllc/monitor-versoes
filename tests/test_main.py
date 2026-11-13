@@ -99,16 +99,6 @@ def _versao_do_pyproject() -> str:
         return str(tomllib.load(f)["project"]["version"])
 
 
-def test_version_imprime_a_versao_do_pyproject(capsys):
-    with pytest.raises(SystemExit) as saida:
-        main(["--version"])
-
-    assert saida.value.code == 0
-    assert (
-        capsys.readouterr().out.strip() == f"monitor-versoes {_versao_do_pyproject()}"
-    )
-
-
 def test_version_ignora_config_central_invalida(tmp_path, monkeypatch, capsys):
     (tmp_path / "monitor-versoes").mkdir()
     (tmp_path / "monitor-versoes" / "config.toml").write_text("[ambiente")

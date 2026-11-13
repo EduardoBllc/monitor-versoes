@@ -60,10 +60,10 @@ Com plugins:
 uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 --with <plugin> # x-release-please-version
 ```
 
-O `uv tool upgrade` não sai de uma tag fixada: para atualizar, reinstale com a tag da
-[última release](https://github.com/EduardoBllc/monitor-versoes/releases/latest) e repita os
-`--with`: `uv tool install --reinstall git+…@vX.Y.Z --with <plugin>`. As mudanças de cada
-versão estão no [CHANGELOG.md](CHANGELOG.md). Se o `monitor-versoes serve` estiver rodando,
+O `uv tool upgrade` não sai de uma tag fixada: para atualizar, rode o mesmo comando com que
+instalou (com o extra e os `--with` que usou), trocando a tag pela da
+[última release](https://github.com/EduardoBllc/monitor-versoes/releases/latest) e
+acrescentando `--reinstall`. As mudanças de cada versão estão no [CHANGELOG.md](CHANGELOG.md). Se o `monitor-versoes serve` estiver rodando,
 reinicie-o.
 
 Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Se você
