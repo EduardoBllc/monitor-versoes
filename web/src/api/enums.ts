@@ -119,3 +119,8 @@ export enum Chave {
   FONTE = "fonte",
   PISO = "piso",
 }
+
+export enum VarAmbiente {
+  DATABASE_SQLITE_PATH = "DATABASE_SQLITE_PATH",
+  WORKTREES_MANTIDAS = "WORKTREES_MANTIDAS",
+}

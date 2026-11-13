@@ -90,7 +90,7 @@ export const opcoesDe = (campo: Campo, atual: Escalar): string[] =>
 
 export const textoDe = (valor: Escalar): string => (valor === null ? "" : String(valor));
 
-const vazio = (v: Escalar | undefined): boolean => v === null || v === "" || v === undefined;
+export const vazio = (v: Escalar | undefined): boolean => v === null || v === "" || v === undefined;
 
 export function alteracoesDe(
   original: ConfigEditavel,

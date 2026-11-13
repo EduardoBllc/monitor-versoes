@@ -6,9 +6,17 @@ import {
   GrupoPlugin,
   Tabela,
   TipoCampo,
+  VarAmbiente,
 } from "./api/enums";
 import type { Campo, ConfigEditavel, ResultadoTeste, ValorLido } from "./api/tipos";
-import { ORIGEM_MOTOR, TABELA_AMBIENTE, chaveDe, type Formulario, type Linha } from "./config";
+import {
+  ORIGEM_MOTOR,
+  TABELA_AMBIENTE,
+  alteracoesDe,
+  chaveDe,
+  type Formulario,
+  type Linha,
+} from "./config";
 import {
   CHAVE_CAMINHO,
   GrupoLateral,
@@ -45,7 +53,6 @@ const TICKIO_TOKEN = "TICKIO_TOKEN";
 const JIRA_TOKEN = "JIRA_TOKEN";
 const BITBUCKET_EMAIL = "BITBUCKET_EMAIL";
 const BITBUCKET_TOKEN = "BITBUCKET_TOKEN";
-const SQLITE = "DATABASE_SQLITE_PATH";
 
 function campo(
   escopo: Escopo,
@@ -79,7 +86,7 @@ const CAMPOS: Campo[] = [
   campo(Escopo.GERAL, Tabela.PRS, Chave.FONTE),
   campo(Escopo.REPO, null, CHAVE_CAMINHO),
   campo(Escopo.REPO, Tabela.VERSAO, Chave.PISO),
-  campo(Escopo.AMBIENTE, TABELA_AMBIENTE, SQLITE),
+  campo(Escopo.AMBIENTE, TABELA_AMBIENTE, VarAmbiente.DATABASE_SQLITE_PATH),
   campo(Escopo.GERAL, TABELA_TICKIO, URL, plugin(GrupoPlugin.TAREFAS, TICKIO)),
   campo(Escopo.REPO, TABELA_TICKIO, PROJETO, plugin(GrupoPlugin.TAREFAS, TICKIO)),
   campo(Escopo.AMBIENTE, TABELA_AMBIENTE, TICKIO_TOKEN, {
@@ -87,6 +94,7 @@ const CAMPOS: Campo[] = [
     ...segredo,
   }),
   campo(Escopo.GERAL, TABELA_JIRA, URL, plugin(GrupoPlugin.TAREFAS, JIRA)),
+  campo(Escopo.REPO, TABELA_JIRA, PROJETO, plugin(GrupoPlugin.TAREFAS, JIRA)),
   campo(Escopo.AMBIENTE, TABELA_AMBIENTE, JIRA_TOKEN, {
     ...plugin(GrupoPlugin.TAREFAS, JIRA),
     ...segredo,
@@ -186,7 +194,7 @@ describe("linhasDaSecao", () => {
 
   it("chave livre e campo com valor de plugin não escolhido caem em Avançado", () => {
     expect(chaves(linhasDaSecao(CONFIG, formulario(), Secao.AVANCADO))).toEqual([
-      ambiente(SQLITE),
+      ambiente(VarAmbiente.DATABASE_SQLITE_PATH),
       chaveDe(null, TABELA_JIRA, URL),
       chaveDe(null, TABELA_LIVRE, LIVRE),
     ]);
@@ -198,8 +206,26 @@ describe("linhasDaSecao", () => {
     expect(todas).not.toContain(chaveDe(null, TABELA_MINHA, URL));
   });
 
+  it("plugin escolhido só por um repo leva o [ambiente] dele para a seção do grupo", () => {
+    const f = formulario({
+      [chaveDe(REPO, Tabela.TAREFAS, Chave.FONTE)]: JIRA,
+      [chaveDe(REPO, Tabela.PRS, Chave.FONTE)]: BITBUCKET,
+    });
+    expect(chaves(linhasDaSecao(CONFIG, f, Secao.TAREFAS))).toContain(ambiente(JIRA_TOKEN));
+    expect(chaves(linhasDaSecao(CONFIG, f, Secao.PRS))).toContain(ambiente(BITBUCKET_TOKEN));
+    const proprias = chaves(linhasDoRepo(CONFIG, f, REPO).proprias);
+    expect(proprias).toContain(chaveDe(REPO, TABELA_JIRA, PROJETO));
+    expect(proprias).not.toContain(chaveDe(REPO, TABELA_TICKIO, PROJETO));
+  });
+
+  it("campo de plugin não escolhido com valor no arquivo continua em Avançado ao ser limpo", () => {
+    const jiraUrl = chaveDe(null, TABELA_JIRA, URL);
+    expect(chaves(linhasDaSecao(CONFIG, formulario({ [jiraUrl]: "" }), Secao.AVANCADO))).toContain(jiraUrl);
+  });
+
   it("nenhuma linha aparece em duas seções", () => {
-    for (const f of [formulario(), formulario({ [fonteTarefas]: JIRA, [fontePrs]: BITBUCKET })]) {
+    const porRepo = formulario({ [chaveDe(REPO, Tabela.TAREFAS, Chave.FONTE)]: JIRA });
+    for (const f of [formulario(), formulario({ [fonteTarefas]: JIRA, [fontePrs]: BITBUCKET }), porRepo]) {
       const todas = Object.values(Secao).flatMap((s) => chaves(linhasDaSecao(CONFIG, f, s)));
       expect(new Set(todas).size).toBe(todas.length);
     }
@@ -218,9 +244,19 @@ describe("linhasDoRepo", () => {
     expect(chaves(antes.sobrescreviveis)).toContain(chaveDe(REPO, Tabela.PRS, Chave.FONTE));
     expect(chaves(antes.sobrescreviveis)).not.toContain(chaveDe(REPO, TABELA_JIRA, URL));
 
-    const depois = linhasDoRepo(CONFIG, formulario({ [principalRepo]: "" }), REPO);
+    const depois = linhasDoRepo(CONFIG, formulario({ [principalRepo]: null }), REPO);
     expect(depois.sobrescritas).toEqual([]);
     expect(chaves(depois.sobrescreviveis)).toContain(principalRepo);
+  });
+
+  it("sobrescrita acrescentada vazia fica no bloco, e limpar não a tira de lá", () => {
+    const esquemaRepo = chaveDe(REPO, Tabela.VERSAO, Chave.ESQUEMA);
+    const acrescentada = formulario({ [esquemaRepo]: "" });
+    expect(chaves(linhasDoRepo(CONFIG, acrescentada, REPO).sobrescritas)).toContain(esquemaRepo);
+    expect(alteracoesDe(CONFIG, acrescentada)).toEqual(alteracoesDe(CONFIG, formulario()));
+
+    const limpa = linhasDoRepo(CONFIG, formulario({ [principalRepo]: "" }), REPO);
+    expect(chaves(limpa.sobrescritas)).toContain(principalRepo);
   });
 });
 
@@ -255,6 +291,8 @@ describe("pendencias", () => {
     expect(marcaDe(Secao.TAREFAS, CONFIG, f, testes, new Set())).toBe(Marca.FALHOU);
     const mudado = formulario({ [tickioUrl]: "https://outro" });
     expect(marcaDe(Secao.TAREFAS, CONFIG, mudado, testes, new Set())).toBe(Marca.PRONTA);
+    const tokenApagado = formulario({ [ambiente(TICKIO_TOKEN)]: null });
+    expect(marcaDe(Secao.TAREFAS, CONFIG, tokenApagado, testes, new Set())).toBe(Marca.PRONTA);
 
     const semCaminho = formulario({ [caminho]: "" });
     const doRepo = { [assinatura({ repo: REPO }, CONFIG, semCaminho)]: falha };

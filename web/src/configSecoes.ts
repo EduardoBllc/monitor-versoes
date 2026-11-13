@@ -1,14 +1,6 @@
 import { Chave, Escopo, EstadoTeste, GrupoPlugin, Tabela } from "./api/enums";
 import type { ConfigEditavel, ResultadoTeste } from "./api/tipos";
-import {
-  EstadoSegredo,
-  achaCampo,
-  chaveDe,
-  estadoSegredo,
-  linhasDe,
-  type Formulario,
-  type Linha,
-} from "./config";
+import { achaCampo, chaveDe, linhasDe, vazio, type Formulario, type Linha } from "./config";
 
 export const CHAVE_CAMINHO = "caminho";
 export const CHAVE_PULADOS = "monitor-versoes:config:pulados";
@@ -82,8 +74,6 @@ const COBRADAS: Partial<Record<Secao, GrupoPlugin>> = {
   [Secao.TAREFAS]: GrupoPlugin.TAREFAS,
 };
 
-const vazio = (v: unknown): boolean => v === undefined || v === null || v === "";
-
 const textoNo = (f: Formulario, repo: string | null, [tabela, chave]: TabelaChave): string => {
   const v = f.valores[chaveDe(repo, tabela, chave)];
   return vazio(v) ? "" : String(v);
@@ -104,18 +94,29 @@ export function escolhido(
   );
 }
 
-// Segredo não vem no formulário: ausente vale o que está no arquivo.
+const reposAtivos = (config: ConfigEditavel, f: Formulario): string[] =>
+  [...config.repos, ...f.reposCriados].filter((r) => !f.reposRemovidos.includes(r));
+
+// Valor no arquivo ou chave no formulário (null = marcada para remover, "" = acabou de entrar).
 function temValor(l: Linha, f: Formulario): boolean {
   const v = f.valores[chaveDe(l.repo, l.tabela, l.chave)];
-  if (l.campo?.segredo !== true) return !vazio(v);
-  return !vazio(v) || estadoSegredo(v, l.lido?.definido === true) === EstadoSegredo.DEFINIDO;
+  return l.lido?.definido === true || (v !== undefined && v !== null);
+}
+
+// Ausente do formulário só acontece com segredo ou valor não escalar: vale o arquivo.
+function sobrescreve(l: Linha, f: Formulario): boolean {
+  const v = f.valores[chaveDe(l.repo, l.tabela, l.chave)];
+  return v === undefined ? l.lido?.definido === true : v !== null;
 }
 
 // O tipo gerado é a união dos valores; o enum espelha os mesmos.
 const grupoDe = (l: Linha) => (l.campo?.grupo ?? undefined) as GrupoPlugin | undefined;
 
-const doEscolhido = (config: ConfigEditavel, f: Formulario, l: Linha, grupo: GrupoPlugin): boolean =>
-  l.campo?.origem === escolhido(config, f, grupo, l.repo);
+// No topo, vale também o plugin que só um repo escolhe: o [ambiente] dele mora no topo.
+function doEscolhido(config: ConfigEditavel, f: Formulario, l: Linha, grupo: GrupoPlugin): boolean {
+  const repos = l.repo === null ? [null, ...reposAtivos(config, f)] : [l.repo];
+  return repos.some((r) => l.campo?.origem === escolhido(config, f, grupo, r));
+}
 
 // Campo de plugin não escolhido só aparece se ainda tem valor.
 function visivel(config: ConfigEditavel, f: Formulario, l: Linha): boolean {
@@ -148,8 +149,8 @@ export function linhasDoRepo(
   const gerais = linhas.filter((l) => l.campo?.escopo !== Escopo.REPO);
   return {
     proprias: linhas.filter((l) => l.campo?.escopo === Escopo.REPO),
-    sobrescritas: gerais.filter((l) => temValor(l, formulario)),
-    sobrescreviveis: gerais.filter((l) => !temValor(l, formulario)),
+    sobrescritas: gerais.filter((l) => sobrescreve(l, formulario)),
+    sobrescreviveis: gerais.filter((l) => !sobrescreve(l, formulario)),
   };
 }
 
@@ -167,7 +168,9 @@ export function assinatura(destino: Destino, config: ConfigEditavel, formulario:
     typeof destino === "string"
       ? linhasDaSecao(config, formulario, destino).map((l) => chaveDe(l.repo, l.tabela, l.chave))
       : Object.keys(formulario.valores).filter((k) => (JSON.parse(k) as [string | null])[0] === destino.repo);
-  return JSON.stringify([destino, chaves.map((k) => [k, formulario.valores[k] ?? ""])]);
+  // Ausente e "" são "não tocado"; null (apagar segredo) precisa invalidar o teste.
+  const valor = (k: string) => (formulario.valores[k] === undefined ? "" : formulario.valores[k]);
+  return JSON.stringify([destino, chaves.map((k) => [k, valor(k)])]);
 }
 
 const temCaminho = (f: Formulario, repo: string): boolean =>
@@ -204,9 +207,7 @@ export function pendencias(
   testes: Record<string, ResultadoTeste>,
   pulados: Set<Secao>,
 ): { segmentos: Segmento[]; proxima: Destino | null; completa: boolean } {
-  const repos = [...config.repos, ...formulario.reposCriados].filter(
-    (r) => !formulario.reposRemovidos.includes(r),
-  );
+  const repos = reposAtivos(config, formulario);
   const marcas = repos.map((repo) => marcaDe({ repo }, config, formulario, testes, pulados));
   const alvo = repos.find((r) => !temCaminho(formulario, r)) ?? repos[0];
   const segmentos: Segmento[] = [
