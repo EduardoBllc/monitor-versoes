@@ -42,18 +42,23 @@ sem adaptação:
 Em um diretório de trabalho qualquer (não precisa clonar o repositório):
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 # x-release-please-version
 ```
 
 O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração a rodar (veja
 "Estado").
 
-Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
+Com plugins:
 
-Para atualizar, `uv tool upgrade monitor-versoes`: busca o último commit da `main` e mantém os
-plugins do `--with`. A versão do pacote não muda a cada commit; se o comportamento novo não
-aparecer, force com `uv tool upgrade --reinstall monitor-versoes`. Se o `monitor-versoes serve`
-estiver rodando, reinicie-o.
+```bash
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 --with <plugin> # x-release-please-version
+```
+
+O `uv tool upgrade` não sai de uma tag fixada: para atualizar, reinstale com a tag da
+[última release](https://github.com/EduardoBllc/monitor-versoes/releases/latest) e repita os
+`--with`: `uv tool install --reinstall git+…@vX.Y.Z --with <plugin>`. As mudanças de cada
+versão estão no [CHANGELOG.md](CHANGELOG.md). Se o `monitor-versoes serve` estiver rodando,
+reinicie-o.
 
 Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Se você
 tem inscrições agendadas, rode `monitor-versoes inscricao agendar` de novo depois de atualizar: o
@@ -191,11 +196,14 @@ começando por letra ou dígito.
 
 ## Verificar que funcionou
 
-1. O CLI responde:
+1. O CLI responde e diz a versão instalada:
 
    ```console
+   $ monitor-versoes --version
+   monitor-versoes X.Y.Z
    $ monitor-versoes --help
-   usage: monitor-versoes [-h] [--env {development,production}] comando ...
+   usage: monitor-versoes [-h] [--version] [--env {development,production}]
+                          comando ...
    ...
    ```
 
