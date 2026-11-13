@@ -61,6 +61,14 @@ def _config_central_isolado(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _dados_windows_isolados(monkeypatch, tmp_path):
+    """No Windows, dados e config moram em `%LOCALAPPDATA%` e `%APPDATA%`: a
+    suíte nunca toca os de quem a roda. Fora do Windows, as variáveis não são lidas."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata-isolado"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata-isolado"))
+
+
+@pytest.fixture(autouse=True)
 def _ambiente_central_reiniciado():
     """Cada teste começa sem base nem chaves aplicadas do `[ambiente]`."""
     from motor.config import _reiniciar_ambiente_base

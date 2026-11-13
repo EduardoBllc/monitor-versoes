@@ -54,7 +54,7 @@ CHAVE_TOKEN = "token"
 def _escrever(texto: str) -> None:
     caminho = caminho_config_global()
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    with open(caminho, "w") as f:
+    with open(caminho, "w", encoding="utf-8") as f:
         f.write(texto)
 
 
@@ -162,7 +162,7 @@ def test_tui_config_salva_e_preserva_comentario():
             ]
 
     asyncio.run(fluxo())
-    texto = Path(caminho_config_global()).read_text()
+    texto = Path(caminho_config_global()).read_text(encoding="utf-8")
     assert VALOR_NOVO in texto
     assert TEXTO_COMENTARIO in texto
 

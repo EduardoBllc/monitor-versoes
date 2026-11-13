@@ -34,8 +34,8 @@ sem adaptação:
 
 | Ferramenta | Para quê | Instalação |
 | --- | --- | --- |
-| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install` |
+| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: veja "Windows" |
+| git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install`; Windows: [Git for Windows](https://git-scm.com/download/win) |
 
 ## Instalação
 
@@ -72,6 +72,41 @@ timer do systemd e o LaunchAgent guardam o caminho absoluto do executável antig
 existir. Não há migração automática.
 
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Windows
+
+O motor roda nativo no Windows: CLI, TUI, `serve` e inscrições. Instale o
+[Git for Windows](https://git-scm.com/download/win) e o `uv`, no PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Depois, o mesmo `uv tool install` dos outros sistemas. Os caminhos mudam:
+
+| O quê | Windows | Linux e macOS |
+| --- | --- | --- |
+| `config.toml` central | `%APPDATA%\monitor-versoes\config.toml` | `~/.config/monitor-versoes/config.toml` |
+| estado, inscrições | `%LOCALAPPDATA%\monitor-versoes\` | `~/.local/share/monitor-versoes/` |
+
+`XDG_CONFIG_HOME`, se definida, vale também no Windows. No TOML, escreva caminhos do Windows
+entre aspas simples, `caminho = 'C:\repos\app'`: entre aspas duplas, `\` é escape.
+
+`monitor-versoes inscricao agendar` não instala nada no Windows; crie a tarefa agendada uma vez,
+à mão. Ela chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que
+`monitor-versoes inscricao rodar` sem abrir janela de console. No Prompt de Comando (`cmd`),
+ache o executável e crie a tarefa com o caminho que o `where` mostrar:
+
+```bat
+where monitor-versoes-inscricoes
+schtasks /create /tn monitor-versoes-inscricoes /sc minute /mo 1 /it /tr "\"C:\Users\voce\.local\bin\monitor-versoes-inscricoes.exe\""
+```
+
+`/it` roda a tarefa só com você logado: fora da sessão não há onde mostrar a notificação. Para
+remover: `schtasks /delete /tn monitor-versoes-inscricoes /f`.
+
+Alternativa: rodar no WSL como no Linux; o agendador (systemd) e a notificação desktop dependem
+de como o WSL está configurado.
 
 ### Configurar o ambiente
 
@@ -428,7 +463,8 @@ outras. O desfecho da última execução aparece no `listar`:
 
 `agendar` usa o `monitor-versoes` do `PATH` no momento do comando (caminho absoluto) e instala, no Linux,
 o timer de usuário do systemd (`monitor-versoes-inscricoes.timer`) e, no macOS, um LaunchAgent
-(`monitor-versoes.inscricoes.plist`). Outro sistema falha com erro de entrada. O agendador roda
+(`monitor-versoes.inscricoes.plist`). No Windows, a tarefa se cria à mão (veja "Windows"); outro
+sistema falha com erro de entrada. O agendador roda
 sem o agente SSH nem o `PATH` da sua sessão (push por SSH via agente pode falhar e virar `erro`);
 no Linux, o timer de usuário só roda fora de uma sessão com `loginctl enable-linger`; no macOS,
 a notificação desktop pode falhar num Python fora de um app empacotado (a falha vai para o log).

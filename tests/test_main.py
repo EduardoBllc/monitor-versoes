@@ -13,7 +13,9 @@ import dataclasses
 import datetime
 import json
 import os
+import pkgutil
 import subprocess
+import sys
 import tomllib
 from enum import StrEnum
 from pathlib import Path
@@ -1220,6 +1222,23 @@ def test_inscricao_listar_mostra_intervalo_formatado(inscricoes_env, tmp_path, c
     assert f"a cada {padrao}  " in capsys.readouterr().out
 
 
+def test_executavel_sem_console_roda_as_inscricoes_sem_stdout_nem_stderr(
+    inscricoes_env, monkeypatch
+):
+    """O `gui-scripts` do pacote (a tarefa agendada do Windows) roda o mesmo que
+    `inscricao rodar`, e sem console o Windows dá `None` em stdout/stderr."""
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    (alvo,) = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"][
+        "gui-scripts"
+    ].values()
+    vistos: list[Any] = []
+    monkeypatch.setattr(cli, "rodar", lambda *a: vistos.append(a))
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    pkgutil.resolve_name(alvo)()
+    assert len(vistos) == 1
+
+
 def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp_path):
     chave = "CHAVE_SO_DO_DOTENV"
     monkeypatch.setenv(chave, "")  # registra a limpeza do que o .env poria
@@ -1393,7 +1412,7 @@ def _central_com(monkeypatch, tmp_path, conteudo: str):
     central.parent.mkdir(parents=True)
     clone = tmp_path / "webapp"
     clone.mkdir()
-    central.write_text(f'{conteudo}\n[repos.webapp]\ncaminho = "{clone}"\n')
+    central.write_text(f"{conteudo}\n[repos.webapp]\ncaminho = '{clone}'\n")
     return tmp_path / "estado.db"
 
 

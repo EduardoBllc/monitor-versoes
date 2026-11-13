@@ -65,12 +65,12 @@ def test_soltar_e_idempotente(clone):
 
 
 _SEGURA_E_DORME = """
-import sys, time
+import os, sys, time
 from pathlib import Path
 import motor.trava
 motor.trava.diretorio_travas = lambda: Path(sys.argv[1])
 trava = motor.trava.travar("r", sys.argv[2])
-print("pronto", flush=True)
+print(os.getpid(), flush=True)
 time.sleep(60)
 """
 
@@ -84,10 +84,12 @@ def test_processo_morto_com_sigkill_nao_deixa_o_repo_travado(clone, tmp_path):
     )
     try:
         assert filho.stdout is not None
-        assert filho.stdout.readline().strip() == "pronto"
+        # O pid que o filho informa, não `filho.pid`: no Windows o python do
+        # venv é um lançador, e o interpretador que trava é processo neto.
+        pid = int(filho.stdout.readline())
         with pytest.raises(RepoOcupado) as erro:
             travar("r", clone)
-        assert erro.value.pid == filho.pid
+        assert erro.value.pid == pid
     finally:
         filho.kill()
         filho.wait()

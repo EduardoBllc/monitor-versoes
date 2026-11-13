@@ -15,7 +15,9 @@ def test_decisoes_citadas_no_codigo_existem():
         f"{caminho.relative_to(_RAIZ)}:{numero}: {citada}"
         for pasta in (_RAIZ / "motor", _RAIZ / "tests")
         for caminho in sorted(pasta.rglob("*.py"))
-        for numero, linha in enumerate(caminho.read_text().splitlines(), start=1)
+        for numero, linha in enumerate(
+            caminho.read_text(encoding="utf-8").splitlines(), start=1
+        )
         for citada in _DECISAO.findall(linha)
         if not (_RAIZ / citada).is_file()
     ]

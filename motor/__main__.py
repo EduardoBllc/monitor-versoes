@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TextIO
 
 from motor.agendador import (
+    ARGUMENTOS_RODAR,
     agendar,
     desagendar,
     executavel_motor,
@@ -866,6 +867,16 @@ def main(argv: list[str] | None = None) -> None:
     except Exception:
         logging.exception("Erro interno fatal (bug). Traceback completo:")
         sys.exit(1)
+
+
+def main_inscricoes() -> None:
+    """`monitor-versoes inscricao rodar` como executável sem console.
+
+    É o que a tarefa agendada do Windows chama: o `.exe` de console piscaria uma
+    janela a cada minuto. Sem console, `sys.stdout`/`sys.stderr` são `None`;
+    `print`, `logging` e `argparse` já os toleram, e o teste confere.
+    """
+    main(list(ARGUMENTOS_RODAR))
 
 
 if __name__ == "__main__":

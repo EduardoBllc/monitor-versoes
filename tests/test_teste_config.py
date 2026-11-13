@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
+import sys
 import tempfile
 
 import pytest
@@ -83,7 +85,7 @@ def test_repo_criado_no_rascunho_e_testado(tmp_path):
     assert resultado.estado is Estado.OK
     # O salvar recusa caminho inexistente; o teste recusa igual (422 na rota).
     inexistente = str(tmp_path / "nao-existe")
-    with pytest.raises(ErroDeEntrada, match=inexistente):
+    with pytest.raises(ErroDeEntrada, match=re.escape(repr(inexistente))):
         teste_config.testar(_repo_novo(inexistente), versao, PecaTestavel.REPO, REPO)
 
 
@@ -158,7 +160,9 @@ def test_segredo_do_rascunho_nao_vaza(tmp_path, temporarios):
 
     assert resultado.estado is Estado.OK
     assert SEGREDO not in str(resultado)
-    assert list(temporarios.values()) == [MODO_DIRETORIO_PRIVADO]
+    # O Windows não tem modo POSIX; lá o temporário já é do usuário.
+    if sys.platform != "win32":
+        assert list(temporarios.values()) == [MODO_DIRETORIO_PRIVADO]
     assert not any(os.path.exists(t) for t in temporarios)
 
 

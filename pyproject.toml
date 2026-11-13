@@ -29,6 +29,10 @@ anthropic = [
 [project.scripts]
 monitor-versoes = "motor.__main__:main"
 
+# Sem console no Windows: o que a tarefa agendada das inscrições chama.
+[project.gui-scripts]
+monitor-versoes-inscricoes = "motor.__main__:main_inscricoes"
+
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"
 

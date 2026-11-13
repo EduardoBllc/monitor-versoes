@@ -13,7 +13,7 @@ jobs:
     # O nome do job e o nome do check que a protecao da main exige: mudar
     # `etapa` aqui exige atualizar o ruleset junto.
     name: ${{ matrix.etapa }}
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.so || 'ubuntu-26.04' }}
     strategy:
       # Cada etapa reporta sozinha: um format quebrado nao esconde o pytest.
       fail-fast: false
@@ -29,6 +29,9 @@ jobs:
             alvo: typecheck
           - etapa: pytest
             alvo: test
+          - etapa: pytest windows
+            alvo: test
+            so: windows-latest
           - etapa: web check
             alvo: web-check
             node: true
@@ -47,5 +50,8 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # O runner Windows não tem `make`; o comando continua só no Makefile.
+      - run: choco install make --no-progress
+        if: runner.os == 'Windows'
       - run: uv sync --all-extras --locked --python 3.14
       - run: make ${{ matrix.alvo }}

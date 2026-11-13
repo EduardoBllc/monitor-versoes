@@ -157,6 +157,8 @@ def _rodar_git(
             cwd=cwd,
             capture_output=True,
             text=True,
+            # Sem `encoding`, o Windows decodificaria em cp1252 a saída UTF-8 do git.
+            encoding="utf-8",
             errors="replace",
             check=False,
             **extra,
