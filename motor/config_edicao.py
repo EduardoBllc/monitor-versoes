@@ -42,6 +42,7 @@ from motor.montagem import (
     GRUPO_ATRIBUICOES,
     GRUPO_ESQUEMAS,
     GRUPO_PRS,
+    GRUPO_SUGESTAO,
     GRUPO_TAREFAS,
     resolver_versionamento,
 )
@@ -52,7 +53,7 @@ from motor.services.versionamento import (
 )
 
 ORIGEM_MOTOR = "motor"
-_GRUPOS = (GRUPO_TAREFAS, GRUPO_PRS, GRUPO_ESQUEMAS, GRUPO_ATRIBUICOES)
+_GRUPOS = (GRUPO_TAREFAS, GRUPO_PRS, GRUPO_ESQUEMAS, GRUPO_ATRIBUICOES, GRUPO_SUGESTAO)
 
 
 class Escopo(StrEnum):
@@ -109,6 +110,7 @@ _GRUPO_DO_CAMPO: dict[tuple[str, str], str] = {
     (Tabela.VERSAO, Chave.ATRIBUICAO): GRUPO_ATRIBUICOES,
     (Tabela.TAREFAS, Chave.FONTE): GRUPO_TAREFAS,
     (Tabela.PRS, Chave.FONTE): GRUPO_PRS,
+    (Tabela.SUGESTAO, Chave.PROVEDOR): GRUPO_SUGESTAO,
 }
 
 _V = VarAmbiente

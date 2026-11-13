@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 
 import pytest
 
 from motor.adapters.git.fake import FakeGit
 from motor.adapters.sugestao.fake import FakeProvedorSugestao
+from motor.config import Chave, ConfigProjeto, Escolhido
 from motor.domain.conflito import (
     LadosDoBloco,
     PedidoAoProvedor,
@@ -30,6 +33,7 @@ from motor.errors import (
     RespostaInvalida,
     VersaoDesatualizada,
 )
+from motor.montagem import instanciar_provedor_sugestao
 from motor.ports import ProvedorSugestao
 from tests.conflito_falso import (
     APAGADO,
@@ -49,6 +53,8 @@ from tests.conflito_falso import (
 LINHAS_DO_MARCADOR = "2, 4, 6"
 RESOLVIDO = "a\nc\n"
 MUDOU_FORA = "editado fora da web\n"
+# Nome do plugin e do pacote do SDK.
+ANTHROPIC = "anthropic"
 
 
 def test_ler_conflito_lista_arquivos_e_contexto():
@@ -143,6 +149,19 @@ def test_disponibilidade_da_sugestao_no_conflito_aberto(fonte, esperado: bool):
     deps = replace(deps_em_conflito(), sugestao=fonte)
 
     assert ler_conflito(deps, VERSAO).sugestao_disponivel is esperado
+
+
+def test_sem_sdk_conflito_sem_sugestao(monkeypatch):
+    monkeypatch.setitem(sys.modules, ANTHROPIC, None)
+    config = ConfigProjeto(
+        sugestao={Chave.PROVEDOR: ANTHROPIC},
+        provedor_sugestao=Escolhido(ANTHROPIC, "/cfg/config.toml"),
+    )
+    deps = replace(
+        deps_em_conflito(), sugestao=partial(instanciar_provedor_sugestao, config)
+    )
+
+    assert ler_conflito(deps, VERSAO).sugestao_disponivel is False
 
 
 def _pedir(deps, ordens: list[int], caminho: str = DOIS):
