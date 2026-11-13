@@ -20,10 +20,12 @@ from motor.config import (
 )
 from motor.config_edicao import (
     MODO_ARQUIVO_NOVO,
+    ORIGEM_MOTOR,
     AcaoAlteracao,
     Alteracao,
     Campo,
     Escopo,
+    GrupoPlugin,
     TipoCampo,
     catalogo_campos,
     gravar,
@@ -124,6 +126,14 @@ def test_plugin_instalado_declara_campos(monkeypatch):
     _instalar(monkeypatch, _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteFalsa"))
     campos = [c for c in catalogo_campos({}) if c.origem == NOME_PLUGIN]
     assert {c.chave for c in campos} == {"projeto", "FAKE_TOKEN"}
+    assert all(c.grupo is GrupoPlugin.TAREFAS for c in campos)
+    assert all(c.grupo is None for c in catalogo_campos({}) if c.origem == ORIGEM_MOTOR)
+
+
+def test_host_de_pr_do_pacote_declara_campos_do_grupo_prs():
+    campos = [c for c in catalogo_campos({}) if c.origem == "bitbucket"]
+    assert campos
+    assert all(c.grupo is GrupoPlugin.PRS for c in campos)
 
 
 class EntryPointQuebrado(EntryPoint):
@@ -177,6 +187,13 @@ def test_modulo_classe_em_uso_vira_opcao_do_campo():
     _escrever('[tarefas]\nfonte = "tests.test_config_edicao:FonteFalsa"\n')
     campo = next(c for c in ler_para_edicao().campos if c.chave == Chave.FONTE)
     assert "tests.test_config_edicao:FonteFalsa" in campo.opcoes
+    daquele = [
+        c
+        for c in ler_para_edicao().campos
+        if c.origem == "tests.test_config_edicao:FonteFalsa"
+    ]
+    assert daquele
+    assert all(c.grupo is GrupoPlugin.TAREFAS for c in daquele)
 
 
 def test_versao_e_hash_do_arquivo():

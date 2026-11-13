@@ -464,6 +464,7 @@ export interface components {
              * @default motor
              */
             origem: string;
+            grupo?: components["schemas"]["GrupoPlugin"] | null;
             /**
              * Descricao
              * @default
@@ -587,6 +588,11 @@ export interface components {
             resultado?: components["schemas"]["VersionStatus"] | components["schemas"]["AtualizarResult"] | null;
             erro?: components["schemas"]["ErroApi"] | null;
         };
+        /**
+         * GrupoPlugin
+         * @enum {string}
+         */
+        GrupoPlugin: "monitor_versoes.tarefas" | "monitor_versoes.prs" | "monitor_versoes.esquemas" | "monitor_versoes.atribuicoes";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */

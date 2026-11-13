@@ -52,7 +52,16 @@ from motor.services.versionamento import (
 )
 
 ORIGEM_MOTOR = "motor"
-_GRUPOS = (GRUPO_TAREFAS, GRUPO_PRS, GRUPO_ESQUEMAS, GRUPO_ATRIBUICOES)
+
+
+class GrupoPlugin(StrEnum):
+    TAREFAS = GRUPO_TAREFAS
+    PRS = GRUPO_PRS
+    ESQUEMAS = GRUPO_ESQUEMAS
+    ATRIBUICOES = GRUPO_ATRIBUICOES
+
+
+_GRUPOS = tuple(GrupoPlugin)
 
 
 class Escopo(StrEnum):
@@ -77,6 +86,7 @@ class Campo:
     segredo: bool = False
     opcoes: tuple[str, ...] = ()
     origem: str = ORIGEM_MOTOR
+    grupo: GrupoPlugin | None = None
     descricao: str = ""
     padrao: str | None = None
     exemplo: str = ""
@@ -104,11 +114,11 @@ _G, _R, _A = Escopo.GERAL, Escopo.REPO, Escopo.AMBIENTE
 _TX, _IN, _ES = TipoCampo.TEXTO, TipoCampo.INTEIRO, TipoCampo.ESCOLHA
 
 #: Campo -> grupo cujos entry points e valores `modulo:Classe` em uso são as opções.
-_GRUPO_DO_CAMPO: dict[tuple[str, str], str] = {
-    (Tabela.VERSAO, Chave.ESQUEMA): GRUPO_ESQUEMAS,
-    (Tabela.VERSAO, Chave.ATRIBUICAO): GRUPO_ATRIBUICOES,
-    (Tabela.TAREFAS, Chave.FONTE): GRUPO_TAREFAS,
-    (Tabela.PRS, Chave.FONTE): GRUPO_PRS,
+_GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
+    (Tabela.VERSAO, Chave.ESQUEMA): GrupoPlugin.ESQUEMAS,
+    (Tabela.VERSAO, Chave.ATRIBUICAO): GrupoPlugin.ATRIBUICOES,
+    (Tabela.TAREFAS, Chave.FONTE): GrupoPlugin.TAREFAS,
+    (Tabela.PRS, Chave.FONTE): GrupoPlugin.PRS,
 }
 
 _V = VarAmbiente
@@ -246,7 +256,7 @@ def _em_uso(dados: Mapping[str, object], tabela: str, chave: str) -> set[str]:
     return {v for v in valores if isinstance(v, str) and plugins.MARCADOR_IMPORT in v}
 
 
-def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
+def _campos_do_plugin(grupo: GrupoPlugin, nome: str) -> tuple[Campo, ...]:
     try:
         declarados = getattr(plugins.carregar_plugin(grupo, nome), "campos_config", ())
     except Exception:  # plugin de terceiro pode quebrar no import de qualquer jeito
@@ -260,6 +270,7 @@ def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
         replace(
             c,
             origem=nome,
+            grupo=grupo,
             tabela=TABELA_AMBIENTE if c.escopo is Escopo.AMBIENTE else c.tabela,
         )
         for c in declarados

@@ -72,6 +72,13 @@ export enum TipoCampo {
   ESCOLHA = "escolha",
 }
 
+export enum GrupoPlugin {
+  TAREFAS = "monitor_versoes.tarefas",
+  PRS = "monitor_versoes.prs",
+  ESQUEMAS = "monitor_versoes.esquemas",
+  ATRIBUICOES = "monitor_versoes.atribuicoes",
+}
+
 export enum AcaoAlteracao {
   DEFINIR = "definir",
   REMOVER = "remover",

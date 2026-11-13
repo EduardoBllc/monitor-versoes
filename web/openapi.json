@@ -1365,6 +1365,16 @@
             "title": "Origem",
             "default": "motor"
           },
+          "grupo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrupoPlugin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "descricao": {
             "type": "string",
             "title": "Descricao",
@@ -1706,6 +1716,16 @@
           "estado"
         ],
         "title": "Execucao"
+      },
+      "GrupoPlugin": {
+        "type": "string",
+        "enum": [
+          "monitor_versoes.tarefas",
+          "monitor_versoes.prs",
+          "monitor_versoes.esquemas",
+          "monitor_versoes.atribuicoes"
+        ],
+        "title": "GrupoPlugin"
       },
       "HTTPValidationError": {
         "properties": {
