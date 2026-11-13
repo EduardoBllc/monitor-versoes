@@ -1,4 +1,4 @@
-import { Button, Group, Modal, Table, Text } from "@mantine/core";
+import { Button, Group, Loader, Modal, Table, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Metodo, api } from "../api/cliente";
 import type { InscricaoVista } from "../api/tipos";
@@ -49,6 +49,7 @@ export function ModalInscricoes({
           Inscrever selecionada
         </Button>
       </Group>
+      {lista.isLoading && <Loader mx="auto" display="block" />}
       {lista.error && <Text c="red">{lista.error.message}</Text>}
       {lista.data?.length === 0 && (
         <Text c="dimmed">

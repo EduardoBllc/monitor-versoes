@@ -4,6 +4,7 @@ import {
   Button,
   Divider,
   Group,
+  Loader,
   Modal,
   NavLink,
   Paper,
@@ -393,6 +394,7 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
         body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
       }}
     >
+      {config.isLoading && <Loader mx="auto" display="block" />}
       {config.error && <Alert color="red">{config.error.message}</Alert>}
       {dados && (
         <Editor
