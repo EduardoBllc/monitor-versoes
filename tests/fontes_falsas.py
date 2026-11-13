@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import sys
 from collections.abc import Mapping
 from typing import ClassVar
 
@@ -108,6 +109,17 @@ class HostFalso:
     def verificar_credenciais(self) -> None:
         if os.environ.get("HOST_FALSO_TOKEN", "") != "certo":
             raise ErroDeEntrada("credencial recusada")
+
+
+class HostSaidaBinaria(HostFalso):
+    """Host que escreve bytes que não são UTF-8 no stdout e no stderr ao verificar."""
+
+    def verificar_credenciais(self) -> None:
+        for fluxo in (sys.stdout, sys.stderr):
+            fluxo.flush()
+            fluxo.buffer.write(b"\xff\xfe\n")
+            fluxo.buffer.flush()
+        super().verificar_credenciais()
 
 
 class HostSemVerificacao:

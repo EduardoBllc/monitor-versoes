@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 import motor.operacoes as operacoes
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
+    CHAVE_CAMINHO,
     TABELA_AMBIENTE,
     VAR_XDG_CONFIG_HOME,
     Chave,
@@ -27,6 +28,7 @@ from motor.config_edicao import AcaoAlteracao
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
+from motor.diagnostico import PecaTestavel
 from motor.domain.conflito import TipoArquivo
 from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
@@ -588,6 +590,62 @@ def test_put_config_erros(
         amb.soltar.set()
     if caso is CasoErro.OCUPADO:
         _esperar(cliente)
+
+
+def _pedido_teste(corpo: dict[str, Any], peca: PecaTestavel) -> dict[str, Any]:
+    return corpo | {"peca": peca, "repo": None}
+
+
+@pytest.mark.usefixtures("config_tmp")
+@pytest.mark.parametrize(
+    ("caso", "status", "tipo"),
+    [
+        (CasoErro.INVALIDO, HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+        (CasoErro.VELHA, HTTPStatus.CONFLICT, TipoErro.RECUSA),
+    ],
+)
+def test_testar_config_erros(
+    cliente: TestClient, caso: CasoErro, status: int, tipo: TipoErro
+) -> None:
+    versao = cliente.get("/api/config").json()["versao"]
+    corpo = _definir(
+        VarAmbiente.WORKTREES_MANTIDAS, PORTA_INVALIDA, TABELA_AMBIENTE, versao
+    )
+    if caso is CasoErro.VELHA:
+        corpo["versao"] = VERSAO_INEXISTENTE
+    r = cliente.post("/api/config/testar", json=_pedido_teste(corpo, PecaTestavel.PRS))
+    assert (r.status_code, r.json()["tipo"]) == (status, tipo)
+
+
+@pytest.mark.usefixtures("config_tmp")
+def test_testar_config_nao_e_bloqueado_por_execucao_e_nao_grava(
+    cliente: TestClient, amb: Ambiente, tmp_path: Path
+) -> None:
+    versao = cliente.get("/api/config").json()["versao"]
+    cliente.post(
+        f"/api/repos/{REPO}/versoes/{VERSAO}/verificacao", json={"auditar": False}
+    )
+    novo = {"acao": AcaoAlteracao.CRIAR_REPO, "repo": "novo"}
+    caminho = {
+        "acao": AcaoAlteracao.DEFINIR,
+        "repo": "novo",
+        "chave": CHAVE_CAMINHO,
+        "valor": str(tmp_path),
+    }
+    corpo = {
+        "alteracoes": [novo, caminho],
+        "versao": versao,
+        "peca": PecaTestavel.REPO,
+        "repo": "novo",
+    }
+    try:
+        r = cliente.post("/api/config/testar", json=corpo)
+        assert r.status_code == HTTPStatus.OK
+        assert set(r.json()) == {"estado", "detalhe", "correcao"}
+        assert cliente.get("/api/config").json()["versao"] == versao
+    finally:
+        amb.soltar.set()
+    _esperar(cliente)
 
 
 def test_conflito_le_lista_e_arquivo_com_caminho_na_query(
