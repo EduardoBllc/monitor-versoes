@@ -536,6 +536,11 @@ export interface components {
             chamado: string | null;
             /** Arquivos */
             arquivos: components["schemas"]["ArquivoDoConflito"][];
+            /**
+             * Sugestao Disponivel
+             * @default false
+             */
+            sugestao_disponivel: boolean;
         };
         /** ConteudoDoConflito */
         ConteudoDoConflito: {

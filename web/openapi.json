@@ -1519,6 +1519,11 @@
             },
             "type": "array",
             "title": "Arquivos"
+          },
+          "sugestao_disponivel": {
+            "type": "boolean",
+            "title": "Sugestao Disponivel",
+            "default": false
           }
         },
         "type": "object",
