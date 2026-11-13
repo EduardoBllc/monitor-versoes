@@ -29,6 +29,7 @@ from motor.daemon.erros import (
 )
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
+from motor.diagnostico import PecaTestavel
 from motor.domain.inscricao import UltimaExecucao
 from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult
@@ -49,6 +50,7 @@ from motor.operacoes import (
 )
 from motor.progresso import RelatorProgresso, silencioso
 from motor.services.versionamento import Versionamento
+from motor.teste_config import testar
 
 INTERVALO_EVENTOS_S = 0.1
 ATRASO_NAVEGADOR_S = 1.0
@@ -110,6 +112,21 @@ class PedidoJulgamento:
 class PedidoConfig:
     alteracoes: list[Alteracao]
     versao: str
+
+
+@dataclass(frozen=True)
+class PedidoTeste:
+    alteracoes: list[Alteracao]
+    versao: str
+    peca: PecaTestavel
+    repo: str | None = None
+
+
+@dataclass(frozen=True)
+class ResultadoTeste:
+    estado: str
+    detalhe: str
+    correcao: str
 
 
 @dataclass(frozen=True)
@@ -402,6 +419,12 @@ def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
         if ctx.execucoes.rodando():
             raise ConfigOcupada
         return gravar(corpo.alteracoes, corpo.versao)
+
+    # Não consulta `execucoes.rodando()`: o teste não grava a config.
+    @app.post("/api/config/testar")
+    def testar_config(corpo: PedidoTeste) -> ResultadoTeste:
+        r = testar(corpo.alteracoes, corpo.versao, corpo.peca, corpo.repo)
+        return ResultadoTeste(r.estado.value, r.detalhe, r.correcao)
 
 
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:

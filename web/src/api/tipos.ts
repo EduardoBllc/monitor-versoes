@@ -16,6 +16,7 @@ export type ConfigEditavel = Esquemas["ConfigEditavel"];
 export type Campo = Esquemas["Campo"];
 export type ValorLido = Esquemas["ValorLido"];
 export type Alteracao = Esquemas["Alteracao"];
+export type ResultadoTeste = Esquemas["ResultadoTeste"];
 export type ConflitoAberto = Esquemas["ConflitoAberto"];
 export type ArquivoDoConflito = Esquemas["ArquivoDoConflito"];
 export type ConteudoDoConflito = Esquemas["ConteudoDoConflito"];

@@ -85,3 +85,17 @@ export enum AcaoAlteracao {
   CRIAR_REPO = "criar_repo",
   REMOVER_REPO = "remover_repo",
 }
+
+export enum PecaTestavel {
+  PRS = "prs",
+  TAREFAS = "tarefas",
+  REPO = "repo",
+}
+
+export enum EstadoTeste {
+  OK = "OK",
+  FALHA = "FALHA",
+  NAO_VERIFICADA = "não verificada",
+  NAO_CONFIGURADO = "não configurado",
+  AVISO = "aviso",
+}

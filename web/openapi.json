@@ -1117,6 +1117,44 @@
           }
         }
       }
+    },
+    "/api/config/testar": {
+      "post": {
+        "summary": "Testar Config",
+        "operationId": "testar_config_api_config_testar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoTeste"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoTeste"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1867,6 +1905,16 @@
         ],
         "title": "OrfaoDaVersao"
       },
+      "PecaTestavel": {
+        "type": "string",
+        "enum": [
+          "prs",
+          "tarefas",
+          "repo"
+        ],
+        "title": "PecaTestavel",
+        "description": "As peças que a web testa uma a uma, sobre o rascunho da config."
+      },
       "PedidoAvaliacao": {
         "properties": {
           "numero": {
@@ -2012,6 +2060,42 @@
         ],
         "title": "PedidoSugestoes"
       },
+      "PedidoTeste": {
+        "properties": {
+          "alteracoes": {
+            "items": {
+              "$ref": "#/components/schemas/Alteracao"
+            },
+            "type": "array",
+            "title": "Alteracoes"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "peca": {
+            "$ref": "#/components/schemas/PecaTestavel"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alteracoes",
+          "versao",
+          "peca"
+        ],
+        "title": "PedidoTeste"
+      },
       "PedidoVerificacao": {
         "properties": {
           "auditar": {
@@ -2114,6 +2198,29 @@
           "versao_disco"
         ],
         "title": "Resolucao"
+      },
+      "ResultadoTeste": {
+        "properties": {
+          "estado": {
+            "type": "string",
+            "title": "Estado"
+          },
+          "detalhe": {
+            "type": "string",
+            "title": "Detalhe"
+          },
+          "correcao": {
+            "type": "string",
+            "title": "Correcao"
+          }
+        },
+        "type": "object",
+        "required": [
+          "estado",
+          "detalhe",
+          "correcao"
+        ],
+        "title": "ResultadoTeste"
       },
       "Sugestao": {
         "properties": {

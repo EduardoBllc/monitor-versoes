@@ -365,6 +365,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/testar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Testar Config */
+        post: operations["testar_config_api_config_testar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -658,6 +675,12 @@ export interface components {
             data: string;
             julgamento: components["schemas"]["JulgamentoOrfao"] | null;
         };
+        /**
+         * PecaTestavel
+         * @description As peças que a web testa uma a uma, sobre o rascunho da config.
+         * @enum {string}
+         */
+        PecaTestavel: "prs" | "tarefas" | "repo";
         /** PedidoAvaliacao */
         PedidoAvaliacao: {
             /** Numero */
@@ -708,6 +731,16 @@ export interface components {
             /** Existentes */
             existentes: string[];
         };
+        /** PedidoTeste */
+        PedidoTeste: {
+            /** Alteracoes */
+            alteracoes: components["schemas"]["Alteracao"][];
+            /** Versao */
+            versao: string;
+            peca: components["schemas"]["PecaTestavel"];
+            /** Repo */
+            repo?: string | null;
+        };
         /** PedidoVerificacao */
         PedidoVerificacao: {
             /** Auditar */
@@ -751,6 +784,15 @@ export interface components {
             conteudo: string | null;
             /** Versao Disco */
             versao_disco: string;
+        };
+        /** ResultadoTeste */
+        ResultadoTeste: {
+            /** Estado */
+            estado: string;
+            /** Detalhe */
+            detalhe: string;
+            /** Correcao */
+            correcao: string;
         };
         /** Sugestao */
         Sugestao: {
@@ -1648,6 +1690,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigEditavel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    testar_config_api_config_testar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoTeste"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultadoTeste"];
                 };
             };
             /** @description Validation Error */
