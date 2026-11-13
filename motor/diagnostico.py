@@ -8,7 +8,7 @@ não escreve no banco, não roda git, não exige repo cadastrado.
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +65,12 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
     return []
 
 
+def onde_das_credenciais(config_em: str, ambiente: str) -> str:
+    """Onde a correção manda pôr credencial: o `[ambiente]` do central ou o `.env`."""
+    arquivo = ".env.development" if ambiente == "development" else ".env"
+    return f"[ambiente] de {config_em} (ou no {arquivo})"
+
+
 # Oito parâmetros, sete nomeados: cada um é uma peça injetada para o teste
 # rodar sem banco, rede nem arquivo de config reais.
 def diagnosticar(  # noqa: PLR0913
@@ -80,13 +86,12 @@ def diagnosticar(  # noqa: PLR0913
 ) -> list[Resultado]:
     """`config_em` é o caminho do config central; `erro_ambiente`, o erro ao ler
     o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
-    arquivo = ".env.development" if ambiente == "development" else ".env"
     migrar = (
         "monitor-versoes --env development migrar"
         if ambiente == "development"
         else "monitor-versoes migrar"
     )
-    onde = f"[ambiente] de {config_em} (ou no {arquivo})"
+    onde = onde_das_credenciais(config_em, ambiente)
 
     problemas = _problemas_do_banco(env)
 
@@ -336,9 +341,15 @@ def diagnosticar_peca(
             return _tarefas(config_central, onde)
         case PecaTestavel.REPO:
             configurados = repos()
-            if repo is None or repo not in configurados:
-                raise ErroDeEntrada(f"repo {repo!r} não existe")
-            return _caminho_do_repo(repo, configurados[repo])
+            nome = repo_existente(repo, configurados)
+            return _caminho_do_repo(nome, configurados[nome])
+
+
+def repo_existente(repo: str | None, nomes: Collection[str]) -> str:
+    """O repo a testar, que precisa estar entre os `nomes` da config."""
+    if repo is None or repo not in nomes:
+        raise ErroDeEntrada(f"repo {repo!r} não existe")
+    return repo
 
 
 def formatar(resultado: Resultado) -> str:
@@ -359,4 +370,6 @@ __all__ = [
     "diagnosticar_peca",
     "falhou",
     "formatar",
+    "onde_das_credenciais",
+    "repo_existente",
 ]

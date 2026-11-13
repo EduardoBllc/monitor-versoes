@@ -11,10 +11,12 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 from dataclasses import asdict
 
 from motor.config import (
-    TABELA_AMBIENTE,
+    AMBIENTE_PADRAO,
+    SECAO_REPOS,
     VAR_XDG_CONFIG_HOME,
     ambiente_base,
     ambiente_central,
@@ -31,6 +33,8 @@ from motor.diagnostico import (
     PecaTestavel,
     Resultado,
     diagnosticar_peca,
+    onde_das_credenciais,
+    repo_existente,
 )
 from motor.errors import MotorError, formatar_com_notas
 
@@ -39,11 +43,21 @@ TEMPO_ESGOTADO = "tempo esgotado"
 
 
 def testar(
-    alteracoes: list[Alteracao], versao: str, peca: PecaTestavel, repo: str | None
+    alteracoes: list[Alteracao],
+    versao: str,
+    peca: PecaTestavel,
+    repo: str | None,
+    *,
+    ambiente: str = AMBIENTE_PADRAO,
 ) -> Resultado:
-    """A linha do diagnóstico de `peca` com a config como ficaria se salva."""
+    """A linha do diagnóstico de `peca` com a config como ficaria se salva.
+
+    `ambiente` escolhe o `.env` que a correção cita, como no diagnóstico."""
     texto = rascunho(alteracoes, versao)
-    comando = [sys.executable, "-m", __name__, peca, caminho_config_global()]
+    if peca is PecaTestavel.REPO:
+        repo_existente(repo, tomllib.loads(texto).get(SECAO_REPOS, {}))
+    onde = onde_das_credenciais(caminho_config_global(), ambiente)
+    comando = [sys.executable, "-m", __name__, peca, onde]
     if repo is not None:
         comando.append(repo)
     with tempfile.TemporaryDirectory() as temporario:
@@ -81,9 +95,8 @@ def _falha(peca: PecaTestavel, detalhe: str) -> Resultado:
 
 
 def _main(argv: list[str]) -> None:
-    nome_peca, config_real, *resto = argv
+    nome_peca, onde, *resto = argv
     peca = PecaTestavel(nome_peca)
-    onde = f"[{TABELA_AMBIENTE}] de {config_real}"
     repo = resto[0] if resto else None
     try:
         aplicar_ambiente_central(ambiente_central())

@@ -11,14 +11,22 @@ import pytest
 from motor import teste_config
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
+    AMBIENTE_PADRAO,
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
     Chave,
     Tabela,
     caminho_config_global,
+    carregar_config_global,
 )
-from motor.config_edicao import AcaoAlteracao, Alteracao, ler_para_edicao
-from motor.diagnostico import Estado, Peca, PecaTestavel
+from motor.config_edicao import AcaoAlteracao, Alteracao, gravar, ler_para_edicao
+from motor.diagnostico import (
+    Estado,
+    Peca,
+    PecaTestavel,
+    diagnosticar_peca,
+    onde_das_credenciais,
+)
 from motor.errors import ErroDeEntrada
 
 SEGREDO = "s3nha-nao-salva"
@@ -68,6 +76,15 @@ def test_repo_criado_no_rascunho_e_testado(tmp_path):
         teste_config.testar(_repo_novo(inexistente), versao, PecaTestavel.REPO, REPO)
 
 
+@pytest.mark.parametrize("repo", [None, "ausente"])
+def test_repo_fora_do_rascunho_e_erro_de_entrada(tmp_path, repo, temporarios):
+    with pytest.raises(ErroDeEntrada):
+        teste_config.testar(
+            _repo_novo(tmp_path), ler_para_edicao().versao, PecaTestavel.REPO, repo
+        )
+    assert not temporarios
+
+
 def test_correcao_cita_o_config_real(monkeypatch, temporarios):
     monkeypatch.delenv(VAR_HOST_FALSO, raising=False)
 
@@ -80,6 +97,14 @@ def test_correcao_cita_o_config_real(monkeypatch, temporarios):
 
     assert resultado.estado is Estado.FALHA
     assert caminho_config_global() in resultado.correcao
+    # A mesma linha que o diagnóstico dá com a config salva.
+    gravar([_definir(HOST_FALSO, Chave.FONTE, Tabela.PRS)], ler_para_edicao().versao)
+    assert resultado == diagnosticar_peca(
+        PecaTestavel.PRS,
+        config_central=carregar_config_global,
+        repos=dict,
+        onde=onde_das_credenciais(caminho_config_global(), AMBIENTE_PADRAO),
+    )
     (temporario,) = temporarios
     assert temporario not in resultado.correcao
 
