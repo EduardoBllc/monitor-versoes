@@ -14,7 +14,9 @@ import datetime
 import json
 import os
 import subprocess
+import tomllib
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 import dotenv
@@ -89,6 +91,36 @@ def test_tui_despacha_sem_abrir_banco_no_cli(monkeypatch, argv, arquivo, ambient
 
     assert chamadas == ["tui"]
     assert ambientes == [arquivo]
+
+
+def _versao_do_pyproject() -> str:
+    raiz = Path(__file__).resolve().parent.parent
+    with (raiz / "pyproject.toml").open("rb") as f:
+        return str(tomllib.load(f)["project"]["version"])
+
+
+def test_version_imprime_a_versao_do_pyproject(capsys):
+    with pytest.raises(SystemExit) as saida:
+        main(["--version"])
+
+    assert saida.value.code == 0
+    assert (
+        capsys.readouterr().out.strip() == f"monitor-versoes {_versao_do_pyproject()}"
+    )
+
+
+def test_version_ignora_config_central_invalida(tmp_path, monkeypatch, capsys):
+    (tmp_path / "monitor-versoes").mkdir()
+    (tmp_path / "monitor-versoes" / "config.toml").write_text("[ambiente")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    with pytest.raises(SystemExit) as saida:
+        main(["--version"])
+
+    assert saida.value.code == 0
+    assert (
+        capsys.readouterr().out.strip() == f"monitor-versoes {_versao_do_pyproject()}"
+    )
 
 
 def test_help_descreve_as_acoes_da_tui():
