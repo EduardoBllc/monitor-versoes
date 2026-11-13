@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.metadata
 import logging
 import os
 import sys
@@ -388,6 +389,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     parser = argparse.ArgumentParser(prog="monitor-versoes")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {importlib.metadata.version('monitor-versoes')}",
+    )
     parser.add_argument(
         "--env",
         choices=_ARQUIVOS_AMBIENTE,
@@ -796,6 +802,9 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # ponytail: --version não depende do ambiente; só a forma isolada, que é a usada.
+    if argv[:1] == ["--version"]:
+        _build_parser().parse_args(argv)
     try:
         erro_central = _carregar_ambiente(argv)
     except MotorError as e:

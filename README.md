@@ -42,21 +42,29 @@ sem adaptação:
 Em um diretório de trabalho qualquer (não precisa clonar o repositório):
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 # x-release-please-version
 ```
 
 O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração a rodar (veja
 "Estado").
 
 Com a sugestão de resolução por IA (provedor `anthropic`, veja "Sugestão de resolução por IA"):
-`uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes'`.
 
-Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
+```bash
+uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0' # x-release-please-version
+```
 
-Para atualizar, `uv tool upgrade monitor-versoes`: busca o último commit da `main` e mantém os
-plugins do `--with`. A versão do pacote não muda a cada commit; se o comportamento novo não
-aparecer, force com `uv tool upgrade --reinstall monitor-versoes`. Se o `monitor-versoes serve`
-estiver rodando, reinicie-o.
+Com plugins:
+
+```bash
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.1.0 --with <plugin> # x-release-please-version
+```
+
+O `uv tool upgrade` não sai de uma tag fixada: para atualizar, rode o mesmo comando com que
+instalou (com o extra e os `--with` que usou), trocando a tag pela da
+[última release](https://github.com/EduardoBllc/monitor-versoes/releases/latest) e
+acrescentando `--reinstall`. As mudanças de cada versão estão no [CHANGELOG.md](CHANGELOG.md).
+Se o `monitor-versoes serve` estiver rodando, reinicie-o.
 
 Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Se você
 tem inscrições agendadas, rode `monitor-versoes inscricao agendar` de novo depois de atualizar: o
@@ -232,11 +240,14 @@ começando por letra ou dígito.
 
 ## Verificar que funcionou
 
-1. O CLI responde:
+1. O CLI responde e diz a versão instalada:
 
    ```console
+   $ monitor-versoes --version
+   monitor-versoes X.Y.Z
    $ monitor-versoes --help
-   usage: monitor-versoes [-h] [--env {development,production}] comando ...
+   usage: monitor-versoes [-h] [--version] [--env {development,production}]
+                          comando ...
    ...
    ```
 
@@ -473,7 +484,7 @@ desfecho):
 | Sintoma | Causa e saída |
 | --- | --- |
 | Pedir a sugestão dá erro de chave | Falta `ANTHROPIC_API_KEY` no `[ambiente]`. O erro aparece ao pedir, e o `monitor-versoes diagnostico` aponta a correção. |
-| O botão **Sugerir blocos abertos** não aparece e o `diagnostico` pede `monitor-versoes[anthropic]` | O provedor `anthropic` está configurado, mas o extra não está instalado. Reinstale com `uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes'`. |
+| O botão **Sugerir blocos abertos** não aparece e o `diagnostico` pede `monitor-versoes[anthropic]` | O provedor `anthropic` está configurado, mas o extra não está instalado. Reinstale com o extra, como em "Instalação". |
 | `ERROR: banco inacessivel: unable to open database file. Confira DATABASE_SQLITE_PATH ...` | O motor não abre o arquivo do estado. Confira o caminho de `DATABASE_SQLITE_PATH` e as permissões do arquivo e do diretório. |
 | `ERROR: o suporte a Postgres no estado foi removido ...` | A configuração ainda tem `DATABASE_BACKEND=postgres` ou as cinco `DATABASE_HOST/PORT/NAME/USER/PASSWORD` ([decisão 035](docs/decisoes/035-estado-local-em-sqlite.md)). Antes de tirá-las, leve o estado para o SQLite com a última versão que tinha Postgres: `uvx --from git+https://github.com/EduardoBllc/monitor-versoes@7e95ad4abcf7ae99013a025ee434bbd28ea06616 motor migrar-estado --de postgresql://<usuario>:<senha>@<host>:<porta>/<banco> --para sqlite:///$HOME/.local/share/monitor-versoes/estado.db`. Depois, tire `DATABASE_BACKEND` e as `DATABASE_*` do `[ambiente]` (ou do `.env`). |
 | `ERROR: faltando [tarefas] fonte em ...; ou use --task-source manual --lista <arquivo>` | Nenhuma fonte de tarefas na config. Defina `[tarefas] fonte` no `config.toml` central, ou use a lista manual. |
