@@ -2,6 +2,7 @@ import {
   Button,
   Checkbox,
   Group,
+  Loader,
   Modal,
   Stack,
   Table,
@@ -69,6 +70,7 @@ export function ModalOrfaos({
       title={`Órfãos de ${repo} ${versao}`}
       size="xl"
     >
+      {lista.isLoading && <Loader mx="auto" display="block" />}
       {lista.error && <Text c="red">{lista.error.message}</Text>}
       {lista.data?.length === 0 && (
         <Text c="dimmed">Nenhum commit órfão nesta versão.</Text>

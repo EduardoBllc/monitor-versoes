@@ -1,13 +1,17 @@
-import { Button, Group, Select, Tooltip } from "@mantine/core";
+import { Button, Group, Loader, Select, Tooltip } from "@mantine/core";
 import type { ReactNode } from "react";
 import type { RepoOption, VersionOption } from "../api/tipos";
 
 const SEM_CHECKOUT = "checkout local não encontrado";
+const CARREGANDO = "carregando…";
+const girando = (sim?: boolean) => (sim ? <Loader size="xs" /> : undefined);
 
 export interface PropsBarra {
   repos: RepoOption[];
+  carregandoRepos?: boolean;
   repo?: string;
   versoes: VersionOption[];
+  carregandoVersoes?: boolean;
   versao?: string;
   ocupado: boolean;
   bloqueadas?: string[];
@@ -31,9 +35,11 @@ export function Barra(p: PropsBarra) {
     <Group h="100%" px="md" gap="sm" wrap="wrap">
       <Select
         aria-label="Repositório"
-        placeholder="repositório"
+        placeholder={p.carregandoRepos ? CARREGANDO : "repositório"}
         searchable
         w={220}
+        disabled={p.carregandoRepos}
+        rightSection={girando(p.carregandoRepos)}
         value={p.repo ?? null}
         data={p.repos.map((r) => ({
           value: r.nome,
@@ -50,9 +56,10 @@ export function Barra(p: PropsBarra) {
       />
       <Select
         aria-label="Versão"
-        placeholder="versão"
+        placeholder={p.carregandoVersoes ? CARREGANDO : "versão"}
         w={200}
-        disabled={!disponivel}
+        disabled={!disponivel || p.carregandoVersoes}
+        rightSection={girando(p.carregandoVersoes)}
         value={p.versao ?? null}
         data={p.versoes.map((v) => ({
           value: v.numero,
