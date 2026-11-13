@@ -72,9 +72,58 @@ export enum TipoCampo {
   ESCOLHA = "escolha",
 }
 
+export enum GrupoPlugin {
+  TAREFAS = "monitor_versoes.tarefas",
+  PRS = "monitor_versoes.prs",
+  ESQUEMAS = "monitor_versoes.esquemas",
+  ATRIBUICOES = "monitor_versoes.atribuicoes",
+  SUGESTAO = "monitor_versoes.sugestao",
+}
+
 export enum AcaoAlteracao {
   DEFINIR = "definir",
   REMOVER = "remover",
   CRIAR_REPO = "criar_repo",
   REMOVER_REPO = "remover_repo",
+}
+
+export enum PecaTestavel {
+  PRS = "prs",
+  TAREFAS = "tarefas",
+  REPO = "repo",
+}
+
+export enum EstadoTeste {
+  OK = "OK",
+  FALHA = "FALHA",
+  NAO_VERIFICADA = "não verificada",
+  NAO_CONFIGURADO = "não configurado",
+  AVISO = "aviso",
+}
+
+export enum Tabela {
+  VERSAO = "versao",
+  LIBERACAO = "liberacao",
+  BRANCHES = "branches",
+  REFERENCIA = "referencia",
+  TAREFAS = "tarefas",
+  PRS = "prs",
+  SUGESTAO = "sugestao",
+}
+
+export enum Chave {
+  ESQUEMA = "esquema",
+  ATRIBUICAO = "atribuicao",
+  TAG = "tag",
+  VERSAO = "versao",
+  PRINCIPAL = "principal",
+  PADRAO = "padrao",
+  FONTE = "fonte",
+  PISO = "piso",
+  PROVEDOR = "provedor",
+}
+
+export enum VarAmbiente {
+  DATABASE_SQLITE_PATH = "DATABASE_SQLITE_PATH",
+  WORKTREES_MANTIDAS = "WORKTREES_MANTIDAS",
 }

@@ -402,6 +402,11 @@ def aplicar_ambiente_central(central: Mapping[str, str]) -> None:
     _chaves_aplicadas.update(novo)
 
 
+def ambiente_base() -> dict[str, str]:
+    """O ambiente sem o `[ambiente]` aplicado (shell + .env)."""
+    return dict(_estado_ambiente.get(_BASE, os.environ))
+
+
 def ambiente_central() -> dict[str, str]:
     """`[ambiente]` do topo da config central, como variaveis de ambiente."""
     arquivo = caminho_config_global()

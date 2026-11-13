@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { AcaoAlteracao, Escopo, TipoCampo } from "./api/enums";
 import type { ConfigEditavel } from "./api/tipos";
+import { TABELA_AMBIENTE } from "./apoioTeste";
 import {
   ORIGEM_MOTOR,
   EstadoSegredo,
-  TABELA_AMBIENTE,
   alteracoesDe,
   chaveDe,
   estadoSegredo,

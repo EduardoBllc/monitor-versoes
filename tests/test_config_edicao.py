@@ -21,14 +21,17 @@ from motor.config import (
 )
 from motor.config_edicao import (
     MODO_ARQUIVO_NOVO,
+    ORIGEM_MOTOR,
     AcaoAlteracao,
     Alteracao,
     Campo,
     Escopo,
+    GrupoPlugin,
     TipoCampo,
     catalogo_campos,
     gravar,
     ler_para_edicao,
+    rascunho,
 )
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.montagem import GRUPO_TAREFAS
@@ -131,6 +134,14 @@ def test_plugin_instalado_declara_campos(monkeypatch):
     _instalar(monkeypatch, _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteFalsa"))
     campos = [c for c in catalogo_campos({}) if c.origem == NOME_PLUGIN]
     assert {c.chave for c in campos} == {"projeto", "FAKE_TOKEN"}
+    assert all(c.grupo is GrupoPlugin.TAREFAS for c in campos)
+    assert all(c.grupo is None for c in catalogo_campos({}) if c.origem == ORIGEM_MOTOR)
+
+
+def test_host_de_pr_do_pacote_declara_campos_do_grupo_prs():
+    campos = [c for c in catalogo_campos({}) if c.origem == "bitbucket"]
+    assert campos
+    assert all(c.grupo is GrupoPlugin.PRS for c in campos)
 
 
 class EntryPointQuebrado(EntryPoint):
@@ -184,6 +195,13 @@ def test_modulo_classe_em_uso_vira_opcao_do_campo():
     _escrever('[tarefas]\nfonte = "tests.test_config_edicao:FonteFalsa"\n')
     campo = next(c for c in ler_para_edicao().campos if c.chave == Chave.FONTE)
     assert "tests.test_config_edicao:FonteFalsa" in campo.opcoes
+    daquele = [
+        c
+        for c in ler_para_edicao().campos
+        if c.origem == "tests.test_config_edicao:FonteFalsa"
+    ]
+    assert daquele
+    assert all(c.grupo is GrupoPlugin.TAREFAS for c in daquele)
 
 
 def test_versao_e_hash_do_arquivo():
@@ -368,3 +386,21 @@ def test_operacao_de_repo_invalida(tmp_path, alteracao):
     _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
     with pytest.raises(ErroDeEntrada):
         gravar([alteracao], ler_para_edicao().versao)
+
+
+def test_rascunho_nao_grava():
+    _escrever('[tarefas]\na = "1"\n')
+    antes = _bytes()
+    texto = rascunho([_definir("2", "a", Tabela.TAREFAS)], ler_para_edicao().versao)
+    assert 'a = "2"' in texto
+    assert _bytes() == antes
+
+
+def test_rascunho_invalido_e_versao_velha(tmp_path):
+    _escrever(f'[repos.a]\ncaminho = "{tmp_path}"\n')
+    versao = ler_para_edicao().versao
+    with pytest.raises(ErroDeEntrada):
+        rascunho([_definir("abc", Chave.PISO, Tabela.VERSAO, "a")], versao)
+    _escrever('[tarefas]\na = "2"\n')
+    with pytest.raises(RecusaDeInvariante, match="recarregue"):
+        rascunho([_definir("3", "a", Tabela.TAREFAS)], versao)

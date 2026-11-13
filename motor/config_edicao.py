@@ -53,7 +53,17 @@ from motor.services.versionamento import (
 )
 
 ORIGEM_MOTOR = "motor"
-_GRUPOS = (GRUPO_TAREFAS, GRUPO_PRS, GRUPO_ESQUEMAS, GRUPO_ATRIBUICOES, GRUPO_SUGESTAO)
+
+
+class GrupoPlugin(StrEnum):
+    TAREFAS = GRUPO_TAREFAS
+    PRS = GRUPO_PRS
+    ESQUEMAS = GRUPO_ESQUEMAS
+    ATRIBUICOES = GRUPO_ATRIBUICOES
+    SUGESTAO = GRUPO_SUGESTAO
+
+
+_GRUPOS = tuple(GrupoPlugin)
 
 
 class Escopo(StrEnum):
@@ -81,6 +91,7 @@ class Campo:
     descricao: str = ""
     padrao: str | None = None
     exemplo: str = ""
+    grupo: GrupoPlugin | None = None
 
 
 @dataclass(frozen=True)
@@ -105,12 +116,12 @@ _G, _R, _A = Escopo.GERAL, Escopo.REPO, Escopo.AMBIENTE
 _TX, _IN, _ES = TipoCampo.TEXTO, TipoCampo.INTEIRO, TipoCampo.ESCOLHA
 
 #: Campo -> grupo cujos entry points e valores `modulo:Classe` em uso são as opções.
-_GRUPO_DO_CAMPO: dict[tuple[str, str], str] = {
-    (Tabela.VERSAO, Chave.ESQUEMA): GRUPO_ESQUEMAS,
-    (Tabela.VERSAO, Chave.ATRIBUICAO): GRUPO_ATRIBUICOES,
-    (Tabela.TAREFAS, Chave.FONTE): GRUPO_TAREFAS,
-    (Tabela.PRS, Chave.FONTE): GRUPO_PRS,
-    (Tabela.SUGESTAO, Chave.PROVEDOR): GRUPO_SUGESTAO,
+_GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
+    (Tabela.VERSAO, Chave.ESQUEMA): GrupoPlugin.ESQUEMAS,
+    (Tabela.VERSAO, Chave.ATRIBUICAO): GrupoPlugin.ATRIBUICOES,
+    (Tabela.TAREFAS, Chave.FONTE): GrupoPlugin.TAREFAS,
+    (Tabela.PRS, Chave.FONTE): GrupoPlugin.PRS,
+    (Tabela.SUGESTAO, Chave.PROVEDOR): GrupoPlugin.SUGESTAO,
 }
 
 _V = VarAmbiente
@@ -248,7 +259,7 @@ def _em_uso(dados: Mapping[str, object], tabela: str, chave: str) -> set[str]:
     return {v for v in valores if isinstance(v, str) and plugins.MARCADOR_IMPORT in v}
 
 
-def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
+def _campos_do_plugin(grupo: GrupoPlugin, nome: str) -> tuple[Campo, ...]:
     try:
         declarados = getattr(plugins.carregar_plugin(grupo, nome), "campos_config", ())
     except Exception:  # plugin de terceiro pode quebrar no import de qualquer jeito
@@ -262,6 +273,7 @@ def _campos_do_plugin(grupo: str, nome: str) -> tuple[Campo, ...]:
         replace(
             c,
             origem=nome,
+            grupo=grupo,
             tabela=TABELA_AMBIENTE if c.escopo is Escopo.AMBIENTE else c.tabela,
         )
         for c in declarados
@@ -503,8 +515,8 @@ def _gravar_atomico(arquivo: str, conteudo: bytes) -> None:
         raise ErroDeEntrada(f"{arquivo}: não foi possível gravar ({e})") from e
 
 
-def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
-    """Aplica, valida e grava a config central; recusa se ela mudou desde `versao`."""
+def rascunho(alteracoes: list[Alteracao], versao: str) -> str:
+    """Config central com as alterações, validada sem gravar; recusa `versao` velha."""
     arquivo = caminho_config_global()
     bruto = _ler_bytes(arquivo)
     if hashlib.sha256(bruto).hexdigest() != versao:
@@ -521,6 +533,12 @@ def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
     except tomllib.TOMLDecodeError as e:
         raise ErroDeEntrada(f"{arquivo}: alteração gera TOML inválido ({e})") from e
     _validar(candidato, arquivo)
-    _gravar_atomico(arquivo, texto.encode())
+    return texto
+
+
+def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
+    """Aplica, valida e grava a config central; recusa se ela mudou desde `versao`."""
+    texto = rascunho(alteracoes, versao)
+    _gravar_atomico(caminho_config_global(), texto.encode())
     aplicar_ambiente_central(ambiente_central())
     return ler_para_edicao()

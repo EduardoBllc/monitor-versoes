@@ -8,7 +8,7 @@ não escreve no banco, não roda git, não exige repo cadastrado.
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +70,12 @@ def _problemas_do_banco(env: Mapping[str, str]) -> list[str]:
     return []
 
 
+def onde_das_credenciais(config_em: str, ambiente: str) -> str:
+    """Onde a correção manda pôr credencial: o `[ambiente]` do central ou o `.env`."""
+    arquivo = ".env.development" if ambiente == "development" else ".env"
+    return f"[ambiente] de {config_em} (ou no {arquivo})"
+
+
 # Oito parâmetros, sete nomeados: cada um é uma peça injetada para o teste
 # rodar sem banco, rede nem arquivo de config reais.
 def diagnosticar(  # noqa: PLR0913
@@ -85,13 +91,12 @@ def diagnosticar(  # noqa: PLR0913
 ) -> list[Resultado]:
     """`config_em` é o caminho do config central; `erro_ambiente`, o erro ao ler
     o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
-    arquivo = ".env.development" if ambiente == "development" else ".env"
     migrar = (
         "monitor-versoes --env development migrar"
         if ambiente == "development"
         else "monitor-versoes migrar"
     )
-    onde = f"[ambiente] de {config_em} (ou no {arquivo})"
+    onde = onde_das_credenciais(config_em, ambiente)
 
     problemas = _problemas_do_banco(env)
 
@@ -203,26 +208,34 @@ def _estado_sem_secao(
     ]
 
 
+_CORRECAO_REPOS = f"conferir [{SECAO_REPOS}.<nome>] no config.toml central"
+
+
+def _caminho_do_repo(nome: str, caminho: str | None) -> Resultado:
+    if caminho is None:
+        detalhe = f"[{SECAO_REPOS}.{nome}] sem caminho"
+    elif not Path(caminho).is_dir():
+        detalhe = f"[{SECAO_REPOS}.{nome}] caminho não é diretório: {caminho}"
+    else:
+        return Resultado(Peca.REPOS, Estado.OK, "caminho encontrado")
+    return Resultado(Peca.REPOS, Estado.FALHA, detalhe, _CORRECAO_REPOS)
+
+
 def _repos(
     abrir_sessao: Callable[..., AbstractContextManager[Session]],
     repos: Callable[[], Mapping[str, str | None]],
     banco_ok: bool,
 ) -> list[Resultado]:
     """Seções `[repos.<nome>]` do config.toml central contra disco e banco."""
-    correcao = f"conferir [{SECAO_REPOS}.<nome>] no config.toml central"
     try:
         configurados = repos()
     except MotorError as e:
-        return [_falha(Peca.REPOS, e, correcao)]
-    linhas = []
-    for nome, caminho in configurados.items():
-        if caminho is None:
-            detalhe = f"[{SECAO_REPOS}.{nome}] sem caminho"
-        elif not Path(caminho).is_dir():
-            detalhe = f"[{SECAO_REPOS}.{nome}] caminho não é diretório: {caminho}"
-        else:
-            continue
-        linhas.append(Resultado(Peca.REPOS, Estado.FALHA, detalhe, correcao))
+        return [_falha(Peca.REPOS, e, _CORRECAO_REPOS)]
+    linhas = [
+        r
+        for nome, caminho in configurados.items()
+        if (r := _caminho_do_repo(nome, caminho)).estado is Estado.FALHA
+    ]
     if banco_ok:
         linhas += _estado_sem_secao(abrir_sessao, set(configurados))
     else:
@@ -320,6 +333,48 @@ def _sugestao(
     return [] if resultado.estado is Estado.NAO_CONFIGURADO else [resultado]
 
 
+class PecaTestavel(enum.StrEnum):
+    """As peças que a web testa uma a uma, sobre o rascunho da config."""
+
+    PRS = "prs"
+    TAREFAS = "tarefas"
+    REPO = "repo"
+
+
+PECA_DO_DIAGNOSTICO = {
+    PecaTestavel.PRS: Peca.PRS,
+    PecaTestavel.TAREFAS: Peca.TAREFAS,
+    PecaTestavel.REPO: Peca.REPOS,
+}
+
+
+def diagnosticar_peca(
+    peca: PecaTestavel,
+    *,
+    config_central: Callable[[], ConfigProjeto],
+    repos: Callable[[], Mapping[str, str | None]],
+    onde: str,
+    repo: str | None = None,
+) -> Resultado:
+    """A linha do diagnóstico de uma peça só; `onde` é o que a correção cita."""
+    match peca:
+        case PecaTestavel.PRS:
+            return _prs(config_central, onde)
+        case PecaTestavel.TAREFAS:
+            return _tarefas(config_central, onde)
+        case PecaTestavel.REPO:
+            configurados = repos()
+            nome = repo_existente(repo, configurados)
+            return _caminho_do_repo(nome, configurados[nome])
+
+
+def repo_existente(repo: str | None, nomes: Collection[str]) -> str:
+    """O repo a testar, que precisa estar entre os `nomes` da config."""
+    if repo is None or repo not in nomes:
+        raise ErroDeEntrada(f"repo {repo!r} não existe")
+    return repo
+
+
 def formatar(resultado: Resultado) -> str:
     linha = f"{resultado.estado.value}  {resultado.peca}"
     if resultado.detalhe:
@@ -332,8 +387,12 @@ def formatar(resultado: Resultado) -> str:
 __all__ = [
     "Estado",
     "Peca",
+    "PecaTestavel",
     "Resultado",
     "diagnosticar",
+    "diagnosticar_peca",
     "falhou",
     "formatar",
+    "onde_das_credenciais",
+    "repo_existente",
 ]

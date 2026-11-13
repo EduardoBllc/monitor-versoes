@@ -1179,6 +1179,44 @@
           }
         }
       }
+    },
+    "/api/config/testar": {
+      "post": {
+        "summary": "Testar Config",
+        "operationId": "testar_config_api_config_testar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoTeste"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoTeste"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1447,6 +1485,16 @@
             "type": "string",
             "title": "Exemplo",
             "default": ""
+          },
+          "grupo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrupoPlugin"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1700,6 +1748,17 @@
         ],
         "title": "Escopo"
       },
+      "Estado": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "FALHA",
+          "não verificada",
+          "não configurado",
+          "aviso"
+        ],
+        "title": "Estado"
+      },
       "EstadoExecucao": {
         "type": "string",
         "enum": [
@@ -1773,6 +1832,17 @@
           "estado"
         ],
         "title": "Execucao"
+      },
+      "GrupoPlugin": {
+        "type": "string",
+        "enum": [
+          "monitor_versoes.tarefas",
+          "monitor_versoes.prs",
+          "monitor_versoes.esquemas",
+          "monitor_versoes.atribuicoes",
+          "monitor_versoes.sugestao"
+        ],
+        "title": "GrupoPlugin"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1913,6 +1983,16 @@
           "julgamento"
         ],
         "title": "OrfaoDaVersao"
+      },
+      "PecaTestavel": {
+        "type": "string",
+        "enum": [
+          "prs",
+          "tarefas",
+          "repo"
+        ],
+        "title": "PecaTestavel",
+        "description": "As peças que a web testa uma a uma, sobre o rascunho da config."
       },
       "PedidoAvaliacao": {
         "properties": {
@@ -2085,6 +2165,42 @@
         ],
         "title": "PedidoSugestoes"
       },
+      "PedidoTeste": {
+        "properties": {
+          "alteracoes": {
+            "items": {
+              "$ref": "#/components/schemas/Alteracao"
+            },
+            "type": "array",
+            "title": "Alteracoes"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "peca": {
+            "$ref": "#/components/schemas/PecaTestavel"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alteracoes",
+          "versao",
+          "peca"
+        ],
+        "title": "PedidoTeste"
+      },
       "PedidoVerificacao": {
         "properties": {
           "auditar": {
@@ -2210,6 +2326,28 @@
           "versao_disco"
         ],
         "title": "Resolucao"
+      },
+      "ResultadoTeste": {
+        "properties": {
+          "estado": {
+            "$ref": "#/components/schemas/Estado"
+          },
+          "detalhe": {
+            "type": "string",
+            "title": "Detalhe"
+          },
+          "correcao": {
+            "type": "string",
+            "title": "Correcao"
+          }
+        },
+        "type": "object",
+        "required": [
+          "estado",
+          "detalhe",
+          "correcao"
+        ],
+        "title": "ResultadoTeste"
       },
       "Sugestao": {
         "properties": {

@@ -1,173 +1,102 @@
 import {
   Alert,
+  Box,
   Button,
+  Divider,
   Group,
   Loader,
   Modal,
-  NumberInput,
-  PasswordInput,
-  Select,
+  NavLink,
+  Paper,
+  Progress,
   Stack,
-  Switch,
-  Tabs,
   Text,
   TextInput,
   Title,
-  Tooltip,
+  UnstyledButton,
+  VisuallyHidden,
+  getDefaultZIndex,
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { CHAVE_REPOS, Metodo, ErroApi, api } from "../api/cliente";
-import { Escopo, TipoCampo, TipoErro } from "../api/enums";
-import type { ConfigEditavel } from "../api/tipos";
+import { PecaTestavel, TipoErro } from "../api/enums";
+import type { ConfigEditavel, ResultadoTeste } from "../api/tipos";
 import {
   ORIGEM_MOTOR,
-  EstadoSegredo,
-  SEM_ORIGEM,
-  TABELA_AMBIENTE,
   achaCampo,
   alteracoesDe,
   chaveDe,
-  estadoSegredo,
-  linhasDe,
-  opcoesDe,
-  textoDe,
   type Escalar,
   type Formulario,
   type Linha,
 } from "../config";
+import {
+  GrupoLateral,
+  LATERAL,
+  Marca,
+  NOME_SECAO,
+  Secao,
+  comTeste,
+  gravarPulados,
+  lerPulados,
+  linhasDaSecao,
+  marcaDe,
+  pendencias,
+  testeVigente,
+  type Destino,
+  type Segmento,
+} from "../configSecoes";
+import { Entrada, type Valores } from "./CampoConfig";
 import { notificarErro, notificarOk } from "./notificar";
+import { SecaoRepo } from "./SecaoRepo";
+import { TestarSecao } from "./TestarSecao";
 
 const CHAVE = ["config"];
 
-enum Aba {
-  GERAL = "geral",
-  REPOS = "repos",
-  AMBIENTE = "ambiente",
-  PLUGINS = "plugins",
-}
+const TITULO: Record<Secao, string> = { ...NOME_SECAO, [Secao.NOVO_REPO]: "Adicionar repo" };
 
-type Valores = Formulario["valores"];
+const ABERTURA: Record<Secao, string> = {
+  [Secao.PRS]:
+    "É por ela que o monitor descobre a qual PR cada commit pertence. Sem ela, os commits saem só do grep na principal.",
+  [Secao.TAREFAS]: "De onde vêm os chamados que o monitor acompanha.",
+  [Secao.VERSOES]: "Como as versões são nomeadas, liberadas e em que branches vivem.",
+  [Secao.NOVO_REPO]: "O nome pelo qual o monitor chama o repo.",
+  [Secao.AVANCADO]: "Ajustes com padrão razoável; raramente precisam mudar.",
+};
 
-const rotuloDe = (l: Linha): string =>
-  l.campo?.rotulo ?? [l.tabela, l.chave].filter(Boolean).join(".");
+// Só as conexões têm teste e só elas podem ser puladas.
+const PECA: Partial<Record<Secao, PecaTestavel>> = {
+  [Secao.PRS]: PecaTestavel.PRS,
+  [Secao.TAREFAS]: PecaTestavel.TAREFAS,
+};
 
-function Rotulo({ linha }: { linha: Linha }) {
-  const texto = rotuloDe(linha);
-  const descricao = linha.campo?.descricao;
-  if (!descricao) return texto;
+const SINAL: Partial<Record<Marca, { texto: string; cor: string; nome: string }>> = {
+  [Marca.PRONTA]: { texto: "✓", cor: "green", nome: "pronta" },
+  [Marca.PENDENTE]: { texto: "●", cor: "orange", nome: "pendente" },
+  [Marca.FALHOU]: { texto: "✕", cor: "red", nome: "teste falhou" },
+};
+
+const COR_BARRA: Partial<Record<Marca, string>> = { [Marca.PRONTA]: "green", [Marca.FALHOU]: "red" };
+
+const mesmo = (a: Destino, b: Destino) => JSON.stringify(a) === JSON.stringify(b);
+const nomeDe = (d: Destino) => (typeof d === "string" ? NOME_SECAO[d] : d.repo);
+const origemDe = (l: Linha) => l.campo?.origem ?? ORIGEM_MOTOR;
+
+function Sinal({ marca }: { marca: Marca }) {
+  const s = SINAL[marca];
+  if (!s) return null;
   return (
-    <Group component="span" gap={4} display="inline-flex">
-      {texto}
-      <Tooltip label={descricao} multiline w={280} withArrow events={{ hover: true, focus: true, touch: true }}>
-        <Text span c="dimmed" tabIndex={0} aria-label={descricao} style={{ cursor: "help" }}>
-          ⓘ
-        </Text>
-      </Tooltip>
-    </Group>
+    <>
+      <Text span c={s.cor} aria-hidden>
+        {s.texto}
+      </Text>
+      <VisuallyHidden>{s.nome}</VisuallyHidden>
+    </>
   );
 }
 
-function Entrada({
-  linha,
-  valores,
-  mudar,
-  placeholder,
-}: {
-  linha: Linha;
-  valores: Valores;
-  mudar: (k: string, v: Escalar) => void;
-  placeholder?: string;
-}) {
-  const k = chaveDe(linha.repo, linha.tabela, linha.chave);
-  const { campo, lido } = linha;
-  const label = <Rotulo linha={linha} />;
-  // Com valor herdado do topo (placeholder), o padrão do motor não vale.
-  const description =
-    placeholder == null && campo?.padrao != null ? `Padrão: ${campo.padrao}` : undefined;
-  const dica = placeholder ?? (campo?.exemplo || undefined);
-  const somenteLeitura = lido?.editavel === false;
-  const atual = valores[k] ?? null;
-  if (campo?.segredo) {
-    const estado = estadoSegredo(valores[k], lido?.definido === true);
-    const apagar = estado === EstadoSegredo.APAGAR;
-    const marcas = {
-      [EstadoSegredo.APAGAR]: "será apagado",
-      [EstadoSegredo.DEFINIDO]: "definido",
-      [EstadoSegredo.NAO_DEFINIDO]: "não definido",
-    };
-    return (
-      <Group align="end">
-        <PasswordInput
-          label={label}
-          description={description}
-          style={{ flex: 1 }}
-          autoComplete="new-password"
-          placeholder={marcas[estado]}
-          disabled={somenteLeitura}
-          value={typeof atual === "string" ? atual : ""}
-          onChange={(e) => mudar(k, e.currentTarget.value)}
-        />
-        <Button
-          variant="light"
-          color="red"
-          disabled={somenteLeitura || !lido?.definido}
-          onClick={() => mudar(k, apagar ? "" : null)}
-        >
-          {apagar ? "Desfazer" : "Apagar"}
-        </Button>
-      </Group>
-    );
-  }
-  if (campo?.tipo === TipoCampo.ESCOLHA) {
-    return (
-      <Select
-        label={label}
-        description={description}
-        data={opcoesDe(campo, atual)}
-        disabled={somenteLeitura}
-        clearable
-        placeholder={dica}
-        value={typeof atual === "string" ? atual : null}
-        onChange={(v) => mudar(k, v)}
-      />
-    );
-  }
-  if (campo?.tipo === TipoCampo.INTEIRO || typeof lido?.valor === "number") {
-    return (
-      <NumberInput
-        label={label}
-        description={description}
-        readOnly={somenteLeitura}
-        placeholder={dica}
-        value={textoDe(atual)}
-        onChange={(v) => mudar(k, typeof v === "number" ? v : null)}
-      />
-    );
-  }
-  if (typeof lido?.valor === "boolean") {
-    return (
-      <Switch
-        label={label}
-        disabled={somenteLeitura}
-        checked={atual === true}
-        onChange={(e) => mudar(k, e.currentTarget.checked)}
-      />
-    );
-  }
-  return (
-    <TextInput
-      label={label}
-      description={description}
-      readOnly={somenteLeitura}
-      placeholder={dica}
-      value={typeof atual === "string" ? atual : ""}
-      onChange={(e) => mudar(k, e.currentTarget.value)}
-    />
-  );
-}
-
-function Lista({
+function Campos({
   linhas,
   valores,
   mudar,
@@ -177,17 +106,46 @@ function Lista({
   mudar: (k: string, v: Escalar) => void;
 }) {
   if (linhas.length === 0) return <Text c="dimmed">Nada a configurar.</Text>;
+  const origens = [...new Set(linhas.map(origemDe))];
   return (
     <Stack>
-      {linhas.map((l) => (
-        <Entrada
-          key={chaveDe(l.repo, l.tabela, l.chave)}
-          linha={l}
-          valores={valores}
-          mudar={mudar}
-        />
+      {origens.map((origem) => (
+        <Fragment key={origem}>
+          {origem !== ORIGEM_MOTOR && <Divider label={`Campos do plugin ${origem}`} labelPosition="left" />}
+          {linhas
+            .filter((l) => origemDe(l) === origem)
+            .map((l) => (
+              <Entrada key={chaveDe(l.repo, l.tabela, l.chave)} linha={l} valores={valores} mudar={mudar} />
+            ))}
+        </Fragment>
       ))}
     </Stack>
+  );
+}
+
+function Barra({ segmentos, abrir, continuar }: { segmentos: Segmento[]; abrir: (d: Destino) => void; continuar: () => void }) {
+  return (
+    <Paper withBorder p="sm">
+      <Group wrap="nowrap">
+        <Group grow gap="xs" align="flex-start" style={{ flex: 1 }}>
+          {segmentos.map((s) => (
+            <UnstyledButton key={s.nome} onClick={() => abrir(s.destino)}>
+              <Progress
+                aria-hidden
+                size="sm"
+                value={s.marca === Marca.PENDENTE ? 0 : 100}
+                color={COR_BARRA[s.marca] ?? "gray"}
+              />
+              <Text size="xs" c="dimmed" mt={4}>
+                {s.nome}
+                {s.marca !== Marca.PENDENTE && <> <Sinal marca={s.marca} /></>}
+              </Text>
+            </UnstyledButton>
+          ))}
+        </Group>
+        <Button onClick={continuar}>Continuar</Button>
+      </Group>
+    </Paper>
   );
 }
 
@@ -195,154 +153,189 @@ function Editor({
   config,
   salvando,
   recusada,
+  retomar,
+  sujo,
   aoSalvar,
+  aoRecusa,
   aoRecarregar,
 }: {
   config: ConfigEditavel;
   salvando: boolean;
   recusada: boolean;
-  aoSalvar: (f: Formulario) => void;
+  retomar: Destino | null;
+  sujo: RefObject<boolean>;
+  aoSalvar: (f: Formulario, destino: Destino) => void;
+  aoRecusa: () => void;
   aoRecarregar: () => void;
 }) {
   // Segredo fica fora do estado: ausente = não tocado.
-  const [valores, setValores] = useState<Valores>(() =>
-    Object.fromEntries(
+  const [formulario, setFormulario] = useState<Formulario>(() => ({
+    valores: Object.fromEntries(
       config.valores
-        .filter(
-          (v) =>
-            v.editavel &&
-            achaCampo(config.campos, v.repo, v.tabela, v.chave)?.segredo !== true,
-        )
+        .filter((v) => v.editavel && achaCampo(config.campos, v.repo, v.tabela, v.chave)?.segredo !== true)
         .map((v) => [chaveDe(v.repo, v.tabela, v.chave), v.valor]),
     ),
-  );
-  const [reposCriados, setReposCriados] = useState<string[]>([]);
-  const [reposRemovidos, setReposRemovidos] = useState<string[]>([]);
+    reposCriados: [],
+    reposRemovidos: [],
+  }));
+  const [testes, setTestes] = useState<Record<string, ResultadoTeste>>({});
+  const [pulados, setPulados] = useState(lerPulados);
+  const proximaDe = (f: Formulario) => pendencias(config, f, testes, pulados).proxima ?? Secao.PRS;
+  const [destino, setDestino] = useState<Destino>(() => retomar ?? proximaDe(formulario));
   const [novo, setNovo] = useState("");
-  const formulario = { valores, reposCriados, reposRemovidos };
-  const pendentes = alteracoesDe(config, formulario).length;
-  const mudar = (k: string, v: Escalar) => setValores((a) => ({ ...a, [k]: v }));
 
+  const pendentes = alteracoesDe(config, formulario).length;
+  useEffect(() => {
+    sujo.current = pendentes > 0;
+    return () => {
+      sujo.current = false;
+    };
+  }, [pendentes, sujo]);
+
+  const { segmentos, proxima } = pendencias(config, formulario, testes, pulados);
+  const marca = (d: Destino) => marcaDe(d, config, formulario, testes, pulados);
+  const mudar = (k: string, v: Escalar) => setFormulario((f) => ({ ...f, valores: { ...f.valores, [k]: v } }));
+
+  const repos = [...config.repos, ...formulario.reposCriados].filter((r) => !formulario.reposRemovidos.includes(r));
   const nome = novo.trim();
-  const repos = [...config.repos, ...reposCriados];
   const criar = () => {
-    setReposCriados((r) => [...r, nome]);
-    setReposRemovidos((r) => r.filter((x) => x !== nome));
+    setFormulario((f) => ({ ...f, reposCriados: [...f.reposCriados, nome] }));
     setNovo("");
+    setDestino({ repo: nome });
   };
   const remover = (repo: string) => {
-    if (reposCriados.includes(repo)) {
-      setReposCriados((r) => r.filter((x) => x !== repo));
-      setValores((a) =>
-        Object.fromEntries(
-          Object.entries(a).filter(([k]) => (JSON.parse(k) as [string])[0] !== repo),
-        ),
-      );
-    } else setReposRemovidos((r) => [...r, repo]);
+    const f = formulario.reposCriados.includes(repo)
+      ? {
+          ...formulario,
+          reposCriados: formulario.reposCriados.filter((x) => x !== repo),
+          valores: Object.fromEntries(
+            Object.entries(formulario.valores).filter(([k]) => (JSON.parse(k) as [string])[0] !== repo),
+          ),
+        }
+      : { ...formulario, reposRemovidos: [...formulario.reposRemovidos, repo] };
+    setFormulario(f);
+    setDestino(proximaDe(f));
+  };
+  const alternarPulo = (s: Secao) => {
+    const p = new Set(pulados);
+    if (!p.delete(s)) p.add(s);
+    gravarPulados(p);
+    setPulados(p);
   };
 
-  const topo = (l: Linha) => (l.tabela === null ? undefined : valores[chaveDe(null, l.tabela, l.chave)]);
-  const geral = linhasDe(config, null);
-  const ehAmbiente = (l: Linha): boolean =>
-    l.campo ? l.campo.escopo === Escopo.AMBIENTE : l.tabela === TABELA_AMBIENTE;
-  const doMotor = geral.filter((l) => (l.campo?.origem ?? ORIGEM_MOTOR) === ORIGEM_MOTOR);
-  const plugins = geral.filter((l) => (l.campo?.origem ?? ORIGEM_MOTOR) !== ORIGEM_MOTOR);
-  const origens = [...new Set(plugins.map((l) => l.campo?.origem ?? SEM_ORIGEM))];
+  const testar = (d: Destino, peca: PecaTestavel, extra?: ReactNode) => (
+    <TestarSecao
+      config={config}
+      formulario={formulario}
+      destino={d}
+      peca={peca}
+      resultado={testeVigente(d, config, formulario, testes)}
+      aoResultado={(f, r, recusa) => setTestes((t) => comTeste(t, d, config, f, r, recusa))}
+      aoRecusa={aoRecusa}
+    >
+      {extra}
+    </TestarSecao>
+  );
+
+  let conteudo: ReactNode;
+  if (typeof destino !== "string") {
+    conteudo = (
+      <SecaoRepo
+        config={config}
+        formulario={formulario}
+        repo={destino.repo}
+        mudar={mudar}
+        aoRemover={() => remover(destino.repo)}
+      >
+        {testar(destino, PecaTestavel.REPO)}
+      </SecaoRepo>
+    );
+  } else if (destino === Secao.NOVO_REPO) {
+    conteudo = (
+      <Group align="end">
+        <TextInput label="Nome" style={{ flex: 1 }} value={novo} onChange={(e) => setNovo(e.currentTarget.value)} />
+        <Button disabled={nome === "" || [...config.repos, ...formulario.reposCriados].includes(nome)} onClick={criar}>
+          Criar
+        </Button>
+      </Group>
+    );
+  } else {
+    const peca = PECA[destino];
+    conteudo = (
+      <>
+        <Campos linhas={linhasDaSecao(config, formulario, destino)} valores={formulario.valores} mudar={mudar} />
+        {peca &&
+          testar(
+            destino,
+            peca,
+            pulados.has(destino) ? (
+              <Button variant="subtle" onClick={() => alternarPulo(destino)}>
+                Desfazer
+              </Button>
+            ) : (
+              marca(destino) !== Marca.PRONTA && (
+                <Button variant="subtle" onClick={() => alternarPulo(destino)}>
+                  Não uso isso
+                </Button>
+              )
+            ),
+          )}
+      </>
+    );
+  }
 
   return (
-    <Stack>
-      {recusada && (
-        <Alert color="orange" title="A config mudou">
-          <Button size="xs" onClick={aoRecarregar}>
-            Recarregar
-          </Button>
-        </Alert>
-      )}
-      <Tabs defaultValue={Aba.GERAL}>
-        <Tabs.List>
-          <Tabs.Tab value={Aba.GERAL}>Geral</Tabs.Tab>
-          <Tabs.Tab value={Aba.REPOS}>Repos</Tabs.Tab>
-          <Tabs.Tab value={Aba.AMBIENTE}>Ambiente</Tabs.Tab>
-          {origens.length > 0 && <Tabs.Tab value={Aba.PLUGINS}>Plugins</Tabs.Tab>}
-        </Tabs.List>
-        <Tabs.Panel value={Aba.GERAL} pt="md">
-          <Lista
-            linhas={doMotor.filter((l) => !ehAmbiente(l))}
-            valores={valores}
-            mudar={mudar}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value={Aba.REPOS} pt="md">
-          <Stack>
-            {repos
-              .filter((r) => !reposRemovidos.includes(r))
-              .map((repo) => (
-                <Stack key={repo} gap="xs">
-                  <Group justify="space-between">
-                    <Title order={5}>{repo}</Title>
-                    <Button size="xs" color="red" variant="light" onClick={() => remover(repo)}>
-                      Remover
-                    </Button>
-                  </Group>
-                  <Stack>
-                    {linhasDe(config, repo).map((l) => {
-                      const herdado = topo(l);
-                      return (
-                        <Entrada
-                          key={chaveDe(l.repo, l.tabela, l.chave)}
-                          linha={l}
-                          valores={valores}
-                          mudar={mudar}
-                          {...(herdado != null && { placeholder: String(herdado) })}
-                        />
-                      );
-                    })}
-                  </Stack>
-                </Stack>
-              ))}
-            <Group align="end">
-              <TextInput
-                label="Novo repo"
-                value={novo}
-                onChange={(e) => setNovo(e.currentTarget.value)}
-              />
-              <Button
-                disabled={nome === "" || repos.includes(nome)}
-                onClick={criar}
-              >
-                Criar repo
+    <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+      <Group align="flex-start" wrap="nowrap" gap="xl" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <Box component="nav" aria-label="Seções da configuração" w={240} style={{ flexShrink: 0 }}>
+          {LATERAL.map(({ grupo, secoes }) => (
+            <Fragment key={grupo}>
+              <Text size="xs" tt="uppercase" c="dimmed" fw={700} mt="md" mb={4} px="sm">
+                {grupo}
+              </Text>
+              {[...(grupo === GrupoLateral.REPOSITORIOS ? repos.map((repo) => ({ repo })) : []), ...secoes].map(
+                (d) => (
+                  <NavLink
+                    key={JSON.stringify(d)}
+                    component="button"
+                    label={nomeDe(d)}
+                    active={mesmo(d, destino)}
+                    aria-current={mesmo(d, destino) ? "page" : undefined}
+                    rightSection={<Sinal marca={marca(d)} />}
+                    onClick={() => setDestino(d)}
+                  />
+                ),
+              )}
+            </Fragment>
+          ))}
+        </Box>
+        <Stack style={{ flex: 1, minWidth: 0 }} maw={760} pt="md">
+          {recusada && (
+            <Alert color="orange" title="A config mudou">
+              <Button size="xs" onClick={aoRecarregar}>
+                Recarregar
               </Button>
-            </Group>
-          </Stack>
-        </Tabs.Panel>
-        <Tabs.Panel value={Aba.AMBIENTE} pt="md">
-          <Lista
-            linhas={doMotor.filter(ehAmbiente)}
-            valores={valores}
-            mudar={mudar}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value={Aba.PLUGINS} pt="md">
-          <Stack>
-            {origens.map((origem) => (
-              <Stack key={origem} gap="xs">
-                <Title order={5}>{origem}</Title>
-                <Lista
-                  linhas={plugins.filter((l) => (l.campo?.origem ?? SEM_ORIGEM) === origem)}
-                        valores={valores}
-                  mudar={mudar}
-                />
-              </Stack>
-            ))}
-          </Stack>
-        </Tabs.Panel>
-      </Tabs>
-      <Group justify="flex-end">
-        <Button
-          disabled={pendentes === 0}
-          loading={salvando}
-          onClick={() => aoSalvar(formulario)}
-        >
+            </Alert>
+          )}
+          {proxima !== null && (
+            <Barra segmentos={segmentos} abrir={setDestino} continuar={() => setDestino(proxima)} />
+          )}
+          {typeof destino === "string" && (
+            <div>
+              <Title order={3}>{TITULO[destino]}</Title>
+              <Text c="dimmed">{ABERTURA[destino]}</Text>
+            </div>
+          )}
+          <Fragment key={JSON.stringify(destino)}>{conteudo}</Fragment>
+        </Stack>
+      </Group>
+      <Group justify="flex-end" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
+        {pendentes > 0 && (
+          <Text c="dimmed" size="sm">
+            {pendentes === 1 ? "1 alteração não salva" : `${pendentes} alterações não salvas`}
+          </Text>
+        )}
+        <Button disabled={pendentes === 0} loading={salvando} onClick={() => aoSalvar(formulario, destino)}>
           Salvar
         </Button>
       </Group>
@@ -350,15 +343,13 @@ function Editor({
   );
 }
 
-export function ModalConfig({
-  aberto,
-  aoFechar,
-}: {
-  aberto: boolean;
-  aoFechar: () => void;
-}) {
+export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
   const cliente = useQueryClient();
   const [recusada, setRecusada] = useState(false);
+  // Salvar recarrega o editor na seção aberta; recarregar e fechar voltam à próxima pendência.
+  const [retomar, setRetomar] = useState<Destino | null>(null);
+  const [confirmar, setConfirmar] = useState(false);
+  const sujo = useRef(false);
   const config = useQuery({
     queryKey: CHAVE,
     queryFn: () => api<ConfigEditavel>(Metodo.GET, "/api/config"),
@@ -380,9 +371,29 @@ export function ModalConfig({
     },
   });
   const dados = config.data;
+  const fechar = () => {
+    setConfirmar(false);
+    setRetomar(null);
+    aoFechar();
+  };
 
   return (
-    <Modal opened={aberto} onClose={aoFechar} title="Configuração" size="xl">
+    <Modal
+      opened={aberto}
+      onClose={() => {
+        // O Escape chega às duas modais; a confirmação não o escuta, e quem a fecha é este handler.
+        if (confirmar) setConfirmar(false);
+        else if (sujo.current) setConfirmar(true);
+        else fechar();
+      }}
+      title="Configuração"
+      fullScreen
+      // Rodapé fixo: o corpo ocupa a altura e só o meio rola.
+      styles={{
+        content: { display: "flex", flexDirection: "column" },
+        body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+      }}
+    >
       {config.isLoading && <Loader mx="auto" display="block" />}
       {config.error && <Alert color="red">{config.error.message}</Alert>}
       {dados && (
@@ -391,15 +402,37 @@ export function ModalConfig({
           config={dados}
           salvando={salvar.isPending}
           recusada={recusada}
-          aoSalvar={(f) =>
-            salvar.mutate({ alteracoes: alteracoesDe(dados, f), versao: dados.versao })
-          }
+          retomar={retomar}
+          sujo={sujo}
+          aoSalvar={(f, destino) => {
+            setRetomar(destino);
+            salvar.mutate({ alteracoes: alteracoesDe(dados, f), versao: dados.versao });
+          }}
+          aoRecusa={() => setRecusada(true)}
           aoRecarregar={() => {
             setRecusada(false);
+            setRetomar(null);
             void config.refetch();
           }}
         />
       )}
+      <Modal
+        opened={confirmar}
+        onClose={() => setConfirmar(false)}
+        title="Descartar as alterações não salvas?"
+        centered
+        closeOnEscape={false}
+        zIndex={getDefaultZIndex("modal") + 1}
+      >
+        <Group justify="flex-end">
+          <Button variant="default" data-autofocus onClick={() => setConfirmar(false)}>
+            Continuar editando
+          </Button>
+          <Button color="red" onClick={fechar}>
+            Descartar
+          </Button>
+        </Group>
+      </Modal>
     </Modal>
   );
 }

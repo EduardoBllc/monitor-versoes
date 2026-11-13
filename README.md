@@ -314,6 +314,12 @@ do arquivo e validam antes de gravar. Mudanças no `[ambiente]` valem sem reinic
 consulta o lock do clone: edite por um lugar de cada vez. O porquê:
 [033](docs/decisoes/033-config-editavel-pelas-interfaces.md).
 
+Na web, as seções ficam numa lateral por assunto, e os campos de um plugin, na seção que o
+escolhe. A barra no topo mostra o que falta (um repo com caminho, a fonte de PR e a de tarefas),
+e **Continuar** leva à próxima pendência; a fonte que você não usa pode ser pulada neste
+navegador. **Testar**, nas fontes e em cada repo, roda a checagem do `diagnostico` sobre o
+formulário, sem gravar nada.
+
 #### Para autores de plugin
 
 Para a tela mostrar as chaves do seu plugin (esquema, atribuição, fonte de tarefas ou host de PR), declare
@@ -347,9 +353,9 @@ class MinhaFonte:
 ```
 
 No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor na tela.
-O atributo `campos_config` é opcional e plugin que falha ao carregar é ignorado; a aba Plugins
-só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao` (o tooltip da
-web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
+O atributo `campos_config` é opcional e plugin que falha ao carregar é ignorado; na TUI, a
+aba Plugins só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao`
+(o tooltip da web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
 web) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
 
 Um host de PR implementa a porta `HostPr` (`motor/ports.py`): `prs_mergeadas(desde)`, as PRs

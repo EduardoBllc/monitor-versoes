@@ -13,15 +13,19 @@ from sqlalchemy.orm import Session
 
 from motor.config import (
     SECAO_REPOS,
+    Chave,
     ConfigProjeto,
+    Tabela,
     carregar_config_global,
     repos_configurados,
 )
 from motor.diagnostico import (
     Estado,
     Peca,
+    PecaTestavel,
     Resultado,
     diagnosticar,
+    diagnosticar_peca,
     falhou,
 )
 from motor.errors import ErroDeEntrada
@@ -574,3 +578,74 @@ def test_anthropic_sem_sdk_pede_o_extra(tmp_path, monkeypatch):
     assert linha.estado is Estado.FALHA
     assert "monitor-versoes[anthropic]" in linha.detalhe
     assert linha.correcao == "conferir [sugestao] provedor e os plugins instalados"
+
+
+# -- uma peça só (Testar da web) ------------------------------------------------
+
+ONDE = "/real/monitor-versoes/config.toml"
+
+
+@pytest.mark.parametrize(
+    ("token", "estado"), [("certo", Estado.OK), ("errado", Estado.FALHA)]
+)
+def test_peca_prs_usa_o_plugin_da_config(tmp_path, monkeypatch, token, estado):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HOST_FALSO_TOKEN", token)
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text(
+        f'[{Tabela.PRS}]\n{Chave.FONTE} = "tests.fontes_falsas:HostFalso"\n'
+    )
+
+    linha = diagnosticar_peca(
+        PecaTestavel.PRS,
+        config_central=carregar_config_global,
+        repos=_proibido,
+        onde=ONDE,
+    )
+
+    assert linha.peca is Peca.PRS
+    assert linha.estado is estado
+    assert (ONDE in linha.correcao) is (estado is Estado.FALHA)
+
+
+def _proibido() -> dict[str, str | None]:
+    raise AssertionError("não devia ler os repos")
+
+
+def test_peca_repo_caminho_inexistente_falha():
+    linha = diagnosticar_peca(
+        PecaTestavel.REPO,
+        config_central=_sem_fonte,
+        repos=lambda: {"a": CAMINHO_INEXISTENTE},
+        onde=ONDE,
+        repo="a",
+    )
+
+    assert linha.peca is Peca.REPOS
+    assert linha.estado is Estado.FALHA
+    assert CAMINHO_INEXISTENTE in linha.detalhe
+
+
+def test_peca_repo_existente_ok(tmp_path):
+    linha = diagnosticar_peca(
+        PecaTestavel.REPO,
+        config_central=_sem_fonte,
+        repos=lambda: {"a": str(tmp_path), "b": CAMINHO_INEXISTENTE},
+        onde=ONDE,
+        repo="a",
+    )
+
+    assert linha == Resultado(Peca.REPOS, Estado.OK, "caminho encontrado")
+
+
+@pytest.mark.parametrize("repo", [None, "ausente"])
+def test_peca_repo_sem_nome_e_erro_de_entrada(tmp_path, repo):
+    with pytest.raises(ErroDeEntrada):
+        diagnosticar_peca(
+            PecaTestavel.REPO,
+            config_central=_sem_fonte,
+            repos=lambda: {"a": str(tmp_path)},
+            onde=ONDE,
+            repo=repo,
+        )
