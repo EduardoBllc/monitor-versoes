@@ -48,6 +48,9 @@ uv tool install git+https://github.com/EduardoBllc/monitor-versoes
 O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração a rodar (veja
 "Estado").
 
+Com a sugestão de resolução por IA (provedor `anthropic`, veja "Sugestão de resolução por IA"):
+`uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes'`.
+
 Com plugins: `uv tool install git+https://github.com/EduardoBllc/monitor-versoes --with <plugin>`.
 
 Para atualizar, `uv tool upgrade monitor-versoes`: busca o último commit da `main` e mantém os
@@ -77,6 +80,9 @@ variável de ambiente, e o motor a exporta no início de todo comando:
 # Credenciais do host de PR, se houver `[prs] fonte`. O plugin `bitbucket` lê estas:
 # BITBUCKET_TOKEN = "..."
 # BITBUCKET_EMAIL = "..."
+
+# Chave do provedor de sugestão `anthropic` (só ele a lê; veja "Sugestão de resolução por IA"):
+# ANTHROPIC_API_KEY = "..."
 
 # Worktrees de versão mantidas em disco entre operações (padrão 3). Mantendo as últimas
 # usadas, o comando seguinte na mesma versão reusa o diretório. 0 = descarta a cada run.
@@ -270,6 +276,36 @@ Se a resolução não deixou alteração nenhuma no alvo, o continuar para e ped
 **Registrar vazio** (na CLI, `atualizar --continue --allow-empty`) entra com um commit vazio,
 com o trailer `-x`, e o commit conta como aplicado; **Abortar** (`--abort`) o descarta.
 
+#### Sugestão de resolução por IA
+
+No editor de conflito, um modelo pode propor o conteúdo de cada bloco aberto. Para ligar,
+instale o extra (`monitor-versoes[anthropic]`, veja "Instalação") e configure, no topo do
+`config.toml` central (não vale em `[repos.<nome>]`):
+
+```toml
+[sugestao]
+provedor = "anthropic"
+# modelo = "claude-opus-5-5"   # padrão
+```
+
+A chave vai no `[ambiente]` como `ANTHROPIC_API_KEY`; outras credenciais da máquina não são
+usadas. Sem `[sugestao] provedor`, ou sem o extra, a interface fica como antes.
+
+Em arquivo pendente do tipo `conteudo`, o botão **Sugerir blocos abertos** pede uma proposta
+para cada bloco do resultado ainda aberto, e a lente **Sugerir** de um bloco pede só a dele.
+A proposta aparece numa faixa abaixo do bloco, com o conteúdo e o "Por quê:", e não muda o
+resultado até o **Aplicar**, que vale como decisão do bloco (o Ctrl+Z o desfaz).
+**Descartar** some com a faixa. Nada é gravado até o **Marcar resolvido**.
+
+| Vai ao provedor | Não vai |
+| --- | --- |
+| caminho do arquivo | qualquer outro arquivo do repo |
+| os lados (base, ours e theirs) de cada bloco pedido | blocos não pedidos e o trecho que mesclou sem conflito |
+| mensagem do commit aplicado | histórico e diff de outros commits |
+| identificador da tarefa que a mensagem cita (sem tarefa, não vai) | dados da fonte de tarefas além do identificador |
+
+O porquê em [decisão 038](docs/decisoes/038-sugestao-de-resolucao-por-ia.md).
+
 ### Editar a configuração pela interface
 
 Na TUI, a tecla `g` abre a tela de configuração; na web, o botão **Configuração** da barra. As
@@ -394,6 +430,8 @@ desfecho):
 
 | Sintoma | Causa e saída |
 | --- | --- |
+| Pedir a sugestão dá erro de chave | Falta `ANTHROPIC_API_KEY` no `[ambiente]`. O erro aparece ao pedir, e o `monitor-versoes diagnostico` aponta a correção. |
+| O botão **Sugerir blocos abertos** não aparece e o `diagnostico` pede `monitor-versoes[anthropic]` | O provedor `anthropic` está configurado, mas o extra não está instalado. Reinstale com `uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes'`. |
 | `ERROR: banco inacessivel: unable to open database file. Confira DATABASE_SQLITE_PATH ...` | O motor não abre o arquivo do estado. Confira o caminho de `DATABASE_SQLITE_PATH` e as permissões do arquivo e do diretório. |
 | `ERROR: o suporte a Postgres no estado foi removido ...` | A configuração ainda tem `DATABASE_BACKEND=postgres` ou as cinco `DATABASE_HOST/PORT/NAME/USER/PASSWORD` ([decisão 035](docs/decisoes/035-estado-local-em-sqlite.md)). Antes de tirá-las, leve o estado para o SQLite com a última versão que tinha Postgres: `uvx --from git+https://github.com/EduardoBllc/monitor-versoes@7e95ad4abcf7ae99013a025ee434bbd28ea06616 motor migrar-estado --de postgresql://<usuario>:<senha>@<host>:<porta>/<banco> --para sqlite:///$HOME/.local/share/monitor-versoes/estado.db`. Depois, tire `DATABASE_BACKEND` e as `DATABASE_*` do `[ambiente]` (ou do `.env`). |
 | `ERROR: faltando [tarefas] fonte em ...; ou use --task-source manual --lista <arquivo>` | Nenhuma fonte de tarefas na config. Defina `[tarefas] fonte` no `config.toml` central, ou use a lista manual. |
