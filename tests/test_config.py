@@ -9,8 +9,12 @@ from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
     SECAO_REPOS,
+    TABELA_AMBIENTE,
     ULTIMO_COMMIT_COM_POSTGRES,
     VAR_XDG_CONFIG_HOME,
+    Chave,
+    Escolhido,
+    Tabela,
     VarAmbiente,
     checar_backend,
     database_url,
@@ -488,15 +492,23 @@ def test_ambiente_que_nao_e_tabela_e_erro(central):
         config.ambiente_central()
 
 
+@pytest.mark.parametrize("tabela", [TABELA_AMBIENTE, Tabela.SUGESTAO])
 @pytest.mark.parametrize(
     "ler", [config.ambiente_central, lambda: config.carregar_config_repo(NOME)]
 )
-def test_ambiente_por_repo_e_erro(central, tmp_path, ler):
-    _escrever(central, tmp_path, '[ambiente]\nA = "x"\n')
+def test_tabela_so_do_topo_por_repo_e_erro(central, tmp_path, ler, tabela):
+    _escrever(central, tmp_path, f'[{tabela}]\nA = "x"\n')
     with pytest.raises(ErroDeEntrada) as e:
         ler()
     assert str(central) in str(e.value)
-    assert f"[{SECAO_REPOS}.{NOME}.ambiente]" in str(e.value)
+    assert f"[{SECAO_REPOS}.{NOME}.{tabela}]" in str(e.value)
+
+
+def test_sugestao_do_topo_chega_inteira(central):
+    central.write_text('[sugestao]\nprovedor = "x"\nmodelo = "m"\n')
+    cfg = config.carregar_config_global()
+    assert cfg.provedor_sugestao == Escolhido("x", str(central))
+    assert cfg.sugestao == {Chave.PROVEDOR: "x", "modelo": "m"}
 
 
 def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):

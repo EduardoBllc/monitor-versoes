@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EstadoBloco,
   Lado,
+  type LadoDoBloco,
   aceitouLado,
   blocos,
   estadoDoBloco,
@@ -47,7 +48,7 @@ describe("trecho", () => {
     [Lado.THEIRS, "B2\r\n"],
     [Lado.AMBOS, "A2\r\nB2\r\n"],
     [Lado.BASE, "O2\r\n"],
-  ])("%s dá o texto daquele lado do bloco", (lado, esperado) => {
+  ] as [LadoDoBloco, string][])("%s dá o texto daquele lado do bloco", (lado, esperado) => {
     const [, bloco] = blocos(DOIS_BLOCOS);
     expect(trecho(bloco!, lado)).toBe(esperado);
   });

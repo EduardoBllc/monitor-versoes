@@ -7,7 +7,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from motor.domain.referencia import FonteReferencia, Referencia, resolver_referencia
-from motor.ports import CommitSource, EstadoRepo, GitRepo, TaskSource
+from motor.ports import (
+    CommitSource,
+    EstadoRepo,
+    GitRepo,
+    ProvedorSugestao,
+    TaskSource,
+)
 from motor.progresso import RelatorProgresso, silencioso
 from motor.services.versionamento import (
     BRANCH_VERSAO_PADRAO,
@@ -15,6 +21,8 @@ from motor.services.versionamento import (
     FonteVersionamento,
     versionamento_padrao,
 )
+
+FonteSugestao = Callable[[], ProvedorSugestao | None]
 
 
 def _sem_referencia() -> Referencia:
@@ -61,3 +69,6 @@ class Deps:
     # calcular a identidade exige o plugin da fonte de tarefas, e a montagem
     # nao o carrega.
     identidade_das_entradas: Callable[[], str] = lambda: ""
+    # Provedor de sugestao de conflito, carregado so no uso: montar nao carrega o
+    # plugin. Sem `[sugestao] provedor` devolve None.
+    sugestao: FonteSugestao = lambda: None

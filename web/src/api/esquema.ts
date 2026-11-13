@@ -243,6 +243,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/{repo}/versoes/{versao}/conflito/proposta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propor */
+        post: operations["propor_api_repos__repo__versoes__versao__conflito_proposta_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo}/versoes/{versao}/conflito/resolucao": {
         parameters: {
             query?: never;
@@ -554,6 +571,11 @@ export interface components {
             chamado: string | null;
             /** Arquivos */
             arquivos: components["schemas"]["ArquivoDoConflito"][];
+            /**
+             * Sugestao Disponivel
+             * @default false
+             */
+            sugestao_disponivel: boolean;
         };
         /** ConteudoDoConflito */
         ConteudoDoConflito: {
@@ -614,7 +636,7 @@ export interface components {
          * GrupoPlugin
          * @enum {string}
          */
-        GrupoPlugin: "monitor_versoes.tarefas" | "monitor_versoes.prs" | "monitor_versoes.esquemas" | "monitor_versoes.atribuicoes";
+        GrupoPlugin: "monitor_versoes.tarefas" | "monitor_versoes.prs" | "monitor_versoes.esquemas" | "monitor_versoes.atribuicoes" | "monitor_versoes.sugestao";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -719,6 +741,15 @@ export interface components {
             /** Motivo */
             motivo: string;
         };
+        /** PedidoProposta */
+        PedidoProposta: {
+            /** Caminho */
+            caminho: string;
+            /** Versao Disco */
+            versao_disco: string;
+            /** Ordens */
+            ordens: number[];
+        };
         /** PedidoReabertura */
         PedidoReabertura: {
             /** Caminho */
@@ -771,6 +802,15 @@ export interface components {
              * @default 0
              */
             total: number;
+        };
+        /** PropostaDeBloco */
+        PropostaDeBloco: {
+            /** Ordem */
+            ordem: number;
+            /** Conteudo */
+            conteudo: string;
+            /** Justificativa */
+            justificativa: string;
         };
         /** RepoOption */
         RepoOption: {
@@ -1398,6 +1438,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConteudoDoConflito"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propor_api_repos__repo__versoes__versao__conflito_proposta_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoProposta"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PropostaDeBloco"][];
                 };
             };
             /** @description Validation Error */

@@ -37,3 +37,32 @@
 .cf-recolhido:hover {
   opacity: 1;
 }
+/* Proposta da IA: tom neutro translúcido, para servir nos dois temas. */
+.cf-proposta {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: rgba(128, 128, 128, 0.12);
+  border-left: 3px solid rgba(128, 128, 128, 0.6);
+  font-size: 13px;
+}
+.cf-proposta-titulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.cf-proposta-conteudo {
+  margin: 6px 0;
+  padding: 6px;
+  white-space: pre-wrap;
+  background: rgba(128, 128, 128, 0.12);
+}
+.cf-proposta-porque {
+  font-style: italic;
+}
+.cf-proposta-acoes {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}

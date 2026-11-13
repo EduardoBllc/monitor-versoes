@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import hashlib
 import json
 import os
 import threading
@@ -16,6 +17,7 @@ from fastapi.testclient import TestClient
 
 import motor.operacoes as operacoes
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
+from motor.adapters.sugestao.fake import FakeProvedorSugestao
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
@@ -29,21 +31,34 @@ from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
 from motor.diagnostico import PecaTestavel
-from motor.domain.conflito import TipoArquivo
+from motor.domain.conflito import PedidoAoProvedor, PropostaDeBloco, TipoArquivo
 from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
-from motor.engine.conflito import ArquivoDoConflito, ConflitoAberto, ConteudoDoConflito
+from motor.engine.conflito import (
+    ArquivoDoConflito,
+    ConflitoAberto,
+    ConteudoDoConflito,
+    propor_resolucao,
+)
 from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import (
     BackendIndisponivel,
     ErroDeEntrada,
     MotorError,
     NaoEncontrado,
+    RespostaInvalida,
     VersaoDesatualizada,
 )
 from motor.inscricoes import INTERVALO_PADRAO
-from motor.operacoes import RepoOption, Resolucao, Runners, VersionOption
+from motor.operacoes import (
+    PedidoProposta,
+    RepoOption,
+    Resolucao,
+    Runners,
+    VersionOption,
+)
 from motor.progresso import Progresso, RelatorProgresso
+from tests import conflito_falso
 from tests.versionamento import ESCALONADO_COMPOSTA
 
 PORTA = 8765
@@ -53,8 +68,13 @@ VERSAO = "14.0.0"
 CLONE = "/tmp/clones/meu-repo"
 CAMINHO = "src/app/main.py"
 VERSAO_DISCO = "v1"
+JUSTIFICATIVA = "mantém o lado do HEAD"
 CONFLITO = ConflitoAberto(
-    "abc123", "msg", None, [ArquivoDoConflito(CAMINHO, TipoArquivo.CONTEUDO, False)]
+    "abc123",
+    "msg",
+    None,
+    [ArquivoDoConflito(CAMINHO, TipoArquivo.CONTEUDO, False)],
+    sugestao_disponivel=True,
 )
 CONTEUDO = ConteudoDoConflito(TipoArquivo.CONTEUDO, "b", "o", "t", "d", VERSAO_DISCO)
 BASE_CONFLITO = f"/api/repos/{REPO}/versoes/{VERSAO}/conflito"
@@ -75,6 +95,34 @@ class Ambiente:
         self.erro_conflito: MotorError | None = None
         self.julgamentos: dict[str, JulgamentoOrfao] = {}
         self.erro_julgar: MotorError | None = None
+        self.soltar_proposta = threading.Event()
+        self.proposta_iniciou = threading.Event()
+        self.erro_provedor: MotorError | None = None
+        self.provedor = FakeProvedorSugestao(responder=self._responder)
+        self.deps_proposta = conflito_falso.deps_em_conflito(
+            estagios=conflito_falso.ESTAGIOS_DOIS, provedor=self.provedor
+        )
+
+    def _responder(self, pedido: PedidoAoProvedor) -> list[PropostaDeBloco]:
+        self.proposta_iniciou.set()
+        self.soltar_proposta.wait(ESPERA_S)
+        if self.erro_provedor is not None:
+            raise self.erro_provedor
+        return [
+            PropostaDeBloco(b.ordem, b.ours + b.theirs, JUSTIFICATIVA)
+            for b in pedido.blocos
+        ]
+
+    def propor(
+        self, repo: RepoOption, versao: str, pedido: PedidoProposta
+    ) -> list[PropostaDeBloco]:
+        return propor_resolucao(
+            self.deps_proposta,
+            conflito_falso.VERSAO,
+            pedido.caminho,
+            pedido.versao_disco,
+            pedido.ordens,
+        )
 
     def fabrica(self, relatar: RelatorProgresso) -> Runners:
         def executar(repo: RepoOption, versao: str, auditar: bool) -> VersionStatus:
@@ -114,6 +162,7 @@ class Ambiente:
             ler_arquivo_conflito=ler_arquivo,
             resolver_arquivo_conflito=resolver,
             reabrir_arquivo_conflito=reabrir,
+            propor_resolucao=self.propor,
             versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
             listar_orfaos=self.listar_orfaos,
             julgar_orfao=self.julgar_orfao,
@@ -733,6 +782,136 @@ def test_escrita_de_conflito_solta_o_repo_depois_de_erro_do_runner(
     amb.erro_conflito = None
     r = cliente.post(url, json={"caminho": CAMINHO})
     assert r.status_code == HTTPStatus.NO_CONTENT
+
+
+VERSAO_DISCO_VELHA = "leitura-velha"
+
+
+def _proposta() -> dict[str, Any]:
+    return {
+        "caminho": conflito_falso.DOIS,
+        "versao_disco": hashlib.sha256(conflito_falso.DISCO_DOIS.encode()).hexdigest(),
+        "ordens": [1],
+    }
+
+
+def test_conflito_informa_sugestao_disponivel(cliente: TestClient) -> None:
+    assert cliente.get(BASE_CONFLITO).json()["sugestao_disponivel"] is True
+
+
+def test_proposta_devolve_conteudo_e_justificativa(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    amb.soltar_proposta.set()
+    r = cliente.post(f"{BASE_CONFLITO}/proposta", json=_proposta())
+    assert r.status_code == HTTPStatus.OK
+    assert r.json() == [
+        {"ordem": 1, "conteudo": "A2\nB2\n", "justificativa": JUSTIFICATIVA}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("corpo", "status", "tipo"),
+    [
+        (
+            {"versao_disco": VERSAO_DISCO_VELHA},
+            HTTPStatus.CONFLICT,
+            TipoErro.DESATUALIZADO,
+        ),
+        ({"ordens": [7]}, HTTPStatus.UNPROCESSABLE_ENTITY, TipoErro.ENTRADA),
+    ],
+    ids=["leitura-velha", "ordem-inexistente"],
+)
+def test_proposta_recusa_leitura_velha_e_ordem_inexistente(
+    cliente: TestClient,
+    amb: Ambiente,
+    corpo: dict[str, Any],
+    status: HTTPStatus,
+    tipo: TipoErro,
+) -> None:
+    amb.soltar_proposta.set()
+    r = cliente.post(f"{BASE_CONFLITO}/proposta", json={**_proposta(), **corpo})
+    assert (r.status_code, r.json()["tipo"]) == (status, tipo)
+
+
+@pytest.mark.parametrize(
+    ("erro", "status", "tipo"),
+    [
+        (
+            RespostaInvalida("sem justificativa para o bloco 1"),
+            HTTPStatus.BAD_GATEWAY,
+            TipoErro.RESPOSTA,
+        ),
+        (
+            BackendIndisponivel("rede"),
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            TipoErro.BACKEND,
+        ),
+        (
+            ErroDeEntrada("faltando ANTHROPIC_API_KEY"),
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+            TipoErro.ENTRADA,
+        ),
+    ],
+)
+def test_erro_do_provedor_vira_erro_da_api_sem_traceback(
+    cliente: TestClient,
+    amb: Ambiente,
+    erro: MotorError,
+    status: HTTPStatus,
+    tipo: TipoErro,
+) -> None:
+    amb.soltar_proposta.set()
+    amb.erro_provedor = erro
+    r = cliente.post(f"{BASE_CONFLITO}/proposta", json=_proposta())
+    assert (r.status_code, r.json()["tipo"]) == (status, tipo)
+    assert str(erro) in r.json()["mensagem"]
+    assert "Traceback" not in r.text
+
+
+def test_proposta_nao_trava_o_repo(cliente: TestClient, amb: Ambiente) -> None:
+    from motor.trava import travar
+
+    respostas: list[int] = []
+    pedido = threading.Thread(
+        target=lambda: respostas.append(
+            TestClient(cliente.app, base_url=str(cliente.base_url))
+            .post(f"{BASE_CONFLITO}/proposta", json=_proposta())
+            .status_code
+        )
+    )
+    pedido.start()
+    try:
+        assert amb.proposta_iniciou.wait(ESPERA_S)
+        corpo = {"caminho": CAMINHO, "conteudo": None, "versao_disco": VERSAO_DISCO}
+        r = cliente.post(f"{BASE_CONFLITO}/resolucao", json=corpo)
+        assert r.status_code == HTTPStatus.NO_CONTENT
+        with travar(REPO, CLONE):
+            pass
+    finally:
+        amb.soltar_proposta.set()
+        pedido.join(ESPERA_S)
+    assert respostas == [HTTPStatus.OK]
+
+
+def test_daemon_sobe_com_provedor_inexistente(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(VAR_XDG_CONFIG_HOME, str(tmp_path / "xdg"))
+    central = tmp_path / "xdg" / "monitor-versoes" / "config.toml"
+    central.parent.mkdir(parents=True)
+    central.write_text(
+        f'[sugestao]\nprovedor = "inexistente"\n\n[repos.r]\ncaminho = "{tmp_path}"\n'
+    )
+    app = criar_app(
+        operacoes.runners_com_progresso,
+        porta=PORTA,
+        estaticos=tmp_path,
+        inscricoes_em=tmp_path / "inscricoes.json",
+    )
+    c = TestClient(app, base_url=f"http://127.0.0.1:{PORTA}")
+    assert c.get("/api/repos").status_code == HTTPStatus.OK
+    assert c.get("/api/config").status_code == HTTPStatus.OK
 
 
 _ORFAOS_URL = f"/api/repos/{REPO}/versoes/{VERSAO}/orfaos"

@@ -9,6 +9,7 @@ import pytest
 
 from motor import plugins
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
+from motor.adapters.sugestao.anthropic import Var as VarAnthropic
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,
@@ -103,6 +104,12 @@ def test_segredo_nunca_sai_na_leitura():
     [v] = [v for v in lido.valores if v.chave == VarBitbucket.TOKEN]
     assert v.valor is None and v.definido is True
     assert SEGREDO not in repr(lido)
+
+
+def test_chave_da_anthropic_e_mascarada():
+    _escrever(f'[ambiente]\n{VarAnthropic.CHAVE} = "sk-x"\n')
+
+    assert all(v.valor != "sk-x" for v in ler_para_edicao().valores)
 
 
 def test_segredo_de_plugin_no_ambiente_sai_mascarado(monkeypatch):

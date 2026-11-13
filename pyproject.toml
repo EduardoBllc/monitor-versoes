@@ -22,6 +22,9 @@ dev = [
     "pre-commit>=4.7.0",
     "httpx2>=2.16.0",
 ]
+anthropic = [
+    "anthropic>=2.8,<3",
+]
 
 [project.scripts]
 monitor-versoes = "motor.__main__:main"
@@ -31,6 +34,9 @@ semver = "motor.esquemas.semver:Semver"
 
 [project.entry-points."monitor_versoes.prs"]
 bitbucket = "motor.adapters.commitsource.bitbucket:BitbucketPrs"
+
+[project.entry-points."monitor_versoes.sugestao"]
+anthropic = "motor.adapters.sugestao.anthropic:ProvedorAnthropic"
 
 [project.entry-points."monitor_versoes.atribuicoes"]
 exata = "motor.atribuicoes:Exata"
