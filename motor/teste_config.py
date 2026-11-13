@@ -57,7 +57,7 @@ def testar(
     if peca is PecaTestavel.REPO:
         repo_existente(repo, tomllib.loads(texto).get(SECAO_REPOS, {}))
     onde = onde_das_credenciais(caminho_config_global(), ambiente)
-    comando = [sys.executable, "-m", __name__, peca, onde]
+    comando = [sys.executable, "-P", "-m", __name__, peca, onde]
     if repo is not None:
         comando.append(repo)
     with tempfile.TemporaryDirectory() as temporario:
@@ -80,11 +80,13 @@ def testar(
     try:
         # Só a última linha: um plugin pode ter escrito no stdout antes.
         dados = json.loads(saida.stdout.strip().rsplit("\n", 1)[-1])
+        # Plugin cita a config lida, que no subprocesso é o arquivo temporário.
+        real = caminho_config_global()
         return Resultado(
             Peca(dados["peca"]),
             Estado(dados["estado"]),
-            dados["detalhe"],
-            dados["correcao"],
+            dados["detalhe"].replace(arquivo, real),
+            dados["correcao"].replace(arquivo, real),
         )
     except ValueError, KeyError, TypeError:
         return _falha(peca, "o teste terminou sem resultado legível")

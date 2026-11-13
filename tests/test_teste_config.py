@@ -32,8 +32,11 @@ from motor.errors import ErroDeEntrada
 SEGREDO = "s3nha-nao-salva"
 REPO = "novo"
 HOST_FALSO = "tests.fontes_falsas:HostFalso"
+HOST_BITBUCKET = "bitbucket"
 VAR_HOST_FALSO = "HOST_FALSO_TOKEN"
 MODO_DIRETORIO_PRIVADO = 0o700
+MODULO_HOMONIMO = "json.py"
+VAR_PYTHONPATH = "PYTHONPATH"
 
 
 def _definir(valor, chave, tabela=None, repo=None) -> Alteracao:
@@ -45,6 +48,13 @@ def _repo_novo(caminho) -> list[Alteracao]:
         Alteracao(AcaoAlteracao.CRIAR_REPO, REPO),
         _definir(str(caminho), CHAVE_CAMINHO, repo=REPO),
     ]
+
+
+@pytest.fixture(autouse=True)
+def _fontes_falsas_importaveis(monkeypatch) -> None:
+    """O subprocesso roda com `-P`: `tests.fontes_falsas` só entra pelo PYTHONPATH."""
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    monkeypatch.setenv(VAR_PYTHONPATH, raiz)
 
 
 @pytest.fixture
@@ -109,6 +119,20 @@ def test_correcao_cita_o_config_real(monkeypatch, temporarios):
     assert temporario not in resultado.correcao
 
 
+def test_detalhe_cita_o_config_real(temporarios):
+    resultado = teste_config.testar(
+        [_definir(HOST_BITBUCKET, Chave.FONTE, Tabela.PRS)],
+        ler_para_edicao().versao,
+        PecaTestavel.PRS,
+        None,
+    )
+
+    assert resultado.estado is Estado.FALHA
+    assert caminho_config_global() in resultado.detalhe
+    (temporario,) = temporarios
+    assert temporario not in str(resultado)
+
+
 def test_segredo_do_rascunho_nao_vaza(tmp_path, temporarios):
     alteracoes = [
         *_repo_novo(tmp_path),
@@ -123,6 +147,21 @@ def test_segredo_do_rascunho_nao_vaza(tmp_path, temporarios):
     assert SEGREDO not in str(resultado)
     assert list(temporarios.values()) == [MODO_DIRETORIO_PRIVADO]
     assert not any(os.path.exists(t) for t in temporarios)
+
+
+def test_modulo_homonimo_no_cwd_nao_e_importado(tmp_path, monkeypatch):
+    plantado = tmp_path / "plantado"
+    plantado.mkdir()
+    marca = tmp_path / "importado"
+    (plantado / MODULO_HOMONIMO).write_text(f"open({str(marca)!r}, 'w')\n")
+    monkeypatch.chdir(plantado)
+
+    resultado = teste_config.testar(
+        _repo_novo(tmp_path), ler_para_edicao().versao, PecaTestavel.REPO, REPO
+    )
+
+    assert resultado.estado is Estado.OK
+    assert not marca.exists()
 
 
 def test_timeout_vira_falha(tmp_path, monkeypatch, temporarios):
