@@ -11,12 +11,7 @@
         { "type": "fix", "section": "Correções" }
       ],
       "extra-files": [
-        "README.md",
-        {
-          "type": "toml",
-          "path": "uv.lock",
-          "jsonpath": "$.package[?(@.name==='monitor-versoes')].version"
-        }
+        "README.md"
       ]
     }
   }
