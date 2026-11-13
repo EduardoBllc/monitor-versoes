@@ -17,7 +17,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as monaco from "monaco-editor";
 import TrabalhadorEditor from "monaco-editor/editor/editor.worker?worker";
 import TrabalhadorJson from "monaco-editor/language/json/json.worker?worker";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ErroApi, Metodo, api } from "../api/cliente";
 import { TipoArquivo, TipoErro, assertNever } from "../api/enums";
 import type {
@@ -25,15 +25,29 @@ import type {
   AtualizarResult,
   ConflitoAberto,
   ConteudoDoConflito,
+  PedidoProposta,
+  PropostaDeBloco,
   Resolucao,
 } from "../api/tipos";
 import {
   AVISO_DESCARTE,
+  type EstadoBloco,
   Lado,
   proximoPendente,
   temMarcadores,
 } from "../conflito";
 import { linguagemDe } from "../linguagem";
+import {
+  SEM_PROPOSTAS,
+  descartar,
+  falhar,
+  iniciar,
+  invalidar,
+  mostraGatilhos,
+  podar,
+  receber,
+  vigente,
+} from "../proposta";
 import { MergeConteudo } from "./MergeConteudo";
 import { SO_LEITURA } from "./monacoConflito";
 import { ModalReabrir } from "./ModalReabrir";
@@ -61,6 +75,7 @@ enum Tema {
 enum RotaConflito {
   RESOLUCAO = "resolucao",
   REABERTURA = "reabertura",
+  PROPOSTA = "proposta",
 }
 
 // Cada painel tem o próprio modelo no Monaco; o commit no caminho impede reuso entre picks.
@@ -147,6 +162,17 @@ export default function EditorConflito({
   const [desatualizado, setDesatualizado] = useState(false);
   const [verBase, setVerBase] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [propostas, setPropostas] = useState(SEM_PROPOSTAS);
+  // Os blocos ficam no estado (o botão re-renderiza) e num ref, que a
+  // resposta assíncrona lê sem pegar a versão da hora do pedido.
+  const [estados, setEstados] = useState<EstadoBloco[]>([]);
+  const estadosAtuais = useRef(estados);
+  const propostasAtuais = useRef(propostas);
+  propostasAtuais.current = propostas;
+  const id = `${conflito.data?.commit ?? ""}/${atual?.caminho ?? ""}`;
+  // Nova leitura do disco (resolver, reabrir, recarregar) recomeça a tela.
+  const chaveMerge =
+    atual && dados ? `${id}/${dados.versao_disco}/${atual.resolvido}` : "";
 
   const texto = edicao?.texto ?? dados?.disco ?? "";
   const linguagem = linguagemDe(
@@ -160,6 +186,8 @@ export default function EditorConflito({
   );
 
   useEffect(() => aoMudar({ pendente, sujo }), [pendente, sujo, aoMudar]);
+
+  useEffect(() => setPropostas(invalidar), [chaveMerge]);
 
   useEffect(() => {
     if (!sujo) return;
@@ -188,6 +216,7 @@ export default function EditorConflito({
 
   const descartando = (acao: () => void) => () => {
     setEdicao(null);
+    setPropostas(invalidar);
     setDesatualizado(false);
     acao();
   };
@@ -235,6 +264,38 @@ export default function EditorConflito({
     if (caminho !== null) await enviar(RotaConflito.REABERTURA, { caminho });
   };
 
+  const mudarEstados = (novos: EstadoBloco[]) => {
+    estadosAtuais.current = novos;
+    setEstados(novos);
+    setPropostas((e) => podar(e, novos));
+  };
+
+  const pedir = async (alvo: number | null) => {
+    if (!atual || !dados) return;
+    const inicio = iniciar(propostas, estadosAtuais.current, alvo);
+    if (inicio === null) return;
+    setPropostas(inicio.estado);
+    const corpo: PedidoProposta = {
+      caminho: atual.caminho,
+      versao_disco: edicao?.versao ?? dados.versao_disco,
+      ordens: inicio.ordens,
+    };
+    try {
+      const recebidas = await api<PropostaDeBloco[]>(
+        Metodo.POST,
+        `${url}/${RotaConflito.PROPOSTA}`,
+        corpo,
+      );
+      setPropostas((e) =>
+        receber(e, inicio.geracao, recebidas, estadosAtuais.current),
+      );
+    } catch (erro) {
+      setPropostas((e) => falhar(e, inicio.geracao));
+      // Resposta de outro arquivo ou leitura: o erro já não é desta tela.
+      if (vigente(propostasAtuais.current, inicio.geracao)) tratar(erro);
+    }
+  };
+
   const editar = (novo: string) => {
     if (!atual || !dados || novo === texto) return;
     // Fixa o arquivo: a lista relida no foco não troca o buffer de dono.
@@ -246,7 +307,11 @@ export default function EditorConflito({
     if (!atual || !dados) return null;
     // O esquema gerado tipa como união de strings; o cast alinha ao enum do switch.
     const tipo = dados.tipo as TipoArquivo;
-    const id = `${conflito.data?.commit ?? ""}/${atual.caminho}`;
+    const gatilhos = mostraGatilhos(
+      conflito.data?.sugestao_disponivel ?? false,
+      tipo,
+      atual.resolvido,
+    );
     const modelo = (painel: Painel) => `${painel}/${id}`;
     const botaoReabrir = (
       <Button
@@ -262,8 +327,7 @@ export default function EditorConflito({
         return (
           <Stack>
             <MergeConteudo
-              // Nova leitura do disco (resolver, reabrir, recarregar) recomeça a tela.
-              key={`${id}/${dados.versao_disco}/${atual.resolvido}`}
+              key={chaveMerge}
               linguagem={linguagem}
               modelos={{
                 [Lado.THEIRS]: modelo(Painel.THEIRS),
@@ -275,6 +339,11 @@ export default function EditorConflito({
               resolvido={atual.resolvido}
               tema={tema}
               aoMudar={editar}
+              gatilhos={gatilhos}
+              propostas={propostas}
+              aoSugerir={(k) => void pedir(k)}
+              aoDescartarProposta={(k) => setPropostas((e) => descartar(e, k))}
+              aoMudarEstados={mudarEstados}
             />
             <Group>
               {atual.resolvido ? (
@@ -290,6 +359,16 @@ export default function EditorConflito({
               {dados.base !== null && (
                 <Button variant="default" onClick={() => setVerBase(true)}>
                   Ver base
+                </Button>
+              )}
+              {gatilhos && (
+                <Button
+                  variant="default"
+                  leftSection={<span className="codicon codicon-sparkle" />}
+                  disabled={iniciar(propostas, estados, null) === null}
+                  onClick={() => void pedir(null)}
+                >
+                  Sugerir blocos abertos
                 </Button>
               )}
               {!atual.resolvido && temMarcadores(texto) && (

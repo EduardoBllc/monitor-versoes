@@ -20,18 +20,26 @@ import {
   temMarcadores,
   trecho,
 } from "../conflito";
+import {
+  type EstadoPropostas,
+  lenteSugerir,
+  trechoDaProposta,
+} from "../proposta";
 import "./EditorConflito.css";
 import {
   Classe,
   SO_LEITURA,
   colorir,
   decoracoes,
+  faixasAbaixo,
+  noDaProposta,
   recolherNoEditor,
 } from "./monacoConflito";
 
 const ALTURA_LADO = "35vh";
 const ALTURA_RESULTADO = "45vh";
 const COMANDO_ACEITAR = "monitor-versoes.aceitar";
+const COMANDO_SUGERIR = "monitor-versoes.sugerir";
 // Lente sem id vira texto sem clique.
 const SEM_ACAO = "";
 // O bloco não cresce quando se digita na borda dele: a borda é a linha vizinha.
@@ -89,6 +97,11 @@ export function MergeConteudo({
   resolvido,
   tema,
   aoMudar,
+  gatilhos,
+  propostas,
+  aoSugerir,
+  aoDescartarProposta,
+  aoMudarEstados,
 }: {
   linguagem: string;
   modelos: Record<Lado.OURS | Lado.THEIRS | "resultado", string>;
@@ -97,6 +110,11 @@ export function MergeConteudo({
   resolvido: boolean;
   tema: string;
   aoMudar: (texto: string) => void;
+  gatilhos: boolean;
+  propostas: EstadoPropostas;
+  aoSugerir: (k: number) => void;
+  aoDescartarProposta: (k: number) => void;
+  aoMudarEstados: (estados: EstadoBloco[]) => void;
 }) {
   // Os blocos de quando a tela montou; a chave do componente troca a cada leitura.
   const [inicial] = useState(() => comoMonaco(texto));
@@ -105,16 +123,47 @@ export function MergeConteudo({
   const registro = useRef<Registro[]>([]);
   const resultado = useRef<monaco.editor.ITextModel | null>(null);
   const [mudou] = useState(() => new monaco.Emitter<void>());
-  const aceitar = useRef<(k: number, lado: LadoDoBloco) => void>(() => {});
+  const decidir = useRef<(k: number, lado: Lado, bruto: string) => void>(
+    () => {},
+  );
+  const redesenhar = useRef<() => void>(() => {});
+  // Providers e comandos são closures do onMount: leem as props por aqui.
+  const props = useRef({
+    gatilhos,
+    propostas,
+    aoSugerir,
+    aoDescartarProposta,
+    aoMudarEstados,
+  });
+  props.current = {
+    gatilhos,
+    propostas,
+    aoSugerir,
+    aoDescartarProposta,
+    aoMudarEstados,
+  };
 
   useEffect(() => {
-    const comando = monaco.editor.addCommand({
-      id: COMANDO_ACEITAR,
-      run: (_acesso: unknown, k: number, lado: LadoDoBloco) =>
-        aceitar.current(k, lado),
-    });
-    return () => comando.dispose();
+    const comandos = [
+      monaco.editor.addCommand({
+        id: COMANDO_ACEITAR,
+        run: (_acesso: unknown, k: number, lado: LadoDoBloco) => {
+          const r = registro.current[k];
+          if (r) decidir.current(k, lado, trecho(r.original, lado));
+        },
+      }),
+      monaco.editor.addCommand({
+        id: COMANDO_SUGERIR,
+        run: (_acesso: unknown, k: number) => props.current.aoSugerir(k),
+      }),
+    ];
+    return () => comandos.forEach((c) => c.dispose());
   }, []);
+
+  useEffect(() => {
+    mudou.fire();
+    redesenhar.current();
+  }, [gatilhos, propostas]);
 
   const estado = (k: number): EstadoBloco => {
     const r = registro.current[k];
@@ -249,6 +298,37 @@ export function MergeConteudo({
       }));
     };
 
+    let faixas: monaco.IDisposable = { dispose: () => {} };
+    redesenhar.current = () => {
+      faixas.dispose();
+      const { propostas: atuais, aoDescartarProposta: descartar } =
+        props.current;
+      faixas = faixasAbaixo(
+        editor,
+        [...atuais.pendentes].flatMap(([k, p]) => {
+          const r = registro.current[k];
+          const f = r && modelo.getDecorationRange(r.id);
+          // A poda do pai chega no render seguinte; até lá, só bloco aberto.
+          if (!f || estado(k) !== EstadoBloco.ABERTO) return [];
+          return [
+            {
+              depoisDe: linhasDa(f).fim,
+              no: noDaProposta(
+                p,
+                () =>
+                  decidir.current(
+                    k,
+                    Lado.PROPOSTA,
+                    trechoDaProposta(p.conteudo),
+                  ),
+                () => descartar(k),
+              ),
+            },
+          ];
+        }),
+      );
+    };
+
     const pintura = editor.createDecorationsCollection();
     const atualizar = () => {
       const linhas = registro.current.flatMap((r, k) => {
@@ -277,16 +357,17 @@ export function MergeConteudo({
       });
       pintura.set(decoracoes(linhas));
       mudou.fire();
+      props.current.aoMudarEstados(registro.current.map((_, k) => estado(k)));
+      redesenhar.current();
     };
 
-    aceitar.current = (k, lado) => {
+    decidir.current = (k, lado, bruto) => {
       const r = registro.current[k];
       const f = r && modelo.getDecorationRange(r.id);
       if (!r || !f || estado(k) === EstadoBloco.EDITADO) return;
       // Bloco no fim sem quebra final: o trecho também termina sem ela.
       const semQuebra =
         f.endLineNumber === modelo.getLineCount() && f.endColumn > 1;
-      const bruto = trecho(r.original, lado);
       const novo = semQuebra ? bruto.replace(/\r?\n$/, "") : bruto;
       // A lente não leva o foco, e sem ele o Ctrl+Z logo depois não chega aqui.
       // Focar antes de avisar as lentes: o blur do painel do lado cancela a
@@ -315,6 +396,7 @@ export function MergeConteudo({
     };
 
     aoDescartar(editor, [
+      { dispose: () => faixas.dispose() },
       modelo.onDidChangeContent(() => {
         restaurar();
         atualizar();
@@ -331,12 +413,31 @@ export function MergeConteudo({
         registro.current.flatMap((r, k) => {
           const f = modelo.getDecorationRange(r.id);
           if (!f || estado(k) !== EstadoBloco.ABERTO) return [];
+          const range = new monaco.Range(
+            f.startLineNumber,
+            1,
+            f.startLineNumber,
+            1,
+          );
           const acoes: [LadoDoBloco, string][] = [[Lado.AMBOS, "Ambos"]];
           if (r.original.base !== null) acoes.push([Lado.BASE, "Usar base"]);
-          return acoes.map(([lado, title]) => ({
-            range: new monaco.Range(f.startLineNumber, 1, f.startLineNumber, 1),
-            command: { id: COMANDO_ACEITAR, title, arguments: [k, lado] },
-          }));
+          const lentes: monaco.languages.CodeLens[] = acoes.map(
+            ([lado, title]) => ({
+              range,
+              command: { id: COMANDO_ACEITAR, title, arguments: [k, lado] },
+            }),
+          );
+          const sugerir =
+            props.current.gatilhos &&
+            lenteSugerir(estado(k), props.current.propostas.emAndamento);
+          if (sugerir)
+            lentes.push({
+              range,
+              command: sugerir.acionavel
+                ? { id: COMANDO_SUGERIR, title: sugerir.titulo, arguments: [k] }
+                : { id: SEM_ACAO, title: sugerir.titulo },
+            });
+          return lentes;
         }),
       ),
     ]);
