@@ -2,7 +2,7 @@
 
 - **Status:** aceita
 - **Data:** 2026-11-13
-- **Depende de:** [013](013-conflito-e-checkpoint.md), [020](020-contrato-de-erros-do-daemon.md),
+- **Depende de:** [013](013-conflito-e-checkpoint.md), [020](020-contrato-de-erro-por-tipo.md),
   [027](027-fonte-de-tarefas-plugavel.md), [031](031-ambiente-na-config-central.md),
   [032](032-lock-por-repo-entre-processos.md)
 
@@ -30,7 +30,7 @@ Sem a chave não há sugestão, e `[sugestao]` vale só no topo do central, como
 a sugestão é da instalação, não do repo. Montar não é usar: plugin ausente ou credencial
 faltando não impedem o daemon de subir; o plugin ausente esconde os gatilhos, e a credencial
 faltando aparece como erro ao pedir. Falha do provedor vira erro da API pela tabela da
-[020](020-contrato-de-erros-do-daemon.md).
+[020](020-contrato-de-erro-por-tipo.md).
 
 ## O provedor `anthropic`
 
