@@ -86,10 +86,10 @@ class Campo:
     segredo: bool = False
     opcoes: tuple[str, ...] = ()
     origem: str = ORIGEM_MOTOR
-    grupo: GrupoPlugin | None = None
     descricao: str = ""
     padrao: str | None = None
     exemplo: str = ""
+    grupo: GrupoPlugin | None = None
 
 
 @dataclass(frozen=True)
@@ -513,8 +513,7 @@ def _gravar_atomico(arquivo: str, conteudo: bytes) -> None:
 
 
 def rascunho(alteracoes: list[Alteracao], versao: str) -> str:
-    """A config central com as alterações, validada e sem gravar; recusa se ela
-    mudou desde `versao`."""
+    """Config central com as alterações, validada sem gravar; recusa `versao` velha."""
     arquivo = caminho_config_global()
     bruto = _ler_bytes(arquivo)
     if hashlib.sha256(bruto).hexdigest() != versao:

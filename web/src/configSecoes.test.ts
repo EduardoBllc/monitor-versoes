@@ -9,6 +9,7 @@ import {
   VarAmbiente,
 } from "./api/enums";
 import type { Campo, ConfigEditavel, ResultadoTeste, ValorLido } from "./api/tipos";
+import { TABELA_AMBIENTE } from "./apoioTeste";
 import {
   ORIGEM_MOTOR,
   alteracoesDe,
@@ -39,7 +40,6 @@ const PROPORCIONAL = "proporcional";
 const MODULO = "meu.modulo:Fonte";
 const REPO = "app";
 
-const TABELA_AMBIENTE = "ambiente";
 const TABELA_TICKIO = "tickio";
 const TABELA_JIRA = "jira";
 const TABELA_SEMVER = "semver";

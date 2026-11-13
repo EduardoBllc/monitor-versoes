@@ -135,7 +135,8 @@ function Barra({ segmentos, abrir, continuar }: { segmentos: Segmento[]; abrir: 
                 color={COR_BARRA[s.marca] ?? "gray"}
               />
               <Text size="xs" c="dimmed" mt={4}>
-                {s.nome} {s.marca !== Marca.PENDENTE && <Sinal marca={s.marca} />}
+                {s.nome}
+                {s.marca !== Marca.PENDENTE && <> <Sinal marca={s.marca} /></>}
               </Text>
             </UnstyledButton>
           ))}
@@ -177,7 +178,7 @@ function Editor({
   }));
   const [testes, setTestes] = useState<Record<string, ResultadoTeste>>({});
   const [pulados, setPulados] = useState(lerPulados);
-  const proximaDe = (f: Formulario) => pendencias(config, f, testes, pulados).proxima ?? Secao.TAREFAS;
+  const proximaDe = (f: Formulario) => pendencias(config, f, testes, pulados).proxima ?? Secao.PRS;
   const [destino, setDestino] = useState<Destino>(() => retomar ?? proximaDe(formulario));
   const [novo, setNovo] = useState("");
 

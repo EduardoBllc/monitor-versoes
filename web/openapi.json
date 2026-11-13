@@ -1403,16 +1403,6 @@
             "title": "Origem",
             "default": "motor"
           },
-          "grupo": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GrupoPlugin"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "descricao": {
             "type": "string",
             "title": "Descricao",
@@ -1433,6 +1423,16 @@
             "type": "string",
             "title": "Exemplo",
             "default": ""
+          },
+          "grupo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrupoPlugin"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1680,6 +1680,17 @@
           "ambiente"
         ],
         "title": "Escopo"
+      },
+      "Estado": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "FALHA",
+          "não verificada",
+          "não configurado",
+          "aviso"
+        ],
+        "title": "Estado"
       },
       "EstadoExecucao": {
         "type": "string",
@@ -2202,8 +2213,7 @@
       "ResultadoTeste": {
         "properties": {
           "estado": {
-            "type": "string",
-            "title": "Estado"
+            "$ref": "#/components/schemas/Estado"
           },
           "detalhe": {
             "type": "string",

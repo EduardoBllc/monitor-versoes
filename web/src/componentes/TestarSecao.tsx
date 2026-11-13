@@ -8,7 +8,7 @@ import { alteracoesDe, type Formulario } from "../config";
 import { NOME_SECAO, assinatura, type Destino } from "../configSecoes";
 import { notificarErro } from "./notificar";
 
-const ESTILO: Record<EstadoTeste, { cor: string; sinal: string }> = {
+const ESTILO: Record<ResultadoTeste["estado"], { cor: string; sinal: string }> = {
   [EstadoTeste.OK]: { cor: "green", sinal: "✓" },
   [EstadoTeste.FALHA]: { cor: "red", sinal: "✕" },
   [EstadoTeste.NAO_VERIFICADA]: { cor: "gray", sinal: "" },
@@ -73,8 +73,7 @@ export function TestarSecao({
 }
 
 function Resultado({ nome, estado, detalhe, correcao }: ResultadoTeste & { nome: string }) {
-  // O tipo gerado é string; o enum espelha os valores do motor.
-  const { cor, sinal } = ESTILO[estado as EstadoTeste] ?? ESTILO[EstadoTeste.AVISO];
+  const { cor, sinal } = ESTILO[estado];
   return (
     <Alert color={cor} title={sinal ? `${sinal} ${nome}` : `${nome}: ${estado}`}>
       <Text size="sm">{detalhe}</Text>

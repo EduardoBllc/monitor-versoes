@@ -481,7 +481,6 @@ export interface components {
              * @default motor
              */
             origem: string;
-            grupo?: components["schemas"]["GrupoPlugin"] | null;
             /**
              * Descricao
              * @default
@@ -494,6 +493,7 @@ export interface components {
              * @default
              */
             exemplo: string;
+            grupo?: components["schemas"]["GrupoPlugin"] | null;
         };
         /** ChamadoConsultado */
         ChamadoConsultado: {
@@ -585,6 +585,11 @@ export interface components {
          * @enum {string}
          */
         Escopo: "geral" | "repo" | "ambiente";
+        /**
+         * Estado
+         * @enum {string}
+         */
+        Estado: "OK" | "FALHA" | "não verificada" | "não configurado" | "aviso";
         /**
          * EstadoExecucao
          * @enum {string}
@@ -787,8 +792,7 @@ export interface components {
         };
         /** ResultadoTeste */
         ResultadoTeste: {
-            /** Estado */
-            estado: string;
+            estado: components["schemas"]["Estado"];
             /** Detalhe */
             detalhe: string;
             /** Correcao */

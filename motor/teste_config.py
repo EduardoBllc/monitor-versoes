@@ -1,8 +1,4 @@
-"""Testa uma peça da config sobre o rascunho, num subprocesso (decisão 037).
-
-O subprocesso lê o rascunho de um `XDG_CONFIG_HOME` temporário e aplica o
-`[ambiente]` dele; o processo que chama nunca vê o ambiente do rascunho.
-"""
+"""Testa uma peça da config sobre o rascunho, num subprocesso (decisão 037)."""
 
 from __future__ import annotations
 
@@ -50,9 +46,7 @@ def testar(
     *,
     ambiente: str = AMBIENTE_PADRAO,
 ) -> Resultado:
-    """A linha do diagnóstico de `peca` com a config como ficaria se salva.
-
-    `ambiente` escolhe o `.env` que a correção cita, como no diagnóstico."""
+    """A linha do diagnóstico de `peca` com a config como ficaria se salva."""
     texto = rascunho(alteracoes, versao)
     if peca is PecaTestavel.REPO:
         repo_existente(repo, tomllib.loads(texto).get(SECAO_REPOS, {}))

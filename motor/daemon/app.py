@@ -29,7 +29,7 @@ from motor.daemon.erros import (
 )
 from motor.daemon.execucoes import EstadoExecucao, Execucao, Execucoes, Operacao
 from motor.daemon.seguranca import proteger
-from motor.diagnostico import PecaTestavel
+from motor.diagnostico import Estado, PecaTestavel
 from motor.domain.inscricao import UltimaExecucao
 from motor.domain.types import JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult
@@ -124,7 +124,7 @@ class PedidoTeste:
 
 @dataclass(frozen=True)
 class ResultadoTeste:
-    estado: str
+    estado: Estado
     detalhe: str
     correcao: str
 
@@ -424,7 +424,7 @@ def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
     @app.post("/api/config/testar")
     def testar_config(corpo: PedidoTeste) -> ResultadoTeste:
         r = testar(corpo.alteracoes, corpo.versao, corpo.peca, corpo.repo)
-        return ResultadoTeste(r.estado.value, r.detalhe, r.correcao)
+        return ResultadoTeste(r.estado, r.detalhe, r.correcao)
 
 
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:
