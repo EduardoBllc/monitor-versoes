@@ -8,6 +8,7 @@ import {
   alteracoesDe,
   avisoVazio,
   chaveDe,
+  ehSwitch,
   estadoSegredo,
   linhasDe,
   opcoesDe,
@@ -249,5 +250,36 @@ describe("avisoVazio", () => {
   it("texto avisa quando vazio", () => {
     for (const v of [undefined, null, ""]) expect(avisoVazio(campo(false), v, false)).toBe(AVISO);
     expect(avisoVazio(campo(false), "x", false)).toBeUndefined();
+  });
+});
+
+describe("ehSwitch", () => {
+  const campo: Campo = {
+    escopo: Escopo.GERAL,
+    tabela: null,
+    chave: "k",
+    tipo: TipoCampo.TEXTO,
+    rotulo: "K",
+    segredo: false,
+    opcoes: [],
+    origem: ORIGEM_MOTOR,
+    descricao: "",
+    exemplo: "",
+    aviso_vazio: "x",
+  };
+  const lido = (valor: boolean | string) => ({
+    repo: null,
+    tabela: null,
+    chave: "k",
+    valor,
+    definido: true,
+    editavel: true,
+  });
+
+  it("valor booleano de campo texto vira Switch; tipo declarado não", () => {
+    expect(ehSwitch({ repo: null, tabela: null, chave: "k", campo, lido: lido(true) })).toBe(true);
+    expect(ehSwitch({ repo: null, tabela: null, chave: "k", campo, lido: lido("a") })).toBe(false);
+    const inteiro = { ...campo, tipo: TipoCampo.INTEIRO };
+    expect(ehSwitch({ repo: null, tabela: null, chave: "k", campo: inteiro, lido: lido(true) })).toBe(false);
   });
 });

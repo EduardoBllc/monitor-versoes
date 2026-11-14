@@ -1,4 +1,4 @@
-import { AcaoAlteracao, Escopo } from "./api/enums";
+import { AcaoAlteracao, Escopo, TipoCampo } from "./api/enums";
 import type { Alteracao, Campo, ConfigEditavel, ValorLido } from "./api/tipos";
 
 export const ORIGEM_MOTOR = "motor";
@@ -28,6 +28,13 @@ export function avisoVazio(
     : valor == null || valor === "";
   return vazio ? campo.aviso_vazio || undefined : undefined;
 }
+
+// Mesma ordem de `EntradaCampo`: o Switch só vale quando nenhum tipo declarado o precede.
+export const ehSwitch = (l: Linha): boolean =>
+  !l.campo?.segredo &&
+  l.campo?.tipo !== TipoCampo.ESCOLHA &&
+  l.campo?.tipo !== TipoCampo.INTEIRO &&
+  typeof l.lido?.valor === "boolean";
 
 export type Escalar = string | number | boolean | null;
 

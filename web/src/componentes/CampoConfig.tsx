@@ -3,6 +3,7 @@ import { TipoCampo } from "../api/enums";
 import {
   EstadoSegredo,
   avisoVazio,
+  ehSwitch,
   chaveDe,
   estadoSegredo,
   opcoesDe,
@@ -37,7 +38,7 @@ export function Entrada(props: PropsEntrada) {
   const { linha, valores } = props;
   const { campo, lido } = linha;
   const k = chaveDe(linha.repo, linha.tabela, linha.chave);
-  const aviso = campo && avisoVazio(campo, valores[k], lido?.definido === true);
+  const aviso = campo && !ehSwitch(linha) && avisoVazio(campo, valores[k], lido?.definido === true);
   if (!aviso) return <EntradaCampo {...props} />;
   return (
     <Stack gap={4}>
