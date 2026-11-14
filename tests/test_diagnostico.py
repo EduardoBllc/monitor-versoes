@@ -679,6 +679,24 @@ _NOVIDADE = Novidade("pacote-x", "1.0.0", "1.1.0", "uv tool upgrade pacote-x")
         (None, Estado.NAO_VERIFICADA, "", ""),
         (Cache(_CHECADO_EM, ()), Estado.OK, "em dia (checado em ", ""),
         (
+            Cache(_CHECADO_EM, (), ("pacote-y",), respondeu=False),
+            Estado.NAO_VERIFICADA,
+            "nenhuma origem respondeu",
+            "",
+        ),
+        (
+            Cache(_CHECADO_EM, (), ("pacote-y",)),
+            Estado.OK,
+            "sem resposta de pacote-y",
+            "",
+        ),
+        (
+            Cache(_CHECADO_EM, (_NOVIDADE,), ("pacote-y",)),
+            Estado.AVISO,
+            "sem resposta de pacote-y",
+            _NOVIDADE.comando,
+        ),
+        (
             Cache(_CHECADO_EM, (_NOVIDADE,)),
             Estado.AVISO,
             "pacote-x 1.0.0 → 1.1.0",

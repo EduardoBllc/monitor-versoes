@@ -29,6 +29,7 @@ from motor.novidades import (
     TIMEOUT_GIT_S,
     VALIDADE,
     Cache,
+    Checagem,
     Novidade,
     VarGit,
     checar,
@@ -170,7 +171,13 @@ def test_checar(
     saida: str | None,
     esperado: tuple[Novidade, ...],
 ) -> None:
-    assert checar(registro, instalados, _rodar_fixo(saida)) == esperado
+    assert checar(registro, instalados, _rodar_fixo(saida)).novidades == esperado
+
+
+def test_checar_aponta_origem_sem_resposta() -> None:
+    assert checar(_registro("v0.2.0"), {}, _rodar_fixo(None)) == Checagem(
+        (), (PACOTE_MOTOR,), respondeu=False
+    )
 
 
 @pytest.mark.parametrize(
@@ -188,7 +195,7 @@ def test_checar_commit_fixado_com_tags_compara_versao(
     achadas = checar(
         _registro(COMMIT_NOVO), instalados, _rodar_fixo(saida), lambda _: versao
     )
-    assert achadas == esperado
+    assert achadas.novidades == esperado
 
 
 def test_git_roda_sem_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -242,7 +249,9 @@ def test_git_com_falha_nao_levanta(
 
 def test_cache_ida_e_volta_e_validade(tmp_path: Path) -> None:
     arquivo = tmp_path / "novidades.json"
-    cache = Cache(AGORA, (Novidade("pacote", "1", "2", "comando"),))
+    cache = Cache(
+        AGORA, (Novidade("pacote", "1", "2", "comando"),), ("outro",), respondeu=False
+    )
     gravar_cache(arquivo, cache)
     assert ler_cache(arquivo) == cache
 
@@ -283,6 +292,7 @@ def test_renovacao_que_falha_ainda_grava_cache_novo(
     cache = ler_cache(tmp_path / ARQUIVO_CACHE)
     assert cache is not None
     assert cache.novidades == ()
+    assert not cache.respondeu
     assert not vencido(cache, datetime.now().astimezone())
 
 

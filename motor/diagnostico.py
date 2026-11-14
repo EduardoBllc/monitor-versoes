@@ -141,12 +141,17 @@ def _versao(novidades: Callable[[], Cache | None]) -> Resultado:
         return Resultado(
             Peca.VERSAO, Estado.NAO_VERIFICADA, "sem resultado da checagem"
         )
-    if not cache.novidades:
-        quando = cache.checado_em.astimezone()
+    quando = f"checado em {cache.checado_em.astimezone():%Y-%m-%d %H:%M}"
+    if not cache.novidades and not cache.respondeu:
         return Resultado(
-            Peca.VERSAO, Estado.OK, f"em dia (checado em {quando:%Y-%m-%d %H:%M})"
+            Peca.VERSAO, Estado.NAO_VERIFICADA, f"nenhuma origem respondeu ({quando})"
         )
+    calada = f"; sem resposta de {', '.join(cache.sem_resposta)}"
+    sem_resposta = calada if cache.sem_resposta else ""
+    if not cache.novidades:
+        return Resultado(Peca.VERSAO, Estado.OK, f"em dia ({quando}){sem_resposta}")
     detalhe = "; ".join(f"{n.pacote} {n.atual} → {n.nova}" for n in cache.novidades)
+    detalhe += sem_resposta
     correcao = "; ".join(n.comando for n in cache.novidades)
     return Resultado(Peca.VERSAO, Estado.AVISO, detalhe, correcao)
 

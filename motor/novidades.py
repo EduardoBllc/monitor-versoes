@@ -55,6 +55,8 @@ class VarGit(StrEnum):
 class ChaveCache(StrEnum):
     CHECADO_EM = "checado_em"
     NOVIDADES = "novidades"
+    SEM_RESPOSTA = "sem_resposta"
+    RESPONDEU = "respondeu"
     PACOTE = "pacote"
     ATUAL = "atual"
     NOVA = "nova"
@@ -70,9 +72,18 @@ class Novidade:
 
 
 @dataclass(frozen=True)
+class Checagem:
+    novidades: tuple[Novidade, ...]
+    sem_resposta: tuple[str, ...] = ()  # pacotes cuja origem não respondeu
+    respondeu: bool = True  # alguma origem git respondeu
+
+
+@dataclass(frozen=True)
 class Cache:
     checado_em: datetime
     novidades: tuple[Novidade, ...]
+    sem_resposta: tuple[str, ...] = ()
+    respondeu: bool = True
 
 
 VersaoInstalada = Callable[[str], str | None]  # versão do pacote, ou None
@@ -225,25 +236,27 @@ def checar(
     instalados: Mapping[str, Origem],
     rodar: Rodar = rodar_git,
     versao_instalada: VersaoInstalada = _versao_do_pacote,
-) -> tuple[Novidade, ...]:
-    achadas = []
+) -> Checagem:
+    achadas, sem_resposta, respondeu = [], [], False
     for r in (reg.motor, *reg.plugins):
         if r.git is None:
             continue
         saida = ls_remote(r.git, rodar)
         if saida is None:
+            sem_resposta.append(r.nome)
             continue
+        respondeu = True
         if (achada := novidade(r, instalados, saida, versao_instalada)) is not None:
             achadas.append(achada)
-    return tuple(achadas)
+    return Checagem(tuple(achadas), tuple(sem_resposta), respondeu)
 
 
 def ler_cache(arquivo: Path) -> Cache | None:
     try:
         dados = json.loads(arquivo.read_text())
         return Cache(
-            datetime.fromisoformat(dados[ChaveCache.CHECADO_EM]),
-            tuple(
+            checado_em=datetime.fromisoformat(dados[ChaveCache.CHECADO_EM]),
+            novidades=tuple(
                 Novidade(
                     n[ChaveCache.PACOTE],
                     n[ChaveCache.ATUAL],
@@ -252,6 +265,8 @@ def ler_cache(arquivo: Path) -> Cache | None:
                 )
                 for n in dados[ChaveCache.NOVIDADES]
             ),
+            sem_resposta=tuple(str(p) for p in dados[ChaveCache.SEM_RESPOSTA]),
+            respondeu=bool(dados[ChaveCache.RESPONDEU]),
         )
     except OSError, ValueError, KeyError, TypeError:
         return None
@@ -269,6 +284,8 @@ def gravar_cache(arquivo: Path, cache: Cache) -> None:
             }
             for n in cache.novidades
         ],
+        ChaveCache.SEM_RESPOSTA: list(cache.sem_resposta),
+        ChaveCache.RESPONDEU: cache.respondeu,
     }
     arquivo.parent.mkdir(parents=True, exist_ok=True)
     # Temporário no mesmo diretório: `os.replace` só é atômico dentro do volume.
@@ -338,22 +355,27 @@ def linha_aviso(n: Novidade) -> str:
     return f"{texto_aviso(n)} {n.comando}"
 
 
-def _checar_instalado() -> tuple[Novidade, ...]:
+def _checar_instalado() -> Checagem:
     reg = ler_registro()
     if reg is None:
-        return ()
+        return Checagem((), respondeu=False)
     return checar(reg, origens_instaladas())
 
 
 def _renovar() -> None:
     try:
-        achadas = _checar_instalado()
+        feita = _checar_instalado()
     except Exception:
         # Sem cache novo, todo comando dispararia outra renovação.
-        achadas = ()
+        feita = Checagem((), respondeu=False)
     gravar_cache(
         Path(diretorio_cache()) / ARQUIVO_CACHE,
-        Cache(datetime.now().astimezone(), achadas),
+        Cache(
+            datetime.now().astimezone(),
+            feita.novidades,
+            feita.sem_resposta,
+            feita.respondeu,
+        ),
     )
 
 
