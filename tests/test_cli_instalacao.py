@@ -311,6 +311,20 @@ def test_atualizar_sem_versao_nova_nao_reinstala(
     assert "tudo em dia" in capsys.readouterr().out
 
 
+def test_atualizar_com_origem_sem_resposta_nao_diz_tudo_em_dia(
+    inst: Instalacao, capsys
+) -> None:
+    inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR,))
+
+    main([COMANDO_ATUALIZAR_MOTOR])
+
+    assert inst.comandos == []
+    saida = capsys.readouterr()
+    assert f"Sem resposta de {URL_A}" in saida.err
+    assert "tudo em dia" not in saida.out
+    assert "nada a reinstalar" in saida.out.lower()
+
+
 def test_atualizar_motor_leva_motor_e_plugins(inst: Instalacao, capsys) -> None:
     inst.remotos[URL_A] = _remoto(head=COMMIT_NOVO)
     inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR, TAG_MOTOR_NOVA))

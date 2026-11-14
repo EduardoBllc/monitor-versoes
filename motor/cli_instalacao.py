@@ -188,6 +188,7 @@ def _atualizar(
     reg: Registro, origens: dict[str, Origem], nomes: set[str], pedido: bool
 ) -> None:
     publicados: list[str] = []
+    sem_resposta: list[str] = []
 
     def alvo(r: Requisito) -> Requisito:
         if normalizar(r.nome) not in nomes:
@@ -200,6 +201,7 @@ def _atualizar(
         saida = ls_remote(r.git, rodar_git)
         if saida is None:
             print(f"Sem resposta de {r.git}; {r.nome} fica como está.", file=sys.stderr)
+            sem_resposta.append(r.nome)
             return r
         if novidade(r, origens, saida) is None:
             return r
@@ -207,7 +209,11 @@ def _atualizar(
 
     novo = replace(reg, motor=alvo(reg.motor), plugins=tuple(map(alvo, reg.plugins)))
     if novo == reg and not publicados:
-        print("Está tudo em dia; nada a reinstalar.")
+        print(
+            "Nada a reinstalar."
+            if sem_resposta
+            else "Está tudo em dia; nada a reinstalar."
+        )
         return
     extras = [arg for nome in publicados for arg in ("--upgrade-package", nome)]
     _reinstalar(reg, [*comando_reinstalar(novo), *extras])
