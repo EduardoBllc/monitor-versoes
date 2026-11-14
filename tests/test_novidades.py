@@ -37,6 +37,7 @@ PLUGIN_METADADO = "Monitor_Versoes.Extra"  # mesmo pacote, grafia do METADATA
 URL_PLUGIN = "https://github.com/EduardoBllc/monitor-versoes-extra"
 COMMIT_ANTIGO = "a" * 40
 COMMIT_NOVO = "b" * 40
+COMANDO_MOTOR = f"{PACOTE_MOTOR} atualizar-motor"
 AGORA = datetime(2026, 1, 1, 12, tzinfo=UTC)
 
 
@@ -147,19 +148,6 @@ def test_maior_tag_ordena_numericamente_e_ignora_lixo() -> None:
             (),
         ),
         (
-            _registro(COMMIT_NOVO),
-            {PACOTE_MOTOR: Origem(TipoOrigem.GIT, commit=COMMIT_NOVO)},
-            _remoto(head=COMMIT_NOVO, tags=("v0.2.0", "v0.10.0")),
-            (
-                Novidade(
-                    PACOTE_MOTOR,
-                    COMMIT_NOVO[:7],
-                    "0.10.0",
-                    f"{PACOTE_MOTOR} atualizar-motor",
-                ),
-            ),
-        ),
-        (
             _registro("main"),
             {},
             _remoto(head=COMMIT_NOVO, tags=("v0.2.0",)),
@@ -174,6 +162,24 @@ def test_checar(
     esperado: tuple[Novidade, ...],
 ) -> None:
     assert checar(registro, instalados, _rodar_fixo(saida)) == esperado
+
+
+@pytest.mark.parametrize(
+    ("versao", "esperado"),
+    [
+        ("0.2.0", ()),
+        ("0.1.0", (Novidade(PACOTE_MOTOR, "0.1.0", "0.2.0", COMANDO_MOTOR),)),
+    ],
+)
+def test_checar_commit_fixado_com_tags_compara_versao(
+    versao: str, esperado: tuple[Novidade, ...]
+) -> None:
+    instalados = {PACOTE_MOTOR: Origem(TipoOrigem.GIT, commit=COMMIT_NOVO)}
+    saida = _remoto(head=COMMIT_NOVO, tags=("v0.2.0",))
+    achadas = checar(
+        _registro(COMMIT_NOVO), instalados, _rodar_fixo(saida), lambda _: versao
+    )
+    assert achadas == esperado
 
 
 def test_git_roda_sem_prompt(monkeypatch: pytest.MonkeyPatch) -> None:

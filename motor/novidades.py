@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from importlib.metadata import distribution
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 
 from motor.config import checagem_ligada, diretorio_cache
@@ -68,6 +68,7 @@ class Cache:
     novidades: tuple[Novidade, ...]
 
 
+VersaoInstalada = Callable[[str], str | None]  # versão do pacote, ou None
 Rodar = Callable[[list[str], Mapping[str, str]], str | None]  # stdout; None em falha
 
 
@@ -105,16 +106,6 @@ def maior_tag(saida_ls_remote: str) -> str | None:
     return max(_tags(saida_ls_remote), key=lambda t: _versao(t) or (), default=None)
 
 
-def _commits_da_tag(saida: str, tag: str) -> set[str]:
-    # Tag anotada aparece também como `tag^{}`, com o commit de fato.
-    nomes = {f"{PREFIXO_TAG}{tag}", f"{PREFIXO_TAG}{tag}^{{}}"}
-    return {
-        c
-        for c, _, ref in (ln.partition("\t") for ln in saida.splitlines())
-        if ref in nomes
-    }
-
-
 def _head(saida: str) -> str | None:
     for linha in saida.splitlines():
         commit, _, ref = linha.partition("\t")
@@ -130,15 +121,29 @@ def _de_tag_fixa(r: Requisito, ref: str, saida: str, comando: str) -> Novidade |
     return Novidade(r.nome, ref[1:], nova[1:], comando)
 
 
+def _versao_do_pacote(nome: str) -> str | None:
+    try:
+        return version(nome)
+    except PackageNotFoundError:
+        return None
+
+
 def _de_commit(
-    r: Requisito, instalado: str, saida: str, comando: str
+    r: Requisito,
+    instalado: str,
+    saida: str,
+    comando: str,
+    versao_instalada: VersaoInstalada,
 ) -> Novidade | None:
     curto = TAMANHO_COMMIT_CURTO
     nova = maior_tag(saida)
     if nova is not None:
-        if instalado in _commits_da_tag(saida, nova):
+        # Commit à frente da última tag não é versão velha: compara pela versão.
+        atual = versao_instalada(r.nome) or ""
+        atual_v = _versao(f"v{atual}")
+        if atual_v is None or (_versao(nova) or ()) <= atual_v:
             return None
-        return Novidade(r.nome, instalado[:curto], nova[1:], comando)
+        return Novidade(r.nome, atual, nova[1:], comando)
     remoto = _head(saida)
     if remoto is None or remoto == instalado:
         return None
@@ -151,7 +156,10 @@ def ref_mais_nova(saida: str) -> str | None:
 
 
 def novidade(
-    r: Requisito, instalados: Mapping[str, Origem], saida: str
+    r: Requisito,
+    instalados: Mapping[str, Origem],
+    saida: str,
+    versao_instalada: VersaoInstalada = _versao_do_pacote,
 ) -> Novidade | None:
     comando = (
         f"{PACOTE_MOTOR} atualizar-motor"
@@ -167,7 +175,11 @@ def novidade(
         None,
     )
     instalado = (origem.commit if origem else None) or r.ref
-    return _de_commit(r, instalado, saida, comando) if instalado else None
+    return (
+        _de_commit(r, instalado, saida, comando, versao_instalada)
+        if instalado
+        else None
+    )
 
 
 def ls_remote(url: str, rodar: Rodar = rodar_git) -> str | None:
@@ -175,7 +187,10 @@ def ls_remote(url: str, rodar: Rodar = rodar_git) -> str | None:
 
 
 def checar(
-    reg: Registro, instalados: Mapping[str, Origem], rodar: Rodar = rodar_git
+    reg: Registro,
+    instalados: Mapping[str, Origem],
+    rodar: Rodar = rodar_git,
+    versao_instalada: VersaoInstalada = _versao_do_pacote,
 ) -> tuple[Novidade, ...]:
     achadas = []
     for r in (reg.motor, *reg.plugins):
@@ -184,7 +199,7 @@ def checar(
         saida = ls_remote(r.git, rodar)
         if saida is None:
             continue
-        if (achada := novidade(r, instalados, saida)) is not None:
+        if (achada := novidade(r, instalados, saida, versao_instalada)) is not None:
             achadas.append(achada)
     return tuple(achadas)
 
