@@ -9,6 +9,7 @@ import pytest
 from monitor_versoes_jira import FonteJira
 from monitor_versoes_jira.fonte import ChaveTarefas, VarJira
 
+from motor.config import TABELA_AMBIENTE, Tabela
 from motor.config_edicao import catalogo_campos
 from motor.domain.commits import extrair_chamado
 from motor.domain.referencia import Referencia
@@ -145,19 +146,15 @@ def test_fetch_credencial_com_espacos_nas_pontas() -> None:
 
 
 @pytest.mark.parametrize("valor", [None, ""])
-@pytest.mark.parametrize(
-    ("tabela", "chave"),
-    [
-        ("tarefas", ChaveTarefas.URL),
-        ("tarefas", ChaveTarefas.PROJETO),
-        ("ambiente", VarJira.EMAIL),
-        ("ambiente", VarJira.TOKEN),
-    ],
-)
-def test_fetch_falta_chave(tabela: str, chave: str, valor: str | None) -> None:
+@pytest.mark.parametrize("chave", [*ChaveTarefas, *VarJira])
+def test_fetch_falta_chave(chave: ChaveTarefas | VarJira, valor: str | None) -> None:
     tarefas = dict(TAREFAS)
     env = dict(ENV)
-    alvo = tarefas if tabela == "tarefas" else env
+    tabela: str
+    if isinstance(chave, ChaveTarefas):
+        tabela, alvo = Tabela.TAREFAS, tarefas
+    else:
+        tabela, alvo = TABELA_AMBIENTE, env
     if valor is None:
         del alvo[chave]
     else:
