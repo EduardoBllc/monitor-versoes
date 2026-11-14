@@ -303,6 +303,7 @@ _PLUGINS = "conferir [tarefas] fonte e os plugins instalados"
         ("tests.fontes_falsas:FonteConstrutorQuebra", "", Estado.FALHA, _PLUGINS),
         ("tests.fontes_falsas:FonteFixa", "", Estado.NAO_VERIFICADA, ""),
         ("tests.fontes_falsas:FonteComCredencial", "certo", Estado.OK, ""),
+        ("tests.fontes_falsas:FonteSemToken", "", Estado.NAO_VERIFICADA, ""),
         (
             "tests.fontes_falsas:FonteComCredencial",
             "errado",
@@ -318,6 +319,7 @@ _PLUGINS = "conferir [tarefas] fonte e os plugins instalados"
         "sem-verificacao",
         "credencial-aceita",
         "credencial-recusada",
+        "sem-token",
     ],
 )
 def test_linha_tarefas_por_estado(
@@ -348,6 +350,17 @@ def test_linha_tarefas_cita_a_mensagem_da_falha(tmp_path, monkeypatch):
     por_peca, _ = _rodar(config_central=carregar_config_global)
 
     assert "construtor quebrou" in por_peca[Peca.TAREFAS].detalhe
+
+
+def test_linha_tarefas_cita_o_motivo_de_nao_ter_verificado(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text('[tarefas]\nfonte = "tests.fontes_falsas:FonteSemToken"\n')
+
+    por_peca, _ = _rodar(config_central=carregar_config_global)
+
+    assert "sem FONTE_FALSA_TOKEN" in por_peca[Peca.TAREFAS].detalhe
 
 
 # -- linha Fonte de PR -----------------------------------------------------------
