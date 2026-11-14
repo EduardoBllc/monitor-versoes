@@ -1217,6 +1217,24 @@
           }
         }
       }
+    },
+    "/api/instalacao": {
+      "get": {
+        "summary": "Ler Instalacao",
+        "operationId": "ler_instalacao_api_instalacao_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instalacao"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1891,6 +1909,30 @@
         ],
         "title": "InscricaoVista"
       },
+      "Instalacao": {
+        "properties": {
+          "plugins": {
+            "items": {
+              "$ref": "#/components/schemas/PluginInstalado"
+            },
+            "type": "array",
+            "title": "Plugins"
+          },
+          "novidades": {
+            "items": {
+              "$ref": "#/components/schemas/Novidade"
+            },
+            "type": "array",
+            "title": "Novidades"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plugins",
+          "novidades"
+        ],
+        "title": "Instalacao"
+      },
       "JulgamentoOrfao": {
         "properties": {
           "hash_origem": {
@@ -1923,6 +1965,34 @@
         "type": "object",
         "title": "JulgamentoOrfao",
         "description": "Julgamento humano de um commit órfão (sem referência de tarefa) de uma\nversão. Como a `Exclusion`, o git não o recupera.\n\n`chamado=None` quer dizer \"não pertence a chamado nenhum\"; senão é o ID\npuro, a mesma chave das atribuições."
+      },
+      "Novidade": {
+        "properties": {
+          "pacote": {
+            "type": "string",
+            "title": "Pacote"
+          },
+          "atual": {
+            "type": "string",
+            "title": "Atual"
+          },
+          "nova": {
+            "type": "string",
+            "title": "Nova"
+          },
+          "comando": {
+            "type": "string",
+            "title": "Comando"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pacote",
+          "atual",
+          "nova",
+          "comando"
+        ],
+        "title": "Novidade"
       },
       "NumeroVersao": {
         "properties": {
@@ -1983,6 +2053,51 @@
           "julgamento"
         ],
         "title": "OrfaoDaVersao"
+      },
+      "Origem": {
+        "properties": {
+          "tipo": {
+            "$ref": "#/components/schemas/TipoOrigem"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tipo"
+        ],
+        "title": "Origem"
       },
       "PecaTestavel": {
         "type": "string",
@@ -2214,6 +2329,38 @@
         ],
         "title": "PedidoVerificacao"
       },
+      "PluginInstalado": {
+        "properties": {
+          "grupo": {
+            "type": "string",
+            "title": "Grupo"
+          },
+          "nome": {
+            "type": "string",
+            "title": "Nome"
+          },
+          "pacote": {
+            "type": "string",
+            "title": "Pacote"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "origem": {
+            "$ref": "#/components/schemas/Origem"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grupo",
+          "nome",
+          "pacote",
+          "versao",
+          "origem"
+        ],
+        "title": "PluginInstalado"
+      },
       "Progresso": {
         "properties": {
           "fase": {
@@ -2406,6 +2553,16 @@
           "interno"
         ],
         "title": "TipoErro"
+      },
+      "TipoOrigem": {
+        "type": "string",
+        "enum": [
+          "git",
+          "índice",
+          "embutido",
+          "local"
+        ],
+        "title": "TipoOrigem"
       },
       "UltimaExecucao": {
         "properties": {

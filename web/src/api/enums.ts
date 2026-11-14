@@ -127,3 +127,10 @@ export enum VarAmbiente {
   DATABASE_SQLITE_PATH = "DATABASE_SQLITE_PATH",
   WORKTREES_MANTIDAS = "WORKTREES_MANTIDAS",
 }
+
+export enum TipoOrigem {
+  GIT = "git",
+  INDICE = "índice",
+  EMBUTIDO = "embutido",
+  LOCAL = "local",
+}

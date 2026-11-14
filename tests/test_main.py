@@ -26,6 +26,7 @@ import pytest
 
 import motor.__main__ as cli
 import motor.montagem as montagem
+import motor.novidades as modulo_novidades
 from motor.__main__ import (
     _build_parser,
     imprimir_atualizacao,
@@ -1600,10 +1601,14 @@ _LINHA_MOTOR = (
 def _preparar_aviso(monkeypatch, checado_em, *, novidades=None):
     renovacoes: list[int] = []
     novidades = (_NOVIDADE_MOTOR,) if novidades is None else novidades
-    monkeypatch.setattr(cli, "ler_registro", object)
-    monkeypatch.setattr(cli, "checagem_ligada", lambda: True)
-    monkeypatch.setattr(cli, "ler_cache", lambda _: Cache(checado_em, novidades))
-    monkeypatch.setattr(cli, "disparar_renovacao", lambda: renovacoes.append(1))
+    monkeypatch.setattr(modulo_novidades, "ler_registro", object)
+    monkeypatch.setattr(modulo_novidades, "checagem_ligada", lambda: True)
+    monkeypatch.setattr(
+        modulo_novidades, "ler_cache", lambda _: Cache(checado_em, novidades)
+    )
+    monkeypatch.setattr(
+        modulo_novidades, "disparar_renovacao", lambda: renovacoes.append(1)
+    )
     monkeypatch.setattr(cli, "head", lambda: "rev")
     monkeypatch.setattr(cli, "diagnosticar", lambda *a, **k: [])
     return renovacoes
@@ -1656,9 +1661,9 @@ def test_sem_aviso_nos_comandos_excluidos(monkeypatch, capsys, comando):
 def test_sem_aviso_sem_checagem_ou_fora_do_uv_tool(monkeypatch, capsys, motivo):
     renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))
     if motivo is _SemAviso.CHECAR_DESLIGADO:
-        monkeypatch.setattr(cli, "checagem_ligada", lambda: False)
+        monkeypatch.setattr(modulo_novidades, "checagem_ligada", lambda: False)
     else:
-        monkeypatch.setattr(cli, "ler_registro", lambda: None)
+        monkeypatch.setattr(modulo_novidades, "ler_registro", lambda: None)
 
     main([_Cmd.DIAGNOSTICO])
 
@@ -1693,7 +1698,7 @@ def test_aviso_aparece_tambem_quando_o_comando_falha(monkeypatch, capsys):
 
 def test_falha_no_aviso_nao_derruba_o_comando(monkeypatch, capsys):
     _preparar_aviso(monkeypatch, _agora())
-    monkeypatch.setattr(cli, "ler_cache", lambda _: 1 / 0)
+    monkeypatch.setattr(modulo_novidades, "ler_cache", lambda _: 1 / 0)
 
     main([_Cmd.DIAGNOSTICO])
 

@@ -12,6 +12,7 @@ import pytest
 from rich.console import Console
 from textual.widgets import Button, Checkbox, Input, OptionList, Select, Static
 
+import motor.novidades as modulo_novidades
 import motor.tui as tui
 from motor.domain.types import CommitRef, JulgamentoOrfao, VersionStatus
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
@@ -25,6 +26,8 @@ from motor.inscricoes import (
     inscrever,
     parse_intervalo,
 )
+from motor.instalacao import PACOTE_MOTOR
+from motor.novidades import Cache, Novidade
 from motor.operacoes import (
     RepoOption,
     Runners,
@@ -2657,3 +2660,32 @@ def test_orfaos_lista_e_julga_nos_dois_sentidos():
         (_REPO_PREVIA, numero, "aaaa1111", "123", "m1"),
         (_REPO_PREVIA, numero, "bbbb2222", None, "m2"),
     ]
+
+
+def test_app_avisa_versao_nova_ao_abrir(monkeypatch):
+    novidade = Novidade(
+        PACOTE_MOTOR, "0.2.0", "0.3.0", f"{PACOTE_MOTOR} atualizar-motor"
+    )
+    agora = datetime.datetime.now(datetime.UTC)
+    monkeypatch.setattr(modulo_novidades, "ler_registro", object)
+    monkeypatch.setattr(modulo_novidades, "checagem_ligada", lambda: True)
+    monkeypatch.setattr(
+        modulo_novidades, "ler_cache", lambda _: Cache(agora, (novidade,))
+    )
+    avisos: list[tuple[str, str]] = []
+
+    async def executar_fluxo() -> None:
+        app = MotorTUI(Runners(lambda: [], lambda opcao: [], _nunca_executa))
+        monkeypatch.setattr(
+            app,
+            "notify",
+            lambda mensagem, severity, **_: avisos.append((mensagem, severity)),
+        )
+        async with app.run_test(size=(120, 36)):
+            await app.workers.wait_for_complete()
+
+    asyncio.run(executar_fluxo())
+    assert (
+        "Versão 0.3.0 disponível (você tem 0.2.0): monitor-versoes atualizar-motor",
+        "warning",
+    ) in avisos

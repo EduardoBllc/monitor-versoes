@@ -9,12 +9,13 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from importlib.metadata import distribution
 from pathlib import Path
 
-from motor.config import diretorio_cache
+from motor.config import checagem_ligada, diretorio_cache
+from motor.errors import MotorError
 from motor.instalacao import (
     PACOTE_MOTOR,
     SHA_COMPLETO,
@@ -254,6 +255,31 @@ def disparar_renovacao() -> None:
             )
     except OSError:
         pass
+
+
+def novidades_do_cache() -> Cache | None:
+    """O cache de versões; `None` com a checagem desligada ou fora de um `uv tool`.
+    Cache vencido dispara a renovação em segundo plano, sem esperar."""
+    if ler_registro() is None or not checagem_ligada():
+        return None
+    cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
+    if vencido(cache, datetime.now(UTC)):
+        disparar_renovacao()
+    return cache
+
+
+def novidades_para_exibir() -> tuple[Novidade, ...]:
+    """Para TUI e web: config inválida vale "nada novo" (o diagnóstico a aponta)."""
+    try:
+        cache = novidades_do_cache()
+    except MotorError:
+        return ()
+    return cache.novidades if cache else ()
+
+
+def linha_aviso(n: Novidade) -> str:
+    prefixo = "" if n.pacote == PACOTE_MOTOR else f"{n.pacote}: "
+    return f"{prefixo}Versão {n.nova} disponível (você tem {n.atual}): {n.comando}"
 
 
 def _checar_instalado() -> tuple[Novidade, ...]:

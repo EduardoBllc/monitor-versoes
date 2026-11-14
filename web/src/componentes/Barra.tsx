@@ -1,6 +1,7 @@
-import { Button, Group, Loader, Select, Tooltip } from "@mantine/core";
+import { Button, Code, Group, Loader, Select, Stack, Text, Tooltip } from "@mantine/core";
 import type { ReactNode } from "react";
-import type { RepoOption, VersionOption } from "../api/tipos";
+import type { Novidade, RepoOption, VersionOption } from "../api/tipos";
+import { textoAviso } from "../instalacao";
 
 const SEM_CHECKOUT = "checkout local não encontrado";
 const CARREGANDO = "carregando…";
@@ -15,6 +16,7 @@ export interface PropsBarra {
   versao?: string;
   ocupado: boolean;
   bloqueadas?: string[];
+  novidades: Novidade[];
   aoEscolherRepo: (nome: string) => void;
   aoEscolherVersao: (numero: string) => void;
   aoVerificar: (auditar: boolean) => void;
@@ -106,6 +108,15 @@ export function Barra(p: PropsBarra) {
         </Group>
       </Tooltip>
       <Group gap="xs" ml="auto">
+        {p.novidades.length > 0 && (
+          <Stack gap={0}>
+            {p.novidades.map((n) => (
+              <Text key={n.pacote} size="xs" c="orange">
+                {textoAviso(n)} <Code>{n.comando}</Code>
+              </Text>
+            ))}
+          </Stack>
+        )}
         <Button variant="default" onClick={p.aoInscricoes}>
           Inscrições
         </Button>

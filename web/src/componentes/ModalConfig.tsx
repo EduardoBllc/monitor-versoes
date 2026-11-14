@@ -47,6 +47,7 @@ import {
   type Destino,
   type Segmento,
 } from "../configSecoes";
+import { pluginsDaSecao, useInstalacao } from "../instalacao";
 import { Entrada, type Valores } from "./CampoConfig";
 import { notificarErro, notificarOk } from "./notificar";
 import { SecaoRepo } from "./SecaoRepo";
@@ -93,6 +94,30 @@ function Sinal({ marca }: { marca: Marca }) {
       </Text>
       <VisuallyHidden>{s.nome}</VisuallyHidden>
     </>
+  );
+}
+
+function PluginsInstalados({ secao }: { secao: Secao }) {
+  const instalacao = useInstalacao().data;
+  const plugins = instalacao ? pluginsDaSecao(instalacao, secao) : [];
+  if (plugins.length === 0) return null;
+  return (
+    <Stack gap={4}>
+      <Text size="sm" fw={500}>
+        Plugins instalados
+      </Text>
+      {plugins.map(({ plugin, nova }) => (
+        <Text key={plugin.pacote} size="sm">
+          {plugin.nome}: {plugin.pacote} {plugin.versao}
+          {nova !== null && (
+            <Text span c="orange">
+              {" "}
+              → {nova}
+            </Text>
+          )}
+        </Text>
+      ))}
+    </Stack>
   );
 }
 
@@ -263,6 +288,7 @@ function Editor({
     const peca = PECA[destino];
     conteudo = (
       <>
+        <PluginsInstalados secao={destino} />
         <Campos linhas={linhasDaSecao(config, formulario, destino)} valores={formulario.valores} mudar={mudar} />
         {peca &&
           testar(
