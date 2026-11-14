@@ -252,7 +252,7 @@ def _inscricao_executar(args: argparse.Namespace) -> None:
     except MotorError as e:
         resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
     except Exception as e:
-        # Grava antes de propagar: o traceback segue para o log do agendador.
+        # Grava antes de propagar: o traceback segue para o log de quem disparou (serve, cron ou timer).
         erro = Resultado(Desfecho.ERRO, mensagem=f"{type(e).__name__}: {e}")
         registrar_execucao(caminho, inscricao, erro, notificador, datetime.now(UTC))
         raise

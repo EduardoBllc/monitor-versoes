@@ -91,9 +91,12 @@ Depois, o mesmo `uv tool install` dos outros sistemas. Os caminhos mudam:
 `XDG_CONFIG_HOME`, se definida, vale também no Windows. No TOML, escreva caminhos do Windows
 entre aspas simples, `caminho = 'C:\repos\app'`: entre aspas duplas, `\` é escape.
 
-No Windows não há disparo automático sem o daemon; crie a tarefa agendada uma vez, à mão. Ela chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que
-`monitor-versoes inscricao rodar` sem abrir janela de console. No Prompt de Comando (`cmd`),
-ache o executável e crie a tarefa com o caminho que o `where` mostrar:
+No Windows não há disparo automático sem o daemon; crie a tarefa agendada uma vez, à mão. Ela
+chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que `monitor-versoes inscricao rodar`
+sem abrir janela de console. Com o `serve` não crie a tarefa, e apague a que já criou
+(`schtasks /delete /tn monitor-versoes-inscricoes /f`): o `serve` não remove nada no Windows e
+os dois disparariam em dobro. No Prompt de Comando (`cmd`), ache o executável e crie a tarefa com
+o caminho que o `where` mostrar:
 
 ```bat
 where monitor-versoes-inscricoes
@@ -464,7 +467,8 @@ outras. O desfecho da última execução aparece no `listar`:
 #### Sem o daemon
 
 Sem o `serve`, agende você mesmo o `inscricao rodar` a cada minuto, com o caminho absoluto
-do executável (`which monitor-versoes`). Com cron:
+do executável (`which monitor-versoes`). **Não use junto com o `serve`** (vale para cron,
+systemd e Windows): os dois disparariam em dobro. Com cron:
 
 ```cron
 * * * * * /caminho/absoluto/monitor-versoes inscricao rodar
@@ -474,20 +478,19 @@ Ou com um par de unidades de usuário do systemd (`~/.config/systemd/user/`), qu
 comando:
 
 ```ini
-# monitor-versoes-inscricoes.service
+# monitor-versoes-manual.service
 [Service]
 Type=oneshot
 ExecStart=/caminho/absoluto/monitor-versoes inscricao rodar
 
-# monitor-versoes-inscricoes.timer
+# monitor-versoes-manual.timer
 [Timer]
 OnCalendar=minutely
 [Install]
 WantedBy=timers.target
 ```
 
-Ative com `systemctl --user enable --now monitor-versoes-inscricoes.timer`. **Não use junto com
-o `serve`:** os dois disparariam em dobro, e o `serve` apaga o timer com esses nomes. O disparo
+Ative com `systemctl --user enable --now monitor-versoes-manual.timer`. O disparo
 roda sem o agente SSH nem o `PATH` da sua sessão (push por SSH via agente pode falhar e virar
 `erro`); no Linux, o timer de usuário só roda fora de uma sessão com `loginctl enable-linger`;
 no macOS, a notificação desktop pode falhar num Python fora de um app empacotado (a falha vai

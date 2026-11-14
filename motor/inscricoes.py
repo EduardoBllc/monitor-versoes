@@ -277,28 +277,26 @@ def rodar(
             registrar_execucao(caminho, i, r, notificador, agora)
 
 
-# Grupo próprio: o Ctrl+C no terminal do `serve` não chega ao filho. Ramo literal
-# para o mypy não checar o do outro sistema (ver `trava.py`).
-if sys.platform == "win32":
-    NOVA_SESSAO, FLAGS_DE_CRIACAO = False, subprocess.CREATE_NEW_PROCESS_GROUP
-else:
-    NOVA_SESSAO, FLAGS_DE_CRIACAO = True, 0
-
-
 def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
     # -P: o cwd herdado não pode sombrear o pacote `motor` instalado.
     cmd = [
         sys.executable, "-P", "-m", "motor",
         "inscricao", "executar", i.versao, "--repo", i.repo,
     ]  # fmt: skip
+    # Grupo/sessão própria: o Ctrl+C no terminal do `serve` não chega ao filho. Ramo
+    # literal para o mypy não checar o do outro sistema (ver `trava.py`).
+    if sys.platform == "win32":
+        nova_sessao, flags = False, subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        nova_sessao, flags = True, 0
     try:
         return subprocess.run(
             cmd,
             check=False,
             env=dict(env),
             timeout=LIMITE_EXECUCAO_S,
-            start_new_session=NOVA_SESSAO,
-            creationflags=FLAGS_DE_CRIACAO,
+            start_new_session=nova_sessao,
+            creationflags=flags,
         ).returncode
     except subprocess.TimeoutExpired:
         return TEMPO_ESGOTADO
