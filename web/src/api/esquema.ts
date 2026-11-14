@@ -527,6 +527,11 @@ export interface components {
              * @default
              */
             exemplo: string;
+            /**
+             * Aviso Vazio
+             * @default
+             */
+            aviso_vazio: string;
             grupo?: components["schemas"]["GrupoPlugin"] | null;
         };
         /** ChamadoConsultado */

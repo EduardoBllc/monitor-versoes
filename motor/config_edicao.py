@@ -91,6 +91,7 @@ class Campo:
     descricao: str = ""
     padrao: str | None = None
     exemplo: str = ""
+    aviso_vazio: str = ""
     grupo: GrupoPlugin | None = None
 
 

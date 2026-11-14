@@ -18,6 +18,17 @@ export function estadoSegredo(
   return definido ? EstadoSegredo.DEFINIDO : EstadoSegredo.NAO_DEFINIDO;
 }
 
+export function avisoVazio(
+  campo: Campo,
+  valor: Escalar | undefined,
+  definido: boolean,
+): string | undefined {
+  const vazio = campo.segredo
+    ? valor === null || (!definido && !valor)
+    : valor == null || valor === "";
+  return vazio ? campo.aviso_vazio || undefined : undefined;
+}
+
 export type Escalar = string | number | boolean | null;
 
 // valores: chave de `chaveDe`. Segredo ausente ou "" = não tocado; null = apagar.

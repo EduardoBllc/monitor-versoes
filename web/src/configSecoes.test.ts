@@ -76,6 +76,7 @@ function campo(
     origem: ORIGEM_MOTOR,
     descricao: "",
     exemplo: "",
+    aviso_vazio: "",
     ...extra,
   };
 }

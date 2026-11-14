@@ -427,7 +427,7 @@ No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor n
 O atributo `campos_config` é opcional e plugin que falha ao carregar é ignorado; na TUI, a
 aba Plugins só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao`
 (o tooltip da web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
-web) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
+web), `aviso_vazio` (aviso na modal enquanto o campo está vazio, ou o segredo, não definido) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
 
 Um host de PR implementa a porta `HostPr` (`motor/ports.py`): `prs_mergeadas(desde)`, as PRs
 mergeadas desde a data (`None` = histórico inteiro), e `commits_da_pr(pr_id)`, os commits da
