@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from importlib.metadata import PackageNotFoundError, distribution, version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from motor.config import checagem_ligada, diretorio_cache
@@ -27,8 +27,7 @@ from motor.instalacao import (
     Requisito,
     ler_registro,
     normalizar,
-    origem_do_pacote,
-    plugins_instalados,
+    origens_instaladas,
 )
 
 ARQUIVO_CACHE = "novidades.json"
@@ -340,9 +339,7 @@ def _checar_instalado() -> tuple[Novidade, ...]:
     reg = ler_registro()
     if reg is None:
         return ()
-    instalados = {p.pacote: p.origem for p in plugins_instalados()}
-    instalados[PACOTE_MOTOR] = origem_do_pacote(distribution(PACOTE_MOTOR))
-    return checar(reg, instalados)
+    return checar(reg, origens_instaladas())
 
 
 def _renovar() -> None:

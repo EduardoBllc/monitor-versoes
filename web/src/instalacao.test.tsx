@@ -100,4 +100,15 @@ describe("pluginsDaSecao", () => {
       { plugin: tarefas, nova: null },
     ]);
   });
+
+  it("plugin embutido não repete a versão nova do motor", () => {
+    const embutido: PluginInstalado = {
+      ...plugin(GrupoPlugin.PRS, NOVIDADE_MOTOR.pacote),
+      origem: { tipo: TipoOrigem.EMBUTIDO, url: null, ref: null, commit: null },
+    };
+    const comMotor: Instalacao = { plugins: [embutido], novidades: [NOVIDADE_MOTOR] };
+    expect(pluginsDaSecao(comMotor, Secao.PRS)).toEqual([
+      { plugin: embutido, nova: null },
+    ]);
+  });
 });

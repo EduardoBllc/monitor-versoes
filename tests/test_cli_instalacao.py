@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from motor import cli_instalacao
+from motor import cli_instalacao, instalacao, novidades
 from motor.__main__ import main
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR, COMANDO_PLUGIN, AcaoPlugin
-from motor.config import diretorio_cache
+from motor.config import Chave, Tabela, caminho_config_global, diretorio_cache
 from motor.config_edicao import GrupoPlugin
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
@@ -31,6 +31,7 @@ from motor.novidades import (
     Cache,
     Novidade,
     gravar_cache,
+    linha_aviso,
 )
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes"
@@ -121,7 +122,10 @@ def inst(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Instalacao:
     monkeypatch.setattr(cli_instalacao, "ler_registro", falsa.ler_registro)
     monkeypatch.setattr(cli_instalacao, "rodar_git", falsa.rodar_git)
     monkeypatch.setattr(cli_instalacao, "executar_uv", falsa.executar_uv)
+    monkeypatch.setattr(novidades, "ler_registro", falsa.ler_registro)
+    monkeypatch.setattr(novidades, "disparar_renovacao", lambda: None)
     monkeypatch.setattr(cli_instalacao, "plugins_instalados", lambda: PLUGINS)
+    monkeypatch.setattr(instalacao, "plugins_instalados", lambda: PLUGINS)
     return falsa
 
 
@@ -132,17 +136,34 @@ def _cache() -> Path:
 def test_plugin_listar_por_grupo(inst: Instalacao, capsys) -> None:
     comando = f"{PACOTE_MOTOR} plugin atualizar {PLUGIN_A}"
     novidade = Novidade(PLUGIN_A, A_CURTO, VERSAO_A_NOVA, comando)
-    gravar_cache(_cache(), Cache(datetime.now(UTC), (novidade,)))
+    motor = Novidade(
+        PACOTE_MOTOR, VERSAO_MOTOR, TAG_MOTOR_NOVA[1:], COMANDO_ATUALIZAR_MOTOR
+    )
+    gravar_cache(_cache(), Cache(datetime.now(UTC), (motor, novidade)))
 
     main([COMANDO_PLUGIN, AcaoPlugin.LISTAR])
 
     assert capsys.readouterr().out == (
+        f"{linha_aviso(motor)}\n"
         "esquemas\n"
         f"  padrao: {PACOTE_MOTOR} {VERSAO_MOTOR}, embutido\n"
         "tarefas\n"
         f"  extra: {PLUGIN_A} {VERSAO_A}, git {URL_A}@{A_CURTO} → {VERSAO_A_NOVA}\n"
         f"  publicado: {PUBLICADO} {VERSAO_PUBLICADO}, índice\n"
     )
+
+
+def test_plugin_listar_com_config_invalida_lista_sem_novidades(
+    inst: Instalacao, capsys
+) -> None:
+    config = Path(caminho_config_global())
+    config.parent.mkdir(parents=True)
+    config.write_text(f'[{Tabela.ATUALIZACOES}]\n{Chave.CHECAR} = "talvez"\n')
+
+    main([COMANDO_PLUGIN, AcaoPlugin.LISTAR])
+
+    saida = capsys.readouterr().out
+    assert f"  extra: {PLUGIN_A} {VERSAO_A}, git {URL_A}@{A_CURTO}\n" in saida
 
 
 def test_plugin_instalar_url_git_preserva_resto(inst: Instalacao, capsys) -> None:

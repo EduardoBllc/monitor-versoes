@@ -10,12 +10,11 @@ import subprocess
 import sys
 from dataclasses import replace
 from enum import StrEnum
-from importlib.metadata import distribution
 from itertools import groupby
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from motor.config import checagem_ligada, diretorio_cache
+from motor.config import diretorio_cache
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
@@ -30,15 +29,16 @@ from motor.instalacao import (
     fixar_soltos,
     ler_registro,
     normalizar,
-    origem_do_pacote,
+    origens_instaladas,
     plugins_instalados,
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
     TAMANHO_COMMIT_CURTO,
-    ler_cache,
+    linha_aviso,
     ls_remote,
     novidade,
+    novidades_para_exibir,
     ref_mais_nova,
     rodar_git,
 )
@@ -75,15 +75,18 @@ def _descrever(origem: Origem) -> str:
 
 
 def _listar() -> None:
-    novas: dict[str, str] = {}
-    # Fora de um `uv tool` não há checagem: quem desenvolve segue o checkout.
-    if ler_registro() is not None and checagem_ligada():
-        cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
-        novas = {n.pacote: n.nova for n in cache.novidades} if cache else {}
+    todas = novidades_para_exibir()
+    for n in todas:
+        if n.pacote == PACOTE_MOTOR:
+            print(linha_aviso(n))
+    novas = {normalizar(n.pacote): n.nova for n in todas}
     for grupo, plugins in groupby(plugins_instalados(), key=lambda p: p.grupo):
         print(grupo.name.lower())
         for p in plugins:
-            seta = f" → {novas[p.pacote]}" if p.pacote in novas else ""
+            nova = novas.get(normalizar(p.pacote))
+            # O embutido é o motor: a versão nova dele já saiu na primeira linha.
+            embutido = p.origem.tipo is TipoOrigem.EMBUTIDO
+            seta = f" → {nova}" if nova and not embutido else ""
             print(f"  {p.nome}: {p.pacote} {p.versao}, {_descrever(p.origem)}{seta}")
 
 
@@ -99,8 +102,7 @@ def _preparar() -> tuple[Registro, dict[str, Origem]]:
         raise ErroDeEntrada(
             f"`uv` não encontrado no PATH; instale-o: {URL_INSTALAR_UV}"
         )
-    origens = {p.pacote: p.origem for p in plugins_instalados()}
-    origens[PACOTE_MOTOR] = origem_do_pacote(distribution(PACOTE_MOTOR))
+    origens = origens_instaladas()
     commits = {nome: o.commit for nome, o in origens.items() if o.commit}
     return fixar_soltos(reg, commits), origens
 

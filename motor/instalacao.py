@@ -9,7 +9,7 @@ import tomllib
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from importlib.metadata import Distribution, EntryPoint, entry_points
+from importlib.metadata import Distribution, EntryPoint, distribution, entry_points
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -146,6 +146,13 @@ def plugins_instalados(
                 PluginInstalado(grupo, ep.name, pacote, ep.dist.version, origem)
             )
     return sorted(achados, key=lambda p: (p.grupo, p.nome))
+
+
+def origens_instaladas() -> dict[str, Origem]:
+    """Origem de cada pacote instalado; a do motor vem do próprio metadado."""
+    origens = {p.pacote: p.origem for p in plugins_instalados()}
+    origens[PACOTE_MOTOR] = origem_do_pacote(distribution(PACOTE_MOTOR))
+    return origens
 
 
 def _requisito(linha: Mapping[str, object]) -> Requisito:

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Metodo, api } from "./api/cliente";
+import { TipoOrigem } from "./api/enums";
 import type { Instalacao, PluginInstalado } from "./api/tipos";
 import { SECAO_DO_GRUPO, type Secao } from "./configSecoes";
 
@@ -23,6 +24,10 @@ export function pluginsDaSecao(i: Instalacao, secao: Secao): PluginDaSecao[] {
     .filter((p) => SECAO_DO_GRUPO[p.grupo] === secao)
     .map((plugin) => ({
       plugin,
-      nova: i.novidades.find((n) => n.pacote === plugin.pacote)?.nova ?? null,
+      // O embutido é o motor: a versão nova dele já está na barra.
+      nova:
+        plugin.origem.tipo === TipoOrigem.EMBUTIDO
+          ? null
+          : (i.novidades.find((n) => n.pacote === plugin.pacote)?.nova ?? null),
     }));
 }
