@@ -394,3 +394,15 @@ def test_plugin_instalar_recusa_caminho_local(inst: Instalacao, caminho: str) ->
     with pytest.raises(ErroDeEntrada, match="caminho local"):
         cli_instalacao.plugin(_args(acao_plugin=AcaoPlugin.INSTALAR, origem=caminho))
     assert inst.comandos == []
+
+
+RAMO = "main"
+
+
+@pytest.mark.parametrize("ref", [RAMO, A_CURTO, ""])
+def test_plugin_instalar_recusa_ref_que_nao_fixa(inst: Instalacao, ref: str) -> None:
+    with pytest.raises(ErroDeEntrada, match="commit completo"):
+        cli_instalacao.plugin(
+            _args(acao_plugin=AcaoPlugin.INSTALAR, origem=f"{URL_B_HTTPS}@{ref}")
+        )
+    assert inst.comandos == []

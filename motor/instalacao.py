@@ -219,6 +219,10 @@ def normalizar(nome: str) -> str:
     return re.sub(r"[-_.]+", "-", nome).lower()
 
 
+def ref_fixa(ref: str) -> bool:
+    return _REF_FIXA.fullmatch(ref) is not None
+
+
 def fixar_soltos(reg: Registro, commits: Mapping[str, str]) -> Registro:
     por_nome = {normalizar(nome): commit for nome, commit in commits.items()}
 
@@ -226,7 +230,7 @@ def fixar_soltos(reg: Registro, commits: Mapping[str, str]) -> Registro:
         commit = por_nome.get(normalizar(r.nome))
         if r.git is None or commit is None:
             return r
-        if r.ref is not None and _REF_FIXA.fullmatch(r.ref):
+        if r.ref is not None and ref_fixa(r.ref):
             return r
         return replace(r, ref=commit)
 

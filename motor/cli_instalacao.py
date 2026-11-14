@@ -32,6 +32,7 @@ from motor.instalacao import (
     normalizar,
     origens_instaladas,
     plugins_instalados,
+    ref_fixa,
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
@@ -174,6 +175,11 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
     caminho, arroba, ref_pedida = partes.path.rpartition("@")
     ref: str | None = ref_pedida
     if arroba:
+        if not ref_fixa(ref_pedida):
+            raise ErroDeEntrada(
+                f"ref `{ref_pedida}`: use uma tag vX.Y.Z ou um commit completo, "
+                "para a origem ficar fixada"
+            )
         url = partes._replace(path=caminho).geturl()
     else:
         saida = ls_remote(url, rodar_git)
