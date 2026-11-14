@@ -40,6 +40,7 @@ URL_A = "https://github.com/EduardoBllc/monitor-versoes-extra"
 PLUGIN_B = "monitor-versoes-outro"
 URL_B = "git@github.com:EduardoBllc/monitor-versoes-outro.git"
 URL_B_UV = "ssh://git@github.com/EduardoBllc/monitor-versoes-outro.git"
+URL_B_HTTPS = "https://github.com/EduardoBllc/monitor-versoes-outro"
 PUBLICADO = "meu-plugin"
 COMMIT_A = "a" * 40
 COMMIT_NOVO = "b" * 40
@@ -183,6 +184,27 @@ def test_instalar_fixa_plugin_com_nome_grafado_diferente_no_metadado(
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
 
     assert f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_A}" in inst.comandos[0]
+
+
+@pytest.mark.parametrize(
+    ("origem", "url", "ref"),
+    [
+        (URL_B_HTTPS, URL_B_HTTPS, None),
+        (f"{URL_B_HTTPS}@{TAG_B_VELHA}", URL_B_HTTPS, TAG_B_VELHA),
+        (URL_B, URL_B_UV, None),
+        (f"{URL_B}@{TAG_B_VELHA}", URL_B_UV, TAG_B_VELHA),
+        (f"{URL_B_UV}@{COMMIT_A}", URL_B_UV, COMMIT_A),
+    ],
+)
+def test_plugin_instalar_url_com_ou_sem_ref(
+    inst: Instalacao, origem: str, url: str, ref: str | None
+) -> None:
+    inst.remotos[url] = _remoto(tags=(TAG_B_VELHA, TAG_B))
+
+    main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, origem])
+
+    assert inst.comandos[0][-2:] == ["--with", f"git+{url}@{ref or TAG_B}"]
+    assert inst.consultados == ([] if ref else [url])
 
 
 def test_plugin_instalar_repo_sem_tags_fixa_head(inst: Instalacao) -> None:

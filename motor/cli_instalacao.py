@@ -13,6 +13,7 @@ from enum import StrEnum
 from importlib.metadata import distribution
 from itertools import groupby
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from motor.config import checagem_ligada, diretorio_cache
 from motor.errors import ErroDeEntrada
@@ -165,6 +166,12 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
         return comando_reinstalar(
             replace(reg, plugins=(*reg.plugins, Requisito(origem)))
         )
+    # O "@" do usuário (git@host) fica no netloc; só o do caminho é ref.
+    partes = urlsplit(url)
+    caminho, arroba, ref_pedida = partes.path.rpartition("@")
+    if arroba:
+        url = partes._replace(path=caminho).geturl()
+        return [*comando_reinstalar(reg), "--with", f"{PREFIXO_GIT}{url}@{ref_pedida}"]
     saida = ls_remote(url, rodar_git)
     ref = ref_mais_nova(saida) if saida else None
     if ref is None:
@@ -240,7 +247,8 @@ def adicionar_parsers(
     acoes = p_plugin.add_subparsers(dest="acao_plugin", required=True, metavar="acao")
     acoes.add_parser(AcaoPlugin.LISTAR, help="lista os plugins instalados, por grupo")
     acoes.add_parser(AcaoPlugin.INSTALAR, help="instala um plugin").add_argument(
-        "origem", help="nome publicado ou URL git (https://… ou git@…)"
+        "origem",
+        help="nome publicado ou URL git (https://… ou git@…), com @ref opcional",
     )
     acoes.add_parser(AcaoPlugin.REMOVER, help="remove um plugin").add_argument(
         "pacote", help="pacote, como o `plugin listar` mostra"
