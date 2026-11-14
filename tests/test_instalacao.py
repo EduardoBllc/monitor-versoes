@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from motor.config_edicao import GrupoPlugin
+from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
     Origem,
@@ -166,3 +167,35 @@ def test_fixar_soltos_mantem_tag_e_commit(ref: str) -> None:
         (Requisito("p", git=URL_PLUGIN, ref=ref),),
     )
     assert fixar_soltos(reg, {"p": "f" * 40}).plugins[0].ref == ref
+
+
+@pytest.mark.parametrize(
+    "fonte",
+    [
+        'directory = "/home/x/meu-plugin"',
+        'editable = "/home/x/meu-plugin"',
+        'path = "/home/x/meu_plugin-1.0-py3-none-any.whl"',
+        'url = "https://example.com/meu_plugin-1.0.tar.gz"',
+    ],
+)
+def test_registro_com_fonte_local_ou_url_recusa(tmp_path: Path, fonte: str) -> None:
+    (tmp_path / "uv-receipt.toml").write_text(
+        f"""\
+[tool]
+requirements = [
+    {{ name = "{PACOTE_MOTOR}", git = "{URL_MOTOR}?rev={TAG}" }},
+    {{ name = "{PLUGIN}", {fonte} }},
+]
+"""
+    )
+    with pytest.raises(ErroDeEntrada, match=f"{PLUGIN}.*git ou nome publicado"):
+        ler_registro(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "conteudo", ["[tool\n", "[tool]\npython = '3.12'\n", "tool = 1\n"]
+)
+def test_registro_ilegivel_vira_erro_de_entrada(tmp_path: Path, conteudo: str) -> None:
+    (tmp_path / "uv-receipt.toml").write_text(conteudo)
+    with pytest.raises(ErroDeEntrada, match="registro do uv ilegível"):
+        ler_registro(tmp_path)

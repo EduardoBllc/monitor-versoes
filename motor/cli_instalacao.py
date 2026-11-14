@@ -47,6 +47,7 @@ COMANDO_ATUALIZAR_MOTOR = "atualizar-motor"
 URL_INSTALAR_UV = "https://docs.astral.sh/uv/getting-started/installation/"
 # `git@host:caminho`: o git aceita, o `uv` só aceita como `ssh://git@host/caminho`.
 _SCP = re.compile(r"([^@/:]+@[^/:]+):(?!//)(.+)")
+_SEPARADORES = ("/", "\\", ":")
 
 
 class AcaoPlugin(StrEnum):
@@ -151,13 +152,19 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
 
 
 def _instalar(reg: Registro, origem: str) -> list[str]:
-    if ":" not in origem:  # nome de pacote não tem ":"; URL git sempre tem
-        return comando_reinstalar(
-            replace(reg, plugins=(*reg.plugins, Requisito(origem)))
-        )
     url = origem.removeprefix(PREFIXO_GIT)
     if scp := _SCP.fullmatch(url):
         url = f"ssh://{scp[1]}/{scp[2]}"
+    if "://" not in url:
+        # Nome publicado não tem barra, ":" nem começa com ponto (PEP 508).
+        if origem.startswith(".") or any(c in origem for c in _SEPARADORES):
+            raise ErroDeEntrada(
+                f"{origem}: caminho local não é aceito; instale de uma URL git "
+                "(https://… ou git@…) ou pelo nome publicado"
+            )
+        return comando_reinstalar(
+            replace(reg, plugins=(*reg.plugins, Requisito(origem)))
+        )
     saida = ls_remote(url, rodar_git)
     ref = ref_mais_nova(saida) if saida else None
     if ref is None:

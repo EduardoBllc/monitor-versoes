@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from motor import novidades as modulo_novidades
 from motor.adapters.sugestao.anthropic import EXTRA
 from motor.adapters.sugestao.anthropic import Var as VarAnthropic
 from motor.config import (
@@ -33,6 +34,7 @@ from motor.diagnostico import (
     falhou,
 )
 from motor.errors import ErroDeEntrada
+from motor.instalacao import ARQUIVO_REGISTRO, ler_registro
 from motor.migracoes import head
 from motor.novidades import Cache, Novidade
 from tests.config_repos import secao_repo
@@ -702,4 +704,17 @@ def test_versao_com_config_invalida_fica_nao_verificada_e_o_resto_segue():
     assert por_peca[Peca.VERSAO].estado is Estado.NAO_VERIFICADA
     assert "checar deve ser booleano" in por_peca[Peca.VERSAO].detalhe
     assert len(resultados) > 1
+    assert not falhou(resultados)
+
+
+def test_versao_com_registro_do_uv_ilegivel_fica_nao_verificada(monkeypatch, tmp_path):
+    (tmp_path / ARQUIVO_REGISTRO).write_text("[tool\n")
+    monkeypatch.setattr(
+        modulo_novidades, "ler_registro", lambda: ler_registro(tmp_path)
+    )
+
+    por_peca, resultados = _rodar(novidades=modulo_novidades.novidades_do_cache)
+
+    assert por_peca[Peca.VERSAO].estado is Estado.NAO_VERIFICADA
+    assert "registro do uv ilegível" in por_peca[Peca.VERSAO].detalhe
     assert not falhou(resultados)

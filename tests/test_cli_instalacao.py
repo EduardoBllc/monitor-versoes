@@ -324,3 +324,12 @@ def test_falha_do_uv_imprime_comando_manual(inst: Instalacao, capsys) -> None:
 
     assert saiu.value.code == 1
     assert shlex.join([*INICIO, LINHA_MOTOR]) in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "caminho", ["./meu-plugin", "../meu-plugin", "/home/x/meu-plugin", r"C:\x\plugin"]
+)
+def test_plugin_instalar_recusa_caminho_local(inst: Instalacao, caminho: str) -> None:
+    with pytest.raises(ErroDeEntrada, match="caminho local"):
+        cli_instalacao.plugin(_args(acao_plugin=AcaoPlugin.INSTALAR, origem=caminho))
+    assert inst.comandos == []

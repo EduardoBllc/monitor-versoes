@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from motor.config_edicao import GrupoPlugin
+from motor.errors import ErroDeEntrada
 
 PACOTE_MOTOR = "monitor-versoes"
 UV = "uv"
@@ -43,6 +44,18 @@ class ChaveRegistro(StrEnum):
     GIT = "git"
     EXTRAS = "extras"
     ESPECIFICADOR = "specifier"
+    DIRETORIO = "directory"
+    EDITAVEL = "editable"
+    CAMINHO = "path"
+    URL = "url"
+
+
+_FONTES_SEM_SUPORTE = (
+    ChaveRegistro.DIRETORIO,
+    ChaveRegistro.EDITAVEL,
+    ChaveRegistro.CAMINHO,
+    ChaveRegistro.URL,
+)
 
 
 class ChaveDirectUrl(StrEnum):
@@ -129,6 +142,12 @@ def plugins_instalados(
 
 
 def _requisito(linha: Mapping[str, object]) -> Requisito:
+    nome = str(linha[ChaveRegistro.NOME])
+    if any(chave in linha for chave in _FONTES_SEM_SUPORTE):
+        raise ErroDeEntrada(
+            f"{nome} veio de caminho local, editável ou URL de arquivo; "
+            "as ações de plugin só lidam com origem git ou nome publicado"
+        )
     bruto = linha.get(ChaveRegistro.GIT)
     git = ref = subdiretorio = None
     if isinstance(bruto, str):
@@ -143,12 +162,14 @@ def _requisito(linha: Mapping[str, object]) -> Requisito:
                 resto.append((chave, valor))
         git = partes._replace(query=urlencode(resto)).geturl()
     espec = linha.get(ChaveRegistro.ESPECIFICADOR)
-    extras = linha.get(ChaveRegistro.EXTRAS) or ()
+    extras = linha.get(ChaveRegistro.EXTRAS) or []
+    if not isinstance(extras, list):
+        raise TypeError(f"{nome}: {ChaveRegistro.EXTRAS} não é lista")
     return Requisito(
-        nome=str(linha[ChaveRegistro.NOME]),
+        nome=nome,
         git=git,
         ref=ref,
-        extras=tuple(extras),  # type: ignore[arg-type]
+        extras=tuple(map(str, extras)),
         especificador=str(espec) if espec is not None else None,
         subdiretorio=subdiretorio,
     )
@@ -158,13 +179,15 @@ def ler_registro(prefixo: Path = Path(sys.prefix)) -> Registro | None:
     arquivo = prefixo / ARQUIVO_REGISTRO
     if not arquivo.is_file():
         return None
-    dados = tomllib.loads(arquivo.read_text())
-    linhas = dados[ChaveRegistro.TOOL][ChaveRegistro.REQUISITOS]
-    todos = [_requisito(linha) for linha in linhas]
+    try:
+        tool = tomllib.loads(arquivo.read_text())[ChaveRegistro.TOOL]
+        todos = [_requisito(linha) for linha in tool[ChaveRegistro.REQUISITOS]]
+        python = tool.get(ChaveRegistro.PYTHON)
+    except (ValueError, LookupError, TypeError, AttributeError) as e:
+        raise ErroDeEntrada(f"{arquivo}: registro do uv ilegível ({e})") from e
     motor = next((r for r in todos if r.nome == PACOTE_MOTOR), None)
     if motor is None:
         return None
-    python = dados[ChaveRegistro.TOOL].get(ChaveRegistro.PYTHON)
     return Registro(motor, tuple(r for r in todos if r is not motor), python)
 
 

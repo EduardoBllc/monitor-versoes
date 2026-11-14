@@ -53,7 +53,14 @@ from motor.errors import (
     VersaoDesatualizada,
 )
 from motor.inscricoes import INTERVALO_PADRAO
-from motor.instalacao import PACOTE_MOTOR, Origem, PluginInstalado, TipoOrigem
+from motor.instalacao import (
+    ARQUIVO_REGISTRO,
+    PACOTE_MOTOR,
+    Origem,
+    PluginInstalado,
+    TipoOrigem,
+    ler_registro,
+)
 from motor.novidades import VALIDADE, Cache, Novidade
 from motor.operacoes import (
     PedidoProposta,
@@ -1047,6 +1054,21 @@ def test_api_instalacao_com_config_invalida_vem_sem_novidades(
         raise ErroDeEntrada("checar deve ser true ou false")
 
     monkeypatch.setattr(modulo_novidades, "checagem_ligada", invalida)
+
+    r = cliente.get("/api/instalacao")
+
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["novidades"] == []
+
+
+def test_api_instalacao_com_registro_do_uv_ilegivel_vem_sem_novidades(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _preparar_instalacao(monkeypatch, datetime.datetime.now(datetime.UTC))
+    (tmp_path / ARQUIVO_REGISTRO).write_text("[tool]\n")
+    monkeypatch.setattr(
+        modulo_novidades, "ler_registro", lambda: ler_registro(tmp_path)
+    )
 
     r = cliente.get("/api/instalacao")
 
