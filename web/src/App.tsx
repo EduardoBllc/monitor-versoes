@@ -78,6 +78,7 @@ import {
   avisos,
 } from "./inscricoes";
 import type { InscricaoVista } from "./api/tipos";
+import { useInstalacao } from "./instalacao";
 import { caminhoDe, lerCaminho } from "./rotas";
 
 // Sem refetch ao voltar do editor nem retry: cada leitura de versões faz git fetch.
@@ -137,6 +138,7 @@ function Tela() {
     setExecucoes(execRef.current);
   }, []);
 
+  const instalacao = useInstalacao();
   const repos = useQuery({
     queryKey: CHAVE_REPOS,
     queryFn: () => api<RepoOption[]>(Metodo.GET, "/api/repos"),
@@ -398,6 +400,7 @@ function Tela() {
           {...(versao && { versao })}
           ocupado={ocupado}
           bloqueadas={bloqueadas}
+          novidades={instalacao.data?.novidades ?? []}
           aoEscolherRepo={(nome) => navegar(() => ir(nome))}
           aoEscolherVersao={(numero) =>
             navegar(() => repo && ir(repo, numero))

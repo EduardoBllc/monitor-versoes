@@ -54,17 +54,39 @@ Com a sugestão de resolução por IA (provedor `anthropic`, veja "Sugestão de 
 uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0' # x-release-please-version
 ```
 
-Com plugins:
+Plugins e atualizações passam pelo próprio motor. Um plugin vem por nome publicado ou por URL
+git (`https://…` ou `git@…`, inclusive de repositório privado, com a sua credencial), com
+`@<ref>` opcional no fim para uma tag ou um commit; caminho local não é aceito:
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0 --with <plugin> # x-release-please-version
+monitor-versoes plugin instalar https://github.com/voce/meu-plugin.git
+monitor-versoes plugin listar                # por grupo: pacote, versão, origem e versão nova
+monitor-versoes plugin atualizar [<pacote>]  # sem pacote, todos os de fora
+monitor-versoes plugin remover <pacote>      # o pacote, como o `plugin listar` mostra
+monitor-versoes atualizar-motor              # motor e plugins na versão mais nova, se houver
 ```
 
-O `uv tool upgrade` não sai de uma tag fixada: para atualizar, rode o mesmo comando com que
-instalou (com o extra e os `--with` que usou), trocando a tag pela da
-[última release](https://github.com/EduardoBllc/monitor-versoes/releases/latest) e
-acrescentando `--reinstall`. As mudanças de cada versão estão no [CHANGELOG.md](CHANGELOG.md).
-Se o `monitor-versoes serve` estiver rodando, reinicie-o.
+O plugin por git vai para a tag `v*` mais nova ou, num repo sem tags, para o último commit
+da branch padrão. Cada comando preserva o extra e os outros plugins, parte do que o
+`uv tool` registrou (inclusive uma instalação feita à mão com `--with`) e, ao reinstalar,
+fixa cada origem git numa tag ou num commit: nada muda de versão sem pedido. Uma origem
+ainda solta, de instalação antiga, é fixada na próxima reinstalação; "tudo em dia" não
+reinstala. Um commit à frente da última tag conta pela versão do pacote e não volta para a
+tag: atualizar nunca rebaixa. No fim, ele diz o que
+mudou; se o `monitor-versoes serve` estiver rodando, reinicie-o. As mudanças de cada versão
+estão no [CHANGELOG.md](CHANGELOG.md).
+
+No máximo uma vez por dia, sem atrasar o comando, o motor confere se há versão nova do motor
+e dos plugins por git. O aviso sai no stderr ao fim dos comandos, no `diagnostico`, na TUI e
+na web, com o comando a rodar. Plugin por nome publicado não é conferido. Para desligar a
+checagem e os avisos, no `config.toml` central:
+
+```toml
+[atualizacoes]
+checar = false
+```
+
+O porquê: [040](docs/decisoes/040-instalacao-pelo-registro-do-uv.md).
 
 Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Quem
 agenda o `inscricao rodar` à mão (veja "Sem o daemon") deve conferir o caminho absoluto do
@@ -208,6 +230,8 @@ plugin, que as recebe como estão e as cobra na primeira busca. O plugin só é 
 quando um comando busca tarefas ou precisa da referência: fonte inválida não impede
 `atualizar --abort`, e `reconstruir-estado` roda sem fonte se houver `[referencia] padrao`.
 O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
+
+Para o Jira Cloud há o plugin [`monitor-versoes-jira`](plugins/jira/README.md).
 
 O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
 ou um `modulo:Classe`, e o pacote traz o `bitbucket`. Não há padrão: sem `fonte`, os commits
@@ -445,7 +469,7 @@ monitor-versoes inscricao rodar                                             # di
 
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
 Com o `monitor-versoes serve` de pé, as inscrições vencidas rodam sozinhas (o daemon confere a
-cada minuto); o porquê: [040](docs/decisoes/040-disparo-das-inscricoes-pelo-daemon.md). Ao subir,
+cada minuto); o porquê: [041](docs/decisoes/041-disparo-das-inscricoes-pelo-daemon.md). Ao subir,
 o `serve` remove o timer do systemd ou o LaunchAgent que versões antigas instalaram. Dois `serve`
 disparam em dobro: mantenha um só.
 A execução não depende de diretório e não lê `.env`, nem quando o daemon a dispara: o filho usa
@@ -520,6 +544,8 @@ desfecho):
 | `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `monitor-versoes diagnostico` checa todas as seções. |
 | `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `monitor-versoes serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
 | `error: argument --repo: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
+| ``ERROR: o monitor-versoes não está instalado como `uv tool` ...`` | `plugin instalar`, `remover`, `atualizar` ou `atualizar-motor` rodado num checkout de desenvolvimento ou com `uv run`. Ali, plugins e atualização são pelo git e pelo `uv sync`; o `plugin listar` funciona. |
+| `A reinstalação falhou (o erro do uv está acima). Para tentar à mão: ...` | O `uv` não conseguiu reinstalar (rede, credencial, conflito de dependência), e a instalação anterior continua como estava. No Windows, o executável em uso trava a reinstalação: feche o `monitor-versoes serve` e a TUI e rode a linha impressa no terminal. |
 
 ## Próximos passos
 

@@ -5,7 +5,7 @@
   `atualizar` manual" foi substituído pela [032](032-lock-por-repo-entre-processos.md); o
   estado compartilhado entre máquinas deixou de existir com a
   [035](035-estado-local-em-sqlite.md); o disparo pelo agendador do SO foi substituído pela
-  [040](040-disparo-das-inscricoes-pelo-daemon.md)
+  [041](041-disparo-das-inscricoes-pelo-daemon.md)
 - **Data:** 2026-11-05
 - **Depende de:** [004](004-estado-descartavel.md), [021](021-motor-nao-interativo.md)
 

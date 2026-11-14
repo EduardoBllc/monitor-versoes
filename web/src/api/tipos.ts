@@ -23,3 +23,6 @@ export type ConteudoDoConflito = Esquemas["ConteudoDoConflito"];
 export type Resolucao = Esquemas["Resolucao"];
 export type PedidoProposta = Esquemas["PedidoProposta"];
 export type PropostaDeBloco = Esquemas["PropostaDeBloco"];
+export type Instalacao = Esquemas["Instalacao"];
+export type PluginInstalado = Esquemas["PluginInstalado"];
+export type NovidadeVista = Esquemas["NovidadeVista"];

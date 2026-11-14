@@ -1,7 +1,7 @@
 # Ambiente na config central
 
 - **Status:** aceita; o `motor init` saiu com a [035](035-estado-local-em-sqlite.md); o filho
-  disparado pelo daemon também não herda o `.env` do `serve` ([040](040-disparo-das-inscricoes-pelo-daemon.md))
+  disparado pelo daemon também não herda o `.env` do `serve` ([041](041-disparo-das-inscricoes-pelo-daemon.md))
 - **Data:** 2026-11-10
 - **Depende de:** [024](024-config-por-projeto.md), [028](028-inscricoes-fora-do-estado.md),
   [029](029-repos-na-config-central.md)
