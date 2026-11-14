@@ -691,3 +691,15 @@ def test_peca_versao(cache, estado, no_detalhe, na_correcao):
     assert no_detalhe in versao.detalhe
     assert na_correcao in versao.correcao
     assert not falhou(resultados)
+
+
+def test_versao_com_config_invalida_fica_nao_verificada_e_o_resto_segue():
+    def invalida():
+        raise ErroDeEntrada("config.toml: checar deve ser booleano")
+
+    por_peca, resultados = _rodar(novidades=invalida)
+
+    assert por_peca[Peca.VERSAO].estado is Estado.NAO_VERIFICADA
+    assert "checar deve ser booleano" in por_peca[Peca.VERSAO].detalhe
+    assert len(resultados) > 1
+    assert not falhou(resultados)
