@@ -17,6 +17,10 @@ from motor.instalacao import (
     TipoOrigem,
 )
 from motor.novidades import (
+    ARQUIVO_CACHE,
+    ENV_GIT,
+    TIMEOUT_GIT_S,
+    VALIDADE,
     Cache,
     Novidade,
     checar,
@@ -106,6 +110,44 @@ def test_maior_tag_ordena_numericamente_e_ignora_lixo() -> None:
             (),
         ),
         (_registro("v0.2.0"), {}, None, ()),
+        (
+            _registro(COMMIT_ANTIGO),
+            {PACOTE_MOTOR: Origem(TipoOrigem.GIT, ref=COMMIT_ANTIGO)},
+            _remoto(head=COMMIT_NOVO),
+            (
+                Novidade(
+                    PACOTE_MOTOR,
+                    COMMIT_ANTIGO[:7],
+                    COMMIT_NOVO[:7],
+                    f"{PACOTE_MOTOR} atualizar-motor",
+                ),
+            ),
+        ),
+        (
+            _registro(COMMIT_NOVO),
+            {PACOTE_MOTOR: Origem(TipoOrigem.GIT, ref=COMMIT_NOVO)},
+            _remoto(head=COMMIT_NOVO),
+            (),
+        ),
+        (
+            _registro(COMMIT_NOVO),
+            {PACOTE_MOTOR: Origem(TipoOrigem.GIT, commit=COMMIT_NOVO)},
+            _remoto(head=COMMIT_NOVO, tags=("v0.2.0", "v0.10.0")),
+            (
+                Novidade(
+                    PACOTE_MOTOR,
+                    COMMIT_NOVO[:7],
+                    "0.10.0",
+                    f"{PACOTE_MOTOR} atualizar-motor",
+                ),
+            ),
+        ),
+        (
+            _registro("main"),
+            {},
+            _remoto(head=COMMIT_NOVO, tags=("v0.2.0",)),
+            (),
+        ),
     ],
 )
 def test_checar(
@@ -127,13 +169,12 @@ def test_git_roda_sem_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", falso)
     assert rodar_git(["git", "ls-remote", URL_MOTOR], {}) == "ok"
     env = chamadas[0]["env"]
-    assert env["GIT_TERMINAL_PROMPT"] == "0"
-    assert "BatchMode=yes" in env["GIT_SSH_COMMAND"]
-    assert chamadas[0]["timeout"] == novidades.TIMEOUT_GIT_S == 10
+    assert {k: env[k] for k in ENV_GIT} == ENV_GIT
+    assert chamadas[0]["timeout"] == TIMEOUT_GIT_S
 
 
 @pytest.mark.parametrize(
-    "erro", [subprocess.TimeoutExpired("git", 10), FileNotFoundError()]
+    "erro", [subprocess.TimeoutExpired("git", TIMEOUT_GIT_S), FileNotFoundError()]
 )
 def test_git_com_falha_nao_levanta(
     monkeypatch: pytest.MonkeyPatch, erro: Exception
@@ -152,8 +193,8 @@ def test_cache_ida_e_volta_e_validade(tmp_path: Path) -> None:
     assert ler_cache(arquivo) == cache
 
     assert vencido(None, AGORA)
-    assert vencido(cache, AGORA + timedelta(hours=24, seconds=1))
-    assert not vencido(cache, AGORA + timedelta(hours=23))
+    assert vencido(cache, AGORA + VALIDADE + timedelta(seconds=1))
+    assert not vencido(cache, AGORA + VALIDADE - timedelta(hours=1))
 
     arquivo.write_text("{corrompido")
     assert ler_cache(arquivo) is None
@@ -173,3 +214,18 @@ def test_disparar_renovacao_ignora_oserror(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(subprocess, "Popen", falso)
     novidades.disparar_renovacao()
+
+
+def test_renovacao_que_falha_ainda_grava_cache_novo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def falha() -> None:
+        raise OSError
+
+    monkeypatch.setattr(novidades, "diretorio_cache", lambda: str(tmp_path))
+    monkeypatch.setattr(novidades, "_checar_instalado", falha)
+    novidades._renovar()
+    cache = ler_cache(tmp_path / ARQUIVO_CACHE)
+    assert cache is not None
+    assert cache.novidades == ()
+    assert not vencido(cache, datetime.now().astimezone())

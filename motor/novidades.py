@@ -17,6 +17,7 @@ from pathlib import Path
 from motor.config import diretorio_cache
 from motor.instalacao import (
     PACOTE_MOTOR,
+    SHA_COMPLETO,
     TAG_VERSAO,
     Origem,
     Registro,
@@ -102,12 +103,44 @@ def maior_tag(saida_ls_remote: str) -> str | None:
     return max(_tags(saida_ls_remote), key=lambda t: _versao(t) or (), default=None)
 
 
+def _commits_da_tag(saida: str, tag: str) -> set[str]:
+    # Tag anotada aparece também como `tag^{}`, com o commit de fato.
+    nomes = {f"{PREFIXO_TAG}{tag}", f"{PREFIXO_TAG}{tag}^{{}}"}
+    return {
+        c
+        for c, _, ref in (ln.partition("\t") for ln in saida.splitlines())
+        if ref in nomes
+    }
+
+
 def _head(saida: str) -> str | None:
     for linha in saida.splitlines():
         commit, _, ref = linha.partition("\t")
         if ref == REF_HEAD:
             return commit
     return None
+
+
+def _de_tag_fixa(r: Requisito, ref: str, saida: str, comando: str) -> Novidade | None:
+    nova = maior_tag(saida)
+    if nova is None or (_versao(nova) or ()) <= (_versao(ref) or ()):
+        return None
+    return Novidade(r.nome, ref[1:], nova[1:], comando)
+
+
+def _de_commit(
+    r: Requisito, instalado: str, saida: str, comando: str
+) -> Novidade | None:
+    curto = TAMANHO_COMMIT_CURTO
+    nova = maior_tag(saida)
+    if nova is not None:
+        if instalado in _commits_da_tag(saida, nova):
+            return None
+        return Novidade(r.nome, instalado[:curto], nova[1:], comando)
+    remoto = _head(saida)
+    if remoto is None or remoto == instalado:
+        return None
+    return Novidade(r.nome, instalado[:curto], remoto[:curto], comando)
 
 
 def _novidade(
@@ -119,18 +152,12 @@ def _novidade(
         else f"{PACOTE_MOTOR} plugin atualizar {r.nome}"
     )
     if r.ref is not None and _versao(r.ref) is not None:
-        nova = maior_tag(saida)
-        if nova is None or (_versao(nova) or ()) <= (_versao(r.ref) or ()):
-            return None
-        return Novidade(r.nome, r.ref[1:], nova[1:], comando)
+        return _de_tag_fixa(r, r.ref, saida, comando)
+    if r.ref is not None and not SHA_COMPLETO.fullmatch(r.ref):
+        return None  # branch: não há o que comparar
     origem = instalados.get(r.nome)
-    remoto = _head(saida)
-    if r.ref is not None or origem is None or origem.commit is None or remoto is None:
-        return None  # ref fixa em SHA ou branch: não há o que comparar
-    if origem.commit == remoto:
-        return None
-    curto = TAMANHO_COMMIT_CURTO
-    return Novidade(r.nome, origem.commit[:curto], remoto[:curto], comando)
+    instalado = (origem.commit if origem else None) or r.ref
+    return _de_commit(r, instalado, saida, comando) if instalado else None
 
 
 def checar(
@@ -216,13 +243,21 @@ def disparar_renovacao() -> None:
         pass
 
 
-def _renovar() -> None:
+def _checar_instalado() -> tuple[Novidade, ...]:
     reg = ler_registro()
     if reg is None:
-        return
+        return ()
     instalados = {p.pacote: p.origem for p in plugins_instalados()}
     instalados[PACOTE_MOTOR] = origem_do_pacote(distribution(PACOTE_MOTOR))
-    achadas = checar(reg, instalados)
+    return checar(reg, instalados)
+
+
+def _renovar() -> None:
+    try:
+        achadas = _checar_instalado()
+    except Exception:
+        # Sem cache novo, todo comando dispararia outra renovação.
+        achadas = ()
     gravar_cache(
         Path(diretorio_cache()) / ARQUIVO_CACHE,
         Cache(datetime.now().astimezone(), achadas),

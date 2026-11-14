@@ -23,7 +23,8 @@ PARAMETRO_REV = "rev"
 PARAMETRO_SUBDIRETORIO = "subdirectory"
 # Ref que não muda sozinha: tag de versão ou SHA completo; o resto é branch.
 TAG_VERSAO = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
-_REF_FIXA = re.compile(f"{TAG_VERSAO.pattern}|[0-9a-f]{{40}}")
+SHA_COMPLETO = re.compile(r"[0-9a-f]{40}")
+_REF_FIXA = re.compile(f"{TAG_VERSAO.pattern}|{SHA_COMPLETO.pattern}")
 
 
 class TipoOrigem(StrEnum):
