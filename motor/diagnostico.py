@@ -23,6 +23,7 @@ from motor.montagem import (
     instanciar_host_pr,
     instanciar_provedor_sugestao,
 )
+from motor.novidades import Cache
 
 
 class Peca(enum.StrEnum):
@@ -34,6 +35,7 @@ class Peca(enum.StrEnum):
     TAREFAS = "Tarefas"
     PRS = "Fonte de PR"
     SUGESTAO = "Sugestão"
+    VERSAO = "Versão"
 
 
 class Estado(enum.Enum):
@@ -88,6 +90,7 @@ def diagnosticar(  # noqa: PLR0913
     repos: Callable[[], Mapping[str, str | None]],
     config_em: str,
     erro_ambiente: MotorError | None = None,
+    novidades: Callable[[], Cache | None] = lambda: None,
 ) -> list[Resultado]:
     """`config_em` é o caminho do config central; `erro_ambiente`, o erro ao ler
     o `[ambiente]` dele — o diagnóstico mostra e segue sem o central."""
@@ -124,7 +127,28 @@ def diagnosticar(  # noqa: PLR0913
     resultados.append(_tarefas(config_central, onde))
     resultados.append(_prs(config_central, onde))
     resultados += _sugestao(config_central, onde)
+    resultados.append(_versao(novidades))
     return resultados
+
+
+def _versao(novidades: Callable[[], Cache | None]) -> Resultado:
+    """Nunca é `FALHA`: versão velha não faz o diagnóstico sair com 1."""
+    try:
+        cache = novidades()
+    except MotorError as e:  # config inválida: o resto do diagnóstico segue
+        return Resultado(Peca.VERSAO, Estado.NAO_VERIFICADA, formatar_com_notas(e))
+    if cache is None:
+        return Resultado(
+            Peca.VERSAO, Estado.NAO_VERIFICADA, "sem resultado da checagem"
+        )
+    if not cache.novidades:
+        quando = cache.checado_em.astimezone()
+        return Resultado(
+            Peca.VERSAO, Estado.OK, f"em dia (checado em {quando:%Y-%m-%d %H:%M})"
+        )
+    detalhe = "; ".join(f"{n.pacote} {n.atual} → {n.nova}" for n in cache.novidades)
+    correcao = "; ".join(n.comando for n in cache.novidades)
+    return Resultado(Peca.VERSAO, Estado.AVISO, detalhe, correcao)
 
 
 def _banco_fora(peca: Peca, erro: MotorError, dica: str) -> list[Resultado]:

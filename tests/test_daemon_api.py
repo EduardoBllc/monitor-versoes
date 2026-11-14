@@ -13,8 +13,11 @@ from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 
+import motor.daemon.app as app_daemon
+import motor.novidades as modulo_novidades
 import motor.operacoes as operacoes
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.adapters.sugestao.fake import FakeProvedorSugestao
@@ -26,7 +29,7 @@ from motor.config import (
     Tabela,
     VarAmbiente,
 )
-from motor.config_edicao import AcaoAlteracao
+from motor.config_edicao import AcaoAlteracao, GrupoPlugin
 from motor.daemon.app import INTERVALO_EVENTOS_S, EventoSse, criar_app
 from motor.daemon.erros import TipoErro
 from motor.daemon.execucoes import EstadoExecucao
@@ -50,6 +53,15 @@ from motor.errors import (
     VersaoDesatualizada,
 )
 from motor.inscricoes import INTERVALO_PADRAO
+from motor.instalacao import (
+    ARQUIVO_REGISTRO,
+    PACOTE_MOTOR,
+    Origem,
+    PluginInstalado,
+    TipoOrigem,
+    ler_registro,
+)
+from motor.novidades import VALIDADE, Cache, Novidade
 from motor.operacoes import (
     PedidoProposta,
     RepoOption,
@@ -976,3 +988,106 @@ def test_rotas_de_orfaos_no_openapi(cliente: TestClient) -> None:
     caminhos = cast(FastAPI, cliente.app).openapi()["paths"]
     assert "/api/repos/{repo}/versoes/{versao}/orfaos" in caminhos
     assert "/api/repos/{repo}/versoes/{versao}/orfaos/{hash}/julgamento" in caminhos
+
+
+_PLUGIN = PluginInstalado(
+    GrupoPlugin.PRS,
+    "github",
+    "plugin-prs",
+    "1.0.0",
+    Origem(TipoOrigem.GIT, "https://example.com/plugin-prs", "v1.0.0", "abc"),
+)
+_NOVIDADE = Novidade(PACOTE_MOTOR, "0.2.0", "0.3.0", f"{PACOTE_MOTOR} atualizar-motor")
+_NOVIDADE_VISTA = {
+    **jsonable_encoder(_NOVIDADE),
+    "texto": "Versão 0.3.0 disponível (você tem 0.2.0):",
+}
+
+
+def _preparar_instalacao(
+    monkeypatch: pytest.MonkeyPatch, checado_em: datetime.datetime
+) -> list[int]:
+    renovacoes: list[int] = []
+    monkeypatch.setattr(app_daemon, "plugins_instalados", lambda: [_PLUGIN])
+    monkeypatch.setattr(modulo_novidades, "ler_registro", object)
+    monkeypatch.setattr(modulo_novidades, "checagem_ligada", lambda: True)
+    monkeypatch.setattr(
+        modulo_novidades, "ler_cache", lambda _: Cache(checado_em, (_NOVIDADE,))
+    )
+    monkeypatch.setattr(
+        modulo_novidades, "disparar_renovacao", lambda _: renovacoes.append(1)
+    )
+    return renovacoes
+
+
+def test_api_instalacao(cliente: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    agora = datetime.datetime.now(datetime.UTC)
+    renovacoes = _preparar_instalacao(monkeypatch, agora)
+
+    corpo = cliente.get("/api/instalacao").json()
+
+    assert corpo == {
+        "plugins": [jsonable_encoder(_PLUGIN)],
+        "novidades": [_NOVIDADE_VISTA],
+    }
+    assert renovacoes == []
+
+
+def test_api_instalacao_casa_novidade_pela_grafia_do_metadado(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _preparar_instalacao(monkeypatch, datetime.datetime.now(datetime.UTC))
+    no_registro = _PLUGIN.pacote.replace("-", "_").upper()
+    novidade = replace(_NOVIDADE, pacote=no_registro)
+    monkeypatch.setattr(
+        modulo_novidades,
+        "ler_cache",
+        lambda _: Cache(datetime.datetime.now(datetime.UTC), (novidade,)),
+    )
+
+    corpo = cliente.get("/api/instalacao").json()
+
+    assert [n["pacote"] for n in corpo["novidades"]] == [_PLUGIN.pacote]
+
+
+def test_api_instalacao_com_cache_vencido_dispara_renovacao(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vencido = datetime.datetime.now(datetime.UTC) - VALIDADE * 2
+    renovacoes = _preparar_instalacao(monkeypatch, vencido)
+
+    corpo = cliente.get("/api/instalacao").json()
+
+    assert corpo["novidades"] == [_NOVIDADE_VISTA]
+    assert renovacoes == [1]
+
+
+def test_api_instalacao_com_config_invalida_vem_sem_novidades(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _preparar_instalacao(monkeypatch, datetime.datetime.now(datetime.UTC))
+
+    def invalida() -> bool:
+        raise ErroDeEntrada("checar deve ser true ou false")
+
+    monkeypatch.setattr(modulo_novidades, "checagem_ligada", invalida)
+
+    r = cliente.get("/api/instalacao")
+
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["novidades"] == []
+
+
+def test_api_instalacao_com_registro_do_uv_ilegivel_vem_sem_novidades(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _preparar_instalacao(monkeypatch, datetime.datetime.now(datetime.UTC))
+    (tmp_path / ARQUIVO_REGISTRO).write_text("[tool]\n")
+    monkeypatch.setattr(
+        modulo_novidades, "ler_registro", lambda: ler_registro(tmp_path)
+    )
+
+    r = cliente.get("/api/instalacao")
+
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["novidades"] == []

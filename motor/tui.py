@@ -53,6 +53,7 @@ from motor.inscricoes import (
     parse_intervalo,
     remover,
 )
+from motor.novidades import linha_aviso, novidades_para_exibir
 from motor.operacoes import (
     AbortRunner,
     CriarRunner,
@@ -678,6 +679,8 @@ class MotorTUI(App[None]):
         self._ocupar_resultado()
         self._bloquear(True)
         self.carregar_repos_worker()
+        for n in novidades_para_exibir():
+            self.notify(linha_aviso(n), severity="warning")
         # Amostragem a 10 Hz em vez de call_from_thread por evento: o motor
         # relata uma vez por commit, e cada call_from_thread bloquearia a thread
         # dele ate o loop desenhar (ver SlotProgresso).

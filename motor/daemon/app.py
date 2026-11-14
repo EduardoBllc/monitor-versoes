@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import nullcontext
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
@@ -38,6 +38,8 @@ from motor.engine.conflito import ConflitoAberto, ConteudoDoConflito
 from motor.engine.consultar import ChamadoConsultado
 from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
+from motor.instalacao import PluginInstalado, normalizar, plugins_instalados
+from motor.novidades import novidades_para_exibir, texto_aviso
 from motor.operacoes import (
     PedidoProposta,
     RepoOption,
@@ -154,6 +156,21 @@ class InscricaoVista:
     versao: str
     intervalo: str
     ultima: UltimaExecucao | None
+
+
+@dataclass(frozen=True)
+class NovidadeVista:
+    pacote: str
+    atual: str
+    nova: str
+    comando: str
+    texto: str
+
+
+@dataclass(frozen=True)
+class Instalacao:
+    plugins: list[PluginInstalado]
+    novidades: list[NovidadeVista]
 
 
 # Rotas síncronas respondem 409 aqui; nas operações longas o erro cai na Execucao
@@ -433,6 +450,24 @@ def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
     def testar_config(corpo: PedidoTeste) -> ResultadoTeste:
         r = testar(corpo.alteracoes, corpo.versao, corpo.peca, corpo.repo)
         return ResultadoTeste(r.estado, r.detalhe, r.correcao)
+
+    @app.get("/api/instalacao")
+    def ler_instalacao() -> Instalacao:
+        plugins = plugins_instalados()
+        # A novidade vem com o nome do registro do uv; a web casa pelo do METADATA.
+        grafia = {normalizar(p.pacote): p.pacote for p in plugins}
+        return Instalacao(
+            plugins,
+            [
+                NovidadeVista(
+                    **asdict(
+                        replace(n, pacote=grafia.get(normalizar(n.pacote), n.pacote))
+                    ),
+                    texto=texto_aviso(n),
+                )
+                for n in novidades_para_exibir()
+            ],
+        )
 
 
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:

@@ -9,16 +9,22 @@ from motor import config
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
+    DIRETORIO_APP,
     SECAO_REPOS,
+    SUBDIRETORIO_CACHE,
     TABELA_AMBIENTE,
     ULTIMO_COMMIT_COM_POSTGRES,
+    VAR_LOCALAPPDATA,
+    VAR_XDG_CACHE_HOME,
     VAR_XDG_CONFIG_HOME,
     Chave,
     Escolhido,
     Tabela,
     VarAmbiente,
+    checagem_ligada,
     checar_backend,
     database_url,
+    diretorio_cache,
     worktrees_mantidas,
 )
 from motor.errors import ErroDeEntrada
@@ -535,7 +541,9 @@ def test_ambiente_que_nao_e_tabela_e_erro(central):
         config.ambiente_central()
 
 
-@pytest.mark.parametrize("tabela", [TABELA_AMBIENTE, Tabela.SUGESTAO])
+@pytest.mark.parametrize(
+    "tabela", [TABELA_AMBIENTE, Tabela.SUGESTAO, Tabela.ATUALIZACOES]
+)
 @pytest.mark.parametrize(
     "ler", [config.ambiente_central, lambda: config.carregar_config_repo(NOME)]
 )
@@ -552,6 +560,45 @@ def test_sugestao_do_topo_chega_inteira(central):
     cfg = config.carregar_config_global()
     assert cfg.provedor_sugestao == Escolhido("x", str(central))
     assert cfg.sugestao == {Chave.PROVEDOR: "x", "modelo": "m"}
+
+
+@pytest.mark.parametrize(
+    ("conteudo", "esperado"),
+    [
+        (None, True),
+        ('[sugestao]\nprovedor = "x"\n', True),
+        (f"[{Tabela.ATUALIZACOES}]\n{Chave.CHECAR} = false\n", False),
+        (f"[{Tabela.ATUALIZACOES}]\n{Chave.CHECAR} = true\n", True),
+    ],
+)
+def test_checagem_de_versao_ligada_por_padrao_e_desligavel(central, conteudo, esperado):
+    if conteudo is not None:
+        central.write_text(conteudo)
+    assert checagem_ligada() is esperado
+
+
+def test_checagem_de_versao_nao_booleana_e_erro(central):
+    central.write_text(f'[{Tabela.ATUALIZACOES}]\n{Chave.CHECAR} = "nao"\n')
+    with pytest.raises(ErroDeEntrada, match=Chave.CHECAR):
+        checagem_ligada()
+
+
+def test_diretorio_cache_segue_xdg(tmp_path, monkeypatch):
+    monkeypatch.setenv(VAR_XDG_CACHE_HOME, str(tmp_path))
+    assert diretorio_cache() == str(tmp_path / DIRETORIO_APP)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="caminho do Linux/macOS")
+def test_diretorio_cache_sem_xdg_cai_em_cache_do_home(tmp_path, monkeypatch):
+    monkeypatch.delenv(VAR_XDG_CACHE_HOME, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert diretorio_cache() == str(tmp_path / ".cache" / DIRETORIO_APP)
+
+
+def test_diretorio_cache_no_windows_fica_no_localappdata(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv(VAR_LOCALAPPDATA, str(tmp_path))
+    assert diretorio_cache() == str(tmp_path / DIRETORIO_APP / SUBDIRETORIO_CACHE)
 
 
 def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):

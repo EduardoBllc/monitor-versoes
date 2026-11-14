@@ -22,6 +22,7 @@ from functools import partial
 from pathlib import Path
 from typing import TextIO
 
+from motor import cli_instalacao
 from motor.agendador import (
     ARGUMENTOS_RODAR,
     agendar,
@@ -90,6 +91,7 @@ from motor.montagem import (
     montar_deps,
     montar_notificador,
 )
+from motor.novidades import linha_aviso, novidades_do_cache
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.trava import Trava, travar
 
@@ -152,9 +154,9 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     o chamou. Devolve o erro do central quando o comando o tolera.
     """
     ambiente, comando, acao = _selecionar(argv)
-    if (comando, acao) == ("inscricao", AcaoInscricao.RODAR):
+    if (comando, acao) == (COMANDO_INSCRICAO, AcaoInscricao.RODAR):
         return None
-    filho = (comando, acao) == ("inscricao", AcaoInscricao.EXECUTAR)
+    filho = (comando, acao) == (COMANDO_INSCRICAO, AcaoInscricao.EXECUTAR)
     xdg = os.environ.get(VAR_XDG_CONFIG_HOME)
     erro: MotorError | None = None
     try:
@@ -190,11 +192,17 @@ def _diagnostico(args: argparse.Namespace) -> None:
         repos=repos_configurados,
         config_em=caminho_config_global(),
         erro_ambiente=args.erro_central,
+        novidades=novidades_do_cache,
     )
     for resultado in resultados:
         print(formatar(resultado))
     if falhou(resultados):
         sys.exit(1)
+
+
+COMANDO_SERVE = "serve"
+COMANDO_TUI = "tui"
+COMANDO_INSCRICAO = "inscricao"
 
 
 class AcaoInscricao(StrEnum):
@@ -319,7 +327,9 @@ def _inscricao(args: argparse.Namespace) -> None:
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "migrar": _migrar,
     "diagnostico": _diagnostico,
-    "inscricao": _inscricao,
+    COMANDO_INSCRICAO: _inscricao,
+    cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
+    cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
 }
 
 
@@ -456,11 +466,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _parsers_de_orfaos(sub, comum)
 
     sub.add_parser(
-        "tui",
+        COMANDO_TUI,
         help="abre a interface interativa de consulta, verificacao e atualizacao",
     )
 
-    p_serve = sub.add_parser("serve", help="sobe a interface web local")
+    p_serve = sub.add_parser(COMANDO_SERVE, help="sobe a interface web local")
     p_serve.add_argument("--porta", type=int, default=PORTA_PADRAO)
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
@@ -470,7 +480,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="checa cada peça da instalação e diz como corrigir o que falhar",
     )
 
-    p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
+    p_insc = sub.add_parser(
+        COMANDO_INSCRICAO, help="acompanha versões em segundo plano"
+    )
     acoes_insc = p_insc.add_subparsers(
         dest="acao_inscricao", required=True, metavar="acao"
     )
@@ -496,6 +508,8 @@ def _build_parser() -> argparse.ArgumentParser:
     acoes_insc.add_parser(AcaoInscricao.RODAR, help="dispara as inscrições vencidas")
     # Sem help=: o argparse não lista; é o comando interno do agendador.
     acoes_insc.add_parser(AcaoInscricao.EXECUTAR, parents=[repo_arg])
+
+    cli_instalacao.adicionar_parsers(sub)
 
     return parser
 
@@ -800,6 +814,29 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
             )
 
 
+_SEM_AVISO = frozenset(
+    {
+        COMANDO_SERVE,
+        COMANDO_TUI,
+        COMANDO_INSCRICAO,
+        cli_instalacao.COMANDO_PLUGIN,
+        cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
+    }
+)
+
+
+def _avisar_versao_nova(args: argparse.Namespace) -> None:
+    """Uma linha no stderr por versão nova; lê o cache e nunca espera a checagem."""
+    try:
+        if args.comando in _SEM_AVISO:
+            return
+        cache = novidades_do_cache()
+        for n in cache.novidades if cache else ():
+            print(linha_aviso(n), file=sys.stderr)
+    except Exception:  # o aviso nunca derruba um comando
+        pass
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     # ponytail: --version não depende do ambiente; só a forma isolada, que é a usada.
@@ -828,45 +865,50 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
-        if args.comando in ("serve", "tui"):
-            # Os dois abrem o estado só depois de subir; a config antiga tem de
-            # parar antes de abrir a porta ou montar a tela.
-            checar_backend()
+        try:
+            if args.comando in (COMANDO_SERVE, COMANDO_TUI):
+                # Os dois abrem o estado só depois de subir; a config antiga tem de
+                # parar antes de abrir a porta ou montar a tela.
+                checar_backend()
 
-        if args.comando == "serve":
-            _iniciar_serve(args.porta)
-            return
+            if args.comando == COMANDO_SERVE:
+                _iniciar_serve(args.porta)
+                return
 
-        if args.comando == "tui":
-            _iniciar_tui()
-            return
+            if args.comando == COMANDO_TUI:
+                _iniciar_tui()
+                return
 
-        if args.comando in _SEM_BANCO:
-            _SEM_BANCO[args.comando](args)
-            return
+            if args.comando in _SEM_BANCO:
+                _SEM_BANCO[args.comando](args)
+                return
 
-        # A trava antes da sessão e do montar_deps (que já roda git no clone):
-        # a recusa sai antes de tocar no clone e no banco.
-        with _trava_do_comando(args), abrir_sessao() as sessao:
-            relator = _relator_do_cli(desligado=getattr(args, "sem_progresso", False))
-            deps = montar_deps(
-                args.repo,
-                sessao,
-                tasks=FonteTasks(args.fonte_flag, args.lista_manual),
-                progresso=relator,
-            )
-            try:
-                _despachar(args, deps)
-            finally:
-                # No finally: erro no meio do comando tambem tem de limpar a
-                # linha, senao a mensagem de erro sai colada na barra.
-                _limpar_progresso(relator)
-    except MotorError as e:
-        logging.error(formatar_com_notas(e))
-        sys.exit(1)
-    except Exception:
-        logging.exception("Erro interno fatal (bug). Traceback completo:")
-        sys.exit(1)
+            # A trava antes da sessão e do montar_deps (que já roda git no clone):
+            # a recusa sai antes de tocar no clone e no banco.
+            with _trava_do_comando(args), abrir_sessao() as sessao:
+                relator = _relator_do_cli(
+                    desligado=getattr(args, "sem_progresso", False)
+                )
+                deps = montar_deps(
+                    args.repo,
+                    sessao,
+                    tasks=FonteTasks(args.fonte_flag, args.lista_manual),
+                    progresso=relator,
+                )
+                try:
+                    _despachar(args, deps)
+                finally:
+                    # No finally: erro no meio do comando tambem tem de limpar a
+                    # linha, senao a mensagem de erro sai colada na barra.
+                    _limpar_progresso(relator)
+        except MotorError as e:
+            logging.error(formatar_com_notas(e))
+            sys.exit(1)
+        except Exception:
+            logging.exception("Erro interno fatal (bug). Traceback completo:")
+            sys.exit(1)
+    finally:
+        _avisar_versao_nova(args)
 
 
 def main_inscricoes() -> None:

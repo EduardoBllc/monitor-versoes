@@ -41,10 +41,12 @@ ARQUIVO_SQLITE = "estado.db"
 
 #: Variável que localiza a config central; nunca vem do `[ambiente]`.
 VAR_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
+VAR_XDG_CACHE_HOME = "XDG_CACHE_HOME"
 #: No Windows: dados em `%LOCALAPPDATA%`, config em `%APPDATA%`.
 VAR_LOCALAPPDATA = "LOCALAPPDATA"
 VAR_APPDATA = "APPDATA"
 DIRETORIO_APP = "monitor-versoes"
+SUBDIRETORIO_CACHE = "cache"
 
 
 class Tabela(StrEnum):
@@ -57,6 +59,7 @@ class Tabela(StrEnum):
     TAREFAS = "tarefas"
     PRS = "prs"
     SUGESTAO = "sugestao"
+    ATUALIZACOES = "atualizacoes"
 
 
 class Chave(StrEnum):
@@ -69,6 +72,7 @@ class Chave(StrEnum):
     FONTE = "fonte"
     PISO = "piso"
     PROVEDOR = "provedor"
+    CHECAR = "checar"
 
 
 class VarAmbiente(StrEnum):
@@ -84,6 +88,18 @@ def diretorio_dados() -> str:
     if sys.platform == "win32":
         return os.path.join(_variavel_windows(VAR_LOCALAPPDATA), DIRETORIO_APP)
     return os.path.join(os.path.expanduser("~"), ".local", "share", DIRETORIO_APP)
+
+
+def diretorio_cache() -> str:
+    """Diretorio de cache do usuario; `$XDG_CACHE_HOME` vale so fora do Windows."""
+    if sys.platform == "win32":
+        return os.path.join(
+            _variavel_windows(VAR_LOCALAPPDATA), DIRETORIO_APP, SUBDIRETORIO_CACHE
+        )
+    base = os.environ.get(VAR_XDG_CACHE_HOME, "").strip()
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(base, DIRETORIO_APP)
 
 
 def _variavel_windows(nome: str) -> str:
@@ -164,7 +180,7 @@ SECAO_REPOS = "repos"
 TABELA_AMBIENTE = "ambiente"
 CHAVE_CAMINHO = "caminho"
 #: Tabelas que valem só no topo do central: são da instalação, não do repo.
-_SO_NO_TOPO = (TABELA_AMBIENTE, Tabela.SUGESTAO)
+_SO_NO_TOPO = (TABELA_AMBIENTE, Tabela.SUGESTAO, Tabela.ATUALIZACOES)
 
 
 @dataclass(frozen=True)
@@ -244,6 +260,20 @@ def _ler_toml(caminho: str) -> dict[str, object]:
         raise ErroDeEntrada(f"{caminho}: TOML inválido ({e})") from e
     except OSError as e:
         raise ErroDeEntrada(f"{caminho}: não foi possível ler ({e})") from e
+
+
+def checagem_ligada() -> bool:
+    """`[atualizacoes] checar` do central; ausente vale `True`."""
+    arquivo = caminho_config_global()
+    bruto = _tabela(_ler_toml(arquivo), Tabela.ATUALIZACOES, arquivo).get(Chave.CHECAR)
+    if bruto is None:
+        return True
+    if not isinstance(bruto, bool):
+        raise ErroDeEntrada(
+            f"{arquivo}: [{Tabela.ATUALIZACOES}] {Chave.CHECAR} deve ser "
+            f"true ou false, veio {bruto!r}"
+        )
+    return bruto
 
 
 def _tabela(
