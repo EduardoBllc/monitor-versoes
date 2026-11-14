@@ -11,6 +11,7 @@ from motor.config_edicao import GrupoPlugin
 from motor.instalacao import (
     PACOTE_MOTOR,
     Origem,
+    Registro,
     Requisito,
     TipoOrigem,
     comando_reinstalar,
@@ -121,3 +122,47 @@ def test_plugins_instalados_marca_embutidos() -> None:
     ]
     assert achados[2].pacote == "outro-pacote"
     assert achados[2].versao == "2.0"
+
+
+def test_registro_preserva_subdiretorio_e_python(tmp_path: Path) -> None:
+    (tmp_path / "uv-receipt.toml").write_text(
+        f"""\
+[tool]
+requirements = [
+    {{ name = "{PACOTE_MOTOR}", git = "{URL_MOTOR}?rev={TAG}" }},
+    {{ name = "mono", git = "{URL_PLUGIN}?subdirectory=sub%2Fpk&rev={TAG}" }},
+]
+python = "3.12"
+"""
+    )
+    reg = ler_registro(tmp_path)
+    assert reg is not None
+    assert comando_reinstalar(reg) == [
+        "uv",
+        "tool",
+        "install",
+        "--reinstall",
+        "--python",
+        "3.12",
+        f"{PACOTE_MOTOR} @ git+{URL_MOTOR}@{TAG}",
+        "--with",
+        f"mono @ git+{URL_PLUGIN}@{TAG}#subdirectory=sub/pk",
+    ]
+
+
+@pytest.mark.parametrize("ref", ["main", "v1.2", "abc123", None])
+def test_fixar_soltos_trata_branch_como_solta(ref: str | None) -> None:
+    reg = Registro(
+        Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG),
+        (Requisito("p", git=URL_PLUGIN, ref=ref),),
+    )
+    assert fixar_soltos(reg, {"p": "f" * 40}).plugins[0].ref == "f" * 40
+
+
+@pytest.mark.parametrize("ref", [TAG, "a" * 40])
+def test_fixar_soltos_mantem_tag_e_commit(ref: str) -> None:
+    reg = Registro(
+        Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG),
+        (Requisito("p", git=URL_PLUGIN, ref=ref),),
+    )
+    assert fixar_soltos(reg, {"p": "f" * 40}).plugins[0].ref == ref

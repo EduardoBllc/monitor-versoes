@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
@@ -10,7 +11,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from importlib.metadata import Distribution, EntryPoint, entry_points
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from motor.config_edicao import GrupoPlugin
 
@@ -19,6 +20,9 @@ ARQUIVO_REGISTRO = "uv-receipt.toml"
 ARQUIVO_DIRECT_URL = "direct_url.json"
 PREFIXO_GIT = "git+"
 PARAMETRO_REV = "rev"
+PARAMETRO_SUBDIRETORIO = "subdirectory"
+# Ref que não muda sozinha: tag de versão ou SHA completo; o resto é branch.
+_REF_FIXA = re.compile(r"v\d+\.\d+\.\d+|[0-9a-f]{40}")
 
 
 class TipoOrigem(StrEnum):
@@ -30,6 +34,7 @@ class TipoOrigem(StrEnum):
 
 class ChaveRegistro(StrEnum):
     TOOL = "tool"
+    PYTHON = "python"
     REQUISITOS = "requirements"
     NOME = "name"
     GIT = "git"
@@ -69,12 +74,14 @@ class Requisito:
     ref: str | None = None
     extras: tuple[str, ...] = ()
     especificador: str | None = None
+    subdiretorio: str | None = None
 
 
 @dataclass(frozen=True)
 class Registro:
     motor: Requisito
     plugins: tuple[Requisito, ...]
+    python: str | None = None
 
 
 def _pontos_do_grupo(grupo: str) -> Iterable[EntryPoint]:
@@ -120,12 +127,18 @@ def plugins_instalados(
 
 def _requisito(linha: Mapping[str, object]) -> Requisito:
     bruto = linha.get(ChaveRegistro.GIT)
-    git = ref = None
+    git = ref = subdiretorio = None
     if isinstance(bruto, str):
         partes = urlsplit(bruto)
-        revs = parse_qs(partes.query).get(PARAMETRO_REV)
-        ref = revs[0] if revs else None
-        git = partes._replace(query="").geturl()
+        resto = []
+        for chave, valor in parse_qsl(partes.query):
+            if chave == PARAMETRO_REV:
+                ref = valor
+            elif chave == PARAMETRO_SUBDIRETORIO:
+                subdiretorio = valor
+            else:
+                resto.append((chave, valor))
+        git = partes._replace(query=urlencode(resto)).geturl()
     espec = linha.get(ChaveRegistro.ESPECIFICADOR)
     extras = linha.get(ChaveRegistro.EXTRAS) or ()
     return Requisito(
@@ -134,6 +147,7 @@ def _requisito(linha: Mapping[str, object]) -> Requisito:
         ref=ref,
         extras=tuple(extras),  # type: ignore[arg-type]
         especificador=str(espec) if espec is not None else None,
+        subdiretorio=subdiretorio,
     )
 
 
@@ -147,28 +161,37 @@ def ler_registro(prefixo: Path = Path(sys.prefix)) -> Registro | None:
     motor = next((r for r in todos if r.nome == PACOTE_MOTOR), None)
     if motor is None:
         return None
-    return Registro(motor, tuple(r for r in todos if r is not motor))
+    python = dados[ChaveRegistro.TOOL].get(ChaveRegistro.PYTHON)
+    return Registro(motor, tuple(r for r in todos if r is not motor), python)
 
 
 def fixar_soltos(reg: Registro, commits: Mapping[str, str]) -> Registro:
     def fixar(r: Requisito) -> Requisito:
-        if r.git is None or r.ref is not None or r.nome not in commits:
+        if r.git is None or r.nome not in commits:
+            return r
+        if r.ref is not None and _REF_FIXA.fullmatch(r.ref):
             return r
         return replace(r, ref=commits[r.nome])
 
-    return Registro(fixar(reg.motor), tuple(fixar(p) for p in reg.plugins))
+    return replace(
+        reg, motor=fixar(reg.motor), plugins=tuple(fixar(p) for p in reg.plugins)
+    )
 
 
 def _escrever(r: Requisito) -> str:
     extras = f"[{','.join(r.extras)}]" if r.extras else ""
     if r.git is not None:
         ref = f"@{r.ref}" if r.ref else ""
-        return f"{r.nome}{extras} @ {PREFIXO_GIT}{r.git}{ref}"
+        sub = f"#{PARAMETRO_SUBDIRETORIO}={r.subdiretorio}" if r.subdiretorio else ""
+        return f"{r.nome}{extras} @ {PREFIXO_GIT}{r.git}{ref}{sub}"
     return f"{r.nome}{extras}{r.especificador or ''}"
 
 
 def comando_reinstalar(reg: Registro) -> list[str]:
-    comando = ["uv", "tool", "install", "--reinstall", _escrever(reg.motor)]
+    comando = ["uv", "tool", "install", "--reinstall"]
+    if reg.python:
+        comando += ["--python", reg.python]
+    comando.append(_escrever(reg.motor))
     for plugin in reg.plugins:
         comando += ["--with", _escrever(plugin)]
     return comando
