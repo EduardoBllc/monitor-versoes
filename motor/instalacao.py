@@ -16,6 +16,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 from motor.config_edicao import GrupoPlugin
 
 PACOTE_MOTOR = "monitor-versoes"
+UV = "uv"
 ARQUIVO_REGISTRO = "uv-receipt.toml"
 ARQUIVO_DIRECT_URL = "direct_url.json"
 PREFIXO_GIT = "git+"
@@ -167,13 +168,21 @@ def ler_registro(prefixo: Path = Path(sys.prefix)) -> Registro | None:
     return Registro(motor, tuple(r for r in todos if r is not motor), python)
 
 
+def normalizar(nome: str) -> str:
+    """Nome de pacote na forma da PEP 503: o registro e o METADATA grafam diferente."""
+    return re.sub(r"[-_.]+", "-", nome).lower()
+
+
 def fixar_soltos(reg: Registro, commits: Mapping[str, str]) -> Registro:
+    por_nome = {normalizar(nome): commit for nome, commit in commits.items()}
+
     def fixar(r: Requisito) -> Requisito:
-        if r.git is None or r.nome not in commits:
+        commit = por_nome.get(normalizar(r.nome))
+        if r.git is None or commit is None:
             return r
         if r.ref is not None and _REF_FIXA.fullmatch(r.ref):
             return r
-        return replace(r, ref=commits[r.nome])
+        return replace(r, ref=commit)
 
     return replace(
         reg, motor=fixar(reg.motor), plugins=tuple(fixar(p) for p in reg.plugins)
@@ -190,7 +199,7 @@ def _escrever(r: Requisito) -> str:
 
 
 def comando_reinstalar(reg: Registro) -> list[str]:
-    comando = ["uv", "tool", "install", "--reinstall"]
+    comando = [UV, "tool", "install", "--reinstall"]
     if reg.python:
         comando += ["--python", reg.python]
     comando.append(_escrever(reg.motor))

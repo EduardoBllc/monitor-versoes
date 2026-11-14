@@ -33,6 +33,7 @@ from motor.novidades import (
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes"
 PLUGIN = "monitor-versoes-extra"
+PLUGIN_METADADO = "Monitor_Versoes.Extra"  # mesmo pacote, grafia do METADATA
 URL_PLUGIN = "https://github.com/EduardoBllc/monitor-versoes-extra"
 COMMIT_ANTIGO = "a" * 40
 COMMIT_NOVO = "b" * 40
@@ -94,6 +95,22 @@ def test_maior_tag_ordena_numericamente_e_ignora_lixo() -> None:
                     COMMIT_NOVO[:7],
                     f"{PACOTE_MOTOR} atualizar-motor",
                 ),
+                Novidade(
+                    PLUGIN,
+                    COMMIT_ANTIGO[:7],
+                    COMMIT_NOVO[:7],
+                    f"{PACOTE_MOTOR} plugin atualizar {PLUGIN}",
+                ),
+            ),
+        ),
+        (
+            _registro(None, plugin=True),
+            {
+                PACOTE_MOTOR: Origem(TipoOrigem.GIT, commit=COMMIT_NOVO),
+                PLUGIN_METADADO: Origem(TipoOrigem.GIT, commit=COMMIT_ANTIGO),
+            },
+            _remoto(head=COMMIT_NOVO),
+            (
                 Novidade(
                     PLUGIN,
                     COMMIT_ANTIGO[:7],

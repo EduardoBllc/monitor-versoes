@@ -21,6 +21,7 @@ from motor.instalacao import (
     PACOTE_MOTOR,
     PREFIXO_GIT,
     SHA_COMPLETO,
+    UV,
     Origem,
     Registro,
     Requisito,
@@ -28,6 +29,7 @@ from motor.instalacao import (
     comando_reinstalar,
     fixar_soltos,
     ler_registro,
+    normalizar,
     origem_do_pacote,
     plugins_instalados,
 )
@@ -57,10 +59,6 @@ class AcaoPlugin(StrEnum):
 
 def executar_uv(cmd: list[str]) -> int:
     return subprocess.run(cmd, check=False).returncode
-
-
-def _normalizar(nome: str) -> str:
-    return re.sub(r"[-_.]+", "-", nome).lower()
 
 
 def _ref_curta(ref: str | None) -> str:
@@ -96,7 +94,7 @@ def _preparar() -> tuple[Registro, dict[str, Origem]]:
             "desenvolvimento ou `uv run`); aqui, plugins e atualização são pelo "
             "próprio git e `uv sync`"
         )
-    if shutil.which("uv") is None:
+    if shutil.which(UV) is None:
         raise ErroDeEntrada(
             f"`uv` não encontrado no PATH; instale-o: {URL_INSTALAR_UV}"
         )
@@ -107,10 +105,10 @@ def _preparar() -> tuple[Registro, dict[str, Origem]]:
 
 
 def _de_fora(reg: Registro, pacote: str) -> Requisito:
-    if _normalizar(pacote) == PACOTE_MOTOR:
+    if normalizar(pacote) == PACOTE_MOTOR:
         raise ErroDeEntrada(f"{pacote} é embutido no {PACOTE_MOTOR}; não se remove")
     achado = next(
-        (p for p in reg.plugins if _normalizar(p.nome) == _normalizar(pacote)), None
+        (p for p in reg.plugins if normalizar(p.nome) == normalizar(pacote)), None
     )
     if achado is None:
         raise ErroDeEntrada(
@@ -120,8 +118,8 @@ def _de_fora(reg: Registro, pacote: str) -> Requisito:
 
 
 def _mudancas(antes: Registro, depois: Registro) -> list[str]:
-    de = {_normalizar(r.nome): r for r in (antes.motor, *antes.plugins)}
-    para = {_normalizar(r.nome): r for r in (depois.motor, *depois.plugins)}
+    de = {normalizar(r.nome): r for r in (antes.motor, *antes.plugins)}
+    para = {normalizar(r.nome): r for r in (depois.motor, *depois.plugins)}
     linhas = []
     for nome, r in para.items():
         novo = _ref_curta(r.ref) or r.especificador or ""
@@ -171,14 +169,18 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
     return [*comando_reinstalar(reg), "--with", f"{PREFIXO_GIT}{url}@{ref}"]
 
 
-def _atualizar(reg: Registro, origens: dict[str, Origem], nomes: set[str]) -> None:
+def _atualizar(
+    reg: Registro, origens: dict[str, Origem], nomes: set[str], pedido: bool
+) -> None:
     publicados: list[str] = []
 
     def alvo(r: Requisito) -> Requisito:
-        if _normalizar(r.nome) not in nomes:
+        if normalizar(r.nome) not in nomes:
             return r
-        if r.git is None:  # sem checagem no índice: o `uv` decide
-            publicados.append(r.nome)
+        if r.git is None:
+            # Sem checagem no índice: contá-lo sempre impediria o "tudo em dia".
+            if pedido:
+                publicados.append(r.nome)
             return r
         saida = ls_remote(r.git, rodar_git)
         if saida is None:
@@ -211,13 +213,18 @@ def plugin(args: argparse.Namespace) -> None:
             _reinstalar(reg, comando_reinstalar(replace(reg, plugins=restantes)))
         case AcaoPlugin.ATUALIZAR:
             pedidos = [_de_fora(reg, args.pacote)] if args.pacote else reg.plugins
-            _atualizar(reg, origens, {_normalizar(p.nome) for p in pedidos})
+            _atualizar(
+                reg,
+                origens,
+                {normalizar(p.nome) for p in pedidos},
+                pedido=bool(args.pacote),
+            )
 
 
 def atualizar_motor(_args: argparse.Namespace) -> None:
     reg, origens = _preparar()
     todos = (reg.motor, *reg.plugins)
-    _atualizar(reg, origens, {_normalizar(r.nome) for r in todos})
+    _atualizar(reg, origens, {normalizar(r.nome) for r in todos}, pedido=False)
 
 
 def adicionar_parsers(

@@ -23,6 +23,7 @@ from motor.instalacao import (
     Registro,
     Requisito,
     ler_registro,
+    normalizar,
     origem_do_pacote,
     plugins_instalados,
 )
@@ -160,7 +161,10 @@ def novidade(
         return _de_tag_fixa(r, r.ref, saida, comando)
     if r.ref is not None and not SHA_COMPLETO.fullmatch(r.ref):
         return None  # branch: não há o que comparar
-    origem = instalados.get(r.nome)
+    origem = next(
+        (o for nome, o in instalados.items() if normalizar(nome) == normalizar(r.nome)),
+        None,
+    )
     instalado = (origem.commit if origem else None) or r.ref
     return _de_commit(r, instalado, saida, comando) if instalado else None
 

@@ -18,16 +18,24 @@ from motor.config_edicao import GrupoPlugin
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
+    UV,
     Origem,
     PluginInstalado,
     Registro,
     Requisito,
     TipoOrigem,
 )
-from motor.novidades import ARQUIVO_CACHE, Cache, Novidade, gravar_cache
+from motor.novidades import (
+    ARQUIVO_CACHE,
+    TAMANHO_COMMIT_CURTO,
+    Cache,
+    Novidade,
+    gravar_cache,
+)
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes"
 PLUGIN_A = "monitor-versoes-extra"
+PLUGIN_A_METADADO = "Monitor_Versoes.Extra"  # mesmo pacote, grafia do METADATA
 URL_A = "https://github.com/EduardoBllc/monitor-versoes-extra"
 PLUGIN_B = "monitor-versoes-outro"
 URL_B = "git@github.com:EduardoBllc/monitor-versoes-outro.git"
@@ -35,14 +43,22 @@ URL_B_UV = "ssh://git@github.com/EduardoBllc/monitor-versoes-outro.git"
 PUBLICADO = "meu-plugin"
 COMMIT_A = "a" * 40
 COMMIT_NOVO = "b" * 40
-TAG_MOTOR = "v0.2.0"
+A_CURTO = COMMIT_A[:TAMANHO_COMMIT_CURTO]
+NOVO_CURTO = COMMIT_NOVO[:TAMANHO_COMMIT_CURTO]
+VERSAO_MOTOR = "0.2.0"
+TAG_MOTOR = f"v{VERSAO_MOTOR}"
 TAG_MOTOR_NOVA = "v0.3.0"
+VERSAO_A = "1.0.0"
+VERSAO_A_NOVA = "1.2.0"
+VERSAO_PUBLICADO = "0.1.0"
+TAG_B_VELHA = "v1.0.0"
+TAG_B = "v1.2.0"
 EXTRA = "anthropic"
-UV = "/usr/bin/uv"
+CAMINHO_UV = "/usr/bin/uv"
 
 MOTOR = Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG_MOTOR, extras=(EXTRA,))
 LINHA_MOTOR = f"{PACOTE_MOTOR}[{EXTRA}] @ git+{URL_MOTOR}@{TAG_MOTOR}"
-INICIO = ["uv", "tool", "install", "--reinstall"]
+INICIO = [UV, "tool", "install", "--reinstall"]
 
 
 def _remoto(*, tags: tuple[str, ...] = (), head: str = COMMIT_NOVO) -> str:
@@ -76,18 +92,22 @@ PLUGINS = [
         GrupoPlugin.ESQUEMAS,
         "padrao",
         PACOTE_MOTOR,
-        "0.2.0",
+        VERSAO_MOTOR,
         Origem(TipoOrigem.EMBUTIDO),
     ),
     PluginInstalado(
         GrupoPlugin.TAREFAS,
         "extra",
         PLUGIN_A,
-        "1.0.0",
+        VERSAO_A,
         Origem(TipoOrigem.GIT, URL_A, None, COMMIT_A),
     ),
     PluginInstalado(
-        GrupoPlugin.TAREFAS, "publicado", PUBLICADO, "0.1.0", Origem(TipoOrigem.INDICE)
+        GrupoPlugin.TAREFAS,
+        "publicado",
+        PUBLICADO,
+        VERSAO_PUBLICADO,
+        Origem(TipoOrigem.INDICE),
     ),
 ]
 
@@ -95,7 +115,7 @@ PLUGINS = [
 @pytest.fixture
 def inst(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Instalacao:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr(shutil, "which", lambda _nome: UV)
+    monkeypatch.setattr(shutil, "which", lambda _nome: CAMINHO_UV)
     falsa = Instalacao([Registro(MOTOR, (Requisito(PLUGIN_A, git=URL_A),))])
     monkeypatch.setattr(cli_instalacao, "ler_registro", falsa.ler_registro)
     monkeypatch.setattr(cli_instalacao, "rodar_git", falsa.rodar_git)
@@ -110,26 +130,26 @@ def _cache() -> Path:
 
 def test_plugin_listar_por_grupo(inst: Instalacao, capsys) -> None:
     comando = f"{PACOTE_MOTOR} plugin atualizar {PLUGIN_A}"
-    novidade = Novidade(PLUGIN_A, COMMIT_A[:7], "1.2.0", comando)
+    novidade = Novidade(PLUGIN_A, A_CURTO, VERSAO_A_NOVA, comando)
     gravar_cache(_cache(), Cache(datetime.now(UTC), (novidade,)))
 
     main([COMANDO_PLUGIN, AcaoPlugin.LISTAR])
 
     assert capsys.readouterr().out == (
         "esquemas\n"
-        f"  padrao: {PACOTE_MOTOR} 0.2.0, embutido\n"
+        f"  padrao: {PACOTE_MOTOR} {VERSAO_MOTOR}, embutido\n"
         "tarefas\n"
-        f"  extra: {PLUGIN_A} 1.0.0, git {URL_A}@{COMMIT_A[:7]} → 1.2.0\n"
-        f"  publicado: {PUBLICADO} 0.1.0, índice\n"
+        f"  extra: {PLUGIN_A} {VERSAO_A}, git {URL_A}@{A_CURTO} → {VERSAO_A_NOVA}\n"
+        f"  publicado: {PUBLICADO} {VERSAO_PUBLICADO}, índice\n"
     )
 
 
 def test_plugin_instalar_url_git_preserva_resto(inst: Instalacao, capsys) -> None:
-    inst.remotos[URL_B_UV] = _remoto(tags=("v1.0.0", "v1.2.0"))
+    inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B_VELHA, TAG_B))
     _cache().parent.mkdir(parents=True)
     _cache().write_text("{}")
     a_fixado = Requisito(PLUGIN_A, git=URL_A, ref=COMMIT_A)
-    b = Requisito(PLUGIN_B, git=URL_B_UV, ref="v1.2.0")
+    b = Requisito(PLUGIN_B, git=URL_B_UV, ref=TAG_B)
     inst.registros.append(Registro(MOTOR, (a_fixado, b)))
 
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
@@ -141,13 +161,28 @@ def test_plugin_instalar_url_git_preserva_resto(inst: Instalacao, capsys) -> Non
             "--with",
             f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_A}",
             "--with",
-            f"git+{URL_B_UV}@v1.2.0",
+            f"git+{URL_B_UV}@{TAG_B}",
         ]
     ]
     assert not _cache().exists()
     saida = capsys.readouterr().out
-    assert f"{PLUGIN_B}: instalado (v1.2.0)" in saida
+    assert f"{PLUGIN_B}: instalado ({TAG_B})" in saida
     assert PLUGIN_A not in saida
+
+
+def test_instalar_fixa_plugin_com_nome_grafado_diferente_no_metadado(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git_a = Origem(TipoOrigem.GIT, URL_A, None, COMMIT_A)
+    a = PluginInstalado(
+        GrupoPlugin.TAREFAS, "extra", PLUGIN_A_METADADO, VERSAO_A, git_a
+    )
+    monkeypatch.setattr(cli_instalacao, "plugins_instalados", lambda: [a])
+    inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
+
+    main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
+
+    assert f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_A}" in inst.comandos[0]
 
 
 def test_plugin_instalar_repo_sem_tags_fixa_head(inst: Instalacao) -> None:
@@ -210,7 +245,7 @@ def test_plugin_atualizar_leva_a_versao_nova_e_mantem_o_resto(
         [*INICIO, LINHA_MOTOR, "--with", f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_NOVO}"]
     ]
     saida = capsys.readouterr().out
-    assert f"{PLUGIN_A}: {COMMIT_A[:7]} → {COMMIT_NOVO[:7]}" in saida
+    assert f"{PLUGIN_A}: {A_CURTO} → {NOVO_CURTO}" in saida
     assert f"{PACOTE_MOTOR} serve" in saida
 
 
@@ -221,6 +256,9 @@ def test_plugin_atualizar_leva_a_versao_nova_e_mantem_o_resto(
 def test_atualizar_sem_versao_nova_nao_reinstala(
     inst: Instalacao, capsys, argv: list[str]
 ) -> None:
+    # Pacote do índice não tem checagem: só o pedido explícito o atualiza.
+    publicado = Requisito(PUBLICADO)
+    inst.registros = [Registro(MOTOR, (Requisito(PLUGIN_A, git=URL_A), publicado))]
     inst.remotos[URL_A] = _remoto(head=COMMIT_A)
     inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR,))
 
@@ -249,13 +287,13 @@ def test_atualizar_motor_leva_motor_e_plugins(inst: Instalacao, capsys) -> None:
     ]
     saida = capsys.readouterr().out
     assert f"{PACOTE_MOTOR}: {TAG_MOTOR} → {TAG_MOTOR_NOVA}" in saida
-    assert f"{PLUGIN_A}: {COMMIT_A[:7]} → {COMMIT_NOVO[:7]}" in saida
+    assert f"{PLUGIN_A}: {A_CURTO} → {NOVO_CURTO}" in saida
 
 
 @pytest.mark.parametrize(
     ("registro", "uv", "texto"),
     [
-        (None, UV, "checkout de desenvolvimento"),
+        (None, CAMINHO_UV, "checkout de desenvolvimento"),
         (Registro(MOTOR, ()), None, "https://docs.astral.sh/uv/"),
     ],
 )
