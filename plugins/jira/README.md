@@ -8,7 +8,7 @@ Busca as issues do projeto cuja `fixVersion` é a versão consultada, de todos o
 ## Instalação
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0 --with "monitor-versoes-jira @ git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0#subdirectory=plugins/jira" # x-release-please-version
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.3.0 --with "monitor-versoes-jira @ git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0#subdirectory=plugins/jira" # x-release-please-version
 ```
 
 As tags do núcleo e do plugin devem ser a mesma. Para atualizar, rode o comando de novo com a

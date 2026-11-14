@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.2.0...v0.3.0) (2026-11-14)
+
+
+### Novidades
+
+* daemon dispara as inscrições e a web avisa o resultado ([#193](https://github.com/EduardoBllc/monitor-versoes/issues/193)) ([ec0fec2](https://github.com/EduardoBllc/monitor-versoes/commit/ec0fec24b7a10af633219cb57fca6200f66433a4))
+* gerenciar plugins e atualizar o motor pelo próprio comando ([#192](https://github.com/EduardoBllc/monitor-versoes/issues/192)) ([97cad19](https://github.com/EduardoBllc/monitor-versoes/commit/97cad191e20d4bc2531643f7f60a3e62a3a04e98))
+* plugin de fonte de tarefas do Jira Cloud ([#194](https://github.com/EduardoBllc/monitor-versoes/issues/194)) ([263b3f3](https://github.com/EduardoBllc/monitor-versoes/commit/263b3f3e4a69316fa19a1c033ab906c2e4144e06))
+
 ## [0.2.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.1.0...v0.2.0) (2026-11-13)
 
 
