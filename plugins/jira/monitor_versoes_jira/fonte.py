@@ -17,6 +17,7 @@ from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 _ALFABETO_NUMERICO = "0-9"
 _CAMINHO_BUSCA = "/rest/api/3/search/jql"
+_CAMINHO_EU = "/rest/api/3/myself"
 _POR_PAGINA = 100
 
 
@@ -168,6 +169,9 @@ class FonteJira:
         if status != httpx.codes.OK:
             raise BackendIndisponivel(f"Jira respondeu {status}")
         return resp
+
+    def verificar_credenciais(self) -> None:
+        self._get(_CAMINHO_EU, {}, "de credencial")
 
     def fetch(self, versao: str, /) -> list[str]:
         projeto = self._exigir(ChaveTarefas.PROJETO)

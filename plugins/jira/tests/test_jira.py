@@ -204,3 +204,25 @@ def test_fetch_400_cita_versao_e_projeto() -> None:
     )
     with pytest.raises(ErroDeEntrada, match=r"(?s)(?=.*9\.9)(?=.*ABC)"):
         fonte.fetch("9.9")
+
+
+def test_verificar_credenciais_ok_sem_projeto() -> None:
+    fonte, pedidos = _fonte(
+        [httpx.Response(httpx.codes.OK, json={})], tarefas={ChaveTarefas.URL: URL}
+    )
+    fonte.verificar_credenciais()
+    assert pedidos[0].url.path == "/rest/api/3/myself"
+    assert pedidos[0].headers["Authorization"] == BASIC
+
+
+def test_verificar_credenciais_recusada() -> None:
+    fonte, _ = _fonte([httpx.Response(httpx.codes.UNAUTHORIZED)])
+    with pytest.raises(ErroDeEntrada):
+        fonte.verificar_credenciais()
+
+
+def test_verificar_credenciais_sem_url() -> None:
+    fonte, pedidos = _fonte([], tarefas={})
+    with pytest.raises(ErroDeEntrada):
+        fonte.verificar_credenciais()
+    assert pedidos == []
