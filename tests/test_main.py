@@ -48,6 +48,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.inscricoes import Inscricao
+from motor.novidades import Cache, Novidade
 from motor.plugins import carregar_plugin
 from tests.config_repos import rotulo_secao, secao_repo
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
@@ -1570,3 +1571,125 @@ def test_inscricao_executar_com_repo_ocupado_sai_pulada_sem_notificar(
     capsys.readouterr()
     main(["inscricao", "listar"])
     assert ultima.mensagem in capsys.readouterr().out
+
+
+# -- aviso de versão nova -----------------------------------------------------
+
+
+class _Cmd(StrEnum):
+    DIAGNOSTICO = "diagnostico"
+    INSCRICAO_RODAR = "inscricao rodar"
+    PLUGIN_LISTAR = "plugin listar"
+    ATUALIZAR_MOTOR = "atualizar-motor"
+    VERSAO = "--version"
+
+
+_NOVIDADE_MOTOR = Novidade(
+    "monitor-versoes", "0.2.0", "0.3.0", "monitor-versoes atualizar-motor"
+)
+_LINHA_MOTOR = (
+    "Versão 0.3.0 disponível (você tem 0.2.0): monitor-versoes atualizar-motor"
+)
+
+
+def _preparar_aviso(monkeypatch, checado_em, *, novidades=None):
+    renovacoes: list[int] = []
+    novidades = (_NOVIDADE_MOTOR,) if novidades is None else novidades
+    monkeypatch.setattr(cli, "ler_registro", object)
+    monkeypatch.setattr(cli, "checagem_ligada", lambda: True)
+    monkeypatch.setattr(cli, "ler_cache", lambda _: Cache(checado_em, novidades))
+    monkeypatch.setattr(cli, "disparar_renovacao", lambda: renovacoes.append(1))
+    monkeypatch.setattr(cli, "head", lambda: "rev")
+    monkeypatch.setattr(cli, "diagnosticar", lambda *a, **k: [])
+    return renovacoes
+
+
+def _agora() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
+def test_aviso_de_versao_nova_no_stderr(monkeypatch, capsys):
+    _preparar_aviso(monkeypatch, _agora())
+
+    main([_Cmd.DIAGNOSTICO])
+
+    saida = capsys.readouterr()
+    assert saida.err.rstrip().endswith(_LINHA_MOTOR)
+    assert "disponível" not in saida.out
+
+
+def test_aviso_de_plugin_traz_o_pacote_e_o_comando(monkeypatch, capsys):
+    plugin = Novidade(
+        "meu-plugin", "1.0.0", "1.1.0", "monitor-versoes plugin atualizar meu-plugin"
+    )
+    _preparar_aviso(monkeypatch, _agora(), novidades=(_NOVIDADE_MOTOR, plugin))
+
+    main([_Cmd.DIAGNOSTICO])
+
+    err = capsys.readouterr().err
+    assert _LINHA_MOTOR in err
+    assert "meu-plugin: Versão 1.1.0 disponível (você tem 1.0.0): " in err
+
+
+@pytest.mark.parametrize(
+    "comando",
+    [_Cmd.INSCRICAO_RODAR, _Cmd.PLUGIN_LISTAR, _Cmd.ATUALIZAR_MOTOR, _Cmd.VERSAO],
+)
+def test_sem_aviso_nos_comandos_excluidos(monkeypatch, capsys, comando):
+    renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))
+    monkeypatch.setattr(cli, "_SEM_BANCO", {c: lambda a: None for c in cli._SEM_BANCO})
+    monkeypatch.setattr(cli, "_inscricao", lambda a: None)
+
+    with contextlib.suppress(SystemExit):
+        main(comando.split())
+
+    assert "disponível" not in capsys.readouterr().err
+    assert renovacoes == []
+
+
+@pytest.mark.parametrize("motivo", ["checar_desligado", "fora_do_uv_tool"])
+def test_sem_aviso_sem_checagem_ou_fora_do_uv_tool(monkeypatch, capsys, motivo):
+    renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))
+    if motivo == "checar_desligado":
+        monkeypatch.setattr(cli, "checagem_ligada", lambda: False)
+    else:
+        monkeypatch.setattr(cli, "ler_registro", lambda: None)
+
+    main([_Cmd.DIAGNOSTICO])
+
+    assert "disponível" not in capsys.readouterr().err
+    assert renovacoes == []
+
+
+def test_cache_vencido_dispara_renovacao_sem_esperar(monkeypatch, capsys):
+    renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))
+
+    main([_Cmd.DIAGNOSTICO])
+
+    assert renovacoes == [1]
+    assert _LINHA_MOTOR in capsys.readouterr().err
+
+
+def test_aviso_aparece_tambem_quando_o_comando_falha(monkeypatch, capsys):
+    from motor.diagnostico import Estado, Resultado
+
+    _preparar_aviso(monkeypatch, _agora())
+    monkeypatch.setattr(
+        cli,
+        "diagnosticar",
+        lambda *a, **k: [Resultado(Peca.SQLITE, Estado.FALHA, "x", "y")],
+    )
+
+    with pytest.raises(SystemExit):
+        main([_Cmd.DIAGNOSTICO])
+
+    assert _LINHA_MOTOR in capsys.readouterr().err
+
+
+def test_falha_no_aviso_nao_derruba_o_comando(monkeypatch, capsys):
+    _preparar_aviso(monkeypatch, _agora())
+    monkeypatch.setattr(cli, "ler_cache", lambda _: 1 / 0)
+
+    main([_Cmd.DIAGNOSTICO])
+
+    assert "disponível" not in capsys.readouterr().err

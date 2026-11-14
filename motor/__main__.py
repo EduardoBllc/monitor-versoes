@@ -41,7 +41,9 @@ from motor.config import (
     caminho_config_global,
     carregar_config_global,
     carregar_config_repo,
+    checagem_ligada,
     checar_backend,
+    diretorio_cache,
     repos_configurados,
     validar_nome_repo,
 )
@@ -84,6 +86,7 @@ from motor.inscricoes import (
     remover,
     rodar,
 )
+from motor.instalacao import PACOTE_MOTOR, ler_registro
 from motor.migracoes import head, migrar
 from motor.montagem import (
     FonteTasks,
@@ -91,6 +94,7 @@ from motor.montagem import (
     montar_deps,
     montar_notificador,
 )
+from motor.novidades import ARQUIVO_CACHE, disparar_renovacao, ler_cache, vencido
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.trava import Trava, travar
 
@@ -805,6 +809,37 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
             )
 
 
+_SEM_AVISO = frozenset(
+    {
+        "serve",
+        "tui",
+        "inscricao",
+        cli_instalacao.COMANDO_PLUGIN,
+        cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
+    }
+)
+
+
+def _avisar_versao_nova(args: argparse.Namespace) -> None:
+    """Uma linha no stderr por versão nova; lê o cache e nunca espera a checagem."""
+    try:
+        if args.comando in _SEM_AVISO or ler_registro() is None:
+            return
+        if not checagem_ligada():
+            return
+        cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
+        if vencido(cache, datetime.now(UTC)):
+            disparar_renovacao()
+        for n in cache.novidades if cache else ():
+            prefixo = "" if n.pacote == PACOTE_MOTOR else f"{n.pacote}: "
+            print(
+                f"{prefixo}Versão {n.nova} disponível (você tem {n.atual}): {n.comando}",
+                file=sys.stderr,
+            )
+    except Exception:  # o aviso nunca derruba um comando
+        pass
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     # ponytail: --version não depende do ambiente; só a forma isolada, que é a usada.
@@ -833,45 +868,50 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
-        if args.comando in ("serve", "tui"):
-            # Os dois abrem o estado só depois de subir; a config antiga tem de
-            # parar antes de abrir a porta ou montar a tela.
-            checar_backend()
+        try:
+            if args.comando in ("serve", "tui"):
+                # Os dois abrem o estado só depois de subir; a config antiga tem de
+                # parar antes de abrir a porta ou montar a tela.
+                checar_backend()
 
-        if args.comando == "serve":
-            _iniciar_serve(args.porta)
-            return
+            if args.comando == "serve":
+                _iniciar_serve(args.porta)
+                return
 
-        if args.comando == "tui":
-            _iniciar_tui()
-            return
+            if args.comando == "tui":
+                _iniciar_tui()
+                return
 
-        if args.comando in _SEM_BANCO:
-            _SEM_BANCO[args.comando](args)
-            return
+            if args.comando in _SEM_BANCO:
+                _SEM_BANCO[args.comando](args)
+                return
 
-        # A trava antes da sessão e do montar_deps (que já roda git no clone):
-        # a recusa sai antes de tocar no clone e no banco.
-        with _trava_do_comando(args), abrir_sessao() as sessao:
-            relator = _relator_do_cli(desligado=getattr(args, "sem_progresso", False))
-            deps = montar_deps(
-                args.repo,
-                sessao,
-                tasks=FonteTasks(args.fonte_flag, args.lista_manual),
-                progresso=relator,
-            )
-            try:
-                _despachar(args, deps)
-            finally:
-                # No finally: erro no meio do comando tambem tem de limpar a
-                # linha, senao a mensagem de erro sai colada na barra.
-                _limpar_progresso(relator)
-    except MotorError as e:
-        logging.error(formatar_com_notas(e))
-        sys.exit(1)
-    except Exception:
-        logging.exception("Erro interno fatal (bug). Traceback completo:")
-        sys.exit(1)
+            # A trava antes da sessão e do montar_deps (que já roda git no clone):
+            # a recusa sai antes de tocar no clone e no banco.
+            with _trava_do_comando(args), abrir_sessao() as sessao:
+                relator = _relator_do_cli(
+                    desligado=getattr(args, "sem_progresso", False)
+                )
+                deps = montar_deps(
+                    args.repo,
+                    sessao,
+                    tasks=FonteTasks(args.fonte_flag, args.lista_manual),
+                    progresso=relator,
+                )
+                try:
+                    _despachar(args, deps)
+                finally:
+                    # No finally: erro no meio do comando tambem tem de limpar a
+                    # linha, senao a mensagem de erro sai colada na barra.
+                    _limpar_progresso(relator)
+        except MotorError as e:
+            logging.error(formatar_com_notas(e))
+            sys.exit(1)
+        except Exception:
+            logging.exception("Erro interno fatal (bug). Traceback completo:")
+            sys.exit(1)
+    finally:
+        _avisar_versao_nova(args)
 
 
 def main_inscricoes() -> None:
