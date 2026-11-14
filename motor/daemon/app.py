@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import nullcontext
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
@@ -38,7 +38,7 @@ from motor.engine.conflito import ConflitoAberto, ConteudoDoConflito
 from motor.engine.consultar import ChamadoConsultado
 from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
-from motor.instalacao import PluginInstalado, plugins_instalados
+from motor.instalacao import PluginInstalado, normalizar, plugins_instalados
 from motor.novidades import novidades_para_exibir, texto_aviso
 from motor.operacoes import (
     PedidoProposta,
@@ -453,10 +453,18 @@ def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
 
     @app.get("/api/instalacao")
     def ler_instalacao() -> Instalacao:
+        plugins = plugins_instalados()
+        # A novidade vem com o nome do registro do uv; a web casa pelo do METADATA.
+        grafia = {normalizar(p.pacote): p.pacote for p in plugins}
         return Instalacao(
-            plugins_instalados(),
+            plugins,
             [
-                NovidadeVista(**asdict(n), texto=texto_aviso(n))
+                NovidadeVista(
+                    **asdict(
+                        replace(n, pacote=grafia.get(normalizar(n.pacote), n.pacote))
+                    ),
+                    texto=texto_aviso(n),
+                )
                 for n in novidades_para_exibir()
             ],
         )

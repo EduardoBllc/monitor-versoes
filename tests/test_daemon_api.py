@@ -1033,6 +1033,23 @@ def test_api_instalacao(cliente: TestClient, monkeypatch: pytest.MonkeyPatch) ->
     assert renovacoes == []
 
 
+def test_api_instalacao_casa_novidade_pela_grafia_do_metadado(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _preparar_instalacao(monkeypatch, datetime.datetime.now(datetime.UTC))
+    no_registro = _PLUGIN.pacote.replace("-", "_").upper()
+    novidade = replace(_NOVIDADE, pacote=no_registro)
+    monkeypatch.setattr(
+        modulo_novidades,
+        "ler_cache",
+        lambda _: Cache(datetime.datetime.now(datetime.UTC), (novidade,)),
+    )
+
+    corpo = cliente.get("/api/instalacao").json()
+
+    assert [n["pacote"] for n in corpo["novidades"]] == [_PLUGIN.pacote]
+
+
 def test_api_instalacao_com_cache_vencido_dispara_renovacao(
     cliente: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
