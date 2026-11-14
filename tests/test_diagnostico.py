@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -33,6 +34,7 @@ from motor.diagnostico import (
 )
 from motor.errors import ErroDeEntrada
 from motor.migracoes import head
+from motor.novidades import Cache, Novidade
 from tests.config_repos import secao_repo
 
 HEAD = "rev2"
@@ -95,6 +97,7 @@ def _rodar(
     config_central=_sem_fonte,
     repos=dict,
     erro_ambiente=None,
+    novidades=lambda: None,
 ):
     resultados = diagnosticar(
         ENV_OK if env is None else env,
@@ -105,6 +108,7 @@ def _rodar(
         repos=repos,
         config_em=CONFIG_EM,
         erro_ambiente=erro_ambiente,
+        novidades=novidades,
     )
     return {r.peca: r for r in resultados}, resultados
 
@@ -129,6 +133,7 @@ def test_instalacao_integra():
         Peca.REPOS,
         Peca.TAREFAS,
         Peca.PRS,
+        Peca.VERSAO,
     ]
     assert por_peca[Peca.TAREFAS].estado is Estado.NAO_CONFIGURADO
     assert por_peca[Peca.PRS].estado is Estado.NAO_CONFIGURADO
@@ -429,6 +434,7 @@ def test_config_central_invalida_falha_so_nas_linhas_de_plugin():
         Peca.TAREFAS,
         Peca.PRS,
         Peca.SUGESTAO,
+        Peca.VERSAO,
     ]
     outras = [r for r in resultados if r.peca not in PLUGINS]
     assert all(r.estado is not Estado.FALHA for r in outras)
@@ -659,3 +665,29 @@ def test_peca_repo_sem_nome_e_erro_de_entrada(tmp_path, repo):
             onde=ONDE,
             repo=repo,
         )
+
+
+_CHECADO_EM = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
+_NOVIDADE = Novidade("pacote-x", "1.0.0", "1.1.0", "uv tool upgrade pacote-x")
+
+
+@pytest.mark.parametrize(
+    ("cache", "estado", "no_detalhe", "na_correcao"),
+    [
+        (None, Estado.NAO_VERIFICADA, "", ""),
+        (Cache(_CHECADO_EM, ()), Estado.OK, "em dia (checado em ", ""),
+        (
+            Cache(_CHECADO_EM, (_NOVIDADE,)),
+            Estado.AVISO,
+            "pacote-x 1.0.0 → 1.1.0",
+            _NOVIDADE.comando,
+        ),
+    ],
+)
+def test_peca_versao(cache, estado, no_detalhe, na_correcao):
+    por_peca, resultados = _rodar(novidades=lambda: cache)
+    versao = por_peca[Peca.VERSAO]
+    assert versao.estado is estado
+    assert no_detalhe in versao.detalhe
+    assert na_correcao in versao.correcao
+    assert not falhou(resultados)

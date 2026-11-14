@@ -94,7 +94,7 @@ from motor.montagem import (
     montar_deps,
     montar_notificador,
 )
-from motor.novidades import ARQUIVO_CACHE, disparar_renovacao, ler_cache, vencido
+from motor.novidades import ARQUIVO_CACHE, Cache, disparar_renovacao, ler_cache, vencido
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.trava import Trava, travar
 
@@ -195,6 +195,7 @@ def _diagnostico(args: argparse.Namespace) -> None:
         repos=repos_configurados,
         config_em=caminho_config_global(),
         erro_ambiente=args.erro_central,
+        novidades=_novidades_do_cache,
     )
     for resultado in resultados:
         print(formatar(resultado))
@@ -827,16 +828,23 @@ _SEM_AVISO = frozenset(
 )
 
 
+def _novidades_do_cache() -> Cache | None:
+    """O cache de versões; `None` com a checagem desligada ou fora de um `uv tool`.
+    Cache vencido dispara a renovação em segundo plano, sem esperar."""
+    if ler_registro() is None or not checagem_ligada():
+        return None
+    cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
+    if vencido(cache, datetime.now(UTC)):
+        disparar_renovacao()
+    return cache
+
+
 def _avisar_versao_nova(args: argparse.Namespace) -> None:
     """Uma linha no stderr por versão nova; lê o cache e nunca espera a checagem."""
     try:
-        if args.comando in _SEM_AVISO or ler_registro() is None:
+        if args.comando in _SEM_AVISO:
             return
-        if not checagem_ligada():
-            return
-        cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
-        if vencido(cache, datetime.now(UTC)):
-            disparar_renovacao()
+        cache = _novidades_do_cache()
         for n in cache.novidades if cache else ():
             prefixo = "" if n.pacote == PACOTE_MOTOR else f"{n.pacote}: "
             print(
