@@ -17,13 +17,11 @@ _EXCLUIDOS_PREMISSAS = (_VERSIONS,)
 
 _NOMES = re.compile(r"tickio|vendabem", re.I)
 # Precisam nomear o que saiu: o histórico de migrações (não se reescreve), os
-# testes da migração que derruba as colunas, o dos argumentos recusados e este
-# próprio teste.
+# testes da migração que derruba as colunas e este próprio teste.
 _EXCLUIDOS_NOMES = (
     _VERSIONS,
     _TESTES / "test_migracoes_sqlite.py",
     _TESTES / "test_estado_sqlite.py",
-    _TESTES / "test_argumentos_removidos.py",
     _TESTES / "test_nucleo_neutro.py",
 )
 _ARQUIVOS_AVULSOS = (
