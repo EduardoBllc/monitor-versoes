@@ -107,7 +107,7 @@ function PluginsInstalados({ secao }: { secao: Secao }) {
         Plugins instalados
       </Text>
       {plugins.map(({ plugin, nova }) => (
-        <Text key={plugin.pacote} size="sm">
+        <Text key={`${plugin.grupo}:${plugin.nome}`} size="sm">
           {plugin.nome}: {plugin.pacote} {plugin.versao}
           {nova !== null && (
             <Text span c="orange">
