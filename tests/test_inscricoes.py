@@ -341,6 +341,7 @@ def test_disparar_subprocesso_monta_o_comando(
     assert "cwd" not in visto
     assert visto["env"] == ambiente
     assert visto["timeout"] == LIMITE_EXECUCAO_S
+    assert visto["start_new_session"] is True
 
 
 @pytest.mark.parametrize(

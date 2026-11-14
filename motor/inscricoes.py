@@ -289,6 +289,8 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
             check=False,
             env=dict(env),
             timeout=LIMITE_EXECUCAO_S,
+            # Sessão própria: o Ctrl+C no terminal do `serve` não mata o filho.
+            start_new_session=True,
         ).returncode
     except subprocess.TimeoutExpired:
         return TEMPO_ESGOTADO

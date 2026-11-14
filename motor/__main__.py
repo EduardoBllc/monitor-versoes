@@ -14,11 +14,10 @@ import os
 import sys
 import textwrap
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from enum import StrEnum
-from functools import partial
 from pathlib import Path
 from typing import TextIO
 
@@ -45,6 +44,7 @@ from motor.config import (
     validar_nome_repo,
 )
 from motor.daemon import PORTA_PADRAO
+from motor.daemon.disparo import rodada
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
@@ -75,13 +75,11 @@ from motor.inscricoes import (
     Inscricao,
     caminho_arquivo,
     carregar,
-    disparar_subprocesso,
     formatar_intervalo,
     inscrever,
     parse_intervalo,
     registrar_execucao,
     remover,
-    rodar,
 )
 from motor.migracoes import head, migrar
 from motor.montagem import (
@@ -304,12 +302,7 @@ def _inscricao(args: argparse.Namespace) -> None:
         case AcaoInscricao.AGENDAR:
             _inscricao_agendar(args)
         case AcaoInscricao.RODAR:
-            rodar(
-                caminho_arquivo(),
-                datetime.now(UTC),
-                partial(disparar_subprocesso, env=dict(os.environ)),
-                montar_notificador(),
-            )
+            rodada(os.environ)
         case AcaoInscricao.EXECUTAR:
             _inscricao_executar(args)
 
@@ -500,10 +493,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_serve(porta: int) -> None:
+def _iniciar_serve(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
     from motor.daemon.app import servir
 
-    servir(porta)
+    servir(porta, ambiente_filhos)
 
 
 def _iniciar_tui() -> None:
@@ -802,6 +795,8 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # Antes do `.env` do cwd: os filhos do daemon reaplicam só o central (031).
+    ambiente_filhos = dict(os.environ)
     # ponytail: --version não depende do ambiente; só a forma isolada, que é a usada.
     if argv[:1] == ["--version"]:
         _build_parser().parse_args(argv)
@@ -834,7 +829,7 @@ def main(argv: list[str] | None = None) -> None:
             checar_backend()
 
         if args.comando == "serve":
-            _iniciar_serve(args.porta)
+            _iniciar_serve(args.porta, ambiente_filhos)
             return
 
         if args.comando == "tui":

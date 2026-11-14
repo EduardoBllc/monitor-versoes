@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
-from contextlib import nullcontext
+import threading
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+from functools import partial
 from http import HTTPStatus
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from motor import inscricoes as arquivo
 from motor.config import SECAO_REPOS
 from motor.config_edicao import Alteracao, ConfigEditavel, gravar, ler_para_edicao
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
+from motor.daemon.disparo import INTERVALO_DISPARO_S, laco, rodada
 from motor.daemon.erros import (
     MENSAGEM_INTERNA,
     ConfigOcupada,
@@ -449,15 +452,34 @@ def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:
         return FileResponse(raiz / "index.html")
 
 
-def criar_app(
+def criar_app(  # noqa: PLR0913
     fabrica: Callable[[RelatorProgresso], Runners],
     *,
     porta: int,
     estaticos: Path,
     inscricoes_em: Path,
     versionamento_repo: VersionamentoLoader = versionamento_do_repo,
+    disparar_inscricoes: Callable[[], None] | None = None,
 ) -> FastAPI:
-    app = FastAPI()
+    @asynccontextmanager
+    async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
+        if disparar_inscricoes is None:
+            yield
+            return
+        parar = threading.Event()
+        app.state.disparo = threading.Thread(
+            target=laco,
+            args=(parar, disparar_inscricoes, INTERVALO_DISPARO_S),
+            daemon=True,
+        )
+        app.state.disparo.start()
+        try:
+            yield
+        finally:
+            # Sem join: o filho em curso pode durar até o limite de 1h.
+            parar.set()
+
+    app = FastAPI(lifespan=ciclo_de_vida)
     ctx = _Contexto(fabrica, versionamento_repo, inscricoes_em)
     app.state.execucoes = ctx.execucoes  # gancho dos testes
     proteger(app, porta)
@@ -512,7 +534,7 @@ def _rodar(app: FastAPI, porta: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=porta)
 
 
-def servir(porta: int) -> None:
+def servir(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
     import socket
 
     with socket.socket() as sonda:
@@ -528,5 +550,6 @@ def servir(porta: int) -> None:
         porta=porta,
         estaticos=PASTA_ESTATICOS,
         inscricoes_em=arquivo.caminho_arquivo(),
+        disparar_inscricoes=partial(rodada, ambiente_filhos),
     )
     _rodar(app, porta)

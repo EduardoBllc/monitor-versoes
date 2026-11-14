@@ -25,6 +25,7 @@ import dotenv
 import pytest
 
 import motor.__main__ as cli
+import motor.daemon.disparo as disparo
 import motor.montagem as montagem
 from motor.__main__ import (
     _build_parser,
@@ -1232,7 +1233,7 @@ def test_executavel_sem_console_roda_as_inscricoes_sem_stdout_nem_stderr(
         "gui-scripts"
     ].values()
     vistos: list[Any] = []
-    monkeypatch.setattr(cli, "rodar", lambda *a: vistos.append(a))
+    monkeypatch.setattr(disparo, "rodar", lambda *a: vistos.append(a))
     monkeypatch.setattr(sys, "stdout", None)
     monkeypatch.setattr(sys, "stderr", None)
     pkgutil.resolve_name(alvo)()
@@ -1250,9 +1251,9 @@ def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp
     monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
     visto: dict[str, Any] = {}
     monkeypatch.setattr(
-        cli, "rodar", lambda c, a, disparar, n: visto.update(d=disparar)
+        disparo, "rodar", lambda c, a, disparar, n: visto.update(d=disparar)
     )
-    monkeypatch.setattr(cli, "montar_notificador", lambda: None)
+    monkeypatch.setattr(disparo, "montar_notificador", lambda: None)
     main(["inscricao", "rodar"])
     assert chave not in os.environ
     capturado: dict[str, Any] = {}
@@ -1393,8 +1394,32 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
             cliente.recv(1)
     rodou = []
     monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
-    daemon_app.servir(porta)
+    daemon_app.servir(porta, {})
     assert rodou == [porta]
+
+
+VAR_DO_DOTENV = "MONITOR_TESTE_VAR_DO_DOTENV"
+VALOR_DO_DOTENV = "do-dotenv"
+
+
+def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
+    from dotenv import load_dotenv
+
+    import motor.daemon.app as daemon_app
+
+    (tmp_path / ".env").write_text(f"{VAR_DO_DOTENV}={VALOR_DO_DOTENV}\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(VAR_DO_DOTENV, "")
+    monkeypatch.setattr(cli, "load_dotenv", load_dotenv)
+    monkeypatch.setattr(cli, "checar_backend", lambda: None)
+    vistos = []
+    monkeypatch.setattr(
+        daemon_app, "servir", lambda porta, ambiente: vistos.append(ambiente)
+    )
+
+    main(["serve"])
+
+    assert vistos[0][VAR_DO_DOTENV] != VALOR_DO_DOTENV
 
 
 # -- configuração antiga do Postgres ------------------------------------------
