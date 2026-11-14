@@ -399,6 +399,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instalacao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ler Instalacao */
+        get: operations["ler_instalacao_api_instalacao_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -652,6 +669,13 @@ export interface components {
             intervalo: string;
             ultima: components["schemas"]["UltimaExecucao"] | null;
         };
+        /** Instalacao */
+        Instalacao: {
+            /** Plugins */
+            plugins: components["schemas"]["PluginInstalado"][];
+            /** Novidades */
+            novidades: components["schemas"]["NovidadeVista"][];
+        };
         /**
          * JulgamentoOrfao
          * @description Julgamento humano de um commit órfão (sem referência de tarefa) de uma
@@ -679,6 +703,19 @@ export interface components {
              */
             motivo: string;
         };
+        /** NovidadeVista */
+        NovidadeVista: {
+            /** Pacote */
+            pacote: string;
+            /** Atual */
+            atual: string;
+            /** Nova */
+            nova: string;
+            /** Comando */
+            comando: string;
+            /** Texto */
+            texto: string;
+        };
         /** NumeroVersao */
         NumeroVersao: {
             /** Numero */
@@ -701,6 +738,16 @@ export interface components {
              */
             data: string;
             julgamento: components["schemas"]["JulgamentoOrfao"] | null;
+        };
+        /** Origem */
+        Origem: {
+            tipo: components["schemas"]["TipoOrigem"];
+            /** Url */
+            url?: string | null;
+            /** Ref */
+            ref?: string | null;
+            /** Commit */
+            commit?: string | null;
         };
         /**
          * PecaTestavel
@@ -782,6 +829,17 @@ export interface components {
             /** Auditar */
             auditar: boolean;
         };
+        /** PluginInstalado */
+        PluginInstalado: {
+            grupo: components["schemas"]["GrupoPlugin"];
+            /** Nome */
+            nome: string;
+            /** Pacote */
+            pacote: string;
+            /** Versao */
+            versao: string;
+            origem: components["schemas"]["Origem"];
+        };
         /**
          * Progresso
          * @description Onde o comando esta agora.
@@ -860,6 +918,11 @@ export interface components {
          * @enum {string}
          */
         TipoErro: "entrada" | "nao_encontrado" | "recusa" | "backend" | "resposta" | "motor" | "ocupado" | "desatualizado" | "interno";
+        /**
+         * TipoOrigem
+         * @enum {string}
+         */
+        TipoOrigem: "git" | "índice" | "embutido" | "local";
         /** UltimaExecucao */
         UltimaExecucao: {
             /**
@@ -1812,6 +1875,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ler_instalacao_api_instalacao_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Instalacao"];
                 };
             };
         };

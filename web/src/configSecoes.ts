@@ -48,7 +48,7 @@ const ESCOLHE: Record<GrupoPlugin, TabelaChave> = {
   [GrupoPlugin.SUGESTAO]: [Tabela.SUGESTAO, Chave.PROVEDOR],
 };
 
-const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
+export const SECAO_DO_GRUPO: Record<GrupoPlugin, Secao> = {
   [GrupoPlugin.TAREFAS]: Secao.TAREFAS,
   [GrupoPlugin.PRS]: Secao.PRS,
   [GrupoPlugin.ESQUEMAS]: Secao.VERSOES,
