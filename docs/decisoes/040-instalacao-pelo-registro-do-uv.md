@@ -17,10 +17,12 @@ instalou à mão entra nos comandos sem migrar nada.
 **Toda origem fica fixada numa tag ou num commit.** Qualquer ação reinstala o ambiente
 inteiro, e uma origem que aponta para uma branch puxaria a versão nova daquele plugin sem
 pedido. Fixada, instalar o plugin B não muda o A. A origem ainda solta, de instalações
-antigas, é fixada no commit já instalado. A exceção é o motor no `atualizar-motor`, que vai
-para a release mais nova. Um plugin publicado por nome só reinstala com
-`plugin atualizar <pacote>`: no índice não há como saber se mudou, e contá-lo em toda
-atualização em lote impediria o "tudo em dia".
+antigas, é fixada no commit já instalado na próxima ação que de fato reinstala: um "tudo em
+dia" não reinstala nada e a deixa como está. Só uma versão nova move uma origem, inclusive a
+do motor no `atualizar-motor`. Um commit à frente da última tag conta pela versão do pacote
+e não volta para a tag, então atualizar nunca rebaixa. Um plugin publicado por nome só
+reinstala com `plugin atualizar <pacote>`: no índice não há como saber se mudou, e contá-lo
+em toda atualização em lote impediria o "tudo em dia".
 
 **A checagem de versão nova roda fora do caminho do comando, com cache.** Um `git ls-remote`
 por origem custa rede a cada comando. O resultado fica num cache em arquivo de 24 h, e um

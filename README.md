@@ -55,20 +55,24 @@ uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc
 ```
 
 Plugins e atualizações passam pelo próprio motor. Um plugin vem por nome publicado ou por URL
-git (`https://…` ou `git@…`, inclusive de repositório privado, com a sua credencial):
+git (`https://…` ou `git@…`, inclusive de repositório privado, com a sua credencial), com
+`@<ref>` opcional no fim para uma tag ou um commit; caminho local não é aceito:
 
 ```bash
 monitor-versoes plugin instalar https://github.com/voce/meu-plugin.git
 monitor-versoes plugin listar                # por grupo: pacote, versão, origem e versão nova
 monitor-versoes plugin atualizar [<pacote>]  # sem pacote, todos os de fora
 monitor-versoes plugin remover <pacote>      # o pacote, como o `plugin listar` mostra
-monitor-versoes atualizar-motor              # motor na release mais nova, com os plugins
+monitor-versoes atualizar-motor              # motor e plugins na versão mais nova, se houver
 ```
 
 O plugin por git vai para a tag `v*` mais nova ou, num repo sem tags, para o último commit
 da branch padrão. Cada comando preserva o extra e os outros plugins, parte do que o
-`uv tool` registrou (inclusive uma instalação feita à mão com `--with`) e deixa toda origem
-git fixada numa tag ou num commit: nada muda de versão sem pedido. No fim, ele diz o que
+`uv tool` registrou (inclusive uma instalação feita à mão com `--with`) e, ao reinstalar,
+fixa cada origem git numa tag ou num commit: nada muda de versão sem pedido. Uma origem
+ainda solta, de instalação antiga, é fixada na próxima reinstalação; "tudo em dia" não
+reinstala. Um commit à frente da última tag conta pela versão do pacote e não volta para a
+tag: atualizar nunca rebaixa. No fim, ele diz o que
 mudou; se o `monitor-versoes serve` estiver rodando, reinicie-o. As mudanças de cada versão
 estão no [CHANGELOG.md](CHANGELOG.md).
 
