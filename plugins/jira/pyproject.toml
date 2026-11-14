@@ -1,0 +1,19 @@
+[project]
+name = "monitor-versoes-jira"
+version = "0.1.0"
+description = "Fonte de tarefas do monitor-versoes para o Jira Cloud"
+requires-python = ">=3.14"
+dependencies = ["monitor-versoes", "httpx"]
+
+[project.entry-points."monitor_versoes.tarefas"]
+jira = "monitor_versoes_jira:FonteJira"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["monitor_versoes_jira*"]
+
+[tool.uv.sources]
+monitor-versoes = { workspace = true }

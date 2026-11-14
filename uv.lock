@@ -6,6 +6,12 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "monitor-versoes",
+    "monitor-versoes-jira",
+]
+
 [[package]]
 name = "alembic"
 version = "1.19.0"
@@ -664,6 +670,7 @@ anthropic = [
 ]
 dev = [
     { name = "httpx2" },
+    { name = "monitor-versoes-jira" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -678,6 +685,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "httpx" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.16.0" },
+    { name = "monitor-versoes-jira", marker = "extra == 'dev'", editable = "plugins/jira" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.7.0" },
     { name = "pytest", marker = "extra == 'dev'" },
@@ -689,6 +697,21 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 provides-extras = ["dev", "anthropic"]
+
+[[package]]
+name = "monitor-versoes-jira"
+version = "0.1.0"
+source = { editable = "plugins/jira" }
+dependencies = [
+    { name = "httpx" },
+    { name = "monitor-versoes" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx" },
+    { name = "monitor-versoes", editable = "." },
+]
 
 [[package]]
 name = "mypy"
