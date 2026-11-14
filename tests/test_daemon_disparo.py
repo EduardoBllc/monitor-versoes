@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from motor.daemon.app import criar_app
-from motor.daemon.disparo import laco
+from motor.daemon.disparo import laco, ligar_disparo
 from motor.domain.types import VersionStatus
 from motor.errors import RespostaInvalida
 from motor.operacoes import Runners
@@ -24,8 +24,8 @@ def test_daemon_dispara_inscricoes_enquanto_de_pe(tmp_path: Path) -> None:
         porta=PORTA,
         estaticos=tmp_path,
         inscricoes_em=tmp_path / "inscricoes.json",
-        disparar_inscricoes=disparou.set,
     )
+    ligar_disparo(app, disparou.set)
 
     with TestClient(app, base_url=f"http://127.0.0.1:{PORTA}"):
         assert disparou.wait(TIMEOUT_S)

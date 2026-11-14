@@ -18,9 +18,11 @@ from motor.errors import ErroDeEntrada, RespostaInvalida
 from motor.inscricoes import (
     ARQUIVO_INSCRICOES,
     CAMPO_CLONE_ANTIGO,
+    FLAGS_DE_CRIACAO,
     LIMITE_EXECUCAO_S,
     MENSAGEM_SEM_RESULTADO,
     MENSAGEM_TEMPO_ESGOTADO,
+    NOVA_SESSAO,
     PREFIXO_TITULO,
     SEM_PROCESSO,
     TEMPO_ESGOTADO,
@@ -341,7 +343,8 @@ def test_disparar_subprocesso_monta_o_comando(
     assert "cwd" not in visto
     assert visto["env"] == ambiente
     assert visto["timeout"] == LIMITE_EXECUCAO_S
-    assert visto["start_new_session"] is True
+    assert visto["start_new_session"] == NOVA_SESSAO
+    assert visto["creationflags"] == FLAGS_DE_CRIACAO
 
 
 @pytest.mark.parametrize(

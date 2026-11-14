@@ -15,6 +15,9 @@ agendador do SO: o objetivo é não haver nada a configurar além de subir o dae
 - **O filho não herda o `.env` do `serve`.** O daemon repassa o ambiente capturado antes de
   aplicar o `.env` do diretório, e o filho reaplica sozinho o `[ambiente]` central
   ([031](031-ambiente-na-config-central.md)).
+- **Uma inscrição longa atrasa as outras da mesma rodada**: a rodada é sequencial, como era
+  no timer do SO, que também não sobrepunha execuções. O filho que sobra quando o `serve`
+  sai segue vivo e deixa de ser morto pelo timeout de 1 h.
 - **Quem não usa o daemon agenda o `inscricao rodar` à mão**, pelo agendador que preferir.
 - **Usar os dois, ou dois `serve` em portas diferentes, dobra o disparo.** Não há corrupção: a
   segunda execução sai `pulada` pelo lock do clone

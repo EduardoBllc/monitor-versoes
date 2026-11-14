@@ -1403,14 +1403,12 @@ VALOR_DO_DOTENV = "do-dotenv"
 
 
 def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
-    from dotenv import load_dotenv
-
     import motor.daemon.app as daemon_app
 
     (tmp_path / ".env").write_text(f"{VAR_DO_DOTENV}={VALOR_DO_DOTENV}\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(VAR_DO_DOTENV, "")
-    monkeypatch.setattr(cli, "load_dotenv", load_dotenv)
+    monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
     monkeypatch.setattr(cli, "checar_backend", lambda: None)
     vistos = []
     monkeypatch.setattr(
@@ -1419,7 +1417,8 @@ def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
 
     main(["serve"])
 
-    assert vistos[0][VAR_DO_DOTENV] != VALOR_DO_DOTENV
+    (ambiente,) = vistos
+    assert ambiente[VAR_DO_DOTENV] != VALOR_DO_DOTENV
 
 
 # -- configuração antiga do Postgres ------------------------------------------
