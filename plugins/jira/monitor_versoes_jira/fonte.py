@@ -102,10 +102,7 @@ class FonteJira:
             tabela = (
                 Tabela.TAREFAS if isinstance(chave, ChaveTarefas) else TABELA_AMBIENTE
             )
-            raise ErroDeEntrada(
-                f'[tarefas] fonte = "jira" sem [{tabela}] {chave}: defina-a no '
-                f"config.toml (config lida: {lida})"
-            )
+            raise ErroDeEntrada(f"faltando [{tabela}] {chave} (config lida: {lida})")
         return valor
 
     @property

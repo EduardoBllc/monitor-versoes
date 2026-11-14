@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import httpx
 import pytest
 from monitor_versoes_jira import FonteJira
@@ -37,7 +39,7 @@ def test_referencia_usa_o_projeto() -> None:
 
 
 def test_referencia_sem_projeto_pede_a_chave() -> None:
-    with pytest.raises(ErroDeEntrada):
+    with pytest.raises(ErroDeEntrada, match=re.escape("[tarefas] projeto")):
         _ = FonteJira(tarefas={}, arquivos=("a.toml",)).referencia
 
 
