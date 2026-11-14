@@ -8,11 +8,11 @@ Busca as issues do projeto cuja `fixVersion` é a versão consultada, de todos o
 ## Instalação
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes \
-  --with "monitor-versoes-jira @ git+https://github.com/EduardoBllc/monitor-versoes#subdirectory=plugins/jira"
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0 --with "monitor-versoes-jira @ git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0#subdirectory=plugins/jira" # x-release-please-version
 ```
 
-Sobre fixar tag e atualizar, veja "Instalação" no [README principal](../../README.md).
+As tags do núcleo e do plugin devem ser a mesma. Para atualizar, rode o comando de novo com a
+nova tag nas duas URLs (veja "Instalação" no [README principal](../../README.md)).
 
 ## Configuração
 

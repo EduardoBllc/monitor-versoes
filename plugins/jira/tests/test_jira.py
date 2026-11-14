@@ -3,13 +3,14 @@ from __future__ import annotations
 import base64
 import re
 from collections.abc import Callable
+from enum import StrEnum
 
 import httpx
 import pytest
 from monitor_versoes_jira import FonteJira
 from monitor_versoes_jira.fonte import ChaveTarefas, VarJira
 
-from motor.config import TABELA_AMBIENTE, Tabela
+from motor.config import TABELA_AMBIENTE, Chave, Tabela
 from motor.config_edicao import catalogo_campos
 from motor.domain.commits import extrair_chamado
 from motor.domain.referencia import Referencia
@@ -21,8 +22,12 @@ from motor.ports import TaskSource
 _: type[TaskSource] = FonteJira
 
 
+class _Plugin(StrEnum):
+    JIRA = "jira"
+
+
 def test_entry_point_jira_carrega_a_fonte() -> None:
-    assert carregar_plugin(GRUPO_TAREFAS, "jira") is FonteJira
+    assert carregar_plugin(GRUPO_TAREFAS, _Plugin.JIRA) is FonteJira
 
 
 def test_construir_sem_config_nao_faz_io() -> None:
@@ -49,8 +54,8 @@ def test_referencia_sem_projeto_pede_a_chave() -> None:
 def test_campos_aparecem_no_catalogo() -> None:
     campos = {
         c.chave: c
-        for c in catalogo_campos({"tarefas": {"fonte": "jira"}})
-        if c.origem == "jira"
+        for c in catalogo_campos({Tabela.TAREFAS: {Chave.FONTE: _Plugin.JIRA}})
+        if c.origem == _Plugin.JIRA
     }
     assert set(campos) == {*ChaveTarefas, *VarJira}
     assert campos[VarJira.TOKEN].segredo
@@ -99,8 +104,10 @@ def _pagina(*chaves: str, proxima: str | None = None) -> httpx.Response:
 
 
 def test_fetch_junta_todas_as_paginas() -> None:
-    fonte, pedidos = _fonte([_pagina("ABC-1", "ABC-2", proxima="t"), _pagina("ABC-3")])
-    assert sorted(fonte.fetch("1.2.0")) == ["1", "2", "3"]
+    fonte, pedidos = _fonte(
+        [_pagina("ABC-1", "ABC-2", proxima="t"), _pagina("ABC-2", "ABC-3")]
+    )
+    assert fonte.fetch("1.2.0") == ["1", "2", "3"]
     primeiro, segundo = pedidos
     assert primeiro.url.params["jql"] == 'project = "ABC" AND fixVersion = "1.2.0"'
     assert "nextPageToken" not in primeiro.url.params
@@ -115,11 +122,21 @@ def test_fetch_versao_sem_tarefas_devolve_vazio() -> None:
     assert len(pedidos) == 1
 
 
-def test_fetch_sem_proximo_token_encerra() -> None:
+def test_fetch_sem_proximo_token_e_nao_ultima_falha() -> None:
     corpo = {"issues": [{"key": "ABC-1"}], "isLast": False}
     fonte, pedidos = _fonte([httpx.Response(httpx.codes.OK, json=corpo)])
-    assert fonte.fetch("1") == ["1"]
+    with pytest.raises(RespostaInvalida, match="nextPageToken"):
+        fonte.fetch("1")
     assert len(pedidos) == 1
+
+
+def test_fetch_token_repetido_falha() -> None:
+    fonte, pedidos = _fonte(
+        [_pagina("ABC-1", proxima="t"), _pagina("ABC-2", proxima="t")]
+    )
+    with pytest.raises(RespostaInvalida, match="repetiu"):
+        fonte.fetch("1")
+    _primeiro, _segundo = pedidos
 
 
 def test_fetch_escapa_a_versao() -> None:
@@ -160,7 +177,9 @@ def test_fetch_falta_chave(chave: ChaveTarefas | VarJira, valor: str | None) -> 
     else:
         alvo[chave] = valor
     fonte, pedidos = _fonte([], tarefas=tarefas, env=env)
-    with pytest.raises(ErroDeEntrada, match=re.escape(f"[{tabela}] {chave}")):
+    with pytest.raises(
+        ErroDeEntrada, match=re.escape(f"[{tabela}] {chave}") + ".*c.toml"
+    ):
         fonte.fetch("1")
     assert pedidos == []
 
@@ -170,29 +189,43 @@ def _conexao_recusada(request: httpx.Request) -> httpx.Response:
 
 
 @pytest.mark.parametrize(
-    ("resposta", "erro"),
+    ("resposta", "erro", "mensagem"),
     [
-        (httpx.Response(httpx.codes.UNAUTHORIZED), ErroDeEntrada),
-        (httpx.Response(httpx.codes.FORBIDDEN), ErroDeEntrada),
+        (
+            httpx.Response(httpx.codes.UNAUTHORIZED),
+            ErroDeEntrada,
+            rf"(?=.*{VarJira.EMAIL})(?=.*{VarJira.TOKEN})",
+        ),
+        (
+            httpx.Response(httpx.codes.FORBIDDEN),
+            ErroDeEntrada,
+            rf"(?=.*{VarJira.EMAIL})(?=.*{VarJira.TOKEN})",
+        ),
         (
             httpx.Response(
                 httpx.codes.BAD_REQUEST, json={"errorMessages": ["versão inexistente"]}
             ),
             ErroDeEntrada,
+            "versão inexistente",
         ),
-        (httpx.Response(httpx.codes.INTERNAL_SERVER_ERROR), BackendIndisponivel),
-        (_conexao_recusada, BackendIndisponivel),
-        (httpx.Response(httpx.codes.OK, text="<html>"), RespostaInvalida),
-        (_pagina("XYZ-1"), RespostaInvalida),
-        (_pagina("ABC-x"), RespostaInvalida),
+        (httpx.Response(httpx.codes.INTERNAL_SERVER_ERROR), BackendIndisponivel, "500"),
+        (_conexao_recusada, BackendIndisponivel, "recusou"),
+        (
+            httpx.Response(httpx.codes.OK, text="<html>"),
+            RespostaInvalida,
+            "decodificando",
+        ),
+        (_pagina("XYZ-1"), RespostaInvalida, "XYZ-1"),
+        (_pagina("ABC-x"), RespostaInvalida, "ABC-x"),
     ],
 )
 def test_fetch_traduz_respostas(
     resposta: httpx.Response | Callable[[httpx.Request], httpx.Response],
     erro: type[Exception],
+    mensagem: str,
 ) -> None:
     fonte, _ = _fonte(resposta if callable(resposta) else lambda _r: resposta)
-    with pytest.raises(erro):
+    with pytest.raises(erro, match=mensagem):
         fonte.fetch("1.2.0")
 
 

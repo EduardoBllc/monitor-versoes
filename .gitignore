@@ -63,7 +63,7 @@ docs/superpowers/*
 
 .claude/worktrees
 .worktrees/
-/build/
+build/
 
 # Front
 web/node_modules/

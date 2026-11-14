@@ -139,7 +139,7 @@ class FonteJira:
         return Referencia(f"{projeto}-{{id}}", _ALFABETO_NUMERICO)
 
     def _get(
-        self, caminho: str, params: Mapping[str, str], contexto: str = ""
+        self, caminho: str, params: Mapping[str, str], contexto: str
     ) -> httpx.Response:
         """GET autenticado, com rede, status e JSON traduzidos para erros do motor."""
         base = self._exigir(ChaveTarefas.URL).rstrip("/")
@@ -162,7 +162,8 @@ class FonteJira:
         status = resp.status_code
         if status in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
             raise ErroDeEntrada(
-                f"Jira recusou a credencial ({status}): confira JIRA_EMAIL e JIRA_TOKEN"
+                f"Jira recusou a credencial ({status}): "
+                f"confira {VarJira.EMAIL} e {VarJira.TOKEN}"
             )
         if status == httpx.codes.BAD_REQUEST:
             raise ErroDeEntrada(f"Jira rejeitou a consulta {contexto}: {resp.text}")
@@ -202,7 +203,11 @@ class FonteJira:
                 if m is None:
                     raise RespostaInvalida(f"chave de tarefa inesperada: {bruta!r}")
                 ids.append(m.group(1))
+            if corpo.get(_Campo.ULTIMA):
+                return list(dict.fromkeys(ids))
             proxima = corpo.get(_Campo.PROXIMA)
-            if corpo.get(_Campo.ULTIMA) or not isinstance(proxima, str) or not proxima:
-                return ids
+            if not isinstance(proxima, str) or not proxima:
+                raise RespostaInvalida("Jira indicou mais páginas sem nextPageToken")
+            if proxima == params.get(_Param.PAGINA):
+                raise RespostaInvalida("Jira repetiu o nextPageToken já enviado")
             params = {**params, _Param.PAGINA: proxima}
