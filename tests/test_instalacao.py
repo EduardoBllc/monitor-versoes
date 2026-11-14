@@ -10,6 +10,7 @@ import pytest
 from motor.config_edicao import GrupoPlugin
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
+    ARQUIVO_REGISTRO,
     PACOTE_MOTOR,
     UV,
     ArgUv,
@@ -41,7 +42,7 @@ requirements = [
 
 
 def test_registro_ida_e_volta_preserva_extra_e_plugins(tmp_path: Path) -> None:
-    (tmp_path / "uv-receipt.toml").write_text(RECIBO)
+    (tmp_path / ARQUIVO_REGISTRO).write_text(RECIBO)
     reg = ler_registro(tmp_path)
     assert reg is not None
     assert comando_reinstalar(reg) == [
@@ -62,7 +63,7 @@ def test_ler_registro_fora_de_uv_tool(tmp_path: Path) -> None:
 
 
 def test_fixar_soltos_usa_o_commit_instalado(tmp_path: Path) -> None:
-    (tmp_path / "uv-receipt.toml").write_text(RECIBO)
+    (tmp_path / ARQUIVO_REGISTRO).write_text(RECIBO)
     reg = ler_registro(tmp_path)
     assert reg is not None
     fixado = fixar_soltos(reg, {PLUGIN: "abc123", PACOTE_MOTOR: "zzz"})
@@ -128,7 +129,7 @@ def test_plugins_instalados_marca_embutidos() -> None:
 
 
 def test_registro_preserva_subdiretorio_e_python(tmp_path: Path) -> None:
-    (tmp_path / "uv-receipt.toml").write_text(
+    (tmp_path / ARQUIVO_REGISTRO).write_text(
         f"""\
 [tool]
 requirements = [
@@ -181,7 +182,7 @@ def test_fixar_soltos_mantem_tag_e_commit(ref: str) -> None:
     ],
 )
 def test_registro_com_fonte_local_ou_url_recusa(tmp_path: Path, fonte: str) -> None:
-    (tmp_path / "uv-receipt.toml").write_text(
+    (tmp_path / ARQUIVO_REGISTRO).write_text(
         f"""\
 [tool]
 requirements = [
@@ -198,6 +199,6 @@ requirements = [
     "conteudo", ["[tool\n", "[tool]\npython = '3.12'\n", "tool = 1\n"]
 )
 def test_registro_ilegivel_vira_erro_de_entrada(tmp_path: Path, conteudo: str) -> None:
-    (tmp_path / "uv-receipt.toml").write_text(conteudo)
+    (tmp_path / ARQUIVO_REGISTRO).write_text(conteudo)
     with pytest.raises(ErroDeEntrada, match="registro do uv ilegível"):
         ler_registro(tmp_path)

@@ -22,6 +22,9 @@ from motor.novidades import (
     ARQUIVO_CACHE,
     PREFIXO_TAG,
     REF_HEAD,
+    SEM_PROMPT_GIT,
+    SEM_PROMPT_SSH,
+    SSH_PADRAO,
     TAMANHO_COMMIT_CURTO,
     TIMEOUT_GIT_S,
     VALIDADE,
@@ -206,7 +209,6 @@ def test_git_roda_sem_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
 
 SSH_DO_AMBIENTE = "ssh -i ~/.ssh/chave"
 SSH_DA_CONFIG = "C:/Windows/System32/OpenSSH/ssh.exe"
-SSH_PADRAO = "ssh"
 
 
 @pytest.mark.parametrize(
@@ -221,8 +223,8 @@ def test_git_usa_o_ssh_do_usuario_sem_prompt(
     ambiente: dict[str, str], config: str | None, ssh: str
 ) -> None:
     env = env_git(ambiente, lambda: config)
-    assert env[VarGit.SSH_COMMAND] == f"{ssh} -o BatchMode=yes"
-    assert env[VarGit.TERMINAL_PROMPT] == "0"
+    assert env[VarGit.SSH_COMMAND] == f"{ssh} {SEM_PROMPT_SSH}"
+    assert env[VarGit.TERMINAL_PROMPT] == SEM_PROMPT_GIT
 
 
 @pytest.mark.parametrize(
@@ -266,7 +268,7 @@ def test_disparar_renovacao_ignora_oserror(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(subprocess, "Popen", falso)
     novidades.disparar_renovacao.cache_clear()
-    novidades.disparar_renovacao()
+    novidades.disparar_renovacao(None)
 
 
 def test_renovacao_que_falha_ainda_grava_cache_novo(
@@ -284,7 +286,7 @@ def test_renovacao_que_falha_ainda_grava_cache_novo(
     assert not vencido(cache, datetime.now().astimezone())
 
 
-def test_cache_vencido_dispara_uma_renovacao_por_processo(
+def test_cache_vencido_dispara_uma_renovacao_por_vencimento(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     filhos: list[list[str]] = []
@@ -293,9 +295,15 @@ def test_cache_vencido_dispara_uma_renovacao_por_processo(
     monkeypatch.setattr(novidades, "ler_registro", lambda: _registro(None))
     monkeypatch.setattr(novidades, "checagem_ligada", lambda: True)
     monkeypatch.setattr(novidades, "diretorio_cache", lambda: str(tmp_path))
-    gravar_cache(tmp_path / ARQUIVO_CACHE, Cache(AGORA - VALIDADE * 2, ()))
+    arquivo = tmp_path / ARQUIVO_CACHE
+    gravar_cache(arquivo, Cache(AGORA - VALIDADE * 2, ()))
 
+    # O diagnóstico lê o mesmo cache vencido duas vezes.
     novidades.novidades_do_cache()
     novidades.novidades_do_cache()
-
     assert len(filhos) == 1
+
+    # O filho regravou o cache, que venceu de novo: o mesmo processo renova outra vez.
+    gravar_cache(arquivo, Cache(AGORA - VALIDADE * 3, ()))
+    novidades.novidades_do_cache()
+    assert len(filhos) == 2

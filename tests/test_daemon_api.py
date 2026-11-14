@@ -1015,7 +1015,7 @@ def _preparar_instalacao(
         modulo_novidades, "ler_cache", lambda _: Cache(checado_em, (_NOVIDADE,))
     )
     monkeypatch.setattr(
-        modulo_novidades, "disparar_renovacao", lambda: renovacoes.append(1)
+        modulo_novidades, "disparar_renovacao", lambda _: renovacoes.append(1)
     )
     return renovacoes
 

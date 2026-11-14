@@ -18,6 +18,7 @@ from motor.config_edicao import GrupoPlugin
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
+    PREFIXO_GIT,
     UV,
     ArgUv,
     Origem,
@@ -126,7 +127,7 @@ def inst(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Instalacao:
     monkeypatch.setattr(cli_instalacao, "rodar_git", falsa.rodar_git)
     monkeypatch.setattr(cli_instalacao, "executar_uv", falsa.executar_uv)
     monkeypatch.setattr(novidades, "ler_registro", falsa.ler_registro)
-    monkeypatch.setattr(novidades, "disparar_renovacao", lambda: None)
+    monkeypatch.setattr(novidades, "disparar_renovacao", lambda _: None)
     monkeypatch.setattr(cli_instalacao, "plugins_instalados", lambda: PLUGINS)
     monkeypatch.setattr(instalacao, "plugins_instalados", lambda: PLUGINS)
     return falsa
@@ -227,7 +228,7 @@ def test_plugin_instalar_url_com_ou_sem_ref(
 
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, origem])
 
-    assert inst.comandos[0][-2:] == [ArgUv.WITH, f"git+{url}@{ref or TAG_B}"]
+    assert inst.comandos[0][-2:] == [ArgUv.WITH, f"{PREFIXO_GIT}{url}@{ref or TAG_B}"]
     assert inst.consultados == ([] if ref else [url])
 
 

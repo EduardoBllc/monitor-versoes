@@ -286,8 +286,9 @@ def vencido(cache: Cache | None, agora: datetime) -> bool:
     return cache is None or agora - cache.checado_em > VALIDADE
 
 
-@functools.cache  # uma vez por processo: o diagnóstico lê o cache vencido mais de uma vez
-def disparar_renovacao() -> None:
+# Uma vez por cache vencido: o diagnóstico o lê duas vezes; o `serve` segue renovando.
+@functools.cache
+def disparar_renovacao(_vencido_em: datetime | None) -> None:
     comando = [sys.executable, "-P", "-m", "motor.novidades"]
     nada = subprocess.DEVNULL
     try:
@@ -314,7 +315,7 @@ def novidades_do_cache() -> Cache | None:
         return None
     cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
     if vencido(cache, datetime.now(UTC)):
-        disparar_renovacao()
+        disparar_renovacao(cache.checado_em if cache else None)
     return cache
 
 

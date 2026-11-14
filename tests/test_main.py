@@ -1608,7 +1608,7 @@ def _preparar_aviso(monkeypatch, checado_em, *, novidades=None):
         modulo_novidades, "ler_cache", lambda _: Cache(checado_em, novidades)
     )
     monkeypatch.setattr(
-        modulo_novidades, "disparar_renovacao", lambda: renovacoes.append(1)
+        modulo_novidades, "disparar_renovacao", lambda _: renovacoes.append(1)
     )
     monkeypatch.setattr(cli, "head", lambda: "rev")
     monkeypatch.setattr(cli, "diagnosticar", lambda *a, **k: [])
