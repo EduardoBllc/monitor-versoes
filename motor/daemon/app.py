@@ -18,6 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
+from motor.agendador import remover_agendador_antigo, rodar_comando_do_sistema
 from motor.config import SECAO_REPOS
 from motor.config_edicao import Alteracao, ConfigEditavel, gravar, ler_para_edicao
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
@@ -525,6 +526,7 @@ def servir(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
             sonda.bind(("127.0.0.1", porta))
         except OSError as erro:
             raise ErroDeEntrada(f"porta {porta} em uso; use --porta") from erro
+    remover_agendador_antigo(Path.home(), rodar_comando_do_sistema)
     app = criar_app(
         runners_com_progresso,
         porta=porta,

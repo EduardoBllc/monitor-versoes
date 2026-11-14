@@ -21,15 +21,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
-from motor.agendador import (
-    ARGUMENTOS_RODAR,
-    agendar,
-    desagendar,
-    executavel_motor,
-    instalado,
-    rodar_comando_do_sistema,
-    sistema_atual,
-)
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
@@ -146,7 +137,7 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     arquivo diferente do que acabou de aplicar.
 
     O `inscricao rodar` não lê nada e repassa aos filhos o ambiente que herdou;
-    o `inscricao executar` não lê `.env`, para não depender de onde o agendador
+    o `inscricao executar` não lê `.env`, para não depender de onde o `rodar`
     o chamou. Devolve o erro do central quando o comando o tolera.
     """
     ambiente, comando, acao = _selecionar(argv)
@@ -199,16 +190,8 @@ class AcaoInscricao(StrEnum):
     ADICIONAR = "adicionar"
     LISTAR = "listar"
     REMOVER = "remover"
-    AGENDAR = "agendar"
     RODAR = "rodar"
     EXECUTAR = "executar"
-
-
-def _agendador_instalado() -> bool:
-    try:
-        return instalado(sistema_atual(), Path.home())
-    except ErroDeEntrada:  # SO sem agendador: o adicionar só avisa
-        return False
 
 
 def _inscricao_adicionar(args: argparse.Namespace) -> None:
@@ -222,11 +205,6 @@ def _inscricao_adicionar(args: argparse.Namespace) -> None:
         ),
     )
     print(f"inscrição de {args.versao} registrada")
-    if not _agendador_instalado():
-        print(
-            "agendador não instalado: rode `monitor-versoes inscricao agendar`",
-            file=sys.stderr,
-        )
 
 
 def _inscricao_listar() -> None:
@@ -242,16 +220,6 @@ def _inscricao_listar() -> None:
         print(
             f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  {ultima}"
         )
-
-
-def _inscricao_agendar(args: argparse.Namespace) -> None:
-    sistema = sistema_atual()
-    if args.desfazer:
-        desagendar(sistema, Path.home(), rodar_comando_do_sistema)
-        print("agendador removido")
-    else:
-        agendar(sistema, Path.home(), executavel_motor(), rodar_comando_do_sistema)
-        print("agendador instalado")
 
 
 def _inscricao_executar(args: argparse.Namespace) -> None:
@@ -299,8 +267,6 @@ def _inscricao(args: argparse.Namespace) -> None:
             _inscricao_listar()
         case AcaoInscricao.REMOVER:
             remover(caminho_arquivo(), args.repo, args.versao)
-        case AcaoInscricao.AGENDAR:
-            _inscricao_agendar(args)
         case AcaoInscricao.RODAR:
             rodada(os.environ)
         case AcaoInscricao.EXECUTAR:
@@ -482,12 +448,8 @@ def _build_parser() -> argparse.ArgumentParser:
     acoes_insc.add_parser(
         AcaoInscricao.REMOVER, parents=[repo_arg], help="remove uma inscrição"
     )
-    p_agendar = acoes_insc.add_parser(
-        AcaoInscricao.AGENDAR, help="instala o disparo por minuto"
-    )
-    p_agendar.add_argument("--desfazer", action="store_true", help="remove o disparo")
     acoes_insc.add_parser(AcaoInscricao.RODAR, help="dispara as inscrições vencidas")
-    # Sem help=: o argparse não lista; é o comando interno do agendador.
+    # Sem help=: o argparse não lista; é o comando interno do `rodar`.
     acoes_insc.add_parser(AcaoInscricao.EXECUTAR, parents=[repo_arg])
 
     return parser
@@ -871,7 +833,7 @@ def main_inscricoes() -> None:
     janela a cada minuto. Sem console, `sys.stdout`/`sys.stderr` são `None`;
     `print`, `logging` e `argparse` já os toleram, e o teste confere.
     """
-    main(list(ARGUMENTOS_RODAR))
+    main(["inscricao", AcaoInscricao.RODAR])
 
 
 if __name__ == "__main__":

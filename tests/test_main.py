@@ -1177,11 +1177,6 @@ def test_inscricao_adicionar_grava_sem_diretorio_nem_ambiente(inscricoes_env, tm
     assert "ambiente" not in crua
 
 
-def test_inscricao_adicionar_avisa_sem_agendador(inscricoes_env, tmp_path, capsys):
-    _inscrever(_repo_dir(tmp_path))
-    assert "agendador não instalado" in capsys.readouterr().err
-
-
 def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
     nome = _repo_dir(tmp_path)
     _inscrever(nome)
