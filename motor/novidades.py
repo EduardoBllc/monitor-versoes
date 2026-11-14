@@ -143,7 +143,12 @@ def _de_commit(
     return Novidade(r.nome, instalado[:curto], remoto[:curto], comando)
 
 
-def _novidade(
+def ref_mais_nova(saida: str) -> str | None:
+    """Tag `v*` mais nova; sem tags, o commit do `HEAD` remoto."""
+    return maior_tag(saida) or _head(saida)
+
+
+def novidade(
     r: Requisito, instalados: Mapping[str, Origem], saida: str
 ) -> Novidade | None:
     comando = (
@@ -160,6 +165,10 @@ def _novidade(
     return _de_commit(r, instalado, saida, comando) if instalado else None
 
 
+def ls_remote(url: str, rodar: Rodar = rodar_git) -> str | None:
+    return rodar(["git", "ls-remote", url, REF_HEAD, f"{PREFIXO_TAG}*"], {})
+
+
 def checar(
     reg: Registro, instalados: Mapping[str, Origem], rodar: Rodar = rodar_git
 ) -> tuple[Novidade, ...]:
@@ -167,11 +176,11 @@ def checar(
     for r in (reg.motor, *reg.plugins):
         if r.git is None:
             continue
-        saida = rodar(["git", "ls-remote", r.git, REF_HEAD, f"{PREFIXO_TAG}*"], {})
+        saida = ls_remote(r.git, rodar)
         if saida is None:
             continue
-        if (novidade := _novidade(r, instalados, saida)) is not None:
-            achadas.append(novidade)
+        if (achada := novidade(r, instalados, saida)) is not None:
+            achadas.append(achada)
     return tuple(achadas)
 
 

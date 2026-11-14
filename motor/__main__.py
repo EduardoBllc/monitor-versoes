@@ -22,6 +22,7 @@ from functools import partial
 from pathlib import Path
 from typing import TextIO
 
+from motor import cli_instalacao
 from motor.agendador import (
     ARGUMENTOS_RODAR,
     agendar,
@@ -320,6 +321,8 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "migrar": _migrar,
     "diagnostico": _diagnostico,
     "inscricao": _inscricao,
+    cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
+    cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
 }
 
 
@@ -496,6 +499,8 @@ def _build_parser() -> argparse.ArgumentParser:
     acoes_insc.add_parser(AcaoInscricao.RODAR, help="dispara as inscrições vencidas")
     # Sem help=: o argparse não lista; é o comando interno do agendador.
     acoes_insc.add_parser(AcaoInscricao.EXECUTAR, parents=[repo_arg])
+
+    cli_instalacao.adicionar_parsers(sub)
 
     return parser
 
