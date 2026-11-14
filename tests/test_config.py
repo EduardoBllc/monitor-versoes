@@ -583,6 +583,7 @@ def test_checagem_de_versao_nao_booleana_e_erro(central):
         checagem_ligada()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="caminho do Linux/macOS")
 def test_diretorio_cache_segue_xdg(tmp_path, monkeypatch):
     monkeypatch.setenv(VAR_XDG_CACHE_HOME, str(tmp_path))
     assert diretorio_cache() == str(tmp_path / DIRETORIO_APP)
