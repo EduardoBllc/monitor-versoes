@@ -48,6 +48,7 @@ CAMPO_AMBIENTE_ANTIGO = "ambiente"
 VERMELHO = "sumido:abc"
 NAO_JSON = "{nao e json"
 SO_WINDOWS = "win32"
+SO_POSIX = "linux"
 FLAG_GRUPO = 512  # valor sentinela, não depende do Windows
 
 
@@ -333,6 +334,7 @@ def test_disparar_subprocesso_monta_o_comando(
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(subprocess, "run", falso)
+    monkeypatch.setattr(sys, "platform", SO_POSIX)
     i = _insc()
     ambiente = {"CHAVE_PAI": "v"}
     assert disparar_subprocesso(i, ambiente) == 0
