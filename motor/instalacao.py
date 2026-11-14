@@ -18,6 +18,7 @@ from motor.errors import ErroDeEntrada
 
 PACOTE_MOTOR = "monitor-versoes"
 UV = "uv"
+GIT = "git"
 ARQUIVO_REGISTRO = "uv-receipt.toml"
 ARQUIVO_DIRECT_URL = "direct_url.json"
 PREFIXO_GIT = "git+"
@@ -27,6 +28,12 @@ PARAMETRO_SUBDIRETORIO = "subdirectory"
 TAG_VERSAO = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
 SHA_COMPLETO = re.compile(r"[0-9a-f]{40}")
 _REF_FIXA = re.compile(f"{TAG_VERSAO.pattern}|{SHA_COMPLETO.pattern}")
+
+
+class ArgGit(StrEnum):
+    LS_REMOTE = "ls-remote"
+    CONFIG = "config"
+    GET = "--get"
 
 
 class TipoOrigem(StrEnum):

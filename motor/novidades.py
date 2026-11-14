@@ -17,9 +17,11 @@ from pathlib import Path
 from motor.config import checagem_ligada, diretorio_cache
 from motor.errors import MotorError
 from motor.instalacao import (
+    GIT,
     PACOTE_MOTOR,
     SHA_COMPLETO,
     TAG_VERSAO,
+    ArgGit,
     Origem,
     Registro,
     Requisito,
@@ -35,14 +37,19 @@ TIMEOUT_GIT_S = 10
 TAMANHO_COMMIT_CURTO = 7
 PREFIXO_TAG = "refs/tags/"
 REF_HEAD = "HEAD"
-ENV_GIT = {
-    "GIT_TERMINAL_PROMPT": "0",
-    "GIT_SSH_COMMAND": "ssh -o BatchMode=yes",
-}
+SSH_PADRAO = "ssh"
+CHAVE_SSH_DA_CONFIG = "core.sshCommand"
+SEM_PROMPT_SSH = "-o BatchMode=yes"
+SEM_PROMPT_GIT = "0"
 # Windows: constantes só existem lá.
 _FLAGS_DESTACADO = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
     subprocess, "CREATE_NO_WINDOW", 0
 )
+
+
+class VarGit(StrEnum):
+    TERMINAL_PROMPT = "GIT_TERMINAL_PROMPT"
+    SSH_COMMAND = "GIT_SSH_COMMAND"
 
 
 class ChaveCache(StrEnum):
@@ -72,12 +79,39 @@ VersaoInstalada = Callable[[str], str | None]  # versão do pacote, ou None
 Rodar = Callable[[list[str], Mapping[str, str]], str | None]  # stdout; None em falha
 
 
+def _ssh_da_config() -> str | None:
+    try:
+        feito = subprocess.run(
+            [GIT, ArgGit.CONFIG, ArgGit.GET, CHAVE_SSH_DA_CONFIG],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_GIT_S,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+    return feito.stdout.strip() or None
+
+
+def env_git(
+    ambiente: Mapping[str, str],
+    ssh_da_config: Callable[[], str | None] = _ssh_da_config,
+) -> dict[str, str]:
+    """Sem prompt, mas com o ssh do usuário: no Windows é ele que fala com o agente."""
+    ssh = ambiente.get(VarGit.SSH_COMMAND) or ssh_da_config() or SSH_PADRAO
+    return {
+        VarGit.TERMINAL_PROMPT: SEM_PROMPT_GIT,
+        VarGit.SSH_COMMAND: f"{ssh} {SEM_PROMPT_SSH}",
+    }
+
+
 def rodar_git(args: list[str], env: Mapping[str, str]) -> str | None:
     try:
         feito = subprocess.run(
             args,
             check=False,
-            env={**os.environ, **ENV_GIT, **env},
+            env={**os.environ, **env_git(os.environ, _ssh_da_config), **env},
             capture_output=True,
             text=True,
             timeout=TIMEOUT_GIT_S,
@@ -183,7 +217,7 @@ def novidade(
 
 
 def ls_remote(url: str, rodar: Rodar = rodar_git) -> str | None:
-    return rodar(["git", "ls-remote", url, REF_HEAD, f"{PREFIXO_TAG}*"], {})
+    return rodar([GIT, ArgGit.LS_REMOTE, url, REF_HEAD, f"{PREFIXO_TAG}*"], {})
 
 
 def checar(

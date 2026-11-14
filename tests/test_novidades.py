@@ -18,12 +18,13 @@ from motor.instalacao import (
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
-    ENV_GIT,
     TIMEOUT_GIT_S,
     VALIDADE,
     Cache,
     Novidade,
+    VarGit,
     checar,
+    env_git,
     gravar_cache,
     ler_cache,
     maior_tag,
@@ -190,10 +191,33 @@ def test_git_roda_sem_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
         return subprocess.CompletedProcess(args, 0, stdout="ok", stderr="")
 
     monkeypatch.setattr(subprocess, "run", falso)
+    monkeypatch.setattr(novidades, "_ssh_da_config", lambda: None)
+    monkeypatch.delenv(VarGit.SSH_COMMAND, raising=False)
     assert rodar_git(["git", "ls-remote", URL_MOTOR], {}) == "ok"
     env = chamadas[0]["env"]
-    assert {k: env[k] for k in ENV_GIT} == ENV_GIT
+    assert {k: env[k] for k in VarGit} == env_git({}, lambda: None)
     assert chamadas[0]["timeout"] == TIMEOUT_GIT_S
+
+
+SSH_DO_AMBIENTE = "ssh -i ~/.ssh/chave"
+SSH_DA_CONFIG = "C:/Windows/System32/OpenSSH/ssh.exe"
+SSH_PADRAO = "ssh"
+
+
+@pytest.mark.parametrize(
+    ("ambiente", "config", "ssh"),
+    [
+        ({VarGit.SSH_COMMAND: SSH_DO_AMBIENTE}, SSH_DA_CONFIG, SSH_DO_AMBIENTE),
+        ({}, SSH_DA_CONFIG, SSH_DA_CONFIG),
+        ({}, None, SSH_PADRAO),
+    ],
+)
+def test_git_usa_o_ssh_do_usuario_sem_prompt(
+    ambiente: dict[str, str], config: str | None, ssh: str
+) -> None:
+    env = env_git(ambiente, lambda: config)
+    assert env[VarGit.SSH_COMMAND] == f"{ssh} -o BatchMode=yes"
+    assert env[VarGit.TERMINAL_PROMPT] == "0"
 
 
 @pytest.mark.parametrize(
