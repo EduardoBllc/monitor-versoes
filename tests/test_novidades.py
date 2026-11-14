@@ -10,7 +10,9 @@ import pytest
 
 from motor import novidades
 from motor.instalacao import (
+    GIT,
     PACOTE_MOTOR,
+    ArgGit,
     Origem,
     Registro,
     Requisito,
@@ -18,6 +20,9 @@ from motor.instalacao import (
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
+    PREFIXO_TAG,
+    REF_HEAD,
+    TAMANHO_COMMIT_CURTO,
     TIMEOUT_GIT_S,
     VALIDADE,
     Cache,
@@ -43,8 +48,8 @@ AGORA = datetime(2026, 1, 1, 12, tzinfo=UTC)
 
 
 def _remoto(*, tags: tuple[str, ...] = (), head: str | None = None) -> str:
-    linhas = [f"{head}\tHEAD"] if head else []
-    linhas += [f"{COMMIT_ANTIGO}\trefs/tags/{t}" for t in tags]
+    linhas = [f"{head}\t{REF_HEAD}"] if head else []
+    linhas += [f"{COMMIT_ANTIGO}\t{PREFIXO_TAG}{t}" for t in tags]
     return "\n".join(linhas)
 
 
@@ -93,14 +98,14 @@ def test_maior_tag_ordena_numericamente_e_ignora_lixo() -> None:
             (
                 Novidade(
                     PACOTE_MOTOR,
-                    COMMIT_ANTIGO[:7],
-                    COMMIT_NOVO[:7],
+                    COMMIT_ANTIGO[:TAMANHO_COMMIT_CURTO],
+                    COMMIT_NOVO[:TAMANHO_COMMIT_CURTO],
                     f"{PACOTE_MOTOR} atualizar-motor",
                 ),
                 Novidade(
                     PLUGIN,
-                    COMMIT_ANTIGO[:7],
-                    COMMIT_NOVO[:7],
+                    COMMIT_ANTIGO[:TAMANHO_COMMIT_CURTO],
+                    COMMIT_NOVO[:TAMANHO_COMMIT_CURTO],
                     f"{PACOTE_MOTOR} plugin atualizar {PLUGIN}",
                 ),
             ),
@@ -115,8 +120,8 @@ def test_maior_tag_ordena_numericamente_e_ignora_lixo() -> None:
             (
                 Novidade(
                     PLUGIN,
-                    COMMIT_ANTIGO[:7],
-                    COMMIT_NOVO[:7],
+                    COMMIT_ANTIGO[:TAMANHO_COMMIT_CURTO],
+                    COMMIT_NOVO[:TAMANHO_COMMIT_CURTO],
                     f"{PACOTE_MOTOR} plugin atualizar {PLUGIN}",
                 ),
             ),
@@ -136,8 +141,8 @@ def test_maior_tag_ordena_numericamente_e_ignora_lixo() -> None:
             (
                 Novidade(
                     PACOTE_MOTOR,
-                    COMMIT_ANTIGO[:7],
-                    COMMIT_NOVO[:7],
+                    COMMIT_ANTIGO[:TAMANHO_COMMIT_CURTO],
+                    COMMIT_NOVO[:TAMANHO_COMMIT_CURTO],
                     f"{PACOTE_MOTOR} atualizar-motor",
                 ),
             ),
@@ -193,7 +198,7 @@ def test_git_roda_sem_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", falso)
     monkeypatch.setattr(novidades, "_ssh_da_config", lambda: None)
     monkeypatch.delenv(VarGit.SSH_COMMAND, raising=False)
-    assert rodar_git(["git", "ls-remote", URL_MOTOR], {}) == "ok"
+    assert rodar_git([GIT, ArgGit.LS_REMOTE, URL_MOTOR], {}) == "ok"
     env = chamadas[0]["env"]
     assert {k: env[k] for k in VarGit} == env_git({}, lambda: None)
     assert chamadas[0]["timeout"] == TIMEOUT_GIT_S
@@ -230,7 +235,7 @@ def test_git_com_falha_nao_levanta(
         raise erro
 
     monkeypatch.setattr(subprocess, "run", falso)
-    assert rodar_git(["git"], {}) is None
+    assert rodar_git([GIT], {}) is None
 
 
 def test_cache_ida_e_volta_e_validade(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@ from motor.instalacao import (
     PREFIXO_GIT,
     SHA_COMPLETO,
     UV,
+    ArgUv,
     Origem,
     Registro,
     Requisito,
@@ -171,17 +172,19 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
     # O "@" do usuário (git@host) fica no netloc; só o do caminho é ref.
     partes = urlsplit(url)
     caminho, arroba, ref_pedida = partes.path.rpartition("@")
+    ref: str | None = ref_pedida
     if arroba:
         url = partes._replace(path=caminho).geturl()
-        return [*comando_reinstalar(reg), "--with", f"{PREFIXO_GIT}{url}@{ref_pedida}"]
-    saida = ls_remote(url, rodar_git)
-    ref = ref_mais_nova(saida) if saida else None
-    if ref is None:
-        raise ErroDeEntrada(
-            f"não consegui ler {url}: sem rede, sem acesso ou não é um repositório git"
-        )
+    else:
+        saida = ls_remote(url, rodar_git)
+        ref = ref_mais_nova(saida) if saida else None
+        if ref is None:
+            raise ErroDeEntrada(
+                f"não consegui ler {url}: sem rede, sem acesso ou não é um "
+                "repositório git"
+            )
     # Sem nome: o `uv` descobre o pacote e o grava no registro.
-    return [*comando_reinstalar(reg), "--with", f"{PREFIXO_GIT}{url}@{ref}"]
+    return [*comando_reinstalar(reg), ArgUv.WITH, f"{PREFIXO_GIT}{url}@{ref}"]
 
 
 def _atualizar(
@@ -215,7 +218,7 @@ def _atualizar(
             else "Está tudo em dia; nada a reinstalar."
         )
         return
-    extras = [arg for nome in publicados for arg in ("--upgrade-package", nome)]
+    extras = [arg for nome in publicados for arg in (ArgUv.UPGRADE_PACKAGE, nome)]
     _reinstalar(reg, [*comando_reinstalar(novo), *extras])
 
 

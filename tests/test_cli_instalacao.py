@@ -19,6 +19,7 @@ from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
     UV,
+    ArgUv,
     Origem,
     PluginInstalado,
     Registro,
@@ -27,6 +28,8 @@ from motor.instalacao import (
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
+    PREFIXO_TAG,
+    REF_HEAD,
     TAMANHO_COMMIT_CURTO,
     Cache,
     Novidade,
@@ -60,12 +63,12 @@ CAMINHO_UV = "/usr/bin/uv"
 
 MOTOR = Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG_MOTOR, extras=(EXTRA,))
 LINHA_MOTOR = f"{PACOTE_MOTOR}[{EXTRA}] @ git+{URL_MOTOR}@{TAG_MOTOR}"
-INICIO = [UV, "tool", "install", "--reinstall"]
+INICIO = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL]
 
 
 def _remoto(*, tags: tuple[str, ...] = (), head: str = COMMIT_NOVO) -> str:
-    linhas = [f"{head}\tHEAD"]
-    linhas += [f"{COMMIT_NOVO}\trefs/tags/{t}" for t in tags]
+    linhas = [f"{head}\t{REF_HEAD}"]
+    linhas += [f"{COMMIT_NOVO}\t{PREFIXO_TAG}{t}" for t in tags]
     return "\n".join(linhas)
 
 
@@ -180,9 +183,9 @@ def test_plugin_instalar_url_git_preserva_resto(inst: Instalacao, capsys) -> Non
         [
             *INICIO,
             LINHA_MOTOR,
-            "--with",
+            ArgUv.WITH,
             f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_A}",
-            "--with",
+            ArgUv.WITH,
             f"git+{URL_B_UV}@{TAG_B}",
         ]
     ]
@@ -224,7 +227,7 @@ def test_plugin_instalar_url_com_ou_sem_ref(
 
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, origem])
 
-    assert inst.comandos[0][-2:] == ["--with", f"git+{url}@{ref or TAG_B}"]
+    assert inst.comandos[0][-2:] == [ArgUv.WITH, f"git+{url}@{ref or TAG_B}"]
     assert inst.consultados == ([] if ref else [url])
 
 
@@ -233,21 +236,21 @@ def test_plugin_instalar_repo_sem_tags_fixa_head(inst: Instalacao) -> None:
 
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
 
-    assert inst.comandos[0][-2:] == ["--with", f"git+{URL_B_UV}@{COMMIT_NOVO}"]
+    assert inst.comandos[0][-2:] == [ArgUv.WITH, f"git+{URL_B_UV}@{COMMIT_NOVO}"]
 
 
 def test_plugin_por_nome_publicado(inst: Instalacao) -> None:
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, PUBLICADO])
-    assert inst.comandos[-1][-2:] == ["--with", PUBLICADO]
+    assert inst.comandos[-1][-2:] == [ArgUv.WITH, PUBLICADO]
 
     inst.registros = [
         Registro(MOTOR, (Requisito(PLUGIN_A, git=URL_A), Requisito(PUBLICADO)))
     ]
     main([COMANDO_PLUGIN, AcaoPlugin.ATUALIZAR, PUBLICADO])
     assert inst.comandos[-1][-4:] == [
-        "--with",
+        ArgUv.WITH,
         PUBLICADO,
-        "--upgrade-package",
+        ArgUv.UPGRADE_PACKAGE,
         PUBLICADO,
     ]
     assert inst.consultados == []
@@ -285,7 +288,7 @@ def test_plugin_atualizar_leva_a_versao_nova_e_mantem_o_resto(
     main([COMANDO_PLUGIN, AcaoPlugin.ATUALIZAR])
 
     assert inst.comandos == [
-        [*INICIO, LINHA_MOTOR, "--with", f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_NOVO}"]
+        [*INICIO, LINHA_MOTOR, ArgUv.WITH, f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_NOVO}"]
     ]
     saida = capsys.readouterr().out
     assert f"{PLUGIN_A}: {A_CURTO} → {NOVO_CURTO}" in saida
@@ -338,7 +341,7 @@ def test_atualizar_motor_leva_motor_e_plugins(inst: Instalacao, capsys) -> None:
         [
             *INICIO,
             f"{PACOTE_MOTOR}[{EXTRA}] @ git+{URL_MOTOR}@{TAG_MOTOR_NOVA}",
-            "--with",
+            ArgUv.WITH,
             f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_NOVO}",
         ]
     ]

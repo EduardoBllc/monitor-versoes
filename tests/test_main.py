@@ -35,6 +35,7 @@ from motor.__main__ import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR
 from motor.config import SECAO_REPOS
 from motor.diagnostico import Peca
 from motor.domain.referencia import Referencia
@@ -49,6 +50,7 @@ from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
 from motor.errors import MotorError
 from motor.inscricoes import Inscricao
+from motor.instalacao import PACOTE_MOTOR
 from motor.novidades import Cache, Novidade
 from motor.plugins import carregar_plugin
 from tests.config_repos import rotulo_secao, secao_repo
@@ -1590,12 +1592,11 @@ class _SemAviso(StrEnum):
     FORA_DO_UV_TOOL = "fora_do_uv_tool"
 
 
-_NOVIDADE_MOTOR = Novidade(
-    "monitor-versoes", "0.2.0", "0.3.0", "monitor-versoes atualizar-motor"
-)
-_LINHA_MOTOR = (
-    "Versão 0.3.0 disponível (você tem 0.2.0): monitor-versoes atualizar-motor"
-)
+_COMANDO_MOTOR = f"{PACOTE_MOTOR} {COMANDO_ATUALIZAR_MOTOR}"
+_NOVIDADE_MOTOR = Novidade(PACOTE_MOTOR, "0.2.0", "0.3.0", _COMANDO_MOTOR)
+_MARCA_DO_AVISO = "disponível"
+_LINHA_MOTOR = f"Versão 0.3.0 {_MARCA_DO_AVISO} (você tem 0.2.0): {_COMANDO_MOTOR}"
+_PLUGIN = "meu-plugin"
 
 
 def _preparar_aviso(monkeypatch, checado_em, *, novidades=None):
@@ -1625,12 +1626,12 @@ def test_aviso_de_versao_nova_no_stderr(monkeypatch, capsys):
 
     saida = capsys.readouterr()
     assert saida.err.rstrip().endswith(_LINHA_MOTOR)
-    assert "disponível" not in saida.out
+    assert _MARCA_DO_AVISO not in saida.out
 
 
 def test_aviso_de_plugin_traz_o_pacote_e_o_comando(monkeypatch, capsys):
     plugin = Novidade(
-        "meu-plugin", "1.0.0", "1.1.0", "monitor-versoes plugin atualizar meu-plugin"
+        _PLUGIN, "1.0.0", "1.1.0", f"{PACOTE_MOTOR} plugin atualizar {_PLUGIN}"
     )
     _preparar_aviso(monkeypatch, _agora(), novidades=(_NOVIDADE_MOTOR, plugin))
 
@@ -1638,7 +1639,7 @@ def test_aviso_de_plugin_traz_o_pacote_e_o_comando(monkeypatch, capsys):
 
     err = capsys.readouterr().err
     assert _LINHA_MOTOR in err
-    assert "meu-plugin: Versão 1.1.0 disponível (você tem 1.0.0): " in err
+    assert f"{_PLUGIN}: Versão 1.1.0 {_MARCA_DO_AVISO} (você tem 1.0.0): " in err
 
 
 @pytest.mark.parametrize(
@@ -1653,7 +1654,7 @@ def test_sem_aviso_nos_comandos_excluidos(monkeypatch, capsys, comando):
     with contextlib.suppress(SystemExit):
         main(comando.split())
 
-    assert "disponível" not in capsys.readouterr().err
+    assert _MARCA_DO_AVISO not in capsys.readouterr().err
     assert renovacoes == []
 
 
@@ -1667,7 +1668,7 @@ def test_sem_aviso_sem_checagem_ou_fora_do_uv_tool(monkeypatch, capsys, motivo):
 
     main([_Cmd.DIAGNOSTICO])
 
-    assert "disponível" not in capsys.readouterr().err
+    assert _MARCA_DO_AVISO not in capsys.readouterr().err
     assert renovacoes == []
 
 
@@ -1702,4 +1703,4 @@ def test_falha_no_aviso_nao_derruba_o_comando(monkeypatch, capsys):
 
     main([_Cmd.DIAGNOSTICO])
 
-    assert "disponível" not in capsys.readouterr().err
+    assert _MARCA_DO_AVISO not in capsys.readouterr().err

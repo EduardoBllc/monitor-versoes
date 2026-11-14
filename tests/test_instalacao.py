@@ -11,6 +11,8 @@ from motor.config_edicao import GrupoPlugin
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
+    UV,
+    ArgUv,
     Origem,
     Registro,
     Requisito,
@@ -43,14 +45,14 @@ def test_registro_ida_e_volta_preserva_extra_e_plugins(tmp_path: Path) -> None:
     reg = ler_registro(tmp_path)
     assert reg is not None
     assert comando_reinstalar(reg) == [
-        "uv",
-        "tool",
-        "install",
-        "--reinstall",
+        UV,
+        ArgUv.TOOL,
+        ArgUv.INSTALL,
+        ArgUv.REINSTALL,
         f"{PACOTE_MOTOR}[anthropic] @ git+{URL_MOTOR}@{TAG}",
-        "--with",
+        ArgUv.WITH,
         f"{PLUGIN} @ git+{URL_PLUGIN}",
-        "--with",
+        ArgUv.WITH,
         "six>=1.10",
     ]
 
@@ -139,14 +141,14 @@ python = "3.12"
     reg = ler_registro(tmp_path)
     assert reg is not None
     assert comando_reinstalar(reg) == [
-        "uv",
-        "tool",
-        "install",
-        "--reinstall",
-        "--python",
+        UV,
+        ArgUv.TOOL,
+        ArgUv.INSTALL,
+        ArgUv.REINSTALL,
+        ArgUv.PYTHON,
         "3.12",
         f"{PACOTE_MOTOR} @ git+{URL_MOTOR}@{TAG}",
-        "--with",
+        ArgUv.WITH,
         f"mono @ git+{URL_PLUGIN}@{TAG}#subdirectory=sub/pk",
     ]
 

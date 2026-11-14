@@ -30,6 +30,15 @@ SHA_COMPLETO = re.compile(r"[0-9a-f]{40}")
 _REF_FIXA = re.compile(f"{TAG_VERSAO.pattern}|{SHA_COMPLETO.pattern}")
 
 
+class ArgUv(StrEnum):
+    TOOL = "tool"
+    INSTALL = "install"
+    REINSTALL = "--reinstall"
+    PYTHON = "--python"
+    WITH = "--with"
+    UPGRADE_PACKAGE = "--upgrade-package"
+
+
 class ArgGit(StrEnum):
     LS_REMOTE = "ls-remote"
     CONFIG = "config"
@@ -236,10 +245,10 @@ def _escrever(r: Requisito) -> str:
 
 
 def comando_reinstalar(reg: Registro) -> list[str]:
-    comando = [UV, "tool", "install", "--reinstall"]
+    comando = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL]
     if reg.python:
-        comando += ["--python", reg.python]
+        comando += [ArgUv.PYTHON, reg.python]
     comando.append(_escrever(reg.motor))
     for plugin in reg.plugins:
-        comando += ["--with", _escrever(plugin)]
+        comando += [ArgUv.WITH, _escrever(plugin)]
     return comando
