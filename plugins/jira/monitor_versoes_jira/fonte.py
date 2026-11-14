@@ -8,12 +8,11 @@ from enum import StrEnum
 
 import httpx
 
-from motor.config import TABELA_AMBIENTE
+from motor.config import TABELA_AMBIENTE, Tabela
 from motor.config_edicao import Campo, Escopo, TipoCampo
 from motor.domain.referencia import Referencia
 from motor.errors import ErroDeEntrada
 
-TABELA_TAREFAS = "tarefas"
 _ALFABETO_NUMERICO = "0-9"
 
 
@@ -37,7 +36,7 @@ class FonteJira:
     campos_config = (
         Campo(
             Escopo.GERAL,
-            TABELA_TAREFAS,
+            Tabela.TAREFAS,
             ChaveTarefas.URL,
             TipoCampo.TEXTO,
             "URL do Jira",
@@ -46,7 +45,7 @@ class FonteJira:
         ),
         Campo(
             Escopo.GERAL,
-            TABELA_TAREFAS,
+            Tabela.TAREFAS,
             ChaveTarefas.PROJETO,
             TipoCampo.TEXTO,
             "Projeto do Jira",
@@ -100,9 +99,11 @@ class FonteJira:
         valor = bruto.strip() if isinstance(bruto, str) else ""
         if not valor:
             lida = " e ".join(self._arquivos) or "nenhuma"
-            onde = "[tarefas]" if isinstance(chave, ChaveTarefas) else "[ambiente]"
+            tabela = (
+                Tabela.TAREFAS if isinstance(chave, ChaveTarefas) else TABELA_AMBIENTE
+            )
             raise ErroDeEntrada(
-                f'[tarefas] fonte = "jira" sem {chave}: defina-a em {onde} do '
+                f'[tarefas] fonte = "jira" sem [{tabela}] {chave}: defina-a no '
                 f"config.toml (config lida: {lida})"
             )
         return valor
