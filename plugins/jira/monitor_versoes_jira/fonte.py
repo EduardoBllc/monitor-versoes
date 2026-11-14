@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import os
+import re
 from collections.abc import Mapping
 from enum import StrEnum
 
@@ -11,9 +13,34 @@ import httpx
 from motor.config import TABELA_AMBIENTE, Tabela
 from motor.config_edicao import Campo, Escopo, TipoCampo
 from motor.domain.referencia import Referencia
-from motor.errors import ErroDeEntrada
+from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 _ALFABETO_NUMERICO = "0-9"
+_CAMINHO_BUSCA = "/rest/api/3/search/jql"
+_POR_PAGINA = 100
+
+
+class _Param(StrEnum):
+    """Parâmetros de query da API de busca."""
+
+    JQL = "jql"
+    FIELDS = "fields"
+    MAX_RESULTS = "maxResults"
+    PAGINA = "nextPageToken"
+
+
+class _Campo(StrEnum):
+    """Campos do JSON de resposta da busca."""
+
+    ISSUES = "issues"
+    KEY = "key"
+    ULTIMA = "isLast"
+    PROXIMA = "nextPageToken"
+
+
+def _literal(valor: str) -> str:
+    """Valor como literal entre aspas da JQL."""
+    return '"' + valor.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 class ChaveTarefas(StrEnum):
@@ -110,5 +137,68 @@ class FonteJira:
         projeto = self._exigir(ChaveTarefas.PROJETO)
         return Referencia(f"{projeto}-{{id}}", _ALFABETO_NUMERICO)
 
+    def _get(
+        self, caminho: str, params: Mapping[str, str], contexto: str = ""
+    ) -> httpx.Response:
+        """GET autenticado, com rede, status e JSON traduzidos para erros do motor."""
+        base = self._exigir(ChaveTarefas.URL).rstrip("/")
+        credenciais = f"{self._exigir(VarJira.EMAIL)}:{self._exigir(VarJira.TOKEN)}"
+        auth = "Basic " + base64.b64encode(credenciais.encode()).decode()
+        try:
+            if self._client is not None:
+                resp = self._client.get(
+                    base + caminho, params=params, headers={"Authorization": auth}
+                )
+            else:
+                with httpx.Client() as client:
+                    resp = client.get(
+                        base + caminho, params=params, headers={"Authorization": auth}
+                    )
+        except httpx.InvalidURL as e:
+            raise ErroDeEntrada(f"URL do Jira inválida: {base!r}: {e}") from e
+        except httpx.HTTPError as e:
+            raise BackendIndisponivel(f"chamando o Jira: {e}") from e
+        status = resp.status_code
+        if status in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+            raise ErroDeEntrada(
+                f"Jira recusou a credencial ({status}): confira JIRA_EMAIL e JIRA_TOKEN"
+            )
+        if status == httpx.codes.BAD_REQUEST:
+            raise ErroDeEntrada(f"Jira rejeitou a consulta {contexto}: {resp.text}")
+        if status != httpx.codes.OK:
+            raise BackendIndisponivel(f"Jira respondeu {status}")
+        return resp
+
     def fetch(self, versao: str, /) -> list[str]:
-        raise NotImplementedError
+        projeto = self._exigir(ChaveTarefas.PROJETO)
+        jql = f"project = {_literal(projeto)} AND fixVersion = {_literal(versao)}"
+        contexto = f"(versão {versao!r}, projeto {projeto!r})"
+        chave = re.compile(rf"{re.escape(projeto)}-([0-9]+)", re.IGNORECASE)
+        params: dict[str, str] = {
+            _Param.JQL: jql,
+            _Param.FIELDS: _Campo.KEY,
+            _Param.MAX_RESULTS: str(_POR_PAGINA),
+        }
+        ids: list[str] = []
+        while True:
+            resp = self._get(_CAMINHO_BUSCA, params, contexto)
+            try:
+                corpo = resp.json()
+            except ValueError as e:
+                raise RespostaInvalida(f"decodificando resposta do Jira: {e}") from e
+            if not isinstance(corpo, dict) or not isinstance(
+                corpo.get(_Campo.ISSUES), list
+            ):
+                raise RespostaInvalida(
+                    f"resposta do Jira em formato inesperado: {corpo!r}"
+                )
+            for issue in corpo[_Campo.ISSUES]:
+                bruta = issue.get(_Campo.KEY) if isinstance(issue, dict) else None
+                m = chave.fullmatch(bruta) if isinstance(bruta, str) else None
+                if m is None:
+                    raise RespostaInvalida(f"chave de tarefa inesperada: {bruta!r}")
+                ids.append(m.group(1))
+            proxima = corpo.get(_Campo.PROXIMA)
+            if corpo.get(_Campo.ULTIMA) or not isinstance(proxima, str) or not proxima:
+                return ids
+            params = {**params, _Param.PAGINA: proxima}
