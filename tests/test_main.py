@@ -1389,6 +1389,8 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
             cliente.recv(1)
     rodou = []
     monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
+    # Sem isto a suíte desinstalaria o timer real de quem a roda.
+    monkeypatch.setattr(daemon_app, "remover_agendador_antigo", lambda *_: False)
     daemon_app.servir(porta, {})
     assert rodou == [porta]
 

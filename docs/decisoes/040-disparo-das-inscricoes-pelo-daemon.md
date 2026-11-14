@@ -19,6 +19,7 @@ agendador do SO: o objetivo é não haver nada a configurar além de subir o dae
   no timer do SO, que também não sobrepunha execuções. O filho que sobra quando o `serve`
   sai segue vivo e deixa de ser morto pelo timeout de 1 h.
 - **Quem não usa o daemon agenda o `inscricao rodar` à mão**, pelo agendador que preferir.
-- **Usar os dois, ou dois `serve` em portas diferentes, dobra o disparo.** Não há corrupção: a
-  segunda execução sai `pulada` pelo lock do clone
-  ([032](032-lock-por-repo-entre-processos.md)).
+- **Usar os dois, ou dois `serve` em portas diferentes, dobra o disparo.** Não há corrupção:
+  a execução simultânea sai `pulada` pelo lock do clone
+  ([032](032-lock-por-repo-entre-processos.md)); fora disso, a inscrição pode rodar duas
+  vezes seguidas e notificar em dobro.

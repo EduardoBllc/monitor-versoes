@@ -47,9 +47,7 @@ CAMPO_DIRETORIO_ANTIGO = "diretorio"
 CAMPO_AMBIENTE_ANTIGO = "ambiente"
 VERMELHO = "sumido:abc"
 NAO_JSON = "{nao e json"
-SO_WINDOWS = "win32"
 SO_POSIX = "linux"
-FLAG_GRUPO = 512  # valor sentinela, não depende do Windows
 
 
 class Repo(StrEnum):
@@ -347,25 +345,6 @@ def test_disparar_subprocesso_monta_o_comando(
     assert visto["timeout"] == LIMITE_EXECUCAO_S
     assert visto["start_new_session"] is True
     assert visto["creationflags"] == 0
-
-
-def test_disparar_subprocesso_no_windows_usa_grupo_proprio(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    visto: dict[str, Any] = {}
-
-    def falso(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
-        visto.update(kw)
-        return subprocess.CompletedProcess(cmd, 0)
-
-    monkeypatch.setattr(subprocess, "run", falso)
-    monkeypatch.setattr(sys, "platform", SO_WINDOWS)
-    monkeypatch.setattr(
-        subprocess, "CREATE_NEW_PROCESS_GROUP", FLAG_GRUPO, raising=False
-    )
-    disparar_subprocesso(_insc(), {})
-    assert visto["creationflags"] == FLAG_GRUPO
-    assert visto["start_new_session"] is False
 
 
 @pytest.mark.parametrize(

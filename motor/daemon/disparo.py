@@ -57,4 +57,5 @@ def ligar_disparo(app: FastAPI, rodada: Callable[[], None]) -> None:
             # Sem join: o filho em curso pode durar até o limite de 1h.
             parar.set()
 
+    # Substitui o lifespan do app: se o criar_app ganhar um, encadear aqui.
     app.router.lifespan_context = ciclo_de_vida
