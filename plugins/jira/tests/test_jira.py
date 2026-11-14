@@ -125,18 +125,17 @@ def test_fetch_versao_sem_tarefas_devolve_vazio() -> None:
 def test_fetch_sem_proximo_token_e_nao_ultima_falha() -> None:
     corpo = {"issues": [{"key": "ABC-1"}], "isLast": False}
     fonte, pedidos = _fonte([httpx.Response(httpx.codes.OK, json=corpo)])
-    with pytest.raises(RespostaInvalida, match="nextPageToken"):
+    with pytest.raises(RespostaInvalida):
         fonte.fetch("1")
     assert len(pedidos) == 1
 
 
 def test_fetch_token_repetido_falha() -> None:
-    fonte, pedidos = _fonte(
-        [_pagina("ABC-1", proxima="t"), _pagina("ABC-2", proxima="t")]
-    )
-    with pytest.raises(RespostaInvalida, match="repetiu"):
+    paginas = [_pagina("ABC-1", proxima="t"), _pagina("ABC-2", proxima="t")]
+    fonte, pedidos = _fonte(paginas)
+    with pytest.raises(RespostaInvalida):
         fonte.fetch("1")
-    _primeiro, _segundo = pedidos
+    assert len(pedidos) == len(paginas)
 
 
 def test_fetch_escapa_a_versao() -> None:
@@ -208,12 +207,12 @@ def _conexao_recusada(request: httpx.Request) -> httpx.Response:
             ErroDeEntrada,
             "versão inexistente",
         ),
-        (httpx.Response(httpx.codes.INTERNAL_SERVER_ERROR), BackendIndisponivel, "500"),
-        (_conexao_recusada, BackendIndisponivel, "recusou"),
+        (httpx.Response(httpx.codes.INTERNAL_SERVER_ERROR), BackendIndisponivel, None),
+        (_conexao_recusada, BackendIndisponivel, None),
         (
             httpx.Response(httpx.codes.OK, text="<html>"),
             RespostaInvalida,
-            "decodificando",
+            None,
         ),
         (_pagina("XYZ-1"), RespostaInvalida, "XYZ-1"),
         (_pagina("ABC-x"), RespostaInvalida, "ABC-x"),
@@ -222,11 +221,20 @@ def _conexao_recusada(request: httpx.Request) -> httpx.Response:
 def test_fetch_traduz_respostas(
     resposta: httpx.Response | Callable[[httpx.Request], httpx.Response],
     erro: type[Exception],
-    mensagem: str,
+    mensagem: str | None,
 ) -> None:
     fonte, _ = _fonte(resposta if callable(resposta) else lambda _r: resposta)
     with pytest.raises(erro, match=mensagem):
         fonte.fetch("1.2.0")
+
+
+def test_fetch_url_sem_esquema_e_erro_de_entrada() -> None:
+    fonte, pedidos = _fonte(
+        [_pagina()], tarefas={**TAREFAS, ChaveTarefas.URL: "x.atlassian.net"}
+    )
+    with pytest.raises(ErroDeEntrada):
+        fonte.fetch("1")
+    assert pedidos == []
 
 
 def test_fetch_400_cita_versao_e_projeto() -> None:

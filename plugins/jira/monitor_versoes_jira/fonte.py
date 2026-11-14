@@ -19,6 +19,8 @@ _ALFABETO_NUMERICO = "0-9"
 _CAMINHO_BUSCA = "/rest/api/3/search/jql"
 _CAMINHO_EU = "/rest/api/3/myself"
 _POR_PAGINA = 100
+# Jira Cloud só atende HTTPS.
+_PREFIXO_URL = "https://"
 
 
 class _Param(StrEnum):
@@ -143,6 +145,12 @@ class FonteJira:
     ) -> httpx.Response:
         """GET autenticado, com rede, status e JSON traduzidos para erros do motor."""
         base = self._exigir(ChaveTarefas.URL).rstrip("/")
+        # Sem esquema, o httpx levanta UnsupportedProtocol (HTTPError): sairia como Jira fora.
+        if not base.lower().startswith(_PREFIXO_URL):
+            raise ErroDeEntrada(
+                f"[{Tabela.TAREFAS}] {ChaveTarefas.URL} deve começar com "
+                f"{_PREFIXO_URL}: {base!r}"
+            )
         credenciais = f"{self._exigir(VarJira.EMAIL)}:{self._exigir(VarJira.TOKEN)}"
         auth = "Basic " + base64.b64encode(credenciais.encode()).decode()
         try:
