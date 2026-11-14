@@ -9,9 +9,12 @@ from motor import config
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
+    DIRETORIO_APP,
     SECAO_REPOS,
+    SUBDIRETORIO_CACHE,
     TABELA_AMBIENTE,
     ULTIMO_COMMIT_COM_POSTGRES,
+    VAR_LOCALAPPDATA,
     VAR_XDG_CACHE_HOME,
     VAR_XDG_CONFIG_HOME,
     Chave,
@@ -582,20 +585,20 @@ def test_checagem_de_versao_nao_booleana_e_erro(central):
 
 def test_diretorio_cache_segue_xdg(tmp_path, monkeypatch):
     monkeypatch.setenv(VAR_XDG_CACHE_HOME, str(tmp_path))
-    assert diretorio_cache() == str(tmp_path / "monitor-versoes")
+    assert diretorio_cache() == str(tmp_path / DIRETORIO_APP)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="caminho do Linux/macOS")
 def test_diretorio_cache_sem_xdg_cai_em_cache_do_home(tmp_path, monkeypatch):
     monkeypatch.delenv(VAR_XDG_CACHE_HOME, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert diretorio_cache() == str(tmp_path / ".cache" / "monitor-versoes")
+    assert diretorio_cache() == str(tmp_path / ".cache" / DIRETORIO_APP)
 
 
 def test_diretorio_cache_no_windows_fica_no_localappdata(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    assert diretorio_cache() == str(tmp_path / "monitor-versoes" / "cache")
+    monkeypatch.setenv(VAR_LOCALAPPDATA, str(tmp_path))
+    assert diretorio_cache() == str(tmp_path / DIRETORIO_APP / SUBDIRETORIO_CACHE)
 
 
 def test_reaplicar_ambiente_restaura_chave_removida(monkeypatch):

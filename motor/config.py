@@ -41,11 +41,12 @@ ARQUIVO_SQLITE = "estado.db"
 
 #: Variável que localiza a config central; nunca vem do `[ambiente]`.
 VAR_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
-#: No Windows: dados em `%LOCALAPPDATA%`, config em `%APPDATA%`.
 VAR_XDG_CACHE_HOME = "XDG_CACHE_HOME"
+#: No Windows: dados em `%LOCALAPPDATA%`, config em `%APPDATA%`.
 VAR_LOCALAPPDATA = "LOCALAPPDATA"
 VAR_APPDATA = "APPDATA"
 DIRETORIO_APP = "monitor-versoes"
+SUBDIRETORIO_CACHE = "cache"
 
 
 class Tabela(StrEnum):
@@ -92,7 +93,9 @@ def diretorio_dados() -> str:
 def diretorio_cache() -> str:
     """Diretorio de cache do usuario; `$XDG_CACHE_HOME` vale so fora do Windows."""
     if sys.platform == "win32":
-        return os.path.join(_variavel_windows(VAR_LOCALAPPDATA), DIRETORIO_APP, "cache")
+        return os.path.join(
+            _variavel_windows(VAR_LOCALAPPDATA), DIRETORIO_APP, SUBDIRETORIO_CACHE
+        )
     base = os.environ.get(VAR_XDG_CACHE_HOME, "").strip()
     if not base:
         base = os.path.join(os.path.expanduser("~"), ".cache")
