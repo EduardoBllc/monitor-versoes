@@ -208,6 +208,8 @@ quando um comando busca tarefas ou precisa da referência: fonte inválida não 
 `atualizar --abort`, e `reconstruir-estado` roda sem fonte se houver `[referencia] padrao`.
 O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
 
+Para o Jira Cloud há o plugin [`monitor-versoes-jira`](plugins/jira/README.md).
+
 O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
 ou um `modulo:Classe`, e o pacote traz o `bitbucket`. Não há padrão: sem `fonte`, os commits
 saem só do grep na branch principal. Fora `fonte`, as chaves de `[prs]` são do plugin. Como
