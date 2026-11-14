@@ -157,9 +157,9 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     o chamou. Devolve o erro do central quando o comando o tolera.
     """
     ambiente, comando, acao = _selecionar(argv)
-    if (comando, acao) == ("inscricao", AcaoInscricao.RODAR):
+    if (comando, acao) == (COMANDO_INSCRICAO, AcaoInscricao.RODAR):
         return None
-    filho = (comando, acao) == ("inscricao", AcaoInscricao.EXECUTAR)
+    filho = (comando, acao) == (COMANDO_INSCRICAO, AcaoInscricao.EXECUTAR)
     xdg = os.environ.get(VAR_XDG_CONFIG_HOME)
     erro: MotorError | None = None
     try:
@@ -200,6 +200,11 @@ def _diagnostico(args: argparse.Namespace) -> None:
         print(formatar(resultado))
     if falhou(resultados):
         sys.exit(1)
+
+
+COMANDO_SERVE = "serve"
+COMANDO_TUI = "tui"
+COMANDO_INSCRICAO = "inscricao"
 
 
 class AcaoInscricao(StrEnum):
@@ -324,7 +329,7 @@ def _inscricao(args: argparse.Namespace) -> None:
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "migrar": _migrar,
     "diagnostico": _diagnostico,
-    "inscricao": _inscricao,
+    COMANDO_INSCRICAO: _inscricao,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
 }
@@ -463,11 +468,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _parsers_de_orfaos(sub, comum)
 
     sub.add_parser(
-        "tui",
+        COMANDO_TUI,
         help="abre a interface interativa de consulta, verificacao e atualizacao",
     )
 
-    p_serve = sub.add_parser("serve", help="sobe a interface web local")
+    p_serve = sub.add_parser(COMANDO_SERVE, help="sobe a interface web local")
     p_serve.add_argument("--porta", type=int, default=PORTA_PADRAO)
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
@@ -477,7 +482,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="checa cada peça da instalação e diz como corrigir o que falhar",
     )
 
-    p_insc = sub.add_parser("inscricao", help="acompanha versões em segundo plano")
+    p_insc = sub.add_parser(
+        COMANDO_INSCRICAO, help="acompanha versões em segundo plano"
+    )
     acoes_insc = p_insc.add_subparsers(
         dest="acao_inscricao", required=True, metavar="acao"
     )
@@ -811,9 +818,9 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
 
 _SEM_AVISO = frozenset(
     {
-        "serve",
-        "tui",
-        "inscricao",
+        COMANDO_SERVE,
+        COMANDO_TUI,
+        COMANDO_INSCRICAO,
         cli_instalacao.COMANDO_PLUGIN,
         cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
     }
@@ -869,16 +876,16 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         try:
-            if args.comando in ("serve", "tui"):
+            if args.comando in (COMANDO_SERVE, COMANDO_TUI):
                 # Os dois abrem o estado só depois de subir; a config antiga tem de
                 # parar antes de abrir a porta ou montar a tela.
                 checar_backend()
 
-            if args.comando == "serve":
+            if args.comando == COMANDO_SERVE:
                 _iniciar_serve(args.porta)
                 return
 
-            if args.comando == "tui":
+            if args.comando == COMANDO_TUI:
                 _iniciar_tui()
                 return
 

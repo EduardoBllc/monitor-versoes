@@ -1584,6 +1584,11 @@ class _Cmd(StrEnum):
     VERSAO = "--version"
 
 
+class _SemAviso(StrEnum):
+    CHECAR_DESLIGADO = "checar_desligado"
+    FORA_DO_UV_TOOL = "fora_do_uv_tool"
+
+
 _NOVIDADE_MOTOR = Novidade(
     "monitor-versoes", "0.2.0", "0.3.0", "monitor-versoes atualizar-motor"
 )
@@ -1647,10 +1652,10 @@ def test_sem_aviso_nos_comandos_excluidos(monkeypatch, capsys, comando):
     assert renovacoes == []
 
 
-@pytest.mark.parametrize("motivo", ["checar_desligado", "fora_do_uv_tool"])
+@pytest.mark.parametrize("motivo", list(_SemAviso))
 def test_sem_aviso_sem_checagem_ou_fora_do_uv_tool(monkeypatch, capsys, motivo):
     renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))
-    if motivo == "checar_desligado":
+    if motivo is _SemAviso.CHECAR_DESLIGADO:
         monkeypatch.setattr(cli, "checagem_ligada", lambda: False)
     else:
         monkeypatch.setattr(cli, "ler_registro", lambda: None)
