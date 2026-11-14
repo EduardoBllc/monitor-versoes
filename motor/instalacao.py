@@ -22,7 +22,8 @@ PREFIXO_GIT = "git+"
 PARAMETRO_REV = "rev"
 PARAMETRO_SUBDIRETORIO = "subdirectory"
 # Ref que não muda sozinha: tag de versão ou SHA completo; o resto é branch.
-_REF_FIXA = re.compile(r"v\d+\.\d+\.\d+|[0-9a-f]{40}")
+TAG_VERSAO = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
+_REF_FIXA = re.compile(f"{TAG_VERSAO.pattern}|[0-9a-f]{{40}}")
 
 
 class TipoOrigem(StrEnum):
