@@ -63,7 +63,7 @@ class Origem:
 
 @dataclass(frozen=True)
 class PluginInstalado:
-    grupo: str
+    grupo: GrupoPlugin
     nome: str
     pacote: str
     versao: str

@@ -277,9 +277,14 @@ def novidades_para_exibir() -> tuple[Novidade, ...]:
     return cache.novidades if cache else ()
 
 
-def linha_aviso(n: Novidade) -> str:
+def texto_aviso(n: Novidade) -> str:
+    """O aviso sem o comando: a web mostra o comando à parte."""
     prefixo = "" if n.pacote == PACOTE_MOTOR else f"{n.pacote}: "
-    return f"{prefixo}Versão {n.nova} disponível (você tem {n.atual}): {n.comando}"
+    return f"{prefixo}Versão {n.nova} disponível (você tem {n.atual}):"
+
+
+def linha_aviso(n: Novidade) -> str:
+    return f"{texto_aviso(n)} {n.comando}"
 
 
 def _checar_instalado() -> tuple[Novidade, ...]:

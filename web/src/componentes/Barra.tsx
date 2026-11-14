@@ -1,7 +1,6 @@
-import { Button, Code, Group, Loader, Select, Stack, Text, Tooltip } from "@mantine/core";
+import { Button, Code, Group, Loader, Select, Text, Tooltip } from "@mantine/core";
 import type { ReactNode } from "react";
-import type { Novidade, RepoOption, VersionOption } from "../api/tipos";
-import { textoAviso } from "../instalacao";
+import type { NovidadeVista, RepoOption, VersionOption } from "../api/tipos";
 
 const SEM_CHECKOUT = "checkout local não encontrado";
 const CARREGANDO = "carregando…";
@@ -16,7 +15,7 @@ export interface PropsBarra {
   versao?: string;
   ocupado: boolean;
   bloqueadas?: string[];
-  novidades: Novidade[];
+  novidades: NovidadeVista[];
   aoEscolherRepo: (nome: string) => void;
   aoEscolherVersao: (numero: string) => void;
   aoVerificar: (auditar: boolean) => void;
@@ -26,6 +25,22 @@ export interface PropsBarra {
   aoConfigurar: () => void;
   // Espaço dos botões Atualizar/Abortar, preenchido pela tarefa do fluxo de atualização.
   slotAtualizar?: ReactNode;
+}
+
+// Uma linha só: a barra tem altura fixa; o resto fica no title do "+N".
+function AvisoVersao({ novidades }: { novidades: NovidadeVista[] }) {
+  const [primeira, ...resto] = novidades;
+  if (primeira === undefined) return null;
+  return (
+    <Text size="xs" c="orange">
+      {primeira.texto} <Code>{primeira.comando}</Code>
+      {resto.length > 0 && (
+        <Text span inherit title={resto.map((n) => `${n.texto} ${n.comando}`).join("\n")}>
+          {` +${resto.length}`}
+        </Text>
+      )}
+    </Text>
+  );
 }
 
 export function Barra(p: PropsBarra) {
@@ -108,15 +123,7 @@ export function Barra(p: PropsBarra) {
         </Group>
       </Tooltip>
       <Group gap="xs" ml="auto">
-        {p.novidades.length > 0 && (
-          <Stack gap={0}>
-            {p.novidades.map((n) => (
-              <Text key={n.pacote} size="xs" c="orange">
-                {textoAviso(n)} <Code>{n.comando}</Code>
-              </Text>
-            ))}
-          </Stack>
-        )}
+        <AvisoVersao novidades={p.novidades} />
         <Button variant="default" onClick={p.aoInscricoes}>
           Inscrições
         </Button>

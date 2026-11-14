@@ -674,7 +674,7 @@ export interface components {
             /** Plugins */
             plugins: components["schemas"]["PluginInstalado"][];
             /** Novidades */
-            novidades: components["schemas"]["Novidade"][];
+            novidades: components["schemas"]["NovidadeVista"][];
         };
         /**
          * JulgamentoOrfao
@@ -703,8 +703,8 @@ export interface components {
              */
             motivo: string;
         };
-        /** Novidade */
-        Novidade: {
+        /** NovidadeVista */
+        NovidadeVista: {
             /** Pacote */
             pacote: string;
             /** Atual */
@@ -713,6 +713,8 @@ export interface components {
             nova: string;
             /** Comando */
             comando: string;
+            /** Texto */
+            texto: string;
         };
         /** NumeroVersao */
         NumeroVersao: {
@@ -829,8 +831,7 @@ export interface components {
         };
         /** PluginInstalado */
         PluginInstalado: {
-            /** Grupo */
-            grupo: string;
+            grupo: components["schemas"]["GrupoPlugin"];
             /** Nome */
             nome: string;
             /** Pacote */

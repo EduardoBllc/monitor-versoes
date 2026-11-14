@@ -1920,7 +1920,7 @@
           },
           "novidades": {
             "items": {
-              "$ref": "#/components/schemas/Novidade"
+              "$ref": "#/components/schemas/NovidadeVista"
             },
             "type": "array",
             "title": "Novidades"
@@ -1966,7 +1966,7 @@
         "title": "JulgamentoOrfao",
         "description": "Julgamento humano de um commit órfão (sem referência de tarefa) de uma\nversão. Como a `Exclusion`, o git não o recupera.\n\n`chamado=None` quer dizer \"não pertence a chamado nenhum\"; senão é o ID\npuro, a mesma chave das atribuições."
       },
-      "Novidade": {
+      "NovidadeVista": {
         "properties": {
           "pacote": {
             "type": "string",
@@ -1983,6 +1983,10 @@
           "comando": {
             "type": "string",
             "title": "Comando"
+          },
+          "texto": {
+            "type": "string",
+            "title": "Texto"
           }
         },
         "type": "object",
@@ -1990,9 +1994,10 @@
           "pacote",
           "atual",
           "nova",
-          "comando"
+          "comando",
+          "texto"
         ],
-        "title": "Novidade"
+        "title": "NovidadeVista"
       },
       "NumeroVersao": {
         "properties": {
@@ -2332,8 +2337,7 @@
       "PluginInstalado": {
         "properties": {
           "grupo": {
-            "type": "string",
-            "title": "Grupo"
+            "$ref": "#/components/schemas/GrupoPlugin"
           },
           "nome": {
             "type": "string",

@@ -25,4 +25,4 @@ export type PedidoProposta = Esquemas["PedidoProposta"];
 export type PropostaDeBloco = Esquemas["PropostaDeBloco"];
 export type Instalacao = Esquemas["Instalacao"];
 export type PluginInstalado = Esquemas["PluginInstalado"];
-export type Novidade = Esquemas["Novidade"];
+export type NovidadeVista = Esquemas["NovidadeVista"];

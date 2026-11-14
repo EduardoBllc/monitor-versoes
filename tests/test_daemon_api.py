@@ -991,6 +991,10 @@ _PLUGIN = PluginInstalado(
     Origem(TipoOrigem.GIT, "https://example.com/plugin-prs", "v1.0.0", "abc"),
 )
 _NOVIDADE = Novidade(PACOTE_MOTOR, "0.2.0", "0.3.0", f"{PACOTE_MOTOR} atualizar-motor")
+_NOVIDADE_VISTA = {
+    **jsonable_encoder(_NOVIDADE),
+    "texto": "Versão 0.3.0 disponível (você tem 0.2.0):",
+}
 
 
 def _preparar_instalacao(
@@ -1017,7 +1021,7 @@ def test_api_instalacao(cliente: TestClient, monkeypatch: pytest.MonkeyPatch) ->
 
     assert corpo == {
         "plugins": [jsonable_encoder(_PLUGIN)],
-        "novidades": [jsonable_encoder(_NOVIDADE)],
+        "novidades": [_NOVIDADE_VISTA],
     }
     assert renovacoes == []
 
@@ -1030,7 +1034,7 @@ def test_api_instalacao_com_cache_vencido_dispara_renovacao(
 
     corpo = cliente.get("/api/instalacao").json()
 
-    assert corpo["novidades"] == [jsonable_encoder(_NOVIDADE)]
+    assert corpo["novidades"] == [_NOVIDADE_VISTA]
     assert renovacoes == [1]
 
 

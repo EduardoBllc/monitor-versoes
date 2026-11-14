@@ -39,7 +39,7 @@ from motor.engine.consultar import ChamadoConsultado
 from motor.engine.orfaos import OrfaoDaVersao
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvariante
 from motor.instalacao import PluginInstalado, plugins_instalados
-from motor.novidades import Novidade, novidades_para_exibir
+from motor.novidades import novidades_para_exibir, texto_aviso
 from motor.operacoes import (
     PedidoProposta,
     RepoOption,
@@ -159,9 +159,18 @@ class InscricaoVista:
 
 
 @dataclass(frozen=True)
+class NovidadeVista:
+    pacote: str
+    atual: str
+    nova: str
+    comando: str
+    texto: str
+
+
+@dataclass(frozen=True)
 class Instalacao:
     plugins: list[PluginInstalado]
-    novidades: list[Novidade]
+    novidades: list[NovidadeVista]
 
 
 # Rotas síncronas respondem 409 aqui; nas operações longas o erro cai na Execucao
@@ -444,7 +453,13 @@ def _rotas_config(app: FastAPI, ctx: _Contexto) -> None:
 
     @app.get("/api/instalacao")
     def ler_instalacao() -> Instalacao:
-        return Instalacao(plugins_instalados(), list(novidades_para_exibir()))
+        return Instalacao(
+            plugins_instalados(),
+            [
+                NovidadeVista(**asdict(n), texto=texto_aviso(n))
+                for n in novidades_para_exibir()
+            ],
+        )
 
 
 def _rotas_estaticos(app: FastAPI, estaticos: Path) -> None:

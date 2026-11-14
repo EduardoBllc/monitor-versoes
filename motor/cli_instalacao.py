@@ -15,7 +15,6 @@ from itertools import groupby
 from pathlib import Path
 
 from motor.config import checagem_ligada, diretorio_cache
-from motor.config_edicao import GrupoPlugin
 from motor.errors import ErroDeEntrada
 from motor.instalacao import (
     PACOTE_MOTOR,
@@ -80,7 +79,7 @@ def _listar() -> None:
         cache = ler_cache(Path(diretorio_cache()) / ARQUIVO_CACHE)
         novas = {n.pacote: n.nova for n in cache.novidades} if cache else {}
     for grupo, plugins in groupby(plugins_instalados(), key=lambda p: p.grupo):
-        print(GrupoPlugin(grupo).name.lower())
+        print(grupo.name.lower())
         for p in plugins:
             seta = f" → {novas[p.pacote]}" if p.pacote in novas else ""
             print(f"  {p.nome}: {p.pacote} {p.versao}, {_descrever(p.origem)}{seta}")
