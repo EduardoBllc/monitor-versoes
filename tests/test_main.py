@@ -25,6 +25,7 @@ import dotenv
 import pytest
 
 import motor.__main__ as cli
+import motor.daemon.disparo as disparo
 import motor.montagem as montagem
 import motor.novidades as modulo_novidades
 from motor.__main__ import (
@@ -1180,11 +1181,6 @@ def test_inscricao_adicionar_grava_sem_diretorio_nem_ambiente(inscricoes_env, tm
     assert "ambiente" not in crua
 
 
-def test_inscricao_adicionar_avisa_sem_agendador(inscricoes_env, tmp_path, capsys):
-    _inscrever(_repo_dir(tmp_path))
-    assert "agendador não instalado" in capsys.readouterr().err
-
-
 def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
     nome = _repo_dir(tmp_path)
     _inscrever(nome)
@@ -1236,7 +1232,7 @@ def test_executavel_sem_console_roda_as_inscricoes_sem_stdout_nem_stderr(
         "gui-scripts"
     ].values()
     vistos: list[Any] = []
-    monkeypatch.setattr(cli, "rodar", lambda *a: vistos.append(a))
+    monkeypatch.setattr(disparo, "rodar", lambda *a: vistos.append(a))
     monkeypatch.setattr(sys, "stdout", None)
     monkeypatch.setattr(sys, "stderr", None)
     pkgutil.resolve_name(alvo)()
@@ -1254,9 +1250,9 @@ def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp
     monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
     visto: dict[str, Any] = {}
     monkeypatch.setattr(
-        cli, "rodar", lambda c, a, disparar, n: visto.update(d=disparar)
+        disparo, "rodar", lambda c, a, disparar, n: visto.update(d=disparar)
     )
-    monkeypatch.setattr(cli, "montar_notificador", lambda: None)
+    monkeypatch.setattr(disparo, "montar_notificador", lambda: None)
     main(["inscricao", "rodar"])
     assert chave not in os.environ
     capturado: dict[str, Any] = {}
@@ -1397,8 +1393,33 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
             cliente.recv(1)
     rodou = []
     monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
-    daemon_app.servir(porta)
+    # Sem isto a suíte desinstalaria o timer real de quem a roda.
+    monkeypatch.setattr(daemon_app, "remover_agendador_antigo", lambda *_: False)
+    daemon_app.servir(porta, {})
     assert rodou == [porta]
+
+
+VAR_DO_DOTENV = "MONITOR_TESTE_VAR_DO_DOTENV"
+VALOR_DO_DOTENV = "do-dotenv"
+
+
+def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
+    import motor.daemon.app as daemon_app
+
+    (tmp_path / ".env").write_text(f"{VAR_DO_DOTENV}={VALOR_DO_DOTENV}\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(VAR_DO_DOTENV, "")
+    monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
+    monkeypatch.setattr(cli, "checar_backend", lambda: None)
+    vistos = []
+    monkeypatch.setattr(
+        daemon_app, "servir", lambda porta, ambiente: vistos.append(ambiente)
+    )
+
+    main(["serve"])
+
+    (ambiente,) = vistos
+    assert ambiente[VAR_DO_DOTENV] != VALOR_DO_DOTENV
 
 
 # -- configuração antiga do Postgres ------------------------------------------

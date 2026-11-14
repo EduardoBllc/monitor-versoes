@@ -2,9 +2,8 @@ import { Button, Group, Loader, Modal, Table, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Metodo, api } from "../api/cliente";
 import type { InscricaoVista } from "../api/tipos";
+import { consultaInscricoes } from "../inscricoes";
 import { notificarErro } from "./notificar";
-
-const CHAVE = ["inscricoes"];
 
 function ultima(i: InscricaoVista): string {
   if (i.ultima === null) return "nunca executou";
@@ -24,15 +23,11 @@ export function ModalInscricoes({
   versao?: string;
 }) {
   const cliente = useQueryClient();
-  const lista = useQuery({
-    queryKey: CHAVE,
-    queryFn: () => api<InscricaoVista[]>(Metodo.GET, "/api/inscricoes"),
-    enabled: aberto,
-  });
+  const lista = useQuery(consultaInscricoes);
   const gravar = useMutation({
     mutationFn: (escrita: () => Promise<void>) => escrita(),
     onError: notificarErro,
-    onSettled: () => cliente.invalidateQueries({ queryKey: CHAVE }),
+    onSettled: () => cliente.invalidateQueries({ queryKey: consultaInscricoes.queryKey }),
   });
 
   return (

@@ -47,6 +47,7 @@ CAMPO_DIRETORIO_ANTIGO = "diretorio"
 CAMPO_AMBIENTE_ANTIGO = "ambiente"
 VERMELHO = "sumido:abc"
 NAO_JSON = "{nao e json"
+SO_POSIX = "linux"
 
 
 class Repo(StrEnum):
@@ -331,6 +332,7 @@ def test_disparar_subprocesso_monta_o_comando(
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(subprocess, "run", falso)
+    monkeypatch.setattr(sys, "platform", SO_POSIX)
     i = _insc()
     ambiente = {"CHAVE_PAI": "v"}
     assert disparar_subprocesso(i, ambiente) == 0
@@ -341,6 +343,8 @@ def test_disparar_subprocesso_monta_o_comando(
     assert "cwd" not in visto
     assert visto["env"] == ambiente
     assert visto["timeout"] == LIMITE_EXECUCAO_S
+    assert visto["start_new_session"] is True
+    assert visto["creationflags"] == 0
 
 
 @pytest.mark.parametrize(

@@ -88,10 +88,9 @@ checar = false
 
 O porquê: [040](docs/decisoes/040-instalacao-pelo-registro-do-uv.md).
 
-Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Se você
-tem inscrições agendadas, rode `monitor-versoes inscricao agendar` de novo depois de atualizar: o
-timer do systemd e o LaunchAgent guardam o caminho absoluto do executável antigo, que deixa de
-existir. Não há migração automática.
+Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Quem
+agenda o `inscricao rodar` à mão (veja "Sem o daemon") deve conferir o caminho absoluto do
+executável depois de atualizar.
 
 Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -114,10 +113,12 @@ Depois, o mesmo `uv tool install` dos outros sistemas. Os caminhos mudam:
 `XDG_CONFIG_HOME`, se definida, vale também no Windows. No TOML, escreva caminhos do Windows
 entre aspas simples, `caminho = 'C:\repos\app'`: entre aspas duplas, `\` é escape.
 
-`monitor-versoes inscricao agendar` não instala nada no Windows; crie a tarefa agendada uma vez,
-à mão. Ela chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que
-`monitor-versoes inscricao rodar` sem abrir janela de console. No Prompt de Comando (`cmd`),
-ache o executável e crie a tarefa com o caminho que o `where` mostrar:
+No Windows não há disparo automático sem o daemon; crie a tarefa agendada uma vez, à mão. Ela
+chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que `monitor-versoes inscricao rodar`
+sem abrir janela de console. Com o `serve` não crie a tarefa, e apague a que já criou
+(`schtasks /delete /tn monitor-versoes-inscricoes /f`): o `serve` não remove nada no Windows e
+os dois disparariam em dobro. No Prompt de Comando (`cmd`), ache o executável e crie a tarefa com
+o caminho que o `where` mostrar:
 
 ```bat
 where monitor-versoes-inscricoes
@@ -127,7 +128,7 @@ schtasks /create /tn monitor-versoes-inscricoes /sc minute /mo 1 /it /tr "\"C:\U
 `/it` roda a tarefa só com você logado: fora da sessão não há onde mostrar a notificação. Para
 remover: `schtasks /delete /tn monitor-versoes-inscricoes /f`.
 
-Alternativa: rodar no WSL como no Linux; o agendador (systemd) e a notificação desktop dependem
+Alternativa: rodar no WSL como no Linux; o systemd e a notificação desktop dependem
 de como o WSL está configurado.
 
 ### Configurar o ambiente
@@ -169,7 +170,7 @@ valendo como alternativa. Para cada variável vence a primeira fonte que a defin
 | --- | --- |
 | 1 | `[ambiente]` do config central |
 | 2 | `.env` do diretório atual (`.env.development` com `--env development`) |
-| 3 | variável já exportada no shell (ou no agendador) |
+| 3 | variável já exportada no shell (ou no cron/timer, sem o daemon) |
 
 O `[ambiente]` vence também o `.env.development`: com ele definido, `--env development` não
 leva a outro banco.
@@ -463,14 +464,16 @@ o porquê: [028](docs/decisoes/028-inscricoes-fora-do-estado.md).
 monitor-versoes inscricao adicionar 13.35.0 --repo meu-repo --intervalo 1h  # Nm ou Nh, padrão 30m
 monitor-versoes inscricao listar                                            # clone, intervalo, última execução
 monitor-versoes inscricao remover 13.35.0 --repo meu-repo
-monitor-versoes inscricao agendar                                           # instala o disparo a cada minuto
-monitor-versoes inscricao agendar --desfazer
-monitor-versoes inscricao rodar                                             # o que o agendador chama
+monitor-versoes inscricao rodar                                             # dispara as vencidas agora
 ```
 
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
-A execução agendada não depende de diretório: não lê `.env` e usa o `[ambiente]` do config
-central ou o ambiente do agendador.
+Com o `monitor-versoes serve` de pé, as inscrições vencidas rodam sozinhas (o daemon confere a
+cada minuto); o porquê: [041](docs/decisoes/041-disparo-das-inscricoes-pelo-daemon.md). Ao subir,
+o `serve` remove o timer do systemd ou o LaunchAgent que versões antigas instalaram. Dois `serve`
+disparam em dobro: mantenha um só.
+A execução não depende de diretório e não lê `.env`, nem quando o daemon a dispara: o filho usa
+o `[ambiente]` do config central ou o ambiente que o `serve` herdou.
 Também dá para gerenciar na TUI (tecla `i`) e na web (botão **Inscrições** da barra).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
@@ -485,13 +488,37 @@ outras. O desfecho da última execução aparece no `listar`:
 | `encerrada` | versão liberada; a inscrição é removida |
 | `erro` | falha, com a mensagem; o processo que morre sem gravar resultado também vira `ERRO` |
 
-`agendar` usa o `monitor-versoes` do `PATH` no momento do comando (caminho absoluto) e instala, no Linux,
-o timer de usuário do systemd (`monitor-versoes-inscricoes.timer`) e, no macOS, um LaunchAgent
-(`monitor-versoes.inscricoes.plist`). No Windows, a tarefa se cria à mão (veja "Windows"); outro
-sistema falha com erro de entrada. O agendador roda
-sem o agente SSH nem o `PATH` da sua sessão (push por SSH via agente pode falhar e virar `erro`);
-no Linux, o timer de usuário só roda fora de uma sessão com `loginctl enable-linger`; no macOS,
-a notificação desktop pode falhar num Python fora de um app empacotado (a falha vai para o log).
+#### Sem o daemon
+
+Sem o `serve`, agende você mesmo o `inscricao rodar` a cada minuto, com o caminho absoluto
+do executável (`which monitor-versoes`). **Não use junto com o `serve`** (vale para cron,
+systemd e Windows): os dois disparariam em dobro. Com cron:
+
+```cron
+* * * * * /caminho/absoluto/monitor-versoes inscricao rodar
+```
+
+Ou com um par de unidades de usuário do systemd (`~/.config/systemd/user/`), que chamam o mesmo
+comando:
+
+```ini
+# monitor-versoes-manual.service
+[Service]
+Type=oneshot
+ExecStart=/caminho/absoluto/monitor-versoes inscricao rodar
+
+# monitor-versoes-manual.timer
+[Timer]
+OnCalendar=minutely
+[Install]
+WantedBy=timers.target
+```
+
+Ative com `systemctl --user enable --now monitor-versoes-manual.timer`. O disparo
+roda sem o agente SSH nem o `PATH` da sua sessão (push por SSH via agente pode falhar e virar
+`erro`); no Linux, o timer de usuário só roda fora de uma sessão com `loginctl enable-linger`;
+no macOS, a notificação desktop pode falhar num Python fora de um app empacotado (a falha vai
+para o log).
 
 Notificações desktop (via `desktop-notifier`; falha ao notificar vai para o log e não muda o
 desfecho):

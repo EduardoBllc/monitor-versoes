@@ -14,24 +14,14 @@ import os
 import sys
 import textwrap
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from enum import StrEnum
-from functools import partial
 from pathlib import Path
 from typing import TextIO
 
 from motor import cli_instalacao
-from motor.agendador import (
-    ARGUMENTOS_RODAR,
-    agendar,
-    desagendar,
-    executavel_motor,
-    instalado,
-    rodar_comando_do_sistema,
-    sistema_atual,
-)
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
@@ -46,6 +36,7 @@ from motor.config import (
     validar_nome_repo,
 )
 from motor.daemon import PORTA_PADRAO
+from motor.daemon.disparo import rodada
 from motor.diagnostico import diagnosticar, falhou, formatar
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
@@ -76,13 +67,11 @@ from motor.inscricoes import (
     Inscricao,
     caminho_arquivo,
     carregar,
-    disparar_subprocesso,
     formatar_intervalo,
     inscrever,
     parse_intervalo,
     registrar_execucao,
     remover,
-    rodar,
 )
 from motor.migracoes import head, migrar
 from motor.montagem import (
@@ -150,7 +139,7 @@ def _carregar_ambiente(argv: list[str]) -> MotorError | None:
     arquivo diferente do que acabou de aplicar.
 
     O `inscricao rodar` não lê nada e repassa aos filhos o ambiente que herdou;
-    o `inscricao executar` não lê `.env`, para não depender de onde o agendador
+    o `inscricao executar` não lê `.env`, para não depender de onde o `rodar`
     o chamou. Devolve o erro do central quando o comando o tolera.
     """
     ambiente, comando, acao = _selecionar(argv)
@@ -209,16 +198,8 @@ class AcaoInscricao(StrEnum):
     ADICIONAR = "adicionar"
     LISTAR = "listar"
     REMOVER = "remover"
-    AGENDAR = "agendar"
     RODAR = "rodar"
     EXECUTAR = "executar"
-
-
-def _agendador_instalado() -> bool:
-    try:
-        return instalado(sistema_atual(), Path.home())
-    except ErroDeEntrada:  # SO sem agendador: o adicionar só avisa
-        return False
 
 
 def _inscricao_adicionar(args: argparse.Namespace) -> None:
@@ -232,11 +213,6 @@ def _inscricao_adicionar(args: argparse.Namespace) -> None:
         ),
     )
     print(f"inscrição de {args.versao} registrada")
-    if not _agendador_instalado():
-        print(
-            "agendador não instalado: rode `monitor-versoes inscricao agendar`",
-            file=sys.stderr,
-        )
 
 
 def _inscricao_listar() -> None:
@@ -252,16 +228,6 @@ def _inscricao_listar() -> None:
         print(
             f"{i.versao}  {i.repo}  a cada {formatar_intervalo(i.intervalo)}  {ultima}"
         )
-
-
-def _inscricao_agendar(args: argparse.Namespace) -> None:
-    sistema = sistema_atual()
-    if args.desfazer:
-        desagendar(sistema, Path.home(), rodar_comando_do_sistema)
-        print("agendador removido")
-    else:
-        agendar(sistema, Path.home(), executavel_motor(), rodar_comando_do_sistema)
-        print("agendador instalado")
 
 
 def _inscricao_executar(args: argparse.Namespace) -> None:
@@ -294,7 +260,7 @@ def _inscricao_executar(args: argparse.Namespace) -> None:
     except MotorError as e:
         resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
     except Exception as e:
-        # Grava antes de propagar: o traceback segue para o log do agendador.
+        # Grava antes de propagar: o traceback segue para o log de quem disparou (serve, cron ou timer).
         erro = Resultado(Desfecho.ERRO, mensagem=f"{type(e).__name__}: {e}")
         registrar_execucao(caminho, inscricao, erro, notificador, datetime.now(UTC))
         raise
@@ -309,15 +275,8 @@ def _inscricao(args: argparse.Namespace) -> None:
             _inscricao_listar()
         case AcaoInscricao.REMOVER:
             remover(caminho_arquivo(), args.repo, args.versao)
-        case AcaoInscricao.AGENDAR:
-            _inscricao_agendar(args)
         case AcaoInscricao.RODAR:
-            rodar(
-                caminho_arquivo(),
-                datetime.now(UTC),
-                partial(disparar_subprocesso, env=dict(os.environ)),
-                montar_notificador(),
-            )
+            rodada(os.environ)
         case AcaoInscricao.EXECUTAR:
             _inscricao_executar(args)
 
@@ -501,12 +460,8 @@ def _build_parser() -> argparse.ArgumentParser:
     acoes_insc.add_parser(
         AcaoInscricao.REMOVER, parents=[repo_arg], help="remove uma inscrição"
     )
-    p_agendar = acoes_insc.add_parser(
-        AcaoInscricao.AGENDAR, help="instala o disparo por minuto"
-    )
-    p_agendar.add_argument("--desfazer", action="store_true", help="remove o disparo")
     acoes_insc.add_parser(AcaoInscricao.RODAR, help="dispara as inscrições vencidas")
-    # Sem help=: o argparse não lista; é o comando interno do agendador.
+    # Sem help=: o argparse não lista; é o comando interno do `rodar`.
     acoes_insc.add_parser(AcaoInscricao.EXECUTAR, parents=[repo_arg])
 
     cli_instalacao.adicionar_parsers(sub)
@@ -514,10 +469,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_serve(porta: int) -> None:
+def _iniciar_serve(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
     from motor.daemon.app import servir
 
-    servir(porta)
+    servir(porta, ambiente_filhos)
 
 
 def _iniciar_tui() -> None:
@@ -839,6 +794,8 @@ def _avisar_versao_nova(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # Antes do `.env` do cwd: os filhos do daemon reaplicam só o central (031).
+    ambiente_filhos = dict(os.environ)
     # ponytail: --version não depende do ambiente; só a forma isolada, que é a usada.
     if argv[:1] == ["--version"]:
         _build_parser().parse_args(argv)
@@ -872,7 +829,7 @@ def main(argv: list[str] | None = None) -> None:
                 checar_backend()
 
             if args.comando == COMANDO_SERVE:
-                _iniciar_serve(args.porta)
+                _iniciar_serve(args.porta, ambiente_filhos)
                 return
 
             if args.comando == COMANDO_TUI:
@@ -918,7 +875,7 @@ def main_inscricoes() -> None:
     janela a cada minuto. Sem console, `sys.stdout`/`sys.stderr` são `None`;
     `print`, `logging` e `argparse` já os toleram, e o teste confere.
     """
-    main(list(ARGUMENTOS_RODAR))
+    main(["inscricao", AcaoInscricao.RODAR])
 
 
 if __name__ == "__main__":

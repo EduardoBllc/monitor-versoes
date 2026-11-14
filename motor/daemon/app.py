@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
+from functools import partial
 from http import HTTPStatus
 from pathlib import Path
 
@@ -17,9 +18,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from motor import inscricoes as arquivo
+from motor.agendador import remover_agendador_antigo, rodar_comando_do_sistema
 from motor.config import SECAO_REPOS
 from motor.config_edicao import Alteracao, ConfigEditavel, gravar, ler_para_edicao
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
+from motor.daemon.disparo import ligar_disparo, rodada
 from motor.daemon.erros import (
     MENSAGEM_INTERNA,
     ConfigOcupada,
@@ -547,7 +550,7 @@ def _rodar(app: FastAPI, porta: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=porta)
 
 
-def servir(porta: int) -> None:
+def servir(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
     import socket
 
     with socket.socket() as sonda:
@@ -558,10 +561,12 @@ def servir(porta: int) -> None:
             sonda.bind(("127.0.0.1", porta))
         except OSError as erro:
             raise ErroDeEntrada(f"porta {porta} em uso; use --porta") from erro
+    remover_agendador_antigo(Path.home(), rodar_comando_do_sistema)
     app = criar_app(
         runners_com_progresso,
         porta=porta,
         estaticos=PASTA_ESTATICOS,
         inscricoes_em=arquivo.caminho_arquivo(),
     )
+    ligar_disparo(app, partial(rodada, ambiente_filhos))
     _rodar(app, porta)

@@ -8,7 +8,7 @@ import {
   Modal,
   Text,
 } from "@mantine/core";
-import { Notifications } from "@mantine/notifications";
+import { Notifications, notifications } from "@mantine/notifications";
 import {
   QueryClient,
   QueryClientProvider,
@@ -72,6 +72,12 @@ import {
   type Resultado,
 } from "./execucoes";
 import { AVISO_DESCARTE } from "./conflito";
+import {
+  INTERVALO_CONSULTA_INSCRICOES_MS,
+  consultaInscricoes,
+  avisos,
+} from "./inscricoes";
+import type { InscricaoVista } from "./api/tipos";
 import { useInstalacao } from "./instalacao";
 import { caminhoDe, lerCaminho } from "./rotas";
 
@@ -150,6 +156,20 @@ function Tela() {
   useEffect(() => {
     if (versoes.error) notificarErro(versoes.error);
   }, [versoes.error]);
+
+  const inscricoesVistas = useQuery({
+    ...consultaInscricoes,
+    refetchInterval: INTERVALO_CONSULTA_INSCRICOES_MS,
+  });
+  // Ref, não state: o efeito duplo do StrictMode não pode avisar a mesma mudança duas vezes.
+  const inscricoesAnteriores = useRef<InscricaoVista[] | undefined>(undefined);
+  useEffect(() => {
+    const depois = inscricoesVistas.data;
+    if (depois === undefined) return;
+    for (const a of avisos(inscricoesAnteriores.current, depois))
+      notifications.show({ title: a.titulo, message: a.mensagem, color: a.cor });
+    inscricoesAnteriores.current = depois;
+  }, [inscricoesVistas.data]);
 
   // Sem repo na URL, abre no primeiro com checkout; sem versão, na mais nova.
   useEffect(() => {
