@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import subprocess
@@ -285,6 +286,7 @@ def vencido(cache: Cache | None, agora: datetime) -> bool:
     return cache is None or agora - cache.checado_em > VALIDADE
 
 
+@functools.cache  # uma vez por processo: o diagnóstico lê o cache vencido mais de uma vez
 def disparar_renovacao() -> None:
     comando = [sys.executable, "-P", "-m", "motor.novidades"]
     nada = subprocess.DEVNULL

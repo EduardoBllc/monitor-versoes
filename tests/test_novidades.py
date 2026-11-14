@@ -260,6 +260,7 @@ def test_disparar_renovacao_ignora_oserror(monkeypatch: pytest.MonkeyPatch) -> N
         raise OSError
 
     monkeypatch.setattr(subprocess, "Popen", falso)
+    novidades.disparar_renovacao.cache_clear()
     novidades.disparar_renovacao()
 
 
@@ -276,3 +277,20 @@ def test_renovacao_que_falha_ainda_grava_cache_novo(
     assert cache is not None
     assert cache.novidades == ()
     assert not vencido(cache, datetime.now().astimezone())
+
+
+def test_cache_vencido_dispara_uma_renovacao_por_processo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    filhos: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **_: filhos.append(cmd))
+    novidades.disparar_renovacao.cache_clear()
+    monkeypatch.setattr(novidades, "ler_registro", lambda: _registro(None))
+    monkeypatch.setattr(novidades, "checagem_ligada", lambda: True)
+    monkeypatch.setattr(novidades, "diretorio_cache", lambda: str(tmp_path))
+    gravar_cache(tmp_path / ARQUIVO_CACHE, Cache(AGORA - VALIDADE * 2, ()))
+
+    novidades.novidades_do_cache()
+    novidades.novidades_do_cache()
+
+    assert len(filhos) == 1
