@@ -117,7 +117,7 @@ _G, _R, _A = Escopo.GERAL, Escopo.REPO, Escopo.AMBIENTE
 _TX, _IN, _ES = TipoCampo.TEXTO, TipoCampo.INTEIRO, TipoCampo.ESCOLHA
 
 #: Campo -> grupo cujos entry points e valores `modulo:Classe` em uso são as opções.
-_GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
+GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
     (Tabela.VERSAO, Chave.ESQUEMA): GrupoPlugin.ESQUEMAS,
     (Tabela.VERSAO, Chave.ATRIBUICAO): GrupoPlugin.ATRIBUICOES,
     (Tabela.TAREFAS, Chave.FONTE): GrupoPlugin.TAREFAS,
@@ -284,18 +284,21 @@ def _campos_do_plugin(grupo: GrupoPlugin, nome: str) -> tuple[Campo, ...]:
 def catalogo_campos(dados: Mapping[str, object]) -> list[Campo]:
     """Campos do motor e os que os plugins instalados ou em uso declaram."""
     instalados = {g: plugins.nomes_instalados(g) for g in _GRUPOS}
-    em_uso = {g: _em_uso(dados, *tc) for tc, g in _GRUPO_DO_CAMPO.items()}
+    em_uso = {g: _em_uso(dados, *tc) for tc, g in GRUPO_DO_CAMPO.items()}
     campos: list[Campo] = []
     for base in _CAMPOS_MOTOR:
-        grupo = _GRUPO_DO_CAMPO.get((base.tabela or "", base.chave))
+        grupo = GRUPO_DO_CAMPO.get((base.tabela or "", base.chave))
         opcoes = tuple(instalados[grupo] + sorted(em_uso[grupo])) if grupo else None
         campos.append(base if opcoes is None else replace(base, opcoes=opcoes))
-    vistos = {(c.escopo, c.tabela, c.chave) for c in campos}
+    do_motor = {(c.escopo, c.tabela, c.chave) for c in campos}
+    # Plugins diferentes podem declarar a mesma chave: a modal mostra a do escolhido.
+    vistos: set[tuple[Escopo, str | None, str, str]] = set()
     for grupo in _GRUPOS:
         for nome in [*instalados[grupo], *sorted(em_uso[grupo])]:
             for c in _campos_do_plugin(grupo, nome):
-                if (c.escopo, c.tabela, c.chave) not in vistos:
-                    vistos.add((c.escopo, c.tabela, c.chave))
+                chave = (c.escopo, c.tabela, c.chave, c.origem)
+                if chave[:3] not in do_motor and chave not in vistos:
+                    vistos.add(chave)
                     campos.append(c)
     return campos
 

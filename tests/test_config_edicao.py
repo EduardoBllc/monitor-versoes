@@ -40,11 +40,13 @@ from motor.montagem import GRUPO_TAREFAS
 SEGREDO = "s3nha"
 NOME_PLUGIN = "falso"
 NOME_QUEBRADO = "quebrado"
+NOME_OUTRO = "outro"
+CHAVE_PROJETO = "projeto"
 
 
 class FonteFalsa:
     campos_config = (
-        Campo(Escopo.GERAL, Tabela.TAREFAS, "projeto", TipoCampo.TEXTO, "Projeto"),
+        Campo(Escopo.GERAL, Tabela.TAREFAS, CHAVE_PROJETO, TipoCampo.TEXTO, "Projeto"),
         Campo(
             Escopo.AMBIENTE,
             TABELA_AMBIENTE,
@@ -134,9 +136,16 @@ def test_inteiro_secreto_invalido_nao_ecoa_o_valor(monkeypatch):
 def test_plugin_instalado_declara_campos(monkeypatch):
     _instalar(monkeypatch, _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteFalsa"))
     campos = [c for c in catalogo_campos({}) if c.origem == NOME_PLUGIN]
-    assert {c.chave for c in campos} == {"projeto", "FAKE_TOKEN"}
+    assert {c.chave for c in campos} == {CHAVE_PROJETO, "FAKE_TOKEN"}
     assert all(c.grupo is GrupoPlugin.TAREFAS for c in campos)
     assert all(c.grupo is None for c in catalogo_campos({}) if c.origem == ORIGEM_MOTOR)
+
+
+def test_plugins_com_a_mesma_chave_mantem_cada_declaracao(monkeypatch):
+    fonte = "tests.test_config_edicao:FonteFalsa"
+    _instalar(monkeypatch, _ep(NOME_PLUGIN, fonte), _ep(NOME_OUTRO, fonte))
+    origens = [c.origem for c in catalogo_campos({}) if c.chave == CHAVE_PROJETO]
+    assert sorted(origens) == sorted([NOME_PLUGIN, NOME_OUTRO])
 
 
 def test_host_de_pr_do_pacote_declara_campos_do_grupo_prs():

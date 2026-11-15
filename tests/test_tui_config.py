@@ -21,6 +21,7 @@ from motor.config_edicao import (
     Campo,
     ConfigEditavel,
     Escopo,
+    GrupoPlugin,
     TipoCampo,
     ValorLido,
 )
@@ -50,6 +51,9 @@ WORKTREES = VarAmbiente.WORKTREES_MANTIDAS
 WORKTREES_TEXTO = "5"
 CHAVE_TOKEN = "token"
 AVISO_VAZIO = "sem token o limite é baixo"
+CHAVE_PROJETO = "projeto"
+PLUGIN_A = "alfa"
+PLUGIN_B = "beta"
 
 
 def _escrever(texto: str) -> None:
@@ -349,5 +353,34 @@ def test_tui_config_aviso_vazio_do_segredo_definido_volta_ao_apagar():
             apagar.value = True
             await pilot.pause()
             assert aviso.display
+
+    asyncio.run(fluxo())
+
+
+def test_tui_config_chave_de_dois_plugins_mostra_a_do_escolhido():
+    campos = [
+        Campo(
+            Escopo.GERAL,
+            Tabela.TAREFAS,
+            CHAVE_PROJETO,
+            TipoCampo.TEXTO,
+            nome,
+            origem=nome,
+            grupo=GrupoPlugin.TAREFAS,
+        )
+        for nome in (PLUGIN_A, PLUGIN_B)
+    ]
+    escolha = ValorLido(None, Tabela.TAREFAS, Chave.FONTE, PLUGIN_B, True, True)
+
+    async def fluxo() -> None:
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(ConfigModal(_config(campos, [escolha], [NOME_REPO])))
+            await pilot.pause()
+            rotulos = [
+                str(r.content) for r in app.screen.query(".rotulo").results(Label)
+            ]
+            assert rotulos.count(PLUGIN_B) == 2  # aba Plugins e o repo
+            assert PLUGIN_A not in rotulos
 
     asyncio.run(fluxo())

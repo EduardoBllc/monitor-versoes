@@ -23,6 +23,7 @@ from textual.widgets import (
 
 from motor.config import TABELA_AMBIENTE
 from motor.config_edicao import (
+    GRUPO_DO_CAMPO,
     ORIGEM_MOTOR,
     AcaoAlteracao,
     Alteracao,
@@ -179,6 +180,11 @@ class ConfigModal(ModalScreen[bool]):
             for c in self._config.campos
             if c.escopo == escopo and (c.origem == ORIGEM_MOTOR) == motor
         ]
+        unicos: dict[tuple[str | None, str], Campo] = {}
+        for c in campos:
+            if (c.tabela, c.chave) not in unicos or self._escolhido(repo, c):
+                unicos[(c.tabela, c.chave)] = c
+        campos = list(unicos.values())
         conhecidos = {(c.tabela, c.chave) for c in self._config.campos}
         if motor and repo is None:
             campos += [
@@ -198,6 +204,23 @@ class ConfigModal(ModalScreen[bool]):
         for campo in campos:
             widgets += self._widgets_do_campo(repo, campo)
         return widgets
+
+    def _escolhido(self, repo: str | None, campo: Campo) -> bool:
+        """Se o plugin que declarou o campo é o escolhido no repo (ou no topo)."""
+        for (tabela, chave), grupo in GRUPO_DO_CAMPO.items():
+            if grupo is campo.grupo:
+                lidos = [self._lidos.get((r, tabela, chave)) for r in (repo, None)]
+                padrao = next(
+                    (
+                        c.padrao
+                        for c in self._config.campos
+                        if (c.tabela, c.chave) == (tabela, chave)
+                    ),
+                    None,
+                )
+                valor = next((v.valor for v in lidos if v and v.valor), padrao)
+                return valor == campo.origem
+        return False
 
     @staticmethod
     def _campo_livre(v: ValorLido) -> Campo:
