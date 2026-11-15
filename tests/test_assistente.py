@@ -74,7 +74,7 @@ ORIGINAL = """\
 principal = "develop"  # a principal daqui
 
 [repos.x]
-caminho = "{repo}"
+caminho = '{repo}'
 
 [ambiente]
 BITBUCKET_EMAIL = "quem@exemplo.com"

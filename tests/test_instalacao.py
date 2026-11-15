@@ -233,7 +233,7 @@ def test_registro_com_pasta_local_vira_requisito(tmp_path: Path) -> None:
 [tool]
 requirements = [
     {{ name = "{PACOTE_MOTOR}", git = "{URL_MOTOR}?rev={TAG}" }},
-    {{ name = "{PLUGIN}", directory = "{pasta}" }},
+    {{ name = "{PLUGIN}", directory = '{pasta}' }},
 ]
 """
     )
