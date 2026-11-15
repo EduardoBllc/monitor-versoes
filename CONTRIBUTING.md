@@ -43,7 +43,7 @@ O estado de desenvolvimento serve para usar o CLI à mão sem tocar produção.
 ## Verificações
 
 ```bash
-make check   # ruff format --check, ruff check, mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist
+make check   # ruff format --check, ruff check (e shellcheck do install.sh), mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist
 make fmt     # formata e aplica os fixes automáticos do ruff
 ```
 

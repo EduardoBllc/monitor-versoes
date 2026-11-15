@@ -11,8 +11,7 @@
         { "type": "fix", "section": "Correções" }
       ],
       "extra-files": [
-        "README.md",
-        "plugins/jira/README.md"
+        "README.md"
       ]
     }
   }
