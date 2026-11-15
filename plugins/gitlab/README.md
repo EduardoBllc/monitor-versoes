@@ -4,7 +4,9 @@ Fonte de tarefas do [monitor-versoes](../../README.md) para o **GitLab Issues**
 (gitlab.com ou self-managed).
 
 Busca as issues da milestone cujo título é igual à versão consultada, abertas ou fechadas.
-A milestone pode ser do projeto ou de um grupo ancestral dele.
+A milestone pode ser do projeto ou de um grupo ancestral dele; a de grupo exige GitLab
+16.7+ (`include_ancestors`). Em self-managed mais antigo ela não é encontrada e, com
+token, vira erro de entrada.
 
 ## Instalação
 
