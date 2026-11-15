@@ -380,26 +380,61 @@ def configurar(imprimir_diagnostico: Callable[[], object]) -> None:
         sys.exit(CodigoSaida.INTERROMPIDO)
 
 
+def _existe(caminho: Path) -> bool:
+    return caminho.exists() or caminho.is_symlink()
+
+
+def _sem_aninhados(candidatos: list[Path]) -> list[Path]:
+    """O `.resolve()` só compara; quem fica é o caminho original.
+
+    Uma pasta dentro de outra listada sai junto com ela, salvo se a de fora é
+    um link (só o link é removido).
+    """
+
+    def dentro(c: Path, fora: Path) -> bool:
+        return (
+            fora is not c
+            and not fora.is_symlink()
+            and fora.resolve() in c.resolve().parents
+        )
+
+    vistos: set[Path] = set()
+    unicos = []
+    for c in candidatos:
+        if (chave := c.parent.resolve() / c.name) not in vistos:
+            vistos.add(chave)
+            unicos.append(c)
+    return [c for c in unicos if not any(dentro(c, f) for f in unicos)]
+
+
 def _caminhos_de_dados() -> list[Path]:
     """Pastas e arquivos do SQLite (fora delas), só os que existem."""
     pastas = [
-        Path(caminho_config_global()).parent.resolve(),
-        Path(diretorio_dados()).resolve(),
-        Path(diretorio_cache()).resolve(),
+        Path(os.path.abspath(p))
+        for p in (
+            Path(caminho_config_global()).parent,
+            diretorio_dados(),
+            diretorio_cache(),
+        )
     ]
-    banco = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
     arquivos = []
+    banco = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
     if banco:
-        base = Path(banco).expanduser().resolve()
-        if not any(p in base.parents for p in pastas):
-            arquivos = [Path(f"{base}{s}") for s in SUFIXOS_SQLITE]
-    return [c for c in [*pastas, *arquivos] if c.exists() or c.is_symlink()]
+        base = Path(os.path.abspath(Path(banco).expanduser()))
+        arquivos = [Path(f"{base}{s}") for s in SUFIXOS_SQLITE]
+    return _sem_aninhados([c for c in [*pastas, *arquivos] if _existe(c)])
+
+
+def _descrever(caminho: Path) -> str:
+    if caminho.is_symlink():
+        return f"{caminho} → {caminho.resolve()}, só o link é removido"
+    return str(caminho)
 
 
 def _confirmar_apagar(caminhos: list[Path]) -> bool:
     print("Dados do monitor-versoes:")
     for caminho in caminhos:
-        print(f"  {caminho}")
+        print(f"  {_descrever(caminho)}")
     try:
         return confirmar("Apagar esses dados?", False)
     except KeyboardInterrupt:
@@ -434,4 +469,4 @@ def desinstalar() -> None:
     for caminho in caminhos:
         removido = apagar and _apagar(caminho)
         situacao = Situacao.REMOVIDO if removido else Situacao.MANTIDO
-        print(f"{situacao}: {caminho}")
+        print(f"{situacao}: {_descrever(caminho)}")

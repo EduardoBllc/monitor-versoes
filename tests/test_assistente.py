@@ -324,8 +324,8 @@ def test_fechamento(
     assert Peca.DAEMON in saida
 
 
-def _dados_do_usuario(tmp_path, monkeypatch) -> list[Path]:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache-isolado"))
+def _dados_do_usuario(tmp_path, monkeypatch, cache_base=None) -> list[Path]:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_base or tmp_path / "cache-isolado"))
     banco = Path(os.environ[VarAmbiente.DATABASE_SQLITE_PATH])
     pastas = [
         Path(caminho_config_global()).parent,
@@ -422,9 +422,11 @@ def test_desinstalar_banco_relativo_dentro_de_pasta_listada_aparece_uma_vez(
 
     assert _rodar(ENTER, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
-    assert _linhas_do_relatorio(capsys) == {
-        f"{Situacao.MANTIDO}: {d}" for d in dados[:3]
+    listados = {
+        Path(linha.split(": ", 1)[1]).resolve()
+        for linha in _linhas_do_relatorio(capsys)
     }
+    assert listados == {d.resolve() for d in dados[:3]}
 
 
 def test_desinstalar_sem_nada_diz_que_nao_ha_o_que_remover(cen, capsys):
@@ -433,3 +435,37 @@ def test_desinstalar_sem_nada_diz_que_nao_ha_o_que_remover(cen, capsys):
     assert _rodar(comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
     assert "Nenhum dado" in capsys.readouterr().out
+
+
+def _trocar_por_link(caminho: Path, alvo: Path) -> None:
+    caminho.rename(alvo)
+    caminho.symlink_to(alvo)
+
+
+@pytest.mark.parametrize("o_que", ["pasta", "banco"])
+def test_desinstalar_link_remove_so_o_link(cen, tmp_path, monkeypatch, capsys, o_que):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    original = dados[1] if o_que == "pasta" else dados[3]
+    alvo = tmp_path / "alvo-fora"
+    _trocar_por_link(original, alvo)
+
+    assert _rodar(SIM, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert not original.is_symlink()
+    assert alvo.exists()
+    assert not dados[0].exists()
+    if o_que == "pasta":
+        assert (alvo / "dado").exists()
+    assert f"{original} → {alvo}, só o link é removido" in capsys.readouterr().out
+
+
+def test_desinstalar_pasta_dentro_de_outra_nao_e_listada_a_parte(
+    cen, tmp_path, monkeypatch, capsys
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch, cache_base=Path(diretorio_dados()))
+
+    assert _rodar(SIM, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    listados = {linha.split(": ", 1)[1] for linha in _linhas_do_relatorio(capsys)}
+    assert str(Path(diretorio_cache())) not in listados
+    assert not any(d.exists() for d in dados)
