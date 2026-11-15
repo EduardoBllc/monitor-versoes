@@ -48,7 +48,8 @@ def _cronometrar(*args: str) -> Iterator[None]:
         logger.debug("git %s: %.3fs", " ".join(args), time.monotonic() - inicio)
 
 
-#: Hashes por chamada de `commits_meta`. Existe pelo limite de tamanho de
+#: Hashes por processo nas leituras em lote (`commits_meta`, `patch_ids`,
+#: `changed_files_lote`). Existe pelo limite de tamanho de
 #: linha de comando do SO (ARG_MAX): 500 hashes de 40 caracteres dao ~20 KB,
 #: ordens de magnitude abaixo do limite de qualquer plataforma que rode isto.
 _LOTE_META = 500
@@ -523,40 +524,12 @@ class GitSubprocess:
         return [h for h in out.splitlines() if h in pedidos]
 
     def patch_id(self, hash: str, /) -> str:
-        with _cronometrar("show", hash, "|", "patch-id"):
-            try:
-                show = subprocess.Popen(
-                    ["git", "show", hash],
-                    cwd=self.repo_path,
-                    stdout=subprocess.PIPE,
-                    # O erro levantado abaixo so usa o returncode, entao esse
-                    # stderr nunca foi lido — sem DEVNULL ele era herdado e ia
-                    # direto para o terminal, rasgando o desenho da TUI.
-                    stderr=subprocess.DEVNULL,
-                )
-            except OSError as e:
-                raise BackendIndisponivel(f"git show {hash}: {e}") from e
-            try:
-                patch = _rodar_git(
-                    ["git", "patch-id", "--stable"],
-                    cwd=self.repo_path,
-                    stdin=show.stdout,
-                )
-            finally:
-                if show.stdout is not None:
-                    show.stdout.close()
-                show_ret = show.wait()
-        if show_ret != 0:
-            raise MotorError(f"git show {hash}: exit status {show_ret}")
-        if patch.returncode != 0:
-            raise MotorError(
-                "git patch-id --stable: exit status "
-                f"{patch.returncode}: {_saida_git_publica(patch.stderr)}"
-            )
-        campos = patch.stdout.split()
-        if not campos:
+        pids = self._patch_ids_do_lote([hash])
+        if not pids:
             raise RespostaInvalida(f"patch-id vazio para {hash}")
-        return campos[0]
+        # next(iter) e nao pids[hash]: o git devolve o hash completo, e quem
+        # chama pode ter passado um abreviado.
+        return next(iter(pids.values()))
 
     def changed_files(self, hash: str, /) -> frozenset[str]:
         out = self._output(
@@ -582,10 +555,13 @@ class GitSubprocess:
                     ["git", "show", *lote],
                     cwd=self.repo_path,
                     stdout=subprocess.PIPE,
+                    # O erro levantado abaixo so usa o returncode, entao esse
+                    # stderr nunca foi lido — sem DEVNULL ele era herdado e ia
+                    # direto para o terminal, rasgando o desenho da TUI.
                     stderr=subprocess.DEVNULL,
                 )
             except OSError as e:
-                raise BackendIndisponivel(f"git show: {e}") from e
+                raise BackendIndisponivel(f"git show {' '.join(lote)}: {e}") from e
             try:
                 patch = _rodar_git(
                     ["git", "patch-id", "--stable"],
@@ -597,17 +573,21 @@ class GitSubprocess:
                     show.stdout.close()
                 show_ret = show.wait()
         if show_ret != 0:
-            raise MotorError(f"git show: exit status {show_ret}")
+            raise MotorError(f"git show {' '.join(lote)}: exit status {show_ret}")
         if patch.returncode != 0:
             raise MotorError(
                 "git patch-id --stable: exit status "
                 f"{patch.returncode}: {_saida_git_publica(patch.stderr)}"
             )
         # uma linha `<patch-id> <commit>` por commit com patch
-        return {
-            commit: pid
-            for pid, commit in (linha.split() for linha in patch.stdout.splitlines())
-        }
+        pids: dict[str, str] = {}
+        for linha in patch.stdout.splitlines():
+            match linha.split():
+                case [pid, commit]:
+                    pids[commit] = pid
+                case _:
+                    raise RespostaInvalida(f"linha inesperada do patch-id: {linha!r}")
+        return pids
 
     def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
         encontrados: dict[str, frozenset[str]] = {}
@@ -624,6 +604,7 @@ class GitSubprocess:
                     "log",
                     "--no-walk=unsorted",
                     "--no-renames",
+                    "--no-show-signature",
                     "--name-only",
                     f"--format={SEPARADOR_REGISTRO}%H",
                     *lote,

@@ -233,11 +233,16 @@ class FakeGit:
         return self.file_changes.get(hash, frozenset())
 
     def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
-        # sem passar por `patch_id`: espiao de teste conta os dois em separado
+        # sem passar por `patch_id` (nem `changed_files` no outro): espiao de
+        # teste conta unitario e lote em separado
         return {h: self._patch_id_conhecido(h) for h in hashes if h in self.commits}
 
     def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
-        return {h: self.changed_files(h) for h in hashes if h in self.commits}
+        return {
+            h: self.file_changes.get(h, frozenset())
+            for h in hashes
+            if h in self.commits
+        }
 
     def resolve_ref(self, ref: str, /) -> str:
         if (m := _PREFIXO_REF_REMOTA.match(ref)) is not None:

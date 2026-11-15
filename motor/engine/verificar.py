@@ -483,6 +483,8 @@ def _presenca(
 ) -> tuple[dict[str, Presence], list[CommitRef]]:
     presentes: dict[str, Presence] = {}
     suspeitos_conteudo: list[CommitRef] = []
+    ctx.oracle.precarregar_patch_ids(todos_os_hashes)
+    ctx.oracle.precarregar_arquivos(candidatos_conflito)
     for indice, (hash_, c) in enumerate(todos_os_hashes.items(), start=1):
         ctx.deps.progresso(
             Progresso("presença dos commits", indice, len(todos_os_hashes))
@@ -507,10 +509,7 @@ def _presenca(
     # tem mais o que aplicar (o pick sairia vazio). O gemeo aparece quando a
     # branch da PR foi rebasada e depois mergeada de volta.
     ja_presentes = {h: p for h, p in presentes.items() if p != Presence.AUSENTE}
-    ausentes = [h for h, p in presentes.items() if p == Presence.AUSENTE]
-    if ausentes:
-        ctx.oracle.precarregar_patch_ids(presentes)
-    for hash_ in ausentes:
+    for hash_ in [h for h, p in presentes.items() if p == Presence.AUSENTE]:
         if ctx.oracle.duplicata_de_presente(hash_, ja_presentes):
             presentes[hash_] = Presence.PATCH_ID
     suspeitos_conteudo = [

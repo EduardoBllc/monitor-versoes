@@ -239,39 +239,3 @@ def test_presence_oracle_trailer_abaixo_da_base_conta_como_presente():
     oracle = PresenceOracle(git=g)
 
     assert oracle.presente("origem1", "14.10.0", "14.11.0") == Presence.TRAILER
-
-
-class _GitContador(FakeGit):
-    """Espião: conta chamadas de patch-id unitárias e em lote."""
-
-    patch_id_chamadas: int = 0
-    patch_ids_chamadas: int = 0
-
-    def patch_id(self, hash: str, /) -> str:
-        self.patch_id_chamadas += 1
-        return super().patch_id(hash)
-
-    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
-        self.patch_ids_chamadas += 1
-        return super().patch_ids(hashes)
-
-
-def test_oraculo_usa_lote_no_nivel_3():
-    """Um processo git por commit do intervalo custava ~1s por verificar: o
-    nível 3 tem de ler os patch-ids do intervalo e da origem num lote só."""
-    g = _GitContador()
-    t0 = datetime.datetime.now(datetime.UTC)
-    g.add_commit("origem1", "", "fix: nunca aplicado", t0)
-    g.add_commit("base-tip", "", "base", t0)
-    pai = "base-tip"
-    for i in range(30):
-        g.add_commit(f"alvo{i}", pai, f"commit {i}", t0)
-        pai = f"alvo{i}"
-    g.set_branch("13.6.0", "base-tip")
-    g.set_branch("13.7.0", pai)
-
-    ok = PresenceOracle(git=g).presente("origem1", "13.6.0", "13.7.0")
-
-    assert ok == Presence.AUSENTE
-    assert g.patch_ids_chamadas == 1
-    assert g.patch_id_chamadas == 0

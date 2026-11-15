@@ -1416,3 +1416,80 @@ def test_gravar_julgamento_invalida_o_carimbo_e_verificar_o_renova(onde):
 
     verificar(deps, "14.0.0")
     assert verificacao_vigente(deps, "14.0.0") is not None
+
+
+class _GitQueContaLeituras(FakeGit):
+    """Espião: leituras de patch-id e de arquivos, unitárias e em lote."""
+
+    patch_id_chamadas: int = 0
+    patch_ids_chamadas: int = 0
+    changed_files_chamadas: int = 0
+    changed_files_lote_chamadas: int = 0
+
+    def patch_id(self, hash: str, /) -> str:
+        self.patch_id_chamadas += 1
+        return super().patch_id(hash)
+
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        self.patch_ids_chamadas += 1
+        return super().patch_ids(hashes)
+
+    def changed_files(self, hash: str, /) -> frozenset[str]:
+        self.changed_files_chamadas += 1
+        return super().changed_files(hash)
+
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        self.changed_files_lote_chamadas += 1
+        return super().changed_files_lote(hashes)
+
+
+def _verificar_lote_espiado() -> _GitQueContaLeituras:
+    """30 commits de origem ausentes do alvo, e 30 commits no intervalo do alvo
+    com a mesma mensagem: todos chegam aos níveis 3 e 4 do oráculo."""
+    git = _git(classe=_GitQueContaLeituras)
+    assert isinstance(git, _GitQueContaLeituras)
+    origens: list[CommitRef] = []
+    pai_origem, pai_alvo = "a0", "m0"
+    for i in range(30):
+        msg = f"ch123123 commit {i}"
+        git.add_commit(f"o{i}", pai_origem, msg, D)
+        git.add_commit(f"t{i}", pai_alvo, msg, D)
+        origens.append(
+            CommitRef(
+                hash_origem=f"o{i}",
+                parent=pai_origem,
+                chamado="123123",
+                commit_date=D,
+                msg=msg,
+            )
+        )
+        pai_origem, pai_alvo = f"o{i}", f"t{i}"
+    git.set_branch("14.0.0", pai_alvo)
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+    verificar(
+        _deps(
+            git,
+            FakeTaskSource(chamados={"14.0.0": ["123123"]}),
+            FakeCommitSource(por_chamado={"123123": origens}),
+            estado,
+        ),
+        "14.0.0",
+    )
+    return git
+
+
+def test_verificar_le_os_patch_ids_do_lote_num_processo_so():
+    """Um `git show | git patch-id` por commit custava ~1s por verificar."""
+    git = _verificar_lote_espiado()
+
+    assert git.patch_ids_chamadas == 1
+    assert git.patch_id_chamadas == 0
+
+
+def test_verificar_le_os_arquivos_do_nivel_4_num_processo_so():
+    """Um `git diff-tree` por commit do intervalo e por candidato do lote."""
+    git = _verificar_lote_espiado()
+
+    assert git.changed_files_lote_chamadas == 1
+    assert git.changed_files_chamadas == 0
