@@ -28,6 +28,7 @@ import motor.__main__ as cli
 import motor.daemon.disparo as disparo
 import motor.montagem as montagem
 import motor.novidades as modulo_novidades
+import motor.servico as servico
 from motor.__main__ import (
     _build_parser,
     imprimir_atualizacao,
@@ -49,7 +50,7 @@ from motor.domain.types import (
 )
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import CodigoSaida, MotorError
 from motor.inscricoes import Inscricao
 from motor.instalacao import PACOTE_MOTOR
 from motor.novidades import Cache, Novidade
@@ -1083,6 +1084,29 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     else:
         main(["diagnostico"])
     assert estado.value in capsys.readouterr().out
+
+
+def test_diagnostico_mostra_a_peca_daemon(monkeypatch, capsys):
+    from motor.diagnostico import Estado, Resultado, formatar
+    from motor.servico import EstadoServico, Situacao
+
+    monkeypatch.setattr(cli, "head", lambda: "rev")
+    monkeypatch.setattr(
+        cli,
+        "diagnosticar",
+        lambda *a, **k: [Resultado(Peca.SQLITE, Estado.OK, "x")],
+    )
+    monkeypatch.setattr(
+        servico, "situacao", lambda *a: Situacao(EstadoServico.PARADO, "ver o log")
+    )
+
+    with pytest.raises(SystemExit) as saida:
+        main(["diagnostico"])
+
+    assert saida.value.code == CodigoSaida.ERRO
+    ultima = capsys.readouterr().out.splitlines()[-1]
+    assert ultima.startswith(f"{Estado.FALHA.value}  {Peca.DAEMON}")
+    assert formatar(Resultado(Peca.DAEMON, Estado.FALHA)) in ultima
 
 
 def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path):

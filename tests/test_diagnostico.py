@@ -25,6 +25,7 @@ from motor.config import (
     repos_configurados,
 )
 from motor.diagnostico import (
+    URL_ISSUE_DAEMON,
     Estado,
     Peca,
     PecaTestavel,
@@ -32,11 +33,13 @@ from motor.diagnostico import (
     diagnosticar,
     diagnosticar_peca,
     falhou,
+    peca_daemon,
 )
 from motor.errors import ErroDeEntrada
 from motor.instalacao import ARQUIVO_REGISTRO, ler_registro
 from motor.migracoes import head
 from motor.novidades import Cache, Novidade
+from motor.servico import EstadoServico, Situacao
 from tests.config_repos import secao_repo
 
 HEAD = "rev2"
@@ -736,3 +739,35 @@ def test_versao_com_registro_do_uv_ilegivel_fica_nao_verificada(monkeypatch, tmp
     assert por_peca[Peca.VERSAO].estado is Estado.NAO_VERIFICADA
     assert "registro do uv ilegível" in por_peca[Peca.VERSAO].detalhe
     assert not falhou(resultados)
+
+
+VER_LOG = "journalctl --user -u monitor-versoes-serve.service"
+
+
+@pytest.mark.parametrize(
+    ("situacao", "estado", "correcao", "detalhe"),
+    [
+        (Situacao(EstadoServico.ATIVO), Estado.OK, "", ""),
+        (
+            Situacao(EstadoServico.DESLIGADO),
+            Estado.NAO_CONFIGURADO,
+            "monitor-versoes configurar",
+            "",
+        ),
+        (Situacao(EstadoServico.PARADO, VER_LOG), Estado.FALHA, VER_LOG, ""),
+        (
+            Situacao(EstadoServico.SEM_SUPORTE),
+            Estado.NAO_CONFIGURADO,
+            "",
+            URL_ISSUE_DAEMON,
+        ),
+    ],
+)
+def test_peca_daemon(situacao, estado, correcao, detalhe):
+    r = peca_daemon(situacao)
+
+    assert r.peca is Peca.DAEMON
+    assert r.estado is estado
+    assert r.correcao == correcao
+    assert detalhe in r.detalhe
+    assert falhou([r]) is (estado is Estado.FALHA)

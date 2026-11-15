@@ -21,7 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
-from motor import cli_instalacao
+from motor import cli_instalacao, servico
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
@@ -37,7 +37,7 @@ from motor.config import (
 )
 from motor.daemon import PORTA_PADRAO
 from motor.daemon.disparo import rodada
-from motor.diagnostico import diagnosticar, falhou, formatar
+from motor.diagnostico import diagnosticar, falhou, formatar, peca_daemon
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
 from motor.domain.referencia import FonteReferencia, formatar_referencia
@@ -188,6 +188,9 @@ def _diagnostico(args: argparse.Namespace) -> None:
         config_em=caminho_config_global(),
         erro_ambiente=args.erro_central,
         novidades=novidades_do_cache,
+    )
+    resultados.append(
+        peca_daemon(servico.situacao(Path.home(), servico.consultar_do_sistema))
     )
     for resultado in resultados:
         print(formatar(resultado))

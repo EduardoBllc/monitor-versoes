@@ -14,6 +14,7 @@ from itertools import groupby
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
+from motor import agendador, servico
 from motor.config import diretorio_cache
 from motor.errors import CodigoSaida, ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
@@ -164,7 +165,8 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
     depois = ler_registro()
     for linha in _mudancas(antes, depois) if depois else []:
         print(linha)
-    print(f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o.")
+    if not servico.reiniciar_se_ligado(Path.home(), agendador.rodar_comando_do_sistema):
+        print(f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o.")
 
 
 def _instalar(reg: Registro, origem: str) -> list[str]:

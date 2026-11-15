@@ -24,6 +24,9 @@ from motor.montagem import (
     instanciar_provedor_sugestao,
 )
 from motor.novidades import Cache
+from motor.servico import EstadoServico, Situacao
+
+URL_ISSUE_DAEMON = "https://github.com/EduardoBllc/monitor-versoes/issues/191"
 
 
 class Peca(enum.StrEnum):
@@ -36,6 +39,7 @@ class Peca(enum.StrEnum):
     PRS = "Fonte de PR"
     SUGESTAO = "Sugestão"
     VERSAO = "Versão"
+    DAEMON = "Daemon"
 
 
 class Estado(enum.Enum):
@@ -129,6 +133,32 @@ def diagnosticar(  # noqa: PLR0913
     resultados += _sugestao(config_central, onde)
     resultados.append(_versao(novidades))
     return resultados
+
+
+def peca_daemon(situacao: Situacao) -> Resultado:
+    match situacao.estado:
+        case EstadoServico.ATIVO:
+            return Resultado(Peca.DAEMON, Estado.OK, "serviço de login ativo")
+        case EstadoServico.DESLIGADO:
+            return Resultado(
+                Peca.DAEMON,
+                Estado.NAO_CONFIGURADO,
+                "serviço de login desligado",
+                "monitor-versoes configurar",
+            )
+        case EstadoServico.PARADO:
+            return Resultado(
+                Peca.DAEMON,
+                Estado.FALHA,
+                "serviço de login parado",
+                situacao.ver_log,
+            )
+        case EstadoServico.SEM_SUPORTE:
+            return Resultado(
+                Peca.DAEMON,
+                Estado.NAO_CONFIGURADO,
+                f"sem suporte neste sistema ({URL_ISSUE_DAEMON})",
+            )
 
 
 def _versao(novidades: Callable[[], Cache | None]) -> Resultado:
@@ -425,5 +455,6 @@ __all__ = [
     "falhou",
     "formatar",
     "onde_das_credenciais",
+    "peca_daemon",
     "repo_existente",
 ]

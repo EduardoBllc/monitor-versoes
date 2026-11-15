@@ -10,8 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from motor import cli_instalacao, instalacao, novidades
+from motor import agendador, cli_instalacao, instalacao, novidades, servico
 from motor.__main__ import main
+from motor.agendador import SYSTEMCTL, Acao, Sistema
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR, COMANDO_PLUGIN, AcaoPlugin
 from motor.config import Chave, Tabela, caminho_config_global, diretorio_cache
 from motor.config_edicao import GrupoPlugin
@@ -650,3 +651,37 @@ def test_atualizar_motor_sem_ref_nao_apaga_a_tag_do_plugin_do_repo(
     main([COMANDO_ATUALIZAR_MOTOR])
 
     assert inst.comandos == []
+
+
+@pytest.mark.parametrize("ligado", [True, False])
+@pytest.mark.parametrize(
+    "argv",
+    [[COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B], [COMANDO_ATUALIZAR_MOTOR]],
+)
+def test_reinstalar_reinicia_o_servico_ligado(
+    inst: Instalacao,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+    argv: list[str],
+    ligado: bool,
+) -> None:
+    inst.remotos[URL_A] = _remoto(head=COMMIT_NOVO)
+    inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
+    inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR, TAG_MOTOR_NOVA))
+    if ligado:
+        arquivo = servico.caminho(Sistema.LINUX, Path.home())
+        arquivo.parent.mkdir(parents=True)
+        arquivo.write_text("")
+    monkeypatch.setattr("sys.platform", Sistema.LINUX)
+    chamados: list[list[str]] = []
+    monkeypatch.setattr(agendador, "rodar_comando_do_sistema", chamados.append)
+
+    main(argv)
+
+    saida = capsys.readouterr().out
+    if ligado:
+        assert chamados == [[*SYSTEMCTL, Acao.RESTART, servico.ARQUIVO_SERVICE]]
+        assert "reinicie-o" not in saida
+    else:
+        assert chamados == []
+        assert f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o." in saida
