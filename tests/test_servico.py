@@ -12,12 +12,14 @@ import pytest
 
 from motor import servico
 from motor.__main__ import main
-from motor.agendador import Acao, Sistema
+from motor.agendador import FLAG_AGORA, LAUNCHCTL, SYSTEMCTL, Acao, Sistema
 from motor.errors import BackendIndisponivel
 from motor.servico import (
     ARGUMENTOS_SERVE,
     ARQUIVO_LOG_LAUNCHD,
     ARQUIVO_SERVICE,
+    FLAG_FORCAR,
+    FLAG_PERSISTIR,
     ROTULO_LAUNCHD,
     EstadoServico,
     caminho,
@@ -32,7 +34,11 @@ from tests.plataforma import PLATAFORMA_WINDOWS
 from tests.test_agendador import Registro
 
 EXE = "/opt/venv/bin/monitor-versoes"
-SYSTEMCTL = ["systemctl", "--user"]
+ATIVO_LINUX = "active\n"
+ATIVO_MACOS = "\tstate = running\n"
+OUTROS_ESTADOS = (None, "inactive\n", "\tstate = waiting\n")
+VER_LOG_LINUX = f"journalctl --user -u {ARQUIVO_SERVICE}"
+VER_LOG_MACOS = f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}"
 
 pula_mac_no_windows = pytest.mark.skipif(
     sys.platform == PLATAFORMA_WINDOWS, reason="launchctl usa o uid do POSIX"
@@ -78,7 +84,7 @@ def test_ligar_cria_o_servico_e_sobe(
         assert "Restart=on-failure" in texto
         assert registro.comandos == [
             [*SYSTEMCTL, Acao.DAEMON_RELOAD],
-            [*SYSTEMCTL, Acao.ENABLE, "--now", ARQUIVO_SERVICE],
+            [*SYSTEMCTL, Acao.ENABLE, FLAG_AGORA, ARQUIVO_SERVICE],
         ]
     else:
         dados = plistlib.loads(arquivo.read_bytes())
@@ -88,7 +94,10 @@ def test_ligar_cria_o_servico_e_sobe(
         assert dados["KeepAlive"] is True
         assert dados["StandardOutPath"] == log
         assert dados["StandardErrorPath"] == log
-        assert registro.comandos == [["launchctl", Acao.LOAD, "-w", str(arquivo)]]
+        assert registro.comandos == [
+            [LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)],
+            [LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(arquivo)],
+        ]
 
 
 @pytest.mark.parametrize(
@@ -123,7 +132,7 @@ def test_reiniciar_se_ligado(
     esperado = (
         [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE]
         if sistema is Sistema.LINUX
-        else ["launchctl", Acao.KICKSTART, "-k", _alvo_mac()]
+        else [LAUNCHCTL, Acao.KICKSTART, FLAG_FORCAR, _alvo_mac()]
     )
     assert registro.comandos == [esperado]
 
@@ -143,14 +152,14 @@ def test_reiniciar_se_ligado_sem_suporte(
     [
         pytest.param(
             Sistema.LINUX,
-            "active\n",
-            "journalctl --user -u monitor-versoes-serve.service",
+            ATIVO_LINUX,
+            VER_LOG_LINUX,
             id="linux",
         ),
         pytest.param(
             Sistema.MACOS,
-            "\tstate = running\n",
-            f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}",
+            ATIVO_MACOS,
+            VER_LOG_MACOS,
             marks=pula_mac_no_windows,
             id="macos",
         ),
@@ -168,7 +177,7 @@ def test_situacao(
 
     _criar_arquivo(sistema, tmp_path)
     assert situacao(tmp_path, lambda _: ativo).estado is EstadoServico.ATIVO
-    for saida in (None, "inactive\n", "\tstate = waiting\n"):
+    for saida in OUTROS_ESTADOS:
         parado = situacao(tmp_path, _devolvendo(saida))
         assert parado.estado is EstadoServico.PARADO
         assert parado.ver_log == ver_log
@@ -221,3 +230,13 @@ def test_serve_sem_navegador_nao_abre(
     main(["serve", "--porta", str(porta), *(["--sem-navegador"] * sem_navegador)])
 
     assert bool(abertos) is not sem_navegador
+
+
+@pula_mac_no_windows
+def test_ligar_no_macos_com_o_job_ja_carregado_recarrega(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _como(Sistema.MACOS, monkeypatch)
+    registro = Registro(falhar_em=Acao.UNLOAD)
+    ligar(Sistema.MACOS, tmp_path, EXE, registro)
+    assert registro.comandos[-1][1] == Acao.LOAD

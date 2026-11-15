@@ -13,6 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from motor.agendador import (
+    FLAG_AGORA,
     LAUNCHCTL,
     SYSTEMCTL,
     Acao,
@@ -29,7 +30,6 @@ ARQUIVO_LOG_LAUNCHD = "monitor-versoes-serve.log"
 EXECUTAVEL = "monitor-versoes"
 ARGUMENTOS_SERVE = ("serve", "--sem-navegador")
 
-FLAG_AGORA = "--now"
 FLAG_PERSISTIR = "-w"
 FLAG_FORCAR = "-k"
 ESTADO_SYSTEMD_ATIVO = "active"
@@ -103,6 +103,9 @@ def ligar(
     if sistema is Sistema.MACOS:
         _log_launchd(home).parent.mkdir(parents=True, exist_ok=True)
         arquivo.write_bytes(_plist(executavel, home))
+        # Um job já carregado ignoraria o plist novo; descarregar antes é inócuo se não estiver.
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)])
         rodar_comando([LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(arquivo)])
         return
     arquivo.write_text(_unit(executavel))
