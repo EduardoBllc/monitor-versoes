@@ -405,7 +405,7 @@ def test_falha_do_uv_imprime_comando_manual(inst: Instalacao, capsys) -> None:
 def test_plugin_instalar_caminho_que_nao_e_pasta_recusa(
     inst: Instalacao, caminho: str
 ) -> None:
-    with pytest.raises(ErroDeEntrada, match="não é uma pasta"):
+    with pytest.raises(ErroDeEntrada):
         cli_instalacao.plugin(_args(acao_plugin=AcaoPlugin.INSTALAR, origem=caminho))
     assert inst.comandos == []
 

@@ -215,6 +215,27 @@ def test_ligar_que_falha_propaga_e_nao_deixa_o_arquivo(
     assert not ligado(tmp_path)
 
 
+def test_ligar_com_restart_que_falha_desfaz_o_enable_antes_de_remover_o_arquivo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _como(Sistema.LINUX, monkeypatch)
+    arquivo_existia_no_disable: list[bool] = []
+
+    class RegistroComArquivo(Registro):
+        def __call__(self, cmd: list[str]) -> None:
+            if Acao.DISABLE in cmd:
+                arquivo_existia_no_disable.append(
+                    caminho(Sistema.LINUX, tmp_path).exists()
+                )
+            super().__call__(cmd)
+
+    registro = RegistroComArquivo(falhar_em=Acao.RESTART)
+    with pytest.raises(BackendIndisponivel):
+        ligar(Sistema.LINUX, tmp_path, EXE, registro)
+    assert [*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE] in registro.comandos
+    assert arquivo_existia_no_disable == [True]
+
+
 @pytest.mark.parametrize("sem_navegador", [False, True])
 def test_serve_sem_navegador_nao_abre(
     monkeypatch: pytest.MonkeyPatch, sem_navegador: bool

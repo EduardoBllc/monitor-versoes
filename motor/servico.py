@@ -117,6 +117,10 @@ def ligar(
         rodar_comando([*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE])
     except BackendIndisponivel:
         # O arquivo é o que `ligado()` olha: deixá-lo sem o serviço de pé mente que está ligado.
+        if sistema is Sistema.LINUX:
+            # O `enable` já criou o link em default.target.wants; sem a unit ele ficaria órfão.
+            with contextlib.suppress(BackendIndisponivel):
+                rodar_comando([*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE])
         arquivo.unlink(missing_ok=True)
         if sistema is Sistema.LINUX:
             with contextlib.suppress(BackendIndisponivel):
