@@ -462,19 +462,21 @@ def test_hash_desconhecido_nao_derruba_o_lote_para_um_processo_por_hash(
     hs.insert(len(hs) // 2, "0" * 40)
 
     processos = 0
-    original = subprocess.run
+    original = subprocess.Popen
 
     def contar(*args, **kwargs):
         nonlocal processos
         processos += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(subprocess, "run", contar)
-    # lote que falha, filtro dos conhecidos, lote refeito
-    for ler in (g.patch_ids, g.changed_files_lote):
+    # `subprocess.run` tambem sobe pelo Popen do modulo: conta todo processo
+    monkeypatch.setattr(subprocess, "Popen", contar)
+    # lote que falha, filtro dos conhecidos, lote refeito; o lote de patch-id
+    # e o par `show | patch-id`
+    for ler, esperados in ((g.patch_ids, 5), (g.changed_files_lote, 3)):
         processos = 0
         assert len(ler(hs)) == len(hs) - 1
-        assert processos == 3
+        assert processos == esperados
 
 
 def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):

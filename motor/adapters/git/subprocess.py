@@ -581,11 +581,12 @@ class GitSubprocess:
                 f"{_saida_git_publica(proc.stderr)}"
             )
         # uma linha por hash, na ordem; o desconhecido sai "<hash> missing"
-        return [
-            h
-            for h, tipo in zip(lote, proc.stdout.splitlines(), strict=True)
-            if tipo == _TIPO_COMMIT
-        ]
+        tipos = proc.stdout.splitlines()
+        if len(tipos) != len(lote):
+            raise RespostaInvalida(
+                f"cat-file --batch-check: {len(tipos)} linhas para {len(lote)} hashes"
+            )
+        return [h for h, tipo in zip(lote, tipos, strict=True) if tipo == _TIPO_COMMIT]
 
     def _patch_ids_do_lote(self, lote: list[str]) -> dict[str, str]:
         with _cronometrar("show", f"({len(lote)} hashes)", "|", "patch-id"):
