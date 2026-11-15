@@ -185,6 +185,16 @@ class GitRepo(Protocol):
         """Caminhos alterados pelo commit (para o nível 4 do oráculo de presença)."""
         ...
 
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        """`patch_id` de vários commits num lote; desconhecido ou sem patch
+        (merge limpo, vazio) falta no retorno, como em `commits_meta`."""
+        ...
+
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        """`changed_files` de vários commits num lote; desconhecido falta no
+        retorno."""
+        ...
+
     def resolve_ref(self, ref: str, /) -> str:
         """Resolve uma referência para hash."""
         ...

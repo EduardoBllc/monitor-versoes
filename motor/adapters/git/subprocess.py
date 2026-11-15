@@ -15,7 +15,7 @@ import os
 import re
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any, NamedTuple
@@ -247,6 +247,17 @@ def _parse_metas(out: str) -> dict[str, CommitRef]:
             msg=campos[3],
             parent=campos[2].split(" ")[0],
         )
+    return resultado
+
+
+def _por_hash[T](metodo: Callable[[str], T], lote: list[str]) -> dict[str, T]:
+    """Fallback de lote que falhou: um processo por hash, omitindo os que falham."""
+    resultado: dict[str, T] = {}
+    for h in lote:
+        try:
+            resultado[h] = metodo(h)
+        except MotorError:
+            continue
     return resultado
 
 
@@ -552,6 +563,80 @@ class GitSubprocess:
             self.repo_path, "diff-tree", "--no-commit-id", "--name-only", "-r", hash
         )
         return frozenset(nome for nome in out.split("\n") if nome != "")
+
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        encontrados: dict[str, str] = {}
+        for inicio in range(0, len(hashes), _LOTE_META):
+            lote = hashes[inicio : inicio + _LOTE_META]
+            try:
+                encontrados.update(self._patch_ids_do_lote(lote))
+            except MotorError:
+                # hash desconhecido derruba o `git show` do lote inteiro
+                encontrados.update(_por_hash(self.patch_id, lote))
+        return encontrados
+
+    def _patch_ids_do_lote(self, lote: list[str]) -> dict[str, str]:
+        with _cronometrar("show", f"({len(lote)} hashes)", "|", "patch-id"):
+            try:
+                show = subprocess.Popen(
+                    ["git", "show", *lote],
+                    cwd=self.repo_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+            except OSError as e:
+                raise BackendIndisponivel(f"git show: {e}") from e
+            try:
+                patch = _rodar_git(
+                    ["git", "patch-id", "--stable"],
+                    cwd=self.repo_path,
+                    stdin=show.stdout,
+                )
+            finally:
+                if show.stdout is not None:
+                    show.stdout.close()
+                show_ret = show.wait()
+        if show_ret != 0:
+            raise MotorError(f"git show: exit status {show_ret}")
+        if patch.returncode != 0:
+            raise MotorError(
+                "git patch-id --stable: exit status "
+                f"{patch.returncode}: {_saida_git_publica(patch.stderr)}"
+            )
+        # uma linha `<patch-id> <commit>` por commit com patch
+        return {
+            commit: pid
+            for pid, commit in (linha.split() for linha in patch.stdout.splitlines())
+        }
+
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        encontrados: dict[str, frozenset[str]] = {}
+        for inicio in range(0, len(hashes), _LOTE_META):
+            lote = hashes[inicio : inicio + _LOTE_META]
+            # Sem `--ignore-missing`: o hash desconhecido tem de faltar no
+            # retorno, e so a falha do lote o distingue de commit sem arquivo.
+            # showRoot=false e --no-renames imitam o `diff-tree` unitario.
+            try:
+                out = self._output(
+                    self.repo_path,
+                    "-c",
+                    "log.showRoot=false",
+                    "log",
+                    "--no-walk=unsorted",
+                    "--no-renames",
+                    "--name-only",
+                    f"--format={SEPARADOR_REGISTRO}%H",
+                    *lote,
+                )
+            except MotorError:
+                encontrados.update(_por_hash(self.changed_files, lote))
+                continue
+            # `_output` faz strip(), e o Python conta \x1e como espaço: o
+            # separador do primeiro registro some, por isso o filtro e nao [1:].
+            for bruta in filter(None, out.split(SEPARADOR_REGISTRO)):
+                commit, *nomes = bruta.split("\n")
+                encontrados[commit] = frozenset(n for n in nomes if n != "")
+        return encontrados
 
     def resolve_ref(self, ref: str, /) -> str:
         # ^{commit} descasca tag anotada: as tags de release deste projeto sao

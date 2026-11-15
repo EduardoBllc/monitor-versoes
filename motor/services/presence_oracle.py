@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef, Presence
@@ -67,6 +67,7 @@ class PresenceOracle:
             # (docs/decisoes/003-definicao-de-presente.md).
             return Presence.AUSENTE
 
+        self.precarregar_patch_ids([hash_origem, *(c.hash_origem for c in commits)])
         patch_id_origem = self._patch_id(hash_origem)
         if patch_id_origem is None:
             # merge commit "limpo" tem diff vazio no `git show` default, git
@@ -129,13 +130,29 @@ class PresenceOracle:
         chave = (base, branch)
         if chave not in self._por_msg_arquivos_cache:
             agrupado: dict[tuple[str, frozenset[str]], list[CommitRef]] = {}
-            for c in self._commits_in_range(base, branch) or []:
+            commits = self._commits_in_range(base, branch) or []
+            faltam = [
+                c.hash_origem
+                for c in commits
+                if c.hash_origem not in self._changed_files_cache
+            ]
+            lidos = self.git.changed_files_lote(faltam)
+            for h in faltam:
+                self._changed_files_cache[h] = lidos.get(h)
+            for c in commits:
                 arquivos = self._changed_files(c.hash_origem)
                 if arquivos is None:
                     continue
                 agrupado.setdefault((c.msg.strip(), arquivos), []).append(c)
             self._por_msg_arquivos_cache[chave] = agrupado
         return self._por_msg_arquivos_cache[chave]
+
+    def precarregar_patch_ids(self, hashes: Iterable[str]) -> None:
+        """Lê num lote os patch-ids ainda fora do cache."""
+        faltam = [h for h in dict.fromkeys(hashes) if h not in self._patch_id_cache]
+        lidos = self.git.patch_ids(faltam)
+        for h in faltam:
+            self._patch_id_cache[h] = lidos.get(h)
 
     def _changed_files(self, hash_: str) -> frozenset[str] | None:
         if hash_ not in self._changed_files_cache:

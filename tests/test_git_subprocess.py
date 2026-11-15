@@ -410,6 +410,42 @@ def test_git_subprocess_commits_meta_nao_anda_pelos_ancestrais(tmp_path):
     assert lote[tip].parent != "", "esperava o primeiro pai preenchido"
 
 
+def test_lote_do_oraculo_igual_ao_por_commit(tmp_path):
+    """O lote substitui `patch_id`/`changed_files` em laco no oraculo: divergir
+    em raiz, rename, merge limpo ou commit vazio mudaria o veredito de presenca.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "checkout", "-b", "lado")
+    _run_git(repo_dir, "mv", "arquivo.txt", "renomeado.txt")
+    _run_git(repo_dir, "commit", "-m", "normal com rename")
+    _run_git(repo_dir, "checkout", "master")
+    _run_git(repo_dir, "merge", "--no-ff", "-m", "merge limpo", "lado")
+    _run_git(repo_dir, "commit", "--allow-empty", "-m", "vazio")
+
+    g = new_git_subprocess(repo_dir)
+    inexistente = "0" * 40
+    # raiz, normal com rename, merge limpo, vazio
+    hs = [g.resolve_ref(r) for r in ("master~2", "lado", "master^", "master")]
+    hs.append(inexistente)
+
+    def unitario(metodo, h):
+        try:
+            return metodo(h)
+        except MotorError:
+            return None
+
+    pids = {h: unitario(g.patch_id, h) for h in hs}
+    arquivos = {h: unitario(g.changed_files, h) for h in hs}
+    # sem o inexistente o lote roda inteiro; com ele, cai no caminho por hash
+    for lista in (hs[:-1], hs):
+        assert g.patch_ids(lista) == {h: pids[h] for h in lista if pids[h] is not None}
+        assert g.changed_files_lote(lista) == {
+            h: arquivos[h] for h in lista if arquivos[h] is not None
+        }
+    assert inexistente not in g.patch_ids(hs)
+    assert inexistente not in g.changed_files_lote(hs)
+
+
 def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):
     """O filho tem data de autor ANTERIOR a do pai — e o que o rebase deixa. A
     ordem tem de vir do grafo; hash ausente falta, e lista vazia nao vira

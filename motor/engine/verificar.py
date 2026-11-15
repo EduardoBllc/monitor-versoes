@@ -507,7 +507,10 @@ def _presenca(
     # tem mais o que aplicar (o pick sairia vazio). O gemeo aparece quando a
     # branch da PR foi rebasada e depois mergeada de volta.
     ja_presentes = {h: p for h, p in presentes.items() if p != Presence.AUSENTE}
-    for hash_ in [h for h, p in presentes.items() if p == Presence.AUSENTE]:
+    ausentes = [h for h, p in presentes.items() if p == Presence.AUSENTE]
+    if ausentes:
+        ctx.oracle.precarregar_patch_ids(presentes)
+    for hash_ in ausentes:
         if ctx.oracle.duplicata_de_presente(hash_, ja_presentes):
             presentes[hash_] = Presence.PATCH_ID
     suspeitos_conteudo = [

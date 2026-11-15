@@ -965,8 +965,8 @@ def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
     git.add_commit("a1", "a0", "ch123123 alfa", D)
     git.set_branch("master", "a1")
     git.set_branch("origin/master", "a1")
-    git.patch_ids["a0"] = "mesmo-patch"
-    git.patch_ids["a1"] = "mesmo-patch"
+    git.patch_id_por_commit["a0"] = "mesmo-patch"
+    git.patch_id_por_commit["a1"] = "mesmo-patch"
     # o pick de a0 entrou ANTES do corte da 14.0.0: esta na base, nao no range
     git.add_commit("p0", "m0", "ch123123 alfa\n\n(cherry picked from commit a0)", D)
     git.set_branch("14.0.0", "p0")
