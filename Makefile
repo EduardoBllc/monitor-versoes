@@ -4,7 +4,8 @@
 unexport VIRTUAL_ENV
 
 # `python -m`, como o pre-commit e o CI sempre rodaram: a raiz entra no sys.path.
-DEV := uv run --extra dev --extra anthropic python -m
+RUN := uv run --extra dev --extra anthropic
+DEV := $(RUN) python -m
 
 .PHONY: install setup migracao check fmt fmt-check lint typecheck test web-check web-dist
 
@@ -37,6 +38,7 @@ fmt-check:
 
 lint:
 	$(DEV) ruff check .
+	$(RUN) shellcheck --shell=sh install.sh
 
 typecheck:
 	$(DEV) mypy

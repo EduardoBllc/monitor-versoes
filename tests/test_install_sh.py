@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+import os
+import pty
+import shutil
+import subprocess
+import sys
+from collections.abc import Iterator
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+
+import pytest
+
+from motor import agendador, servico
+from motor.__main__ import COMANDO_DESINSTALAR
+from motor.agendador import Sistema
+from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR, COMANDO_PLUGIN, AcaoPlugin
+from motor.errors import CodigoSaida
+from motor.instalacao import PACOTE_MOTOR
+from tests.plataforma import PLATAFORMA_WINDOWS
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == PLATAFORMA_WINDOWS, reason="install.sh é sh POSIX"
+)
+
+SCRIPT = Path(__file__).resolve().parent.parent / "install.sh"
+URL_REPO = "https://github.com/EduardoBllc/monitor-versoes"
+URL_WINDOWS = f"{URL_REPO}#windows"
+URL_INSTALADOR_UV = "https://astral.sh/uv/install.sh"
+ULTIMA_TAG = "v0.10.0"
+TAGS_REMOTAS = ("v0.2.0", "v0.9.0", ULTIMA_TAG, "v1.0.0-rc1", "latest")
+PLUGIN_GIT = (
+    "git+https://github.com/exemplo/monitor-versoes-plugin"
+    "@99ffe18fdf9f7268abfaf2c611f87e4b10db50c5"
+)
+FLAG_SEM_CONFIGURAR = "--sem-configurar"
+FLAG_DESINSTALAR = "--desinstalar"
+FLAG_HELP = "--help"
+MARCA_OK = "✔"
+MARCA_FALHA = "✖"
+MARCA_TTY = "stdin-tty"
+DICA_PATH = "uv tool update-shell"
+AVISO_BANCO = "DATABASE_SQLITE_PATH"
+UTILITARIOS = (
+    "sh", "cat", "sed", "grep", "sort", "tail", "head",
+    "mkdir", "rm", "id", "tr", "cp", "chmod", "basename", "dirname",
+)  # fmt: skip
+
+
+class Var(StrEnum):
+    LOG = "FALSO_LOG"
+    TAGS = "FALSO_TAGS"
+    UNAME = "FALSO_UNAME"
+    LINHA_UV = "FALSO_LINHA_UV"
+    MOTOR = "FALSO_MOTOR"
+    SAIDA_SONDA = "FALSO_SAIDA_SONDA"
+    SAIDA_ATUALIZAR = "FALSO_SAIDA_ATUALIZAR"
+    SAIDA_DESINSTALAR = "FALSO_SAIDA_DESINSTALAR"
+
+
+class Uname(StrEnum):
+    LINUX = "Linux"
+    DARWIN = "Darwin"
+    WINDOWS = "MINGW64_NT-10.0"
+
+
+SISTEMA = {Uname.LINUX: Sistema.LINUX, Uname.DARWIN: Sistema.MACOS}
+
+
+class Gerenciador(StrEnum):
+    APT = "apt-get"
+    DNF = "dnf"
+    PACMAN = "pacman"
+
+
+class Caminho(StrEnum):
+    NOVA = "instalação nova"
+    REINSTALACAO = "reinstalação"
+
+
+_REGISTRA = f'printf \'%s\\n\' "$(basename "$0") $*" >> "${Var.LOG}"\n'
+
+_UV = f"""#!/bin/sh
+{_REGISTRA}case "$1 $2" in
+  "tool dir") printf '%s\\n' "$UV_TOOL_BIN_DIR" ;;
+  "tool install") cp "${Var.MOTOR}" "$UV_TOOL_BIN_DIR/" ;;
+  "tool list") printf '%s\\n' "${Var.LINHA_UV}" ;;
+esac
+"""
+
+_GIT = f"""#!/bin/sh
+{_REGISTRA}for t in ${Var.TAGS}; do printf '0000\\trefs/tags/%s\\n' "$t"; done
+"""
+
+_UNAME = f"""#!/bin/sh
+{_REGISTRA}printf '%s\\n' "${Var.UNAME}"
+"""
+
+_MOTOR = f"""#!/bin/sh
+{_REGISTRA}case "$1" in
+  {COMANDO_ATUALIZAR_MOTOR})
+    [ "${{2:-}}" = {FLAG_HELP} ] && exit "${Var.SAIDA_SONDA}"
+    exit "${Var.SAIDA_ATUALIZAR}" ;;
+  {servico.COMANDO_CONFIGURAR}) [ -t 0 ] && echo {MARCA_TTY} >> "${Var.LOG}" ;;
+  {COMANDO_DESINSTALAR}) exit "${Var.SAIDA_DESINSTALAR}" ;;
+esac
+exit 0
+"""
+
+
+def _executavel(caminho: Path, conteudo: str) -> None:
+    caminho.write_text(conteudo)
+    caminho.chmod(0o755)
+
+
+@dataclass
+class Maquina:
+    raiz: Path
+    home: Path
+    falsos: Path
+    sistema: Path
+    toolbin: Path
+    log: Path
+    env: dict[str, str]
+
+    def com(self, nome: str, conteudo: str = f"#!/bin/sh\n{_REGISTRA}") -> None:
+        _executavel(self.falsos / nome, conteudo)
+
+    def sem(self, nome: str) -> None:
+        (self.falsos / nome).unlink()
+
+    def instalar_motor(self) -> None:
+        shutil.copy(self.env[Var.MOTOR], self.toolbin)
+
+    @property
+    def motor(self) -> Path:
+        return self.toolbin / servico.EXECUTAVEL
+
+    def chamadas(self) -> list[str]:
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def rodar(self, *args: str) -> subprocess.CompletedProcess[str]:
+        # Sessão nova: sem terminal de controle, o /dev/tty não abre.
+        return subprocess.run(
+            [str(self.sistema / "sh"), str(SCRIPT), *args],
+            env=self.env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            start_new_session=True,
+            check=False,
+        )
+
+
+@pytest.fixture
+def maquina(tmp_path: Path) -> Iterator[Maquina]:
+    home, falsos, sistema, toolbin, pacotes = (
+        tmp_path / nome for nome in ("home", "falsos", "sistema", "toolbin", "pacotes")
+    )
+    for pasta in (home, falsos, sistema, toolbin, pacotes):
+        pasta.mkdir()
+    for util in UTILITARIOS:
+        real = shutil.which(util)
+        assert real is not None, util
+        (sistema / util).symlink_to(real)
+    _executavel(pacotes / "uv", _UV)
+    _executavel(pacotes / servico.EXECUTAVEL, _MOTOR)
+    env = {
+        "HOME": str(home),
+        "PATH": f"{falsos}:{sistema}",
+        "UV_TOOL_BIN_DIR": str(toolbin),
+        Var.LOG: str(tmp_path / "log"),
+        Var.TAGS: " ".join(TAGS_REMOTAS),
+        Var.UNAME: Uname.LINUX,
+        Var.LINHA_UV: f"{PACOTE_MOTOR} v0.2.0",
+        Var.MOTOR: str(pacotes / servico.EXECUTAVEL),
+        Var.SAIDA_SONDA: str(CodigoSaida.OK),
+        Var.SAIDA_ATUALIZAR: str(CodigoSaida.OK),
+        Var.SAIDA_DESINSTALAR: str(CodigoSaida.OK),
+    }
+    m = Maquina(tmp_path, home, falsos, sistema, toolbin, tmp_path / "log", env)
+    m.com("uv", _UV)
+    m.com("git", _GIT)
+    m.com("uname", _UNAME)
+    m.com("curl", f"#!/bin/sh\n{_REGISTRA}")
+    for comando in (agendador.SYSTEMCTL[0], agendador.LAUNCHCTL):
+        m.com(comando)
+    yield m
+
+
+def _instalacao(tag: str, *, reinstalar: bool = False) -> str:
+    flag = " --reinstall" if reinstalar else ""
+    return f"uv tool install{flag} {PACOTE_MOTOR} @ git+{URL_REPO}@{tag}"
+
+
+def test_sem_uv_instala_uv_e_a_ultima_release(maquina):
+    maquina.sem("uv")
+    uv = maquina.raiz / "pacotes" / "uv"
+    instalador = f'mkdir -p "$HOME/.local/bin" && cp {uv} "$HOME/.local/bin/uv"'
+    maquina.com("curl", f"#!/bin/sh\n{_REGISTRA}echo '{instalador}'\n")
+
+    r = maquina.rodar()
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    chamadas = maquina.chamadas()
+    assert any(URL_INSTALADOR_UV in c for c in chamadas if c.startswith("curl"))
+    assert _instalacao(ULTIMA_TAG) in chamadas
+    assert MARCA_OK in r.stdout
+    assert f"{servico.EXECUTAVEL} {servico.COMANDO_CONFIGURAR}" in r.stdout
+
+
+@pytest.mark.parametrize(
+    ("uname", "gerenciador", "comando"),
+    [
+        (Uname.LINUX, Gerenciador.APT, "sudo apt install git"),
+        (Uname.LINUX, Gerenciador.DNF, "sudo dnf install git"),
+        (Uname.LINUX, Gerenciador.PACMAN, "sudo pacman -S git"),
+        (Uname.DARWIN, None, "xcode-select --install"),
+    ],
+)
+def test_sem_git_para_antes_de_instalar(maquina, uname, gerenciador, comando):
+    maquina.sem("git")
+    maquina.env[Var.UNAME] = uname
+    if gerenciador is not None:
+        maquina.com(gerenciador)
+
+    r = maquina.rodar()
+
+    assert r.returncode != CodigoSaida.OK
+    assert comando in r.stdout
+    assert not [c for c in maquina.chamadas() if c.startswith(("uv ", "curl "))]
+
+
+def test_sistema_nao_suportado_aponta_o_windows(maquina):
+    maquina.env[Var.UNAME] = Uname.WINDOWS
+
+    r = maquina.rodar()
+
+    assert r.returncode != CodigoSaida.OK
+    assert URL_WINDOWS in r.stdout
+    assert not [c for c in maquina.chamadas() if c.startswith(("uv ", "curl "))]
+
+
+def test_ja_instalado_roda_atualizar_motor(maquina):
+    maquina.instalar_motor()
+
+    r = maquina.rodar(FLAG_SEM_CONFIGURAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    assert f"{servico.EXECUTAVEL} {COMANDO_ATUALIZAR_MOTOR}" in maquina.chamadas()
+    assert not [c for c in maquina.chamadas() if c.startswith("uv tool install")]
+
+
+@pytest.mark.parametrize(
+    ("sonda", "atualizar"),
+    [
+        (CodigoSaida.USO, CodigoSaida.OK),
+        (CodigoSaida.OK, CodigoSaida.ORIGEM_RECUSADA),
+    ],
+)
+def test_instalacao_que_o_atualizar_motor_nao_atende_reinstala_e_lista_plugins(
+    maquina, sonda, atualizar
+):
+    pasta = maquina.raiz / "plugum"
+    linha = (
+        f"{PACOTE_MOTOR} v0.2.0 [extras: anthropic] "
+        f"[with: monitor-versoes-plugin {PLUGIN_GIT}, plugumfile://{pasta}]"
+    )
+    maquina.env |= {
+        Var.SAIDA_SONDA: str(sonda),
+        Var.SAIDA_ATUALIZAR: str(atualizar),
+        Var.LINHA_UV: linha,
+    }
+    maquina.instalar_motor()
+
+    r = maquina.rodar(FLAG_SEM_CONFIGURAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    assert _instalacao(ULTIMA_TAG, reinstalar=True) in maquina.chamadas()
+    assert linha in r.stdout
+    instalar = f"{servico.EXECUTAVEL} {COMANDO_PLUGIN} {AcaoPlugin.INSTALAR}"
+    assert f"{instalar} {PLUGIN_GIT}" in r.stdout
+    assert f"{instalar} {pasta}" in r.stdout
+
+
+@pytest.mark.parametrize(
+    ("sonda", "atualizar"),
+    [
+        (CodigoSaida.ERRO, CodigoSaida.OK),
+        (CodigoSaida.OK, CodigoSaida.ERRO),
+    ],
+)
+def test_falha_do_motor_instalado_nao_reinstala(maquina, sonda, atualizar):
+    maquina.env |= {Var.SAIDA_SONDA: str(sonda), Var.SAIDA_ATUALIZAR: str(atualizar)}
+    maquina.instalar_motor()
+
+    r = maquina.rodar(FLAG_SEM_CONFIGURAR)
+
+    assert r.returncode != CodigoSaida.OK
+    assert MARCA_FALHA in r.stdout
+    assert not [c for c in maquina.chamadas() if "--reinstall" in c]
+
+
+def _reinicio(uname: Uname) -> str:
+    if uname is Uname.DARWIN:
+        return (
+            f"{agendador.LAUNCHCTL} {agendador.Acao.KICKSTART} {servico.FLAG_FORCAR} "
+            f"gui/{os.getuid()}/{servico.ROTULO_LAUNCHD}"
+        )
+    return f"{' '.join(agendador.SYSTEMCTL)} {agendador.Acao.RESTART} {servico.ARQUIVO_SERVICE}"
+
+
+@pytest.mark.parametrize("com_arquivo", [True, False])
+@pytest.mark.parametrize("caminho", list(Caminho))
+@pytest.mark.parametrize("uname", list(SISTEMA))
+def test_reinicia_o_servico_ligado_depois_de_instalar(
+    maquina, uname, caminho, com_arquivo
+):
+    maquina.env[Var.UNAME] = uname
+    if caminho is Caminho.REINSTALACAO:
+        maquina.env[Var.SAIDA_SONDA] = str(CodigoSaida.USO)
+        maquina.instalar_motor()
+    if com_arquivo:
+        arquivo = servico.caminho(SISTEMA[uname], maquina.home)
+        arquivo.parent.mkdir(parents=True)
+        arquivo.touch()
+
+    r = maquina.rodar(FLAG_SEM_CONFIGURAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    assert (_reinicio(uname) in maquina.chamadas()) is com_arquivo
+
+
+@pytest.mark.parametrize("no_path", [True, False])
+def test_aviso_de_path(maquina, no_path):
+    if no_path:
+        maquina.env["PATH"] += f":{maquina.toolbin}"
+
+    r = maquina.rodar(FLAG_SEM_CONFIGURAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    assert (DICA_PATH in r.stdout) is not no_path
+
+
+@pytest.mark.parametrize("args", [(), (FLAG_SEM_CONFIGURAR,)])
+def test_sem_terminal_ou_sem_configurar_nao_abre_o_configurar(maquina, args):
+    r = maquina.rodar(*args)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    configurar = f"{servico.EXECUTAVEL} {servico.COMANDO_CONFIGURAR}"
+    assert configurar not in maquina.chamadas()
+    assert configurar in r.stdout
+
+
+def test_com_terminal_roda_o_configurar_no_tty(maquina):
+    sh = str(maquina.sistema / "sh")
+    pid, fd = pty.fork()
+    if pid == 0:  # pragma: no cover - filho, com o pty como terminal de controle
+        os.execve(sh, [sh, str(SCRIPT)], maquina.env)
+    saida = b""
+    while True:
+        try:
+            pedaco = os.read(fd, 4096)
+        except OSError:
+            break
+        if not pedaco:
+            break
+        saida += pedaco
+    _, status = os.waitpid(pid, 0)
+
+    assert os.waitstatus_to_exitcode(status) == CodigoSaida.OK, saida.decode()
+    chamadas = maquina.chamadas()
+    assert f"{servico.EXECUTAVEL} {servico.COMANDO_CONFIGURAR}" in chamadas
+    assert MARCA_TTY in chamadas
+
+
+def test_desinstalar_pelo_motor(maquina):
+    maquina.instalar_motor()
+
+    r = maquina.rodar(FLAG_DESINSTALAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    chamadas = maquina.chamadas()
+    desinstalar = chamadas.index(f"{servico.EXECUTAVEL} {COMANDO_DESINSTALAR}")
+    assert desinstalar < chamadas.index(f"uv tool uninstall {PACOTE_MOTOR}")
+    assert "uv" in r.stdout.splitlines()[-1]
+
+
+def test_desinstalar_interrompido_nao_remove_nada(maquina):
+    maquina.env[Var.SAIDA_DESINSTALAR] = str(CodigoSaida.INTERROMPIDO)
+    maquina.instalar_motor()
+
+    r = maquina.rodar(FLAG_DESINSTALAR)
+
+    assert r.returncode == CodigoSaida.INTERROMPIDO
+    assert not [c for c in maquina.chamadas() if c.startswith("uv tool uninstall")]
+    assert maquina.motor.exists()
+
+
+@pytest.mark.parametrize("motor_quebrado", [True, False])
+@pytest.mark.parametrize("uname", list(SISTEMA))
+def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
+    maquina, uname, motor_quebrado
+):
+    sistema = SISTEMA[uname]
+    maquina.env[Var.UNAME] = uname
+    if motor_quebrado:
+        maquina.env[Var.SAIDA_DESINSTALAR] = str(CodigoSaida.ERRO)
+        maquina.instalar_motor()
+    arquivos = [
+        servico.caminho(sistema, maquina.home),
+        *agendador.caminhos(sistema, maquina.home),
+    ]
+    for arquivo in arquivos:
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        arquivo.touch()
+    dados = [
+        maquina.home / ".config" / PACOTE_MOTOR,
+        maquina.home / ".local" / "share" / PACOTE_MOTOR,
+        maquina.home / ".cache" / PACOTE_MOTOR,
+    ]
+    for pasta in dados:
+        pasta.mkdir(parents=True)
+
+    r = maquina.rodar(FLAG_DESINSTALAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    assert not [a for a in arquivos if a.exists()]
+    desativar = (
+        f"{agendador.LAUNCHCTL} {agendador.Acao.UNLOAD}"
+        if sistema is Sistema.MACOS
+        else f"{' '.join(agendador.SYSTEMCTL)} {agendador.Acao.DISABLE} {agendador.FLAG_AGORA}"
+    )
+    assert any(c.startswith(desativar) for c in maquina.chamadas())
+    assert all(pasta.is_dir() for pasta in dados)
+    for pasta in dados:
+        assert str(pasta) in r.stdout
+    assert AVISO_BANCO in r.stdout

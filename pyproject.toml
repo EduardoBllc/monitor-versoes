@@ -23,6 +23,7 @@ dev = [
     "pre-commit>=4.7.0",
     "httpx2>=2.16.0",
     "monitor-versoes-jira",
+    "shellcheck-py",
 ]
 anthropic = [
     "anthropic>=2.8,<3",
