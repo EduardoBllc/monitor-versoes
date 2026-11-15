@@ -1392,10 +1392,12 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
             conexao.close()  # o lado servidor fecha primeiro e fica em TIME_WAIT
             cliente.recv(1)
     rodou = []
-    monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
+    monkeypatch.setattr(
+        daemon_app, "_rodar", lambda app, p, abrir_navegador: rodou.append(p)
+    )
     # Sem isto a suíte desinstalaria o timer real de quem a roda.
     monkeypatch.setattr(daemon_app, "remover_agendador_antigo", lambda *_: False)
-    daemon_app.servir(porta, {})
+    daemon_app.servir(porta, {}, True)
     assert rodou == [porta]
 
 
@@ -1413,7 +1415,9 @@ def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "checar_backend", lambda: None)
     vistos = []
     monkeypatch.setattr(
-        daemon_app, "servir", lambda porta, ambiente: vistos.append(ambiente)
+        daemon_app,
+        "servir",
+        lambda porta, ambiente, abrir_navegador: vistos.append(ambiente),
     )
 
     main(["serve"])

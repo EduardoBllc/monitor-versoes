@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -98,6 +99,22 @@ def _travas_isoladas(monkeypatch, tmp_path):
     import motor.trava
 
     monkeypatch.setattr(motor.trava, "diretorio_travas", lambda: tmp_path / "travas")
+
+
+@pytest.fixture(autouse=True)
+def _sistema_isolado(monkeypatch, tmp_path):
+    """Nenhum teste chama `systemctl`/`launchctl` nem lê o HOME de quem roda a suíte.
+
+    `Path.home` é trocado à parte porque o Windows ignora o `HOME`. Quem precisa
+    registrar as chamadas troca os falsos de novo no próprio teste.
+    """
+    from motor import agendador, servico
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(agendador, "rodar_comando_do_sistema", lambda cmd: None)
+    monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: None)
 
 
 @pytest.fixture

@@ -437,6 +437,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_serve = sub.add_parser(COMANDO_SERVE, help="sobe a interface web local")
     p_serve.add_argument("--porta", type=int, default=PORTA_PADRAO)
+    p_serve.add_argument(
+        "--sem-navegador",
+        action="store_true",
+        help="não abre o navegador ao subir (o serviço de login usa)",
+    )
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
@@ -475,10 +480,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_serve(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
+def _iniciar_serve(
+    porta: int, ambiente_filhos: Mapping[str, str], abrir_navegador: bool
+) -> None:
     from motor.daemon.app import servir
 
-    servir(porta, ambiente_filhos)
+    servir(porta, ambiente_filhos, abrir_navegador)
 
 
 def _iniciar_tui() -> None:
@@ -835,7 +842,7 @@ def main(argv: list[str] | None = None) -> None:
                 checar_backend()
 
             if args.comando == COMANDO_SERVE:
-                _iniciar_serve(args.porta, ambiente_filhos)
+                _iniciar_serve(args.porta, ambiente_filhos, not args.sem_navegador)
                 return
 
             if args.comando == COMANDO_TUI:
