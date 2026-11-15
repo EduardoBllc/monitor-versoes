@@ -9,7 +9,7 @@ import pytest
 from monitor_versoes_gitlab import FonteGitlab
 from monitor_versoes_gitlab.fonte import ChaveTarefas, VarGitlab
 
-from motor.config import Chave, Tabela
+from motor.config import TABELA_AMBIENTE, Chave, Tabela
 from motor.config_edicao import catalogo_campos
 from motor.domain.commits import extrair_chamado
 from motor.domain.referencia import Referencia
@@ -53,11 +53,19 @@ VERDADE = "true"
 TODOS = "all"
 FECHADA = "closed"
 POR_PAGINA = "100"
+HTTPS = "https://"
+HTTP = "http://"
 HOST_PADRAO = "gitlab.com"
-BASE = f"https://{HOST_PADRAO}"
+HOST_OUTRO = "outro.x"
+HOST_PROPRIO = "git.x"
+PORTA_OUTRA = 8443
+BASE = f"{HTTPS}{HOST_PADRAO}"
+PREFIXO_PROPRIO = "/gitlab"
+URL_PROPRIA = f"{HTTPS}{HOST_PROPRIO}{PREFIXO_PROPRIO}"
 API = "/api/v4"
 PROJETO = "grupo/sub/projeto"
 PROJETO_CODIFICADO = "grupo%2Fsub%2Fprojeto"
+PROJETO_ID = "123"
 CAMINHO_PROJETO = f"{API}/projects/{PROJETO}"
 MILESTONES = "milestones"
 ISSUES = "issues"
@@ -68,8 +76,23 @@ CAMINHO_EU = f"{API}/user"
 TOKEN = "tok"
 VERSAO = "v1.2.0"
 GRUPO = 9970
+ISSUE, REPETIDA, ULTIMA = 1, 3, 4
+ID_GLOBAL = 900
+PAGINA_SEGUINTE = 2
+PAGINAS_MAXIMAS = 3
+PAGINA_2_ISSUES = (
+    f"{API}/projects/{PROJETO_ID}/{ISSUES}?{_Param.PAGINA}={PAGINA_SEGUINTE}"
+)
 ARQUIVO = "c.toml"
+BRANCO = "  "
 LIMITE = "limite"
+AUTENTICACAO = "autenticação"
+A_CONTA = "à conta"
+HTML = "<html>"
+FORMATO_REF = "#{id}"
+ALFABETO = "0-9"
+CHAMADO = "123"
+MENSAGEM_COM_CHAMADO = f"#{CHAMADO}-fix corrige x"
 ENV: dict[str, str] = {VarGitlab.TOKEN: TOKEN}
 TAREFAS: dict[str, str] = {ChaveTarefas.PROJETO: PROJETO}
 
@@ -88,8 +111,8 @@ def test_construir_sem_config_nao_faz_io() -> None:
 
 def test_referencia_e_o_iid_da_issue() -> None:
     ref = FonteGitlab(tarefas={}, arquivos=()).referencia
-    assert ref == Referencia("#{id}", "0-9")
-    assert extrair_chamado("#123-fix corrige x", ref) == "123"
+    assert ref == Referencia(FORMATO_REF, ALFABETO)
+    assert extrair_chamado(MENSAGEM_COM_CHAMADO, ref) == CHAMADO
 
 
 def test_campos_aparecem_no_catalogo() -> None:
@@ -159,22 +182,25 @@ def _rotas_simples(
 def test_fetch_junta_paginas_pelo_iid() -> None:
     proxima = (
         f"{URL_PROJETO}/{ISSUES}?{_Param.MILESTONE}={VERSAO}&{_Param.ESCOPO}={TODOS}"
-        f"&{_Param.POR_PAGINA}={POR_PAGINA}&{_Param.PAGINA}=2"
+        f"&{_Param.POR_PAGINA}={POR_PAGINA}&{_Param.PAGINA}={PAGINA_SEGUINTE}"
     )
     fonte, pedidos = _fonte(
         {
             CAMINHO_MILESTONES: [_pagina(_milestone(VERSAO))],
             CAMINHO_ISSUES: [
                 _pagina(
-                    {_Item.ID: 901, _Item.IID: 1},
-                    {_Item.ID: 903, _Item.IID: 3},
+                    {_Item.ID: ID_GLOBAL + ISSUE, _Item.IID: ISSUE},
+                    {_Item.ID: ID_GLOBAL + REPETIDA, _Item.IID: REPETIDA},
                     proxima=proxima,
                 ),
-                _pagina({_Item.ID: 903, _Item.IID: 3}, {_Item.ID: 904, _Item.IID: 4}),
+                _pagina(
+                    {_Item.ID: ID_GLOBAL + REPETIDA, _Item.IID: REPETIDA},
+                    {_Item.ID: ID_GLOBAL + ULTIMA, _Item.IID: ULTIMA},
+                ),
             ],
         }
     )
-    assert fonte.fetch(VERSAO) == ["1", "3", "4"]
+    assert fonte.fetch(VERSAO) == [str(n) for n in (ISSUE, REPETIDA, ULTIMA)]
     ms, is1, is2 = pedidos
     assert ms.url.params[_Param.TITLE] == VERSAO
     assert ms.url.params[_Param.ANCESTRAIS] == VERDADE
@@ -190,7 +216,7 @@ def test_fetch_junta_paginas_pelo_iid() -> None:
 
 @pytest.mark.parametrize(
     ("projeto", "segmento"),
-    [(PROJETO, PROJETO_CODIFICADO), ("123", "123")],
+    [(PROJETO, PROJETO_CODIFICADO), (PROJETO_ID, PROJETO_ID)],
 )
 def test_fetch_projeto_vira_um_segmento(projeto: str, segmento: str) -> None:
     fonte, pedidos = _fonte(
@@ -211,15 +237,15 @@ def test_fetch_projeto_vira_um_segmento(projeto: str, segmento: str) -> None:
     ("env", "token", "caminhos"),
     [
         ({}, None, [CAMINHO_ISSUES]),
-        ({VarGitlab.TOKEN: "  "}, None, [CAMINHO_ISSUES]),
+        ({VarGitlab.TOKEN: BRANCO}, None, [CAMINHO_ISSUES]),
         ({VarGitlab.TOKEN: f" {TOKEN}\n"}, TOKEN, [CAMINHO_MILESTONES, CAMINHO_ISSUES]),
     ],
 )
 def test_fetch_token_opcional(
     env: dict[str, str], token: str | None, caminhos: list[str]
 ) -> None:
-    fonte, pedidos = _fonte(_rotas_simples({_Item.IID: 1}), env=env)
-    assert fonte.fetch(VERSAO) == ["1"]
+    fonte, pedidos = _fonte(_rotas_simples({_Item.IID: ISSUE}), env=env)
+    assert fonte.fetch(VERSAO) == [str(ISSUE)]
     assert [p.url.path for p in pedidos] == caminhos
     for pedido in pedidos:
         assert pedido.headers.get(_Cabecalho.TOKEN) == token
@@ -230,7 +256,7 @@ def test_fetch_token_opcional(
     ("url", "host", "prefixo"),
     [
         (None, HOST_PADRAO, ""),
-        ("https://git.x/gitlab/", "git.x", "/gitlab"),
+        (f"{URL_PROPRIA}/", HOST_PROPRIO, PREFIXO_PROPRIO),
     ],
 )
 def test_fetch_url(url: str | None, host: str, prefixo: str) -> None:
@@ -270,12 +296,12 @@ def test_fetch_milestone_inexistente_nao_pede_issues() -> None:
     [
         ({}, [f"[{Tabela.TAREFAS}] {ChaveTarefas.PROJETO}", ARQUIVO]),
         (
-            {ChaveTarefas.PROJETO: "  "},
+            {ChaveTarefas.PROJETO: BRANCO},
             [f"[{Tabela.TAREFAS}] {ChaveTarefas.PROJETO}", ARQUIVO],
         ),
         (
-            {**TAREFAS, ChaveTarefas.URL: "http://git.x"},
-            [ChaveTarefas.URL, "https://"],
+            {**TAREFAS, ChaveTarefas.URL: f"{HTTP}{HOST_PROPRIO}"},
+            [ChaveTarefas.URL, HTTPS],
         ),
     ],
 )
@@ -293,7 +319,7 @@ def _todos(termos: list[str]) -> str:
 
 
 def _conexao_recusada(request: httpx.Request) -> httpx.Response:
-    raise httpx.ConnectError("recusou", request=request)
+    raise httpx.ConnectError(HOST_OUTRO, request=request)
 
 
 def _status(codigo: int) -> Callable[[httpx.Request], httpx.Response]:
@@ -309,7 +335,7 @@ def _issues(
 
 def _proxima_sempre(proxima: str) -> Callable[[httpx.Request], httpx.Response]:
     """Milestones e issues cuja página sempre aponta `proxima`; no máximo três."""
-    paginas = iter([_pagina(_milestone(VERSAO), proxima=proxima)] * 3)
+    paginas = iter([_pagina(_milestone(VERSAO), proxima=proxima)] * PAGINAS_MAXIMAS)
     return lambda _r: next(paginas)
 
 
@@ -321,7 +347,7 @@ def _proxima_sempre(proxima: str) -> Callable[[httpx.Request], httpx.Response]:
             _status(httpx.codes.UNAUTHORIZED),
             {},
             ErroDeEntrada,
-            [PROJETO, "autenticação", VarGitlab.TOKEN],
+            [PROJETO, AUTENTICACAO, VarGitlab.TOKEN],
         ),
         (
             _status(httpx.codes.FORBIDDEN),
@@ -336,10 +362,16 @@ def _proxima_sempre(proxima: str) -> Callable[[httpx.Request], httpx.Response]:
             ErroDeEntrada,
             [PROJETO, f"[{Tabela.TAREFAS}] {ChaveTarefas.PROJETO}"],
         ),
+        (
+            _status(httpx.codes.NOT_FOUND),
+            {},
+            ErroDeEntrada,
+            [PROJETO, f"[{TABELA_AMBIENTE}] {VarGitlab.TOKEN}"],
+        ),
         (_status(httpx.codes.INTERNAL_SERVER_ERROR), ENV, BackendIndisponivel, []),
         (_conexao_recusada, ENV, BackendIndisponivel, []),
         (
-            lambda _r: httpx.Response(httpx.codes.OK, text="<html>"),
+            lambda _r: httpx.Response(httpx.codes.OK, text=HTML),
             ENV,
             RespostaInvalida,
             [],
@@ -350,10 +382,12 @@ def _proxima_sempre(proxima: str) -> Callable[[httpx.Request], httpx.Response]:
             RespostaInvalida,
             [],
         ),
-        (_issues({_Item.ID: 901}), ENV, RespostaInvalida, []),
+        (_issues({_Item.ID: ID_GLOBAL}), ENV, RespostaInvalida, []),
         (_issues({_Item.IID: True}), ENV, RespostaInvalida, []),
         (
-            _proxima_sempre(f"{URL_PROJETO}/{MILESTONES}?{_Param.PAGINA}=2"),
+            _proxima_sempre(
+                f"{URL_PROJETO}/{MILESTONES}?{_Param.PAGINA}={PAGINA_SEGUINTE}"
+            ),
             ENV,
             RespostaInvalida,
             [],
@@ -372,7 +406,7 @@ def test_fetch_traduz_respostas(
 
 
 def test_fetch_proxima_igual_a_pedida_em_outra_grafia() -> None:
-    restantes = iter(range(2))
+    restantes = iter(range(PAGINA_SEGUINTE))
 
     def rota(request: httpx.Request) -> httpx.Response:
         next(restantes)
@@ -389,11 +423,11 @@ def test_fetch_proxima_igual_a_pedida_em_outra_grafia() -> None:
 @pytest.mark.parametrize(
     ("url", "proxima"),
     [
-        (None, "https://outro.x/api/v4/projects/1/issues?page=2"),
-        (None, "https://gitlab.com.outro.x/api/v4/projects/1/issues?page=2"),
-        (None, "http://gitlab.com/api/v4/projects/1/issues?page=2"),
-        (None, "https://gitlab.com:8443/api/v4/projects/1/issues?page=2"),
-        ("https://git.x/gitlab", "https://git.x/outro/api/v4/projects/1/issues?page=2"),
+        (None, f"{HTTPS}{HOST_OUTRO}{PAGINA_2_ISSUES}"),
+        (None, f"{HTTPS}{HOST_PADRAO}.{HOST_OUTRO}{PAGINA_2_ISSUES}"),
+        (None, f"{HTTP}{HOST_PADRAO}{PAGINA_2_ISSUES}"),
+        (None, f"{HTTPS}{HOST_PADRAO}:{PORTA_OUTRA}{PAGINA_2_ISSUES}"),
+        (URL_PROPRIA, f"{HTTPS}{HOST_PROPRIO}/{HOST_OUTRO}{PAGINA_2_ISSUES}"),
     ],
 )
 def test_fetch_nao_segue_proxima_fora_da_base(url: str | None, proxima: str) -> None:
@@ -429,6 +463,7 @@ def test_verificar_credenciais_ok_sem_projeto() -> None:
     ("status", "termos", "ausente"),
     [
         (httpx.codes.UNAUTHORIZED, [VarGitlab.TOKEN], None),
+        (httpx.codes.FORBIDDEN, [A_CONTA, VarGitlab.TOKEN], None),
         (
             httpx.codes.NOT_FOUND,
             [f"[{Tabela.TAREFAS}] {ChaveTarefas.URL}"],

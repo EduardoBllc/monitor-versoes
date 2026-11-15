@@ -82,7 +82,11 @@ def _sob_a_base(url: httpx.URL, base: httpx.URL) -> bool:
 def _traduzir_status(resp: httpx.Response, token: str, projeto: str | None) -> None:
     """Status de erro da API como erro do motor, na ordem da tabela da spec."""
     status = resp.status_code
-    alvo = f"o projeto {projeto!r}" if projeto else "a conta"
+    alvo, ao_alvo = (
+        (f"o projeto {projeto!r}", f"ao projeto {projeto!r}")
+        if projeto
+        else ("a conta", "à conta")
+    )
     if status == httpx.codes.TOO_MANY_REQUESTS:
         raise BackendIndisponivel(
             f"GitLab atingiu o limite de requisições ({status}); tente mais tarde"
@@ -98,7 +102,7 @@ def _traduzir_status(resp: httpx.Response, token: str, projeto: str | None) -> N
         )
     if status == httpx.codes.FORBIDDEN:
         raise ErroDeEntrada(
-            f"sem acesso a {alvo} ({status}): confira o {VarGitlab.TOKEN}"
+            f"sem acesso {ao_alvo} ({status}): confira o {VarGitlab.TOKEN}"
         )
     if status == httpx.codes.NOT_FOUND:
         if projeto is None:
@@ -106,9 +110,11 @@ def _traduzir_status(resp: httpx.Response, token: str, projeto: str | None) -> N
                 f"a API do GitLab não foi encontrada ({status}): "
                 f"confira [{Tabela.TAREFAS}] {ChaveTarefas.URL}"
             )
+        # Projeto privado pedido sem token também responde 404.
         raise ErroDeEntrada(
             f"{alvo} não foi encontrado ou o token não tem acesso: "
             f"confira [{Tabela.TAREFAS}] {ChaveTarefas.PROJETO}"
+            + ("" if token else f" ou defina [{TABELA_AMBIENTE}] {VarGitlab.TOKEN}")
         )
     if status != httpx.codes.OK:
         raise BackendIndisponivel(f"GitLab respondeu {status}")
