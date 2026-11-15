@@ -247,6 +247,44 @@ def test_commit_do_cache_ainda_passa_pelo_is_ancestor():
     assert _hashes(dentro) == ["c1"]
 
 
+def test_prs_de_varios_chamados_buscadas_uma_vez_cada():
+    # A PR 8 casa com os dois chamados: o lote junta as PRs de todos antes de
+    # ir ao host, então ela é pedida uma vez só.
+    host = FakeHostPr(
+        [
+            _pr(7, chamado="111111"),
+            _pr(8, titulo="ch111111 e ch222222", branch="bugfix/ch222222"),
+            _pr(9, chamado="222222"),
+        ],
+        {7: [_commit("c1")], 8: [_commit("c2")], 9: [_commit("c3")]},
+    )
+
+    resultado = _fonte(host, _git_com_master("c1", "c2", "c3")).resolve(
+        ["111111", "222222"]
+    )
+
+    assert sorted(host.commits_pedidos) == [7, 8, 9]
+    assert _hashes(resultado, "111111") == ["c1", "c2"]
+    assert _hashes(resultado, "222222") == ["c2", "c3"]
+    assert resultado["222222"][0].chamado == "222222"
+
+
+def test_falha_numa_pr_propaga_tipo_e_nao_grava_lote():
+    # Cache com lote parcial esconderia a falha: o próximo run leria só as PRs
+    # que vieram e daria o chamado por resolvido sem a que faltou.
+    estado = _estado_vazio()
+    host = FakeHostPr(
+        [_pr(7, chamado="111111"), _pr(8, chamado="222222"), _pr(9, chamado="222222")],
+        {7: [_commit("c1")], 9: [_commit("c3")]},
+        err_por_pr={8: BackendIndisponivel("boom")},
+    )
+
+    with pytest.raises(BackendIndisponivel):
+        _fonte(host, _git_com_master("c1", "c3"), estado).resolve(["111111", "222222"])
+
+    assert estado.commits_de_pr(REPO_ESTADO, [7, 8, 9]) == {}
+
+
 # -- varredura incremental -----------------------------------------------------
 
 

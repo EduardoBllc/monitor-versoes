@@ -116,6 +116,7 @@ class HostPr(Protocol):
         """Commits da PR, sem merge commits e sem `chamado`.
 
         O nucleo cacheia o que vier: o filtro de merge commit tem de vir antes.
+        Pode ser chamada de várias threads ao mesmo tempo.
         """
         ...
 

@@ -21,6 +21,7 @@ from motor.adapters.tasksource.fake import FakeTaskSource
 from motor.domain.types import (
     Atribuicao,
     CommitRef,
+    PrIndex,
     RepoInfo,
     VersaoInfo,
 )
@@ -117,6 +118,34 @@ def test_fonte_de_pr_relata_a_varredura_e_depois_os_chamados():
         ("commits dos chamados nas PRs", 1, 3),
         ("commits dos chamados nas PRs", 2, 3),
         ("commits dos chamados nas PRs", 3, 3),
+    ]
+
+
+def test_fonte_de_pr_relata_cada_pr_buscada():
+    from motor.adapters.commitsource.fake import FakeHostPr
+
+    def pr(pr_id: int) -> PrIndex:
+        return PrIndex(pr_id=pr_id, titulo=f"ch1 pr {pr_id}")
+
+    relatos: list[Progresso] = []
+    fonte = PrCommitSource(
+        FakeHostPr(prs=[pr(7), pr(8)], commits={}),
+        "fake",
+        FakeGit(),
+        progresso=relatos.append,
+        estado=FakeEstado(repos={"r": RepoInfo(nome="r")}),
+        repo_estado="r",
+        referencia=lambda: REFERENCIA_CH,
+        ref_principal=lambda: "origin/main",
+    )
+
+    fonte.resolve(["1"])
+
+    assert _fases(relatos) == [
+        ("varrendo PRs", 0, 0),
+        ("commits das PRs", 1, 2),
+        ("commits das PRs", 2, 2),
+        ("commits dos chamados nas PRs", 1, 1),
     ]
 
 
