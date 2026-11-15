@@ -88,19 +88,20 @@ class PrCommitSource:
             self._varrer()
         indice = self.estado.prs_indexadas(self.repo_estado)
 
-        for posicao, chamado in enumerate(chamados, start=1):
-            # Relata antes de filtrar: o total é o tamanho do lote pedido, e
-            # uma barra que pula números por causa de chamado vazio confunde
-            # mais do que informa.
-            self.progresso(
-                Progresso("commits dos chamados nas PRs", posicao, len(chamados))
-            )
-            if not chamado:  # sem ID não tem como casar PR
-                continue
-            assert ref is not None  # algum chamado não vazio existe
-            commits = self._commits_do_chamado(ref, chamado, indice)
-            if commits:
-                resultado[chamado] = commits
+        with cronometrar(Etapa.COMMITS_PRS):
+            for posicao, chamado in enumerate(chamados, start=1):
+                # Relata antes de filtrar: o total é o tamanho do lote pedido, e
+                # uma barra que pula números por causa de chamado vazio confunde
+                # mais do que informa.
+                self.progresso(
+                    Progresso("commits dos chamados nas PRs", posicao, len(chamados))
+                )
+                if not chamado:  # sem ID não tem como casar PR
+                    continue
+                assert ref is not None  # algum chamado não vazio existe
+                commits = self._commits_do_chamado(ref, chamado, indice)
+                if commits:
+                    resultado[chamado] = commits
         return resultado
 
     def _varrer(self) -> None:
@@ -134,12 +135,11 @@ class PrCommitSource:
         # Só as PRs que casam com um chamado pedido vão ao host. O índice tem
         # 1118 PRs num repo real; buscar os commits de todas encostaria no limite
         # de taxa para responder pergunta que ninguém fez.
-        with cronometrar(Etapa.COMMITS_PRS):
-            novas = {
-                pr_id: self.host.commits_da_pr(pr_id)
-                for pr_id in pr_ids
-                if pr_id not in por_pr
-            }
+        novas = {
+            pr_id: self.host.commits_da_pr(pr_id)
+            for pr_id in pr_ids
+            if pr_id not in por_pr
+        }
         # ponytail: PR cujos commits são todos merge commit grava vazio e vira
         # miss em todo run. Custa 1 request por run e não tem PR assim na
         # prática; se aparecer, o conserto é uma linha-sentinela por PR.

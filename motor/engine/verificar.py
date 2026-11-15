@@ -244,14 +244,13 @@ def verificar_sem_fetch(
                 preparar_worktree(deps, versao)
         ref_alvo = versionamento.branch(versao)
 
-    with cronometrar(Etapa.BASE):
-        base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
     # A politica decide de quais versoes vem as tarefas do alvo
     # (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md). `corte` e a data
     # do commit-base gravado — o mesmo que nao se recomputa acima, pelo mesmo
     # motivo.
     with cronometrar(Etapa.BASE):
+        base_commit = _base_commit(deps, catalogo, versao, info)
         corte = deps.git.commit_meta(base_commit).commit_date
     fontes = versionamento.politica.fontes(
         versao,
