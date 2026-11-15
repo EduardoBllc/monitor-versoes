@@ -558,7 +558,11 @@ class GitSubprocess:
             except MotorError:
                 # um hash desconhecido derruba o lote inteiro: refaz so com os
                 # commits que existem, e o por hash fica de ultimo recurso
-                conhecidos = self._commits_conhecidos(lote)
+                try:
+                    conhecidos = self._commits_conhecidos(lote)
+                except MotorError:
+                    encontrados.update(_por_hash(ler_um, lote))
+                    continue
             # lista vazia nao vai ao git: `show`/`log` sem revisao assumem HEAD
             if not conhecidos:
                 continue
