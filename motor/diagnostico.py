@@ -319,6 +319,11 @@ def _plugin_da_config(  # noqa: PLR0913
         verificar()
     except MotorError as e:
         return _falha(peca, e, f"conferir as credenciais do plugin em {onde}")
+    finally:
+        # O diagnóstico instancia o plugin só para esta chamada: ninguém mais fecha.
+        fechar = getattr(plugin, "fechar", None)
+        if fechar is not None:
+            fechar()
     return Resultado(peca, Estado.OK, "credenciais aceitas")
 
 

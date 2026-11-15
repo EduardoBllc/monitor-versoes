@@ -38,6 +38,7 @@ from motor.instalacao import ARQUIVO_REGISTRO, ler_registro
 from motor.migracoes import head
 from motor.novidades import Cache, Novidade
 from tests.config_repos import secao_repo
+from tests.fontes_falsas import HostFalso
 
 HEAD = "rev2"
 ENV_OK: dict[str, str] = {}
@@ -625,6 +626,30 @@ def test_peca_prs_usa_o_plugin_da_config(tmp_path, monkeypatch, token, estado):
     assert linha.peca is Peca.PRS
     assert linha.estado is estado
     assert (ONDE in linha.correcao) is (estado is Estado.FALHA)
+
+
+@pytest.mark.parametrize("token", ["certo", "errado"])
+def test_peca_prs_fecha_o_plugin_depois_de_verificar(tmp_path, monkeypatch, token):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HOST_FALSO_TOKEN", token)
+    fechados: list[bool] = []
+    monkeypatch.setattr(
+        HostFalso, "fechar", lambda self: fechados.append(True), raising=False
+    )
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text(
+        f'[{Tabela.PRS}]\n{Chave.FONTE} = "tests.fontes_falsas:HostFalso"\n'
+    )
+
+    diagnosticar_peca(
+        PecaTestavel.PRS,
+        config_central=carregar_config_global,
+        repos=_proibido,
+        onde=ONDE,
+    )
+
+    assert fechados == [True]
 
 
 def _proibido() -> dict[str, str | None]:
