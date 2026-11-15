@@ -102,8 +102,8 @@ class HostPr(Protocol):
     Opcionais, lidos so se existirem: `verificar_credenciais()`, chamado pelo
     `monitor-versoes diagnostico` (devolve `None` ao verificar, ou o motivo de
     nao ter verificado); `fechar()`, chamado pelo nucleo ao fim de cada busca
-    para liberar conexoes; e `campos_config`, as chaves que o plugin declara
-    para a modal de configuracao.
+    para liberar conexoes e que nao deve levantar; e `campos_config`, as
+    chaves que o plugin declara para a modal de configuracao.
     """
 
     def prs_mergeadas(self, desde: datetime.datetime | None, /) -> Iterable[PrIndex]:

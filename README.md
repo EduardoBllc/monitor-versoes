@@ -441,8 +441,8 @@ plugin precisa de trava.
 
 Fonte de tarefas e host de PR podem oferecer `verificar_credenciais()`, opcional, que o
 `diagnostico` usa: devolve `None` quando verificou, ou o motivo de não ter verificado (a linha
-vira "não verificada"). Também podem oferecer `fechar()`, opcional, para liberar conexões: o
-`diagnostico` o chama depois de verificar e, no host de PR, o núcleo o chama ao fim de cada busca.
+vira "não verificada"). Também podem oferecer `fechar()`, opcional, para liberar conexões (não deve levantar
+exceção): o `diagnostico` o chama depois de verificar e, no host de PR, o núcleo o chama ao fim de cada busca.
 
 ### Fontes de tasks e de commits
 
