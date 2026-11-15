@@ -436,7 +436,7 @@ def test_lote_do_oraculo_igual_ao_por_commit(tmp_path):
 
     pids = {h: unitario(g.patch_id, h) for h in hs}
     arquivos = {h: unitario(g.changed_files, h) for h in hs}
-    # sem o inexistente o lote roda inteiro; com ele, cai no caminho por hash
+    # sem o inexistente o lote roda inteiro; com ele, filtra os conhecidos e refaz
     for lista in (hs[:-1], hs):
         assert g.patch_ids(lista) == {h: pids[h] for h in lista if pids[h] is not None}
         assert g.changed_files_lote(lista) == {
