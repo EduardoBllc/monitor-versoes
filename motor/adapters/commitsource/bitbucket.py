@@ -37,8 +37,7 @@ JSON = dict[str, Any]
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 
-# Só o que o adapter lê; `next` fica para a paginação. Se o `next` real mantém
-# o `fields` nas páginas seguintes ainda não foi medido (ver PR #205).
+# Só o que o adapter lê, para encolher a resposta; `next` fica para a paginação.
 _CAMPOS_PRS = "values.id,values.title,values.source.branch.name,values.updated_on,next"
 _CAMPOS_COMMITS = "values.hash,values.parents.hash,values.date,values.message,next"
 

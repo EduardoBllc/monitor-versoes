@@ -13,10 +13,7 @@ from typing import Any
 import httpx
 import pytest
 
-from motor.adapters.commitsource.bitbucket import (
-    BitbucketPrs,
-    parse_workspace_repo,
-)
+from motor.adapters.commitsource.bitbucket import BitbucketPrs, parse_workspace_repo
 from motor.domain.types import CommitRef
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
@@ -165,10 +162,10 @@ def test_com_fields_filtrados_o_resultado_continua_completo():
     prs = host.prs_mergeadas(None)
     [commit] = host.commits_da_pr(7)
 
+    quando = datetime.datetime(2026, 8, 1, 10, tzinfo=datetime.UTC)
     assert [(p.pr_id, p.titulo, p.branch, p.updated_on) for p in prs] == [
-        (n, "ch255514 corrige logs", "feature/x", prs[0].updated_on) for n in (1, 2)
+        (n, "ch255514 corrige logs", "feature/x", quando) for n in (1, 2)
     ]
-    assert prs[0].updated_on == datetime.datetime(2026, 8, 1, 10, tzinfo=datetime.UTC)
     assert commit == CommitRef(
         hash_origem="c1",
         parent="p1",
