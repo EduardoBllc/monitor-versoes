@@ -674,7 +674,7 @@ def test_reinstalar_reinicia_o_servico_ligado(
         arquivo = servico.caminho(Sistema.LINUX, Path.home())
         arquivo.parent.mkdir(parents=True)
         arquivo.write_text("")
-    monkeypatch.setattr("sys.platform", Sistema.LINUX)
+    monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
     chamados: list[list[str]] = []
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", chamados.append)
 
@@ -696,7 +696,7 @@ def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
     arquivo = servico.caminho(Sistema.LINUX, Path.home())
     arquivo.parent.mkdir(parents=True)
     arquivo.write_text("")
-    monkeypatch.setattr("sys.platform", Sistema.LINUX)
+    monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
     monkeypatch.setattr(
         agendador,
         "rodar_comando_do_sistema",

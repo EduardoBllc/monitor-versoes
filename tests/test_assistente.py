@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tomllib
 import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
@@ -34,7 +35,7 @@ from motor.config import (
 )
 from motor.config_edicao import GrupoPlugin
 from motor.diagnostico import Estado, Peca
-from motor.errors import CodigoSaida
+from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
 from motor.servico import ARQUIVO_SERVICE, COMANDO_CONFIGURAR, EXECUTAVEL
 
@@ -54,7 +55,6 @@ JIRA = "jira"
 FONTE_NOVA = "minha"
 OUTRA_FONTE = "outra"
 HOST_NOVO = "host"
-WINDOWS = "win32"
 BITBUCKET = "bitbucket"
 NOMES_TAREFAS = [e.nome for e in EMBUTIDOS[GrupoPlugin.TAREFAS]]
 
@@ -158,10 +158,26 @@ def _descer_ate_lista_manual(atual: str) -> str:
     return BAIXO * (len(NOMES_TAREFAS) - NOMES_TAREFAS.index(atual))
 
 
+def _sistema_falso(sistema: Sistema | None) -> Callable[[], Sistema]:
+    def falso() -> Sistema:
+        if sistema is None:
+            raise ErroDeEntrada("agendador automático não suportado")
+        return sistema
+
+    return falso
+
+
 def _rodar(
-    *teclas: str, plataforma: str = Sistema.LINUX, comando: str = COMANDO_CONFIGURAR
+    *teclas: str,
+    sistema: Sistema | None = Sistema.LINUX,
+    comando: str = COMANDO_CONFIGURAR,
 ) -> int:
-    with create_pipe_input() as entrada, patch.object(sys, "platform", plataforma):
+    # Troca `sistema_atual`, não `sys.platform`: o asyncio escolhe o loop por ele.
+    with (
+        create_pipe_input() as entrada,
+        patch.object(agendador, "sistema_atual", _sistema_falso(sistema)),
+        patch.object(servico, "sistema_atual", _sistema_falso(sistema)),
+    ):
         entrada.send_text("".join(teclas))
         # Sem mais teclas, a pergunta seguinte dá EOFError em vez de travar a suíte.
         entrada.close()
@@ -312,7 +328,7 @@ def test_padrao_do_login(cen, com_config, ligado, comandos):
 
 
 def test_windows_nao_pergunta_o_login(cen):
-    assert _rodar(ENTER, ENTER, plataforma=WINDOWS) == CodigoSaida.OK
+    assert _rodar(ENTER, ENTER, sistema=None) == CodigoSaida.OK
     assert cen.comandos == []
 
 

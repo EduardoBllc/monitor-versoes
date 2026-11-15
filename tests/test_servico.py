@@ -13,7 +13,7 @@ import pytest
 from motor import servico
 from motor.__main__ import COMANDO_SERVE, main
 from motor.agendador import LAUNCHCTL, SYSTEMCTL, Acao, Sistema
-from motor.errors import BackendIndisponivel
+from motor.errors import BackendIndisponivel, ErroDeEntrada
 from motor.servico import (
     ARGUMENTOS_SERVE,
     ARQUIVO_LOG_LAUNCHD,
@@ -52,7 +52,11 @@ SISTEMAS = [
 
 
 def _como(sistema: Sistema, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "platform", sistema.value)
+    monkeypatch.setattr(servico, "sistema_atual", lambda: sistema)
+
+
+def _sem_suporte() -> Sistema:
+    raise ErroDeEntrada("agendador automático não suportado")
 
 
 def _devolvendo(saida: str | None) -> Callable[[list[str]], str | None]:
@@ -143,7 +147,7 @@ def test_reiniciar_se_ligado(
 def test_reiniciar_se_ligado_sem_suporte(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(sys, "platform", PLATAFORMA_WINDOWS)
+    monkeypatch.setattr(servico, "sistema_atual", _sem_suporte)
     registro = Registro()
     assert not reiniciar_se_ligado(tmp_path, registro)
     assert not ligado(tmp_path)
@@ -187,7 +191,7 @@ def test_situacao(
 
 
 def test_situacao_sem_suporte(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "platform", PLATAFORMA_WINDOWS)
+    monkeypatch.setattr(servico, "sistema_atual", _sem_suporte)
     assert situacao(tmp_path, lambda _: None).estado is EstadoServico.SEM_SUPORTE
 
 
