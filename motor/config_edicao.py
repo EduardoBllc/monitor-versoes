@@ -91,6 +91,7 @@ class Campo:
     descricao: str = ""
     padrao: str | None = None
     exemplo: str = ""
+    aviso_vazio: str = ""
     grupo: GrupoPlugin | None = None
 
 
@@ -116,7 +117,7 @@ _G, _R, _A = Escopo.GERAL, Escopo.REPO, Escopo.AMBIENTE
 _TX, _IN, _ES = TipoCampo.TEXTO, TipoCampo.INTEIRO, TipoCampo.ESCOLHA
 
 #: Campo -> grupo cujos entry points e valores `modulo:Classe` em uso são as opções.
-_GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
+GRUPO_DO_CAMPO: dict[tuple[str, str], GrupoPlugin] = {
     (Tabela.VERSAO, Chave.ESQUEMA): GrupoPlugin.ESQUEMAS,
     (Tabela.VERSAO, Chave.ATRIBUICAO): GrupoPlugin.ATRIBUICOES,
     (Tabela.TAREFAS, Chave.FONTE): GrupoPlugin.TAREFAS,
@@ -283,20 +284,28 @@ def _campos_do_plugin(grupo: GrupoPlugin, nome: str) -> tuple[Campo, ...]:
 def catalogo_campos(dados: Mapping[str, object]) -> list[Campo]:
     """Campos do motor e os que os plugins instalados ou em uso declaram."""
     instalados = {g: plugins.nomes_instalados(g) for g in _GRUPOS}
-    em_uso = {g: _em_uso(dados, *tc) for tc, g in _GRUPO_DO_CAMPO.items()}
+    em_uso = {g: _em_uso(dados, *tc) for tc, g in GRUPO_DO_CAMPO.items()}
     campos: list[Campo] = []
     for base in _CAMPOS_MOTOR:
-        grupo = _GRUPO_DO_CAMPO.get((base.tabela or "", base.chave))
+        grupo = GRUPO_DO_CAMPO.get((base.tabela or "", base.chave))
         opcoes = tuple(instalados[grupo] + sorted(em_uso[grupo])) if grupo else None
         campos.append(base if opcoes is None else replace(base, opcoes=opcoes))
-    vistos = {(c.escopo, c.tabela, c.chave) for c in campos}
+    do_motor = {(c.escopo, c.tabela, c.chave) for c in campos}
+    # Plugins diferentes podem declarar a mesma chave: a modal mostra a do escolhido.
+    vistos: set[tuple[Escopo, str | None, str, str]] = set()
     for grupo in _GRUPOS:
         for nome in [*instalados[grupo], *sorted(em_uso[grupo])]:
             for c in _campos_do_plugin(grupo, nome):
-                if (c.escopo, c.tabela, c.chave) not in vistos:
-                    vistos.add((c.escopo, c.tabela, c.chave))
+                chave = (c.escopo, c.tabela, c.chave, c.origem)
+                if chave[:3] not in do_motor and chave not in vistos:
+                    vistos.add(chave)
                     campos.append(c)
-    return campos
+    # A máscara é por (tabela, chave): um plugin que a declara segredo vale para todos.
+    secretas = {(c.tabela, c.chave) for c in campos if c.segredo}
+    return [
+        replace(c, segredo=True) if (c.tabela, c.chave) in secretas else c
+        for c in campos
+    ]
 
 
 def _valor(
@@ -482,11 +491,41 @@ def _validar(dados: Mapping[str, object], arquivo: str) -> None:
         if config.fonte_tarefas is not None:
             plugins.carregar_plugin(GRUPO_TAREFAS, config.fonte_tarefas.valor)
     topo = {k: v for k, v in dados.items() if k != SECAO_REPOS}
-    for campo in catalogo_campos(dados):
-        for camada in [topo, *secoes.values()]:
-            alvo = camada if campo.tabela is None else _mapa(camada.get(campo.tabela))
-            if campo.chave in alvo:
-                _validar_tipo(campo, alvo[campo.chave])
+    campos = catalogo_campos(dados)
+    declaracoes: dict[tuple[str | None, str], list[Campo]] = {}
+    for c in campos:
+        declaracoes.setdefault((c.tabela, c.chave), []).append(c)
+    # Cada camada com as camadas onde se lê o plugin escolhido para ela.
+    camadas: list[tuple[Mapping[str, object], list[Mapping[str, object]]]] = [
+        (topo, [topo]),
+        *((s, [s, topo]) for s in secoes.values()),
+    ]
+    for camada, escolha in camadas:
+        for (tabela, chave), iguais in declaracoes.items():
+            alvo = camada if tabela is None else _mapa(camada.get(tabela))
+            if chave not in alvo:
+                continue
+            # Como a web e a TUI: vale a declaração do plugin escolhido, senão a primeira.
+            campo = next(
+                (c for c in iguais if c.origem == _escolhido(campos, escolha, c.grupo)),
+                iguais[0],
+            )
+            _validar_tipo(campo, alvo[chave])
+
+
+def _escolhido(
+    campos: list[Campo], camadas: list[Mapping[str, object]], grupo: GrupoPlugin | None
+) -> object:
+    """Plugin do `grupo` na primeira camada que o escolhe, senão o padrão do motor."""
+    for (tabela, chave), g in GRUPO_DO_CAMPO.items():
+        if g is grupo:
+            padrao = next(
+                (c.padrao for c in campos if (c.tabela, c.chave) == (tabela, chave)),
+                None,
+            )
+            lidos = (_mapa(c.get(tabela)).get(chave) for c in camadas)
+            return next((v for v in lidos if v), padrao)
+    return None
 
 
 def _gravar_atomico(arquivo: str, conteudo: bytes) -> None:

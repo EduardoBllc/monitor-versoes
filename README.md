@@ -231,7 +231,7 @@ quando um comando busca tarefas ou precisa da referência: fonte inválida não 
 `atualizar --abort`, e `reconstruir-estado` roda sem fonte se houver `[referencia] padrao`.
 O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
 
-Para o Jira Cloud há o plugin [`monitor-versoes-jira`](plugins/jira/README.md).
+Há plugins para o Jira Cloud ([`monitor-versoes-jira`](plugins/jira/README.md)), o GitHub Issues ([`monitor-versoes-github`](plugins/github/README.md)) e o GitLab Issues ([`monitor-versoes-gitlab`](plugins/gitlab/README.md)).
 
 O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
 ou um `modulo:Classe`, e o pacote traz o `bitbucket`. Não há padrão: sem `fonte`, os commits
@@ -427,7 +427,7 @@ No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor n
 O atributo `campos_config` é opcional e plugin que falha ao carregar é ignorado; na TUI, a
 aba Plugins só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao`
 (o tooltip da web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
-web) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
+web), `aviso_vazio` (aviso na modal enquanto o campo está vazio; num segredo, enquanto não está definido) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
 
 Um host de PR implementa a porta `HostPr` (`motor/ports.py`): `prs_mergeadas(desde)`, as PRs
 mergeadas desde a data (`None` = histórico inteiro), e `commits_da_pr(pr_id)`, os commits da
@@ -435,10 +435,14 @@ PR sem merge commits. O resto (varredura incremental, casamento com a referênci
 filtro pela principal) é do núcleo. O construtor recebe só nomeados (`prs`, o `[prs]`
 mesclado; `arquivos`, os arquivos lidos; `remote_url`, uma função que devolve a URL do
 `origin`) e não faz I/O: credencial e URL se cobram na primeira chamada. Registre a classe no
-grupo `monitor_versoes.prs`; `verificar_credenciais()` é opcional e o `diagnostico` a usa.
+grupo `monitor_versoes.prs`.
 `commits_da_pr` pode ser chamada de várias threads ao mesmo tempo, então estado mutável do
-plugin precisa de trava. `fechar()`, também opcional, é chamado ao fim de cada busca (e pelo
-`diagnostico`) para liberar conexões.
+plugin precisa de trava.
+
+Fonte de tarefas e host de PR podem oferecer `verificar_credenciais()`, opcional, que o
+`diagnostico` usa: devolve `None` quando verificou, ou o motivo de não ter verificado (a linha
+vira "não verificada"). Também podem oferecer `fechar()`, opcional, para liberar conexões: o
+`diagnostico` o chama depois de verificar e, no host de PR, o núcleo o chama ao fim de cada busca.
 
 ### Fontes de tasks e de commits
 
