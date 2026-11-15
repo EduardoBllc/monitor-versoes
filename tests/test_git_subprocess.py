@@ -446,6 +446,37 @@ def test_lote_do_oraculo_igual_ao_por_commit(tmp_path):
     assert inexistente not in g.changed_files_lote(hs)
 
 
+def test_hash_desconhecido_nao_derruba_o_lote_para_um_processo_por_hash(
+    tmp_path, monkeypatch
+):
+    """Origem de PR squash com branch apagada no meio do lote: sem filtrar os
+    conhecidos, cada hash do lote voltava a custar um processo."""
+    repo_dir = init_repo_de_teste(tmp_path)
+    for i in range(20):
+        with open(os.path.join(repo_dir, f"f{i}.txt"), "w") as f:
+            f.write(f"{i}\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", f"c{i}")
+    g = new_git_subprocess(repo_dir)
+    hs = g._output(repo_dir, "rev-list", "master").split()
+    hs.insert(len(hs) // 2, "0" * 40)
+
+    processos = 0
+    original = subprocess.run
+
+    def contar(*args, **kwargs):
+        nonlocal processos
+        processos += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", contar)
+    # lote que falha, filtro dos conhecidos, lote refeito
+    for ler in (g.patch_ids, g.changed_files_lote):
+        processos = 0
+        assert len(ler(hs)) == len(hs) - 1
+        assert processos == 3
+
+
 def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):
     """O filho tem data de autor ANTERIOR a do pai — e o que o rebase deixa. A
     ordem tem de vir do grafo; hash ausente falta, e lista vazia nao vira

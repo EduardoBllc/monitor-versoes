@@ -78,6 +78,9 @@ class _Estagio(IntEnum):
 #: Modo de entrada do índice para submódulo: o oid é commit, não blob.
 _MODO_GITLINK = "160000"
 
+#: `%(objecttype)` do `cat-file --batch-check` para objeto que é commit.
+_TIPO_COMMIT = "commit"
+
 
 class _Entrada(NamedTuple):
     modo: str
@@ -538,15 +541,51 @@ class GitSubprocess:
         return frozenset(nome for nome in out.split("\n") if nome != "")
 
     def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
-        encontrados: dict[str, str] = {}
+        return self._em_lotes(hashes, self._patch_ids_do_lote, self.patch_id)
+
+    def _em_lotes[T](
+        self,
+        hashes: list[str],
+        ler_lote: Callable[[list[str]], dict[str, T]],
+        ler_um: Callable[[str], T],
+    ) -> dict[str, T]:
+        encontrados: dict[str, T] = {}
         for inicio in range(0, len(hashes), _LOTE_META):
             lote = hashes[inicio : inicio + _LOTE_META]
             try:
-                encontrados.update(self._patch_ids_do_lote(lote))
+                encontrados.update(ler_lote(lote))
+                continue
             except MotorError:
-                # hash desconhecido derruba o `git show` do lote inteiro
-                encontrados.update(_por_hash(self.patch_id, lote))
+                # um hash desconhecido derruba o lote inteiro: refaz so com os
+                # commits que existem, e o por hash fica de ultimo recurso
+                conhecidos = self._commits_conhecidos(lote)
+            # lista vazia nao vai ao git: `show`/`log` sem revisao assumem HEAD
+            if not conhecidos:
+                continue
+            try:
+                encontrados.update(ler_lote(conhecidos))
+            except MotorError:
+                encontrados.update(_por_hash(ler_um, conhecidos))
         return encontrados
+
+    def _commits_conhecidos(self, lote: list[str]) -> list[str]:
+        with _cronometrar("cat-file", "--batch-check", f"({len(lote)} hashes)"):
+            proc = _rodar_git(
+                ["git", "cat-file", "--batch-check=%(objecttype)"],
+                cwd=self.repo_path,
+                input="".join(f"{h}\n" for h in lote),
+            )
+        if proc.returncode != 0:
+            raise MotorError(
+                f"git cat-file --batch-check: exit status {proc.returncode}: "
+                f"{_saida_git_publica(proc.stderr)}"
+            )
+        # uma linha por hash, na ordem; o desconhecido sai "<hash> missing"
+        return [
+            h
+            for h, tipo in zip(lote, proc.stdout.splitlines(), strict=True)
+            if tipo == _TIPO_COMMIT
+        ]
 
     def _patch_ids_do_lote(self, lote: list[str]) -> dict[str, str]:
         with _cronometrar("show", f"({len(lote)} hashes)", "|", "patch-id"):
@@ -590,33 +629,30 @@ class GitSubprocess:
         return pids
 
     def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        return self._em_lotes(hashes, self._changed_files_do_lote, self.changed_files)
+
+    def _changed_files_do_lote(self, lote: list[str]) -> dict[str, frozenset[str]]:
+        # Sem `--ignore-missing`: o hash desconhecido tem de faltar no
+        # retorno, e so a falha do lote o distingue de commit sem arquivo.
+        # showRoot=false e --no-renames imitam o `diff-tree` unitario.
+        out = self._output(
+            self.repo_path,
+            "-c",
+            "log.showRoot=false",
+            "log",
+            "--no-walk=unsorted",
+            "--no-renames",
+            "--no-show-signature",
+            "--name-only",
+            f"--format={SEPARADOR_REGISTRO}%H",
+            *lote,
+        )
+        # `_output` faz strip(), e o Python conta \x1e como espaço: o
+        # separador do primeiro registro some, por isso o filtro e nao [1:].
         encontrados: dict[str, frozenset[str]] = {}
-        for inicio in range(0, len(hashes), _LOTE_META):
-            lote = hashes[inicio : inicio + _LOTE_META]
-            # Sem `--ignore-missing`: o hash desconhecido tem de faltar no
-            # retorno, e so a falha do lote o distingue de commit sem arquivo.
-            # showRoot=false e --no-renames imitam o `diff-tree` unitario.
-            try:
-                out = self._output(
-                    self.repo_path,
-                    "-c",
-                    "log.showRoot=false",
-                    "log",
-                    "--no-walk=unsorted",
-                    "--no-renames",
-                    "--no-show-signature",
-                    "--name-only",
-                    f"--format={SEPARADOR_REGISTRO}%H",
-                    *lote,
-                )
-            except MotorError:
-                encontrados.update(_por_hash(self.changed_files, lote))
-                continue
-            # `_output` faz strip(), e o Python conta \x1e como espaço: o
-            # separador do primeiro registro some, por isso o filtro e nao [1:].
-            for bruta in filter(None, out.split(SEPARADOR_REGISTRO)):
-                commit, *nomes = bruta.split("\n")
-                encontrados[commit] = frozenset(n for n in nomes if n != "")
+        for bruta in filter(None, out.split(SEPARADOR_REGISTRO)):
+            commit, *nomes = bruta.split("\n")
+            encontrados[commit] = frozenset(n for n in nomes if n != "")
         return encontrados
 
     def resolve_ref(self, ref: str, /) -> str:
