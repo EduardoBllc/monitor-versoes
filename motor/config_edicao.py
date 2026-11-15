@@ -300,7 +300,12 @@ def catalogo_campos(dados: Mapping[str, object]) -> list[Campo]:
                 if chave[:3] not in do_motor and chave not in vistos:
                     vistos.add(chave)
                     campos.append(c)
-    return campos
+    # A máscara é por (tabela, chave): um plugin que a declara segredo vale para todos.
+    secretas = {(c.tabela, c.chave) for c in campos if c.segredo}
+    return [
+        replace(c, segredo=True) if (c.tabela, c.chave) in secretas else c
+        for c in campos
+    ]
 
 
 def _valor(

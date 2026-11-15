@@ -42,6 +42,7 @@ NOME_PLUGIN = "falso"
 NOME_QUEBRADO = "quebrado"
 NOME_OUTRO = "outro"
 CHAVE_PROJETO = "projeto"
+CHAVE_TOKEN_FALSO = "FAKE_TOKEN"
 
 
 class FonteFalsa:
@@ -50,10 +51,22 @@ class FonteFalsa:
         Campo(
             Escopo.AMBIENTE,
             TABELA_AMBIENTE,
-            "FAKE_TOKEN",
+            CHAVE_TOKEN_FALSO,
             TipoCampo.TEXTO,
             "Token",
             segredo=True,
+        ),
+    )
+
+
+class FonteTokenAberto:
+    campos_config = (
+        Campo(
+            Escopo.AMBIENTE,
+            TABELA_AMBIENTE,
+            CHAVE_TOKEN_FALSO,
+            TipoCampo.TEXTO,
+            "Token",
         ),
     )
 
@@ -136,7 +149,7 @@ def test_inteiro_secreto_invalido_nao_ecoa_o_valor(monkeypatch):
 def test_plugin_instalado_declara_campos(monkeypatch):
     _instalar(monkeypatch, _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteFalsa"))
     campos = [c for c in catalogo_campos({}) if c.origem == NOME_PLUGIN]
-    assert {c.chave for c in campos} == {CHAVE_PROJETO, "FAKE_TOKEN"}
+    assert {c.chave for c in campos} == {CHAVE_PROJETO, CHAVE_TOKEN_FALSO}
     assert all(c.grupo is GrupoPlugin.TAREFAS for c in campos)
     assert all(c.grupo is None for c in catalogo_campos({}) if c.origem == ORIGEM_MOTOR)
 
@@ -146,6 +159,17 @@ def test_plugins_com_a_mesma_chave_mantem_cada_declaracao(monkeypatch):
     _instalar(monkeypatch, _ep(NOME_PLUGIN, fonte), _ep(NOME_OUTRO, fonte))
     origens = [c.origem for c in catalogo_campos({}) if c.chave == CHAVE_PROJETO]
     assert sorted(origens) == sorted([NOME_PLUGIN, NOME_OUTRO])
+
+
+def test_segredo_de_um_plugin_vale_para_a_chave_em_todos(monkeypatch):
+    _instalar(
+        monkeypatch,
+        _ep(NOME_OUTRO, "tests.test_config_edicao:FonteTokenAberto"),
+        _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteFalsa"),
+    )
+    campos = [c for c in catalogo_campos({}) if c.chave == CHAVE_TOKEN_FALSO]
+    assert sorted(c.origem for c in campos) == sorted([NOME_PLUGIN, NOME_OUTRO])
+    assert all(c.segredo for c in campos)
 
 
 def test_host_de_pr_do_pacote_declara_campos_do_grupo_prs():
