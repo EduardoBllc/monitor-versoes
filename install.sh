@@ -142,6 +142,12 @@ reinstalar() {
 	printf '%s\n' "$plugins" | tr ',' '\n' |
 		sed 's/^ *//; s/^.*\(git+\)/\1/; s|^.*file://||' |
 		while IFS= read -r origem; do
+			# Plugin do repo do motor segue a tag do motor; `plugin instalar` recusa outro @ref.
+			case "$origem" in
+			"git+$URL_REPO"@*"#subdirectory=plugins/"* | "git+$URL_REPO.git"@*"#subdirectory=plugins/"*)
+				origem="${origem%%@*}#${origem#*#}"
+				;;
+			esac
 			printf "  %s %s '%s'\n" "$EXECUTAVEL" "$CMD_PLUGIN_INSTALAR" "$origem"
 		done
 }
