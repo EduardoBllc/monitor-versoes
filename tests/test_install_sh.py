@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from motor import agendador, servico
+from motor import agendador, config, servico
 from motor.__main__ import COMANDO_DESINSTALAR
 from motor.agendador import Sistema
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR, COMANDO_PLUGIN, AcaoPlugin
@@ -29,7 +29,8 @@ URL_REPO = "https://github.com/EduardoBllc/monitor-versoes"
 URL_WINDOWS = f"{URL_REPO}#windows"
 URL_INSTALADOR_UV = "https://astral.sh/uv/install.sh"
 ULTIMA_TAG = "v0.10.0"
-TAGS_REMOTAS = ("v0.2.0", "v0.9.0", ULTIMA_TAG, "v1.0.0-rc1", "latest")
+VERSAO_ANTIGA = "v0.2.0"
+TAGS_REMOTAS = (VERSAO_ANTIGA, "v0.9.0", ULTIMA_TAG, "v1.0.0-rc1", "latest")
 PLUGIN_GIT = (
     "git+https://github.com/exemplo/monitor-versoes-plugin"
     "@99ffe18fdf9f7268abfaf2c611f87e4b10db50c5"
@@ -42,6 +43,8 @@ MARCA_FALHA = "✖"
 MARCA_TTY = "stdin-tty"
 DICA_PATH = "uv tool update-shell"
 AVISO_BANCO = "DATABASE_SQLITE_PATH"
+FRASE_UV_FICOU = "O uv continua instalado"
+SAIDA_UV_NAO_INSTALADO = 2
 UTILITARIOS = (
     "sh", "cat", "sed", "grep", "sort", "tail", "head",
     "mkdir", "rm", "id", "tr", "cp", "chmod", "basename", "dirname",
@@ -85,7 +88,9 @@ _UV = f"""#!/bin/sh
 {_REGISTRA}case "$1 $2" in
   "tool dir") printf '%s\\n' "$UV_TOOL_BIN_DIR" ;;
   "tool install") cp "${Var.MOTOR}" "$UV_TOOL_BIN_DIR/" ;;
-  "tool list") printf '%s\\n' "${Var.LINHA_UV}" ;;
+  "tool list") [ -x "$UV_TOOL_BIN_DIR/{servico.EXECUTAVEL}" ] && printf '%s\\n' "${Var.LINHA_UV}" ;;
+  "tool uninstall")
+    rm "$UV_TOOL_BIN_DIR/{servico.EXECUTAVEL}" 2>/dev/null || exit {SAIDA_UV_NAO_INSTALADO} ;;
 esac
 """
 
@@ -173,7 +178,7 @@ def maquina(tmp_path: Path) -> Iterator[Maquina]:
         Var.LOG: str(tmp_path / "log"),
         Var.TAGS: " ".join(TAGS_REMOTAS),
         Var.UNAME: Uname.LINUX,
-        Var.LINHA_UV: f"{PACOTE_MOTOR} v0.2.0",
+        Var.LINHA_UV: f"{PACOTE_MOTOR} {VERSAO_ANTIGA}",
         Var.MOTOR: str(pacotes / servico.EXECUTAVEL),
         Var.SAIDA_SONDA: str(CodigoSaida.OK),
         Var.SAIDA_ATUALIZAR: str(CodigoSaida.OK),
@@ -264,7 +269,7 @@ def test_instalacao_que_o_atualizar_motor_nao_atende_reinstala_e_lista_plugins(
 ):
     pasta = maquina.raiz / "plugum"
     linha = (
-        f"{PACOTE_MOTOR} v0.2.0 [extras: anthropic] "
+        f"{PACOTE_MOTOR} {VERSAO_ANTIGA} [extras: anthropic] "
         f"[with: monitor-versoes-plugin {PLUGIN_GIT}, plugumfile://{pasta}]"
     )
     maquina.env |= {
@@ -280,8 +285,8 @@ def test_instalacao_que_o_atualizar_motor_nao_atende_reinstala_e_lista_plugins(
     assert _instalacao(ULTIMA_TAG, reinstalar=True) in maquina.chamadas()
     assert linha in r.stdout
     instalar = f"{servico.EXECUTAVEL} {COMANDO_PLUGIN} {AcaoPlugin.INSTALAR}"
-    assert f"{instalar} {PLUGIN_GIT}" in r.stdout
-    assert f"{instalar} {pasta}" in r.stdout
+    assert f"{instalar} '{PLUGIN_GIT}'" in r.stdout
+    assert f"{instalar} '{pasta}'" in r.stdout
 
 
 @pytest.mark.parametrize(
@@ -384,7 +389,7 @@ def test_desinstalar_pelo_motor(maquina):
     chamadas = maquina.chamadas()
     desinstalar = chamadas.index(f"{servico.EXECUTAVEL} {COMANDO_DESINSTALAR}")
     assert desinstalar < chamadas.index(f"uv tool uninstall {PACOTE_MOTOR}")
-    assert "uv" in r.stdout.splitlines()[-1]
+    assert FRASE_UV_FICOU in r.stdout
 
 
 def test_desinstalar_interrompido_nao_remove_nada(maquina):
@@ -401,7 +406,7 @@ def test_desinstalar_interrompido_nao_remove_nada(maquina):
 @pytest.mark.parametrize("motor_quebrado", [True, False])
 @pytest.mark.parametrize("uname", list(SISTEMA))
 def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
-    maquina, uname, motor_quebrado
+    maquina, monkeypatch, uname, motor_quebrado
 ):
     sistema = SISTEMA[uname]
     maquina.env[Var.UNAME] = uname
@@ -415,10 +420,13 @@ def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
     for arquivo in arquivos:
         arquivo.parent.mkdir(parents=True, exist_ok=True)
         arquivo.touch()
+    monkeypatch.setenv("HOME", str(maquina.home))
+    for var in (config.VAR_XDG_CONFIG_HOME, config.VAR_XDG_CACHE_HOME):
+        monkeypatch.setenv(var, "")
     dados = [
-        maquina.home / ".config" / PACOTE_MOTOR,
-        maquina.home / ".local" / "share" / PACOTE_MOTOR,
-        maquina.home / ".cache" / PACOTE_MOTOR,
+        Path(config.caminho_config_global()).parent,
+        Path(config.diretorio_dados()),
+        Path(config.diretorio_cache()),
     ]
     for pasta in dados:
         pasta.mkdir(parents=True)
@@ -437,3 +445,12 @@ def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
     for pasta in dados:
         assert str(pasta) in r.stdout
     assert AVISO_BANCO in r.stdout
+
+
+def test_desinstalar_sem_uv_nao_diz_que_o_uv_ficou(maquina):
+    maquina.sem("uv")
+
+    r = maquina.rodar(FLAG_DESINSTALAR)
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    assert FRASE_UV_FICOU not in r.stdout
