@@ -23,6 +23,7 @@ from textual.widgets import (
 
 from motor.config import TABELA_AMBIENTE
 from motor.config_edicao import (
+    GRUPO_DO_CAMPO,
     ORIGEM_MOTOR,
     AcaoAlteracao,
     Alteracao,
@@ -137,6 +138,7 @@ class ConfigModal(ModalScreen[bool]):
         self._config = config
         self._entradas: dict[ChaveForm, Input | Select[str]] = {}
         self._apagar: dict[ChaveForm, Checkbox] = {}
+        self._avisos: dict[ChaveForm, tuple[Label, Campo]] = {}
         self._criados: list[str] = []
         self._removidos: list[str] = []
         self._containers: dict[str, Widget] = {}
@@ -178,6 +180,11 @@ class ConfigModal(ModalScreen[bool]):
             for c in self._config.campos
             if c.escopo == escopo and (c.origem == ORIGEM_MOTOR) == motor
         ]
+        unicos: dict[tuple[str | None, str], Campo] = {}
+        for c in campos:
+            if (c.tabela, c.chave) not in unicos or self._escolhido(repo, c):
+                unicos[(c.tabela, c.chave)] = c
+        campos = list(unicos.values())
         conhecidos = {(c.tabela, c.chave) for c in self._config.campos}
         if motor and repo is None:
             campos += [
@@ -197,6 +204,23 @@ class ConfigModal(ModalScreen[bool]):
         for campo in campos:
             widgets += self._widgets_do_campo(repo, campo)
         return widgets
+
+    def _escolhido(self, repo: str | None, campo: Campo) -> bool:
+        """Se o plugin que declarou o campo é o escolhido no repo (ou no topo)."""
+        for (tabela, chave), grupo in GRUPO_DO_CAMPO.items():
+            if grupo is campo.grupo:
+                lidos = [self._lidos.get((r, tabela, chave)) for r in (repo, None)]
+                padrao = next(
+                    (
+                        c.padrao
+                        for c in self._config.campos
+                        if (c.tabela, c.chave) == (tabela, chave)
+                    ),
+                    None,
+                )
+                valor = next((v.valor for v in lidos if v and v.valor), padrao)
+                return valor == campo.origem
+        return False
 
     @staticmethod
     def _campo_livre(v: ValorLido) -> Campo:
@@ -237,7 +261,7 @@ class ConfigModal(ModalScreen[bool]):
                 id=self.id_de(chave),
             )
         self._entradas[chave] = entrada
-        return [rotulo, entrada]
+        return [rotulo, entrada, *self._aviso_do_campo(chave, campo, lido)]
 
     def _widgets_do_segredo(
         self, chave: ChaveForm, campo: Campo, lido: ValorLido | None, rotulo: Label
@@ -254,7 +278,48 @@ class ConfigModal(ModalScreen[bool]):
             apagar = Checkbox("apagar", id=self.id_de(chave) + "-apagar")
             self._apagar[chave] = apagar
             widgets.append(apagar)
-        return widgets
+        return [*widgets, *self._aviso_do_campo(chave, campo, lido)]
+
+    def _aviso_do_campo(
+        self, chave: ChaveForm, campo: Campo, lido: ValorLido | None
+    ) -> list[Label]:
+        if not campo.aviso_vazio:
+            return []
+        aviso = Label(
+            campo.aviso_vazio,
+            classes="aviso",
+            markup=False,
+            id=self.id_de(chave) + "-aviso",
+        )
+        self._avisos[chave] = (aviso, campo)
+        aviso.display = self._avisa(chave)
+        return [aviso]
+
+    def _avisa(self, chave: ChaveForm) -> bool:
+        """Mesma regra de `avisoVazio` na web."""
+        campo = self._avisos[chave][1]
+        entrada = self._entradas[chave]
+        vazio = entrada.value in ("", Select.NULL)
+        if not campo.segredo:
+            return vazio
+        apagar = self._apagar.get(chave)
+        if apagar is not None and apagar.value:
+            return True
+        lido = self._lidos.get(chave)
+        return not (lido and lido.definido) and vazio
+
+    def on_input_changed(self, _: Input.Changed) -> None:
+        self._atualizar_avisos()
+
+    def on_select_changed(self, _: Select.Changed) -> None:
+        self._atualizar_avisos()
+
+    def on_checkbox_changed(self, _: Checkbox.Changed) -> None:
+        self._atualizar_avisos()
+
+    def _atualizar_avisos(self) -> None:
+        for chave, (aviso, _) in self._avisos.items():
+            aviso.display = self._avisa(chave)
 
     def _container_do_repo(self, nome: str) -> Widget:
         campos = [
@@ -306,6 +371,7 @@ class ConfigModal(ModalScreen[bool]):
             self._criados.remove(nome)
             for chave in [k for k in self._entradas if k[0] == nome]:
                 del self._entradas[chave]
+                self._avisos.pop(chave, None)
             await self._containers.pop(nome).remove()
             return
         self._removidos.append(nome)

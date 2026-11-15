@@ -1504,6 +1504,11 @@
             "title": "Exemplo",
             "default": ""
           },
+          "aviso_vazio": {
+            "type": "string",
+            "title": "Aviso Vazio",
+            "default": ""
+          },
           "grupo": {
             "anyOf": [
               {

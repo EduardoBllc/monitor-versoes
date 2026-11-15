@@ -76,6 +76,7 @@ function campo(
     origem: ORIGEM_MOTOR,
     descricao: "",
     exemplo: "",
+    aviso_vazio: "",
     ...extra,
   };
 }
@@ -281,6 +282,36 @@ describe("linhasDoRepo", () => {
     expect(chaves(comJira[fonteRepo] ?? [])).toEqual([chaveDe(REPO, TABELA_JIRA, URL)]);
 
     expect(linhasDoRepo(CONFIG, formulario({ [fonteRepo]: "" }), REPO).doPlugin).toEqual({});
+  });
+});
+
+describe("chave declarada por dois plugins", () => {
+  const NO_TOPO = "P";
+  const NO_REPO = "R";
+  const comum = (origem: string) =>
+    campo(Escopo.GERAL, Tabela.TAREFAS, PROJETO, { ...plugin(GrupoPlugin.TAREFAS, origem), rotulo: origem });
+  const config: ConfigEditavel = {
+    ...CONFIG,
+    campos: [...CAMPOS, comum(TICKIO), comum(JIRA)],
+    valores: [...CONFIG.valores, lido(null, Tabela.TAREFAS, PROJETO, NO_TOPO)],
+  };
+  const projeto = chaveDe(null, Tabela.TAREFAS, PROJETO);
+  const projetoRepo = chaveDe(REPO, Tabela.TAREFAS, PROJETO);
+  const origens = (linhas: Linha[], chave: string) =>
+    linhas.filter((l) => chaveDe(l.repo, l.tabela, l.chave) === chave).map((l) => l.campo?.origem);
+
+  it("aparece uma vez, com a declaração do plugin escolhido", () => {
+    const f = formulario({ [fonteTarefas]: JIRA, [projeto]: NO_TOPO });
+    const todas = Object.values(Secao).flatMap((s) => linhasDaSecao(config, f, s));
+    expect(origens(todas, projeto)).toEqual([JIRA]);
+  });
+
+  it("no repo, sob a escolha dele e uma vez só", () => {
+    const fonteRepo = chaveDe(REPO, Tabela.TAREFAS, Chave.FONTE);
+    const f = formulario({ [fonteRepo]: JIRA, [projetoRepo]: NO_REPO });
+    const { doPlugin, sobrescritas } = linhasDoRepo(config, f, REPO);
+    expect(origens(doPlugin[fonteRepo] ?? [], projetoRepo)).toEqual([JIRA]);
+    expect(origens(sobrescritas, projetoRepo)).toEqual([JIRA]);
   });
 });
 
