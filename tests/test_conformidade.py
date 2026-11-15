@@ -55,7 +55,7 @@ from motor.ports import (
     ProvedorSugestao,
     TaskSource,
 )
-from tests.fontes_falsas import FonteFixa
+from tests.fontes_falsas import FonteComCredencial, FonteFixa, FonteSemToken
 from tests.versionamento import Escalonado
 
 # O fake entra junto com o real de proposito: fake mais permissivo que o
@@ -68,6 +68,8 @@ _TASKS: list[type[TaskSource]] = [
     FakeTaskSource,
     FonteDaConfig,
     FonteFixa,
+    FonteComCredencial,
+    FonteSemToken,
 ]
 _COMMITS: list[type[CommitSource]] = [
     PrCommitSource,
@@ -97,7 +99,7 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
         len(_ATRIBUICOES),
         len(_NOTIFICADORES),
         len(_SUGESTAO),
-    ] == [2, 2, 4, 4, 3, 2, 2, 2, 2]
+    ] == [2, 2, 6, 4, 3, 2, 2, 2, 2]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:

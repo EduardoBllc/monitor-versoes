@@ -137,9 +137,22 @@ function secaoDe(config: ConfigEditavel, f: Formulario, l: Linha): Secao | null 
   return achada ? (achada[0] as Secao) : Secao.AVANCADO;
 }
 
+// Plugins diferentes podem declarar a mesma chave: fica a declaração do escolhido, senão a primeira.
+function semRepetidas(config: ConfigEditavel, f: Formulario, linhas: Linha[]): Linha[] {
+  const doGrupoEscolhido = (l: Linha) => {
+    const grupo = grupoDe(l);
+    return grupo !== undefined && doEscolhido(config, f, l, grupo);
+  };
+  return linhas.filter((l) => {
+    const iguais = linhas.filter((o) => o.tabela === l.tabela && o.chave === l.chave);
+    return (iguais.find(doGrupoEscolhido) ?? iguais[0]) === l;
+  });
+}
+
 /** Linhas do topo que moram na seção, segundo o formulário. */
 export function linhasDaSecao(config: ConfigEditavel, formulario: Formulario, secao: Secao): Linha[] {
-  return linhasDe(config, null).filter((l) => secaoDe(config, formulario, l) === secao);
+  const linhas = semRepetidas(config, formulario, linhasDe(config, null));
+  return linhas.filter((l) => secaoDe(config, formulario, l) === secao);
 }
 
 const grupoEscolhidoPor = (l: Linha): GrupoPlugin | undefined =>
@@ -154,7 +167,7 @@ export function linhasDoRepo(
   formulario: Formulario,
   repo: string,
 ): { proprias: Linha[]; sobrescritas: Linha[]; sobrescreviveis: Linha[]; doPlugin: Record<string, Linha[]> } {
-  const linhas = linhasDe(config, repo).filter((l) => visivel(config, formulario, l));
+  const linhas = semRepetidas(config, formulario, linhasDe(config, repo)).filter((l) => visivel(config, formulario, l));
   const gerais = linhas.filter((l) => l.campo?.escopo !== Escopo.REPO);
   const sobrescritas = gerais.filter((l) => sobrescreve(l, formulario));
   // Escolha ainda vazia herda o plugin geral: os campos dele não são "deste" repo.

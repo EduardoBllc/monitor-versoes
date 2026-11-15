@@ -346,9 +346,11 @@ def _plugin_da_config(  # noqa: PLR0913
             peca, Estado.NAO_VERIFICADA, "o plugin não oferece verificação"
         )
     try:
-        verificar()
+        motivo = verificar()
     except MotorError as e:
         return _falha(peca, e, f"conferir as credenciais do plugin em {onde}")
+    if isinstance(motivo, str) and motivo:
+        return Resultado(peca, Estado.NAO_VERIFICADA, motivo)
     return Resultado(peca, Estado.OK, "credenciais aceitas")
 
 

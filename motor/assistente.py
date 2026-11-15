@@ -70,7 +70,11 @@ class Embutido:
 
 
 EMBUTIDOS: dict[GrupoPlugin, tuple[Embutido, ...]] = {
-    GrupoPlugin.TAREFAS: (Embutido("Jira", "jira", "plugins/jira"),),
+    GrupoPlugin.TAREFAS: (
+        Embutido("Jira", "jira", "plugins/jira"),
+        Embutido("GitHub Issues", "github", "plugins/github"),
+        Embutido("GitLab Issues", "gitlab", "plugins/gitlab"),
+    ),
     GrupoPlugin.PRS: (Embutido("Bitbucket", "bitbucket", None),),
 }
 
