@@ -368,8 +368,7 @@ def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.progresso(Progresso("preparando worktree"))
     branch = deps.versionamento().branch(versao)
     deps.git.use_worktree(branch)
-    if deps.git.remote_branch_exists("origin", branch):
-        deps.git.pull_branch("origin", branch)
+    deps.git.avancar_para_remota(branch)
 
 
 def descartar_worktrees(deps: Deps, versao: str) -> None:

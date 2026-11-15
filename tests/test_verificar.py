@@ -468,7 +468,7 @@ def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
     substituir_atribuicoes do fim levantaria MotorError("nao registrada").
     """
     git = _git()
-    git.remotes["14.0.0"] = True  # branch ja publicada: exercita o pull
+    git.remote_refs["14.0.0"] = "r0"  # branch ja publicada: exercita o avanco
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
     commits = FakeCommitSource(
         por_chamado={

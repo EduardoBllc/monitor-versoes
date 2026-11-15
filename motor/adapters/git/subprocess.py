@@ -1003,15 +1003,15 @@ class GitSubprocess:
             self._worktree_dir(branch), "push", "--progress", "-u", remote, branch
         )
 
-    def pull_branch(self, remote: str, branch: str, /) -> None:
-        self._run_progresso(
-            self._worktree_dir(branch),
-            "pull",
-            "--progress",
-            "--ff-only",
-            remote,
-            branch,
-        )
+    def avancar_para_remota(self, branch: str, /) -> None:
+        ref = f"refs/remotes/origin/{branch}"
+        with _cronometrar("rev-parse", ref):
+            proc = _rodar_git(
+                ["git", "rev-parse", "--verify", "--quiet", ref], cwd=self.repo_path
+            )
+        if proc.returncode == 1:
+            return
+        self._run(self._worktree_dir(branch), "merge", "--ff-only", ref)
 
     def fetch(self, remote: str, /) -> None:
         self._run_progresso(self.repo_path, "fetch", "--progress", remote)

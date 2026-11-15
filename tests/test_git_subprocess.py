@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -1578,3 +1579,77 @@ def test_new_git_subprocess_nao_escreve_config_com_rerere_ja_ligado(tmp_path):
     (tmp_path / ".git" / "config.lock").write_text("")
 
     new_git_subprocess(repo_dir)
+
+
+def _par_origem_clone(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    _run_git(str(origem), "init", "-b", "master")
+    _config_identidade_local(str(origem))
+    (origem / "arquivo.txt").write_text("v1\n")
+    _run_git(str(origem), "add", "arquivo.txt")
+    _run_git(str(origem), "commit", "-m", "base")
+    _run_git(str(origem), "branch", "13.35.0")
+
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _run_git(str(clone), "init", "-b", "master")
+    _config_identidade_local(str(clone))
+    _run_git(str(clone), "remote", "add", "origin", str(origem))
+    g = new_git_subprocess(str(clone))
+    g.fetch("origin")
+    return origem, clone, g
+
+
+def _head(dir_) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(dir_),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def _commitar(dir_, nome: str) -> None:
+    (dir_ / nome).write_text(nome)
+    _run_git(str(dir_), "add", nome)
+    _run_git(str(dir_), "commit", "-m", nome)
+
+
+def test_avancar_para_remota_traz_commit_novo_sem_rede(tmp_path):
+    origem, clone, g = _par_origem_clone(tmp_path)
+    g.use_worktree("13.35.0")
+    _run_git(str(origem), "checkout", "13.35.0")
+    _commitar(origem, "novo.txt")
+    novo = _head(origem)
+    g.fetch("origin")
+    _run_git(str(clone), "remote", "set-url", "origin", str(tmp_path / "inexistente"))
+
+    g.avancar_para_remota("13.35.0")
+
+    assert _head(g._worktree_dir("13.35.0")) == novo
+
+
+def test_avancar_para_remota_sem_ref_de_rastreamento_e_noop(tmp_path):
+    _, clone, g = _par_origem_clone(tmp_path)
+    _run_git(str(clone), "branch", "13.36.0", "origin/13.35.0")
+    g.use_worktree("13.36.0")
+    antes = _head(g._worktree_dir("13.36.0"))
+
+    g.avancar_para_remota("13.36.0")
+
+    assert _head(g._worktree_dir("13.36.0")) == antes
+
+
+def test_avancar_para_remota_divergente_levanta(tmp_path):
+    origem, _, g = _par_origem_clone(tmp_path)
+    g.use_worktree("13.35.0")
+    _config_identidade_local(g._worktree_dir("13.35.0"))
+    _commitar(Path(g._worktree_dir("13.35.0")), "local.txt")
+    _run_git(str(origem), "checkout", "13.35.0")
+    _commitar(origem, "remoto.txt")
+    g.fetch("origin")
+
+    with pytest.raises(MotorError):
+        g.avancar_para_remota("13.35.0")
