@@ -435,8 +435,11 @@ PR sem merge commits. O resto (varredura incremental, casamento com a referênci
 filtro pela principal) é do núcleo. O construtor recebe só nomeados (`prs`, o `[prs]`
 mesclado; `arquivos`, os arquivos lidos; `remote_url`, uma função que devolve a URL do
 `origin`) e não faz I/O: credencial e URL se cobram na primeira chamada. Registre a classe no
-grupo `monitor_versoes.prs`; `verificar_credenciais()` é opcional e o `diagnostico` a usa: devolve `None` quando
-verificou, ou o motivo de não ter verificado (a linha vira "não verificada").
+grupo `monitor_versoes.prs`.
+
+Fonte de tarefas e host de PR podem oferecer `verificar_credenciais()`, opcional, que o
+`diagnostico` usa: devolve `None` quando verificou, ou o motivo de não ter verificado (a linha
+vira "não verificada").
 
 ### Fontes de tasks e de commits
 
