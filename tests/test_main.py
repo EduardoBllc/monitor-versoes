@@ -1631,6 +1631,7 @@ class _Cmd(StrEnum):
     INSCRICAO_RODAR = "inscricao rodar"
     PLUGIN_LISTAR = "plugin listar"
     ATUALIZAR_MOTOR = "atualizar-motor"
+    DESINSTALAR = "desinstalar"
     VERSAO = "--version"
 
 
@@ -1691,7 +1692,13 @@ def test_aviso_de_plugin_traz_o_pacote_e_o_comando(monkeypatch, capsys):
 
 @pytest.mark.parametrize(
     "comando",
-    [_Cmd.INSCRICAO_RODAR, _Cmd.PLUGIN_LISTAR, _Cmd.ATUALIZAR_MOTOR, _Cmd.VERSAO],
+    [
+        _Cmd.INSCRICAO_RODAR,
+        _Cmd.PLUGIN_LISTAR,
+        _Cmd.ATUALIZAR_MOTOR,
+        _Cmd.DESINSTALAR,
+        _Cmd.VERSAO,
+    ],
 )
 def test_sem_aviso_nos_comandos_excluidos(monkeypatch, capsys, comando):
     renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))

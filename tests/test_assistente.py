@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tomllib
@@ -15,11 +16,18 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from motor import agendador, assistente, instalacao, plugins, servico
-from motor.__main__ import COMANDO_SERVE, main
-from motor.agendador import FLAG_AGORA, SYSTEMCTL, Acao, Sistema
-from motor.assistente import OrigemOutro
+from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
+from motor.agendador import ARQUIVO_TIMER, FLAG_AGORA, SYSTEMCTL, Acao, Sistema
+from motor.assistente import SUFIXOS_SQLITE, OrigemOutro, Situacao
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
-from motor.config import VAR_XDG_CONFIG_HOME, Chave, Tabela, caminho_config_global
+from motor.config import (
+    VAR_XDG_CONFIG_HOME,
+    Chave,
+    Tabela,
+    caminho_config_global,
+    diretorio_cache,
+    diretorio_dados,
+)
 from motor.config_edicao import GrupoPlugin
 from motor.diagnostico import Peca
 from motor.errors import CodigoSaida
@@ -134,14 +142,16 @@ def cen(monkeypatch, tmp_path) -> Cenario:
     return c
 
 
-def _rodar(*teclas: str, plataforma: str = Sistema.LINUX) -> int:
+def _rodar(
+    *teclas: str, plataforma: str = Sistema.LINUX, comando: str = COMANDO_CONFIGURAR
+) -> int:
     with create_pipe_input() as entrada, patch.object(sys, "platform", plataforma):
         entrada.send_text("".join(teclas))
         # Sem mais teclas, a pergunta seguinte dá EOFError em vez de travar a suíte.
         entrada.close()
         with create_app_session(input=entrada, output=DummyOutput()):
             try:
-                main([COMANDO_CONFIGURAR])
+                main([comando])
             except SystemExit as e:
                 assert isinstance(e.code, int)
                 return e.code
@@ -308,3 +318,58 @@ def test_fechamento(
     assert cen.abertos == abertos
     assert no_stdout in saida
     assert Peca.DAEMON in saida
+
+
+def _dados_do_usuario(tmp_path, monkeypatch) -> list[Path]:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache-isolado"))
+    banco = Path(os.environ["DATABASE_SQLITE_PATH"])
+    pastas = [
+        Path(caminho_config_global()).parent,
+        Path(diretorio_dados()),
+        Path(diretorio_cache()),
+    ]
+    for pasta in pastas:
+        pasta.mkdir(parents=True, exist_ok=True)
+        (pasta / "dado").write_text("")
+    banco.write_text("")
+    for sufixo in SUFIXOS_SQLITE:
+        Path(f"{banco}{sufixo}").write_text("")
+    return [*pastas, *(Path(f"{banco}{s}") for s in SUFIXOS_SQLITE)]
+
+
+def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    cen.unit().parent.mkdir(parents=True)
+    cen.unit().write_text("")
+    for arquivo in agendador.caminhos(Sistema.LINUX, Path.home()):
+        arquivo.write_text("")
+
+    assert _rodar(ENTER, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert not cen.unit().exists()
+    assert not any(a.exists() for a in agendador.caminhos(Sistema.LINUX, Path.home()))
+    assert cen.comandos == [
+        *DESLIGAR,
+        [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_TIMER],
+        [*SYSTEMCTL, Acao.DAEMON_RELOAD],
+    ]
+    assert all(d.exists() for d in dados)
+
+
+@pytest.mark.parametrize(
+    ("teclas", "terminal", "apagou"),
+    [((SIM,), True, True), ((ENTER,), True, False), ((), False, False)],
+    ids=["sim", "enter-mantem", "sem-terminal"],
+)
+def test_desinstalar_apaga_dados_so_com_sim(
+    cen, tmp_path, monkeypatch, capsys, teclas, terminal, apagou
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    monkeypatch.setattr(assistente, "_terminal", lambda: terminal)
+
+    assert _rodar(*teclas, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert all(d.exists() is not apagou for d in dados)
+    saida = capsys.readouterr().out
+    assert all(str(d) in saida for d in dados[:4])
+    assert saida.count(Situacao.REMOVIDO if apagou else Situacao.MANTIDO) >= 4

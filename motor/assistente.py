@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -26,7 +27,14 @@ from prompt_toolkit.keys import Keys
 from motor import agendador, instalacao, plugins, servico
 from motor.agendador import Sistema
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
-from motor.config import Chave, Tabela, caminho_config_global
+from motor.config import (
+    Chave,
+    Tabela,
+    VarAmbiente,
+    caminho_config_global,
+    diretorio_cache,
+    diretorio_dados,
+)
 from motor.config_edicao import (
     AcaoAlteracao,
     Alteracao,
@@ -51,6 +59,7 @@ TECLAS_SIM = ("s", "S")
 COR_VERDE = "\x1b[32m"
 COR_VERMELHA = "\x1b[31m"
 SEM_COR = "\x1b[0m"
+SUFIXOS_SQLITE = ("", "-wal", "-shm")
 
 
 @dataclass(frozen=True)
@@ -80,6 +89,11 @@ class OrigemOutro(StrEnum):
 class Marca(StrEnum):
     OK = "✔"
     FALHA = "✖"
+
+
+class Situacao(StrEnum):
+    REMOVIDO = "removido"
+    MANTIDO = "mantido"
 
 
 _COR = {Marca.OK: COR_VERDE, Marca.FALHA: COR_VERMELHA}
@@ -362,5 +376,55 @@ def configurar(imprimir_diagnostico: Callable[[], object]) -> None:
     _aplicar_login(home, login)
     try:
         _fechar(imprimir_diagnostico, home)
+    except KeyboardInterrupt:
+        sys.exit(CodigoSaida.INTERROMPIDO)
+
+
+def _caminhos_de_dados() -> tuple[list[Path], list[Path]]:
+    """Pastas e arquivos do SQLite fora do diretório de dados, só os que existem."""
+    dados = Path(diretorio_dados())
+    pastas = [Path(caminho_config_global()).parent, dados, Path(diretorio_cache())]
+    banco = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
+    arquivos = []
+    if banco:
+        base = Path(banco).expanduser()
+        if dados not in base.parents:
+            arquivos = [Path(f"{base}{s}") for s in SUFIXOS_SQLITE]
+    return (
+        [p for p in pastas if p.exists()],
+        [a for a in arquivos if a.exists()],
+    )
+
+
+def desinstalar() -> None:
+    home = Path.home()
+    if servico.ligado(home):
+        servico.desligar(
+            agendador.sistema_atual(), home, agendador.rodar_comando_do_sistema
+        )
+        marcar(Marca.OK, "serviço de login removido")
+    agendador.remover_agendador_antigo(home, agendador.rodar_comando_do_sistema)
+    pastas, arquivos = _caminhos_de_dados()
+    apagar = (
+        _terminal()
+        and bool(pastas or arquivos)
+        and _confirmar_apagar([*pastas, *arquivos])
+    )
+    if apagar:
+        for pasta in pastas:
+            shutil.rmtree(pasta, ignore_errors=True)
+        for arquivo in arquivos:
+            arquivo.unlink(missing_ok=True)
+    situacao = Situacao.REMOVIDO if apagar else Situacao.MANTIDO
+    for caminho in [*pastas, *arquivos]:
+        print(f"{situacao}: {caminho}")
+
+
+def _confirmar_apagar(caminhos: list[Path]) -> bool:
+    print("Dados do monitor-versoes:")
+    for caminho in caminhos:
+        print(f"  {caminho}")
+    try:
+        return confirmar("Apagar esses dados?", False)
     except KeyboardInterrupt:
         sys.exit(CodigoSaida.INTERROMPIDO)

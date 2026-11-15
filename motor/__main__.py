@@ -208,7 +208,14 @@ def _configurar(args: argparse.Namespace) -> None:
     assistente.configurar(lambda: _imprimir_diagnostico(args))
 
 
+def _desinstalar(args: argparse.Namespace) -> None:
+    from motor import assistente
+
+    assistente.desinstalar()
+
+
 COMANDO_SERVE = "serve"
+COMANDO_DESINSTALAR = "desinstalar"
 COMANDO_TUI = "tui"
 COMANDO_INSCRICAO = "inscricao"
 
@@ -306,6 +313,7 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "migrar": _migrar,
     "diagnostico": _diagnostico,
     servico.COMANDO_CONFIGURAR: _configurar,
+    COMANDO_DESINSTALAR: _desinstalar,
     COMANDO_INSCRICAO: _inscricao,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
@@ -468,6 +476,8 @@ def _build_parser() -> argparse.ArgumentParser:
         servico.COMANDO_CONFIGURAR,
         help="assistente interativo: fontes, início no login e próximos passos",
     )
+
+    sub.add_parser(COMANDO_DESINSTALAR)  # interno do install.sh: sem help
 
     p_insc = sub.add_parser(
         COMANDO_INSCRICAO, help="acompanha versões em segundo plano"
@@ -806,6 +816,7 @@ _SEM_AVISO = frozenset(
         COMANDO_SERVE,
         COMANDO_TUI,
         COMANDO_INSCRICAO,
+        COMANDO_DESINSTALAR,
         cli_instalacao.COMANDO_PLUGIN,
         cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
     }
