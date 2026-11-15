@@ -21,9 +21,8 @@ login não tem). Reinstalar troca o ambiente de onde o `serve` importa o código
 Subir no boot sem login exigiria root e fica fora; no Windows não há serviço.
 
 **Plugin do repo do motor fica na tag do motor.** Um plugin cuja origem é o próprio repo do
-motor (git, mesma URL, subdiretório `plugins/`) tem de ser da mesma versão dele, então não
-tem aviso de versão próprio, o `plugin atualizar` não o move e só o `atualizar-motor`
-move os dois juntos.
+motor (git, mesma URL, subdiretório `plugins/`) tem de ser da mesma versão dele: versões
+diferentes quebrariam a interface entre os dois, e por isso quem o move é o motor.
 
 **Pasta local é exceção à fixação da [040](040-instalacao-pelo-registro-do-uv.md).** Não há
 tag nem commit para fixar, e toda reinstalação reconstrói o ambiente a partir da pasta, que
