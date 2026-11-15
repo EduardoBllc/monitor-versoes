@@ -28,6 +28,7 @@ import motor.__main__ as cli
 import motor.daemon.disparo as disparo
 import motor.montagem as montagem
 import motor.novidades as modulo_novidades
+import motor.servico as servico
 from motor.__main__ import (
     _build_parser,
     imprimir_atualizacao,
@@ -38,7 +39,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR
 from motor.config import SECAO_REPOS
-from motor.diagnostico import Peca
+from motor.diagnostico import Estado, Peca, Resultado, formatar
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -49,11 +50,12 @@ from motor.domain.types import (
 )
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
-from motor.errors import MotorError
+from motor.errors import CodigoSaida, MotorError
 from motor.inscricoes import Inscricao
 from motor.instalacao import PACOTE_MOTOR
 from motor.novidades import Cache, Novidade
 from motor.plugins import carregar_plugin
+from motor.servico import EstadoServico, Situacao
 from tests.config_repos import rotulo_secao, secao_repo
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 
@@ -1085,6 +1087,26 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     assert estado.value in capsys.readouterr().out
 
 
+def test_diagnostico_mostra_a_peca_daemon(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "head", lambda: "rev")
+    monkeypatch.setattr(
+        cli,
+        "diagnosticar",
+        lambda *a, **k: [Resultado(Peca.SQLITE, Estado.OK, "x")],
+    )
+    monkeypatch.setattr(
+        servico, "situacao", lambda *a: Situacao(EstadoServico.PARADO, "ver o log")
+    )
+
+    with pytest.raises(SystemExit) as saida:
+        main(["diagnostico"])
+
+    assert saida.value.code == CodigoSaida.ERRO
+    ultima = capsys.readouterr().out.splitlines()[-1]
+    assert ultima.startswith(f"{Estado.FALHA.value}  {Peca.DAEMON}")
+    assert formatar(Resultado(Peca.DAEMON, Estado.FALHA)) in ultima
+
+
 def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     central = tmp_path / "monitor-versoes" / "config.toml"
@@ -1392,10 +1414,12 @@ def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
             conexao.close()  # o lado servidor fecha primeiro e fica em TIME_WAIT
             cliente.recv(1)
     rodou = []
-    monkeypatch.setattr(daemon_app, "_rodar", lambda app, p: rodou.append(p))
+    monkeypatch.setattr(
+        daemon_app, "_rodar", lambda app, p, abrir_navegador: rodou.append(p)
+    )
     # Sem isto a suíte desinstalaria o timer real de quem a roda.
     monkeypatch.setattr(daemon_app, "remover_agendador_antigo", lambda *_: False)
-    daemon_app.servir(porta, {})
+    daemon_app.servir(porta, {}, True)
     assert rodou == [porta]
 
 
@@ -1413,7 +1437,9 @@ def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "checar_backend", lambda: None)
     vistos = []
     monkeypatch.setattr(
-        daemon_app, "servir", lambda porta, ambiente: vistos.append(ambiente)
+        daemon_app,
+        "servir",
+        lambda porta, ambiente, abrir_navegador: vistos.append(ambiente),
     )
 
     main(["serve"])
@@ -1605,6 +1631,7 @@ class _Cmd(StrEnum):
     INSCRICAO_RODAR = "inscricao rodar"
     PLUGIN_LISTAR = "plugin listar"
     ATUALIZAR_MOTOR = "atualizar-motor"
+    DESINSTALAR = "desinstalar"
     VERSAO = "--version"
 
 
@@ -1665,7 +1692,13 @@ def test_aviso_de_plugin_traz_o_pacote_e_o_comando(monkeypatch, capsys):
 
 @pytest.mark.parametrize(
     "comando",
-    [_Cmd.INSCRICAO_RODAR, _Cmd.PLUGIN_LISTAR, _Cmd.ATUALIZAR_MOTOR, _Cmd.VERSAO],
+    [
+        _Cmd.INSCRICAO_RODAR,
+        _Cmd.PLUGIN_LISTAR,
+        _Cmd.ATUALIZAR_MOTOR,
+        _Cmd.DESINSTALAR,
+        _Cmd.VERSAO,
+    ],
 )
 def test_sem_aviso_nos_comandos_excluidos(monkeypatch, capsys, comando):
     renovacoes = _preparar_aviso(monkeypatch, _agora() - datetime.timedelta(days=3))

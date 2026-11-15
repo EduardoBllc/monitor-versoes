@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from motor.domain.types import CommitRef, Presence
@@ -32,6 +32,14 @@ class PresenceOracle:
     )
     _changed_files_cache: dict[str, frozenset[str] | None] = field(
         default_factory=dict, repr=False, compare=False
+    )
+    # Hashes agendados por `precarregar_*`: entram no proximo lote que o
+    # oraculo de fato precisar ler, entao um lote todo ancestral nao paga nada.
+    _patch_ids_pendentes: list[str] = field(
+        default_factory=list, repr=False, compare=False
+    )
+    _arquivos_pendentes: list[str] = field(
+        default_factory=list, repr=False, compare=False
     )
     # (base, branch) -> chave (msg, arquivos) -> fila de candidatos do alvo ainda
     # nao consumidos. Consumo (pop) evita que 2 commits de origem com msg+arquivos
@@ -67,6 +75,7 @@ class PresenceOracle:
             # (docs/decisoes/003-definicao-de-presente.md).
             return Presence.AUSENTE
 
+        self.precarregar_patch_ids(c.hash_origem for c in commits)
         patch_id_origem = self._patch_id(hash_origem)
         if patch_id_origem is None:
             # merge commit "limpo" tem diff vazio no `git show` default, git
@@ -114,6 +123,9 @@ class PresenceOracle:
         mesma msg em commits distintos da mesma PR.
         """
         meta = self.git.commit_meta(hash_origem)
+        self.precarregar_arquivos(
+            c.hash_origem for c in self._commits_in_range(base, branch) or []
+        )
         arquivos_origem = self._changed_files(hash_origem)
         if arquivos_origem is None:
             return None
@@ -137,12 +149,26 @@ class PresenceOracle:
             self._por_msg_arquivos_cache[chave] = agrupado
         return self._por_msg_arquivos_cache[chave]
 
+    def precarregar_patch_ids(self, hashes: Iterable[str]) -> None:
+        """Agenda os patch-ids para o próximo lote lido."""
+        self._patch_ids_pendentes.extend(
+            h for h in hashes if h not in self._patch_id_cache
+        )
+
+    def precarregar_arquivos(self, hashes: Iterable[str]) -> None:
+        """Agenda os arquivos alterados para o próximo lote lido."""
+        self._arquivos_pendentes.extend(
+            h for h in hashes if h not in self._changed_files_cache
+        )
+
     def _changed_files(self, hash_: str) -> frozenset[str] | None:
         if hash_ not in self._changed_files_cache:
-            try:
-                self._changed_files_cache[hash_] = self.git.changed_files(hash_)
-            except MotorError:
-                self._changed_files_cache[hash_] = None
+            _ler_em_lote(
+                self._changed_files_cache,
+                self._arquivos_pendentes,
+                hash_,
+                self.git.changed_files_lote,
+            )
         return self._changed_files_cache[hash_]
 
     def _cherry_picked(self, branch: str) -> list[CommitRef] | None:
@@ -174,8 +200,27 @@ class PresenceOracle:
 
     def _patch_id(self, hash_: str) -> str | None:
         if hash_ not in self._patch_id_cache:
-            try:
-                self._patch_id_cache[hash_] = self.git.patch_id(hash_)
-            except MotorError:
-                self._patch_id_cache[hash_] = None
+            _ler_em_lote(
+                self._patch_id_cache,
+                self._patch_ids_pendentes,
+                hash_,
+                self.git.patch_ids,
+            )
         return self._patch_id_cache[hash_]
+
+
+def _ler_em_lote[T](
+    cache: dict[str, T | None],
+    pendentes: list[str],
+    hash_: str,
+    ler: Callable[[list[str]], dict[str, T]],
+) -> None:
+    """Lê `hash_` e os pendentes num lote só; o que não voltou vira None."""
+    faltam = [h for h in dict.fromkeys([hash_, *pendentes]) if h not in cache]
+    pendentes.clear()
+    try:
+        lidos = ler(faltam)
+    except MotorError:
+        lidos = {}
+    for h in faltam:
+        cache[h] = lidos.get(h)

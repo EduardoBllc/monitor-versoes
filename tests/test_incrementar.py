@@ -876,6 +876,7 @@ def test_atualizar_faz_um_fetch_um_pull_e_no_maximo_uma_ordenacao(
     git = _git(_GitContado)
     assert isinstance(git, _GitContado)
     git.remotes["13.7.0"] = True
+    git.remote_refs["13.7.0"] = "r0"
     c = _cenario(git=git)
     if com_carimbo:
         verificar(c.deps, "13.7.0")

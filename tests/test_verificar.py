@@ -24,7 +24,7 @@ from motor.engine.orfaos import julgar_orfao
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
 from motor.engine.vigencia import impressao_da_verificacao, verificacao_vigente
-from motor.errors import ErroDeEntrada, MotorError
+from motor.errors import BackendIndisponivel, ErroDeEntrada, MotorError
 from motor.esquemas.semver import Semver
 from motor.ports import MergePrediction
 from motor.services.versionamento import Versionamento
@@ -196,6 +196,44 @@ def test_verificar_nao_grava_em_versao_liberada():
 
     # a trava do fake nao disparou => nao tentou escrever
     assert estado.atribuicoes("r", "13.34.0") == []
+
+
+def test_verificar_liberada_ignora_erro_da_busca_adiantada():
+    git = _git(tags={"13.34.0": True})
+    estado = _estado_com_repo()
+    estado.registrar_versao(
+        "r",
+        VersaoInfo(
+            numero="13.34.0",
+            tipo="ajustada",
+            base_ref="13.33.0",
+            base_commit="m0",
+        ),
+    )
+    tasks = FakeTaskSource(err=BackendIndisponivel("rastreador fora do ar"))
+
+    status = verificar(_deps(git, tasks, FakeCommitSource(), estado), "13.34.0")
+
+    assert status.liberada_em is not None
+
+
+class _TasksQueFalhamNoAlvo(FakeTaskSource):
+    def fetch(self, versao: str, /) -> list[str]:
+        if versao == "14.0.0":
+            raise BackendIndisponivel("rastreador fora do ar")
+        return super().fetch(versao)
+
+
+def test_verificar_erro_do_task_source_mantem_a_nota():
+    # So o alvo falha: o erro da busca adiantada sai na posicao dele, com a nota.
+    tasks = _TasksQueFalhamNoAlvo()
+
+    with pytest.raises(BackendIndisponivel) as e:
+        verificar(
+            _deps(_git(), tasks, FakeCommitSource(), _estado_com_repo()), "14.0.0"
+        )
+
+    assert "buscando tasks da versao 14.0.0" in e.value.__notes__
 
 
 def test_auditar_versao_liberada_compara_a_tag_sem_mudar_snapshot():
@@ -469,7 +507,7 @@ def test_verificar_registra_a_base_na_primeira_vez_que_ve_a_versao():
     substituir_atribuicoes do fim levantaria MotorError("nao registrada").
     """
     git = _git()
-    git.remotes["14.0.0"] = True  # branch ja publicada: exercita o pull
+    git.remote_refs["14.0.0"] = "r0"  # branch ja publicada: exercita o avanco
     tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
     commits = FakeCommitSource(
         por_chamado={
@@ -966,8 +1004,8 @@ def test_verificar_nao_cobra_commit_com_o_mesmo_patch_de_outro_ja_presente():
     git.add_commit("a1", "a0", "ch123123 alfa", D)
     git.set_branch("master", "a1")
     git.set_branch("origin/master", "a1")
-    git.patch_ids["a0"] = "mesmo-patch"
-    git.patch_ids["a1"] = "mesmo-patch"
+    git.patch_id_por_commit["a0"] = "mesmo-patch"
+    git.patch_id_por_commit["a1"] = "mesmo-patch"
     # o pick de a0 entrou ANTES do corte da 14.0.0: esta na base, nao no range
     git.add_commit("p0", "m0", "ch123123 alfa\n\n(cherry picked from commit a0)", D)
     git.set_branch("14.0.0", "p0")
@@ -1115,6 +1153,26 @@ def test_carimbo_leva_a_hora_do_inicio_da_varredura():
     deps = _cenario_simples()
     horas = iter([AGORA, AGORA + datetime.timedelta(minutes=2)])
     deps.agora = lambda: next(horas)
+
+    verificar(deps, "14.0.0")
+
+    carimbo = deps.estado.verificacao("r", "14.0.0")
+    assert carimbo is not None
+    assert carimbo.verificado_em == AGORA
+
+
+def test_carimbo_nao_e_posterior_a_busca_adiantada():
+    """As tarefas começam a ser lidas antes do fetch: a hora não pode vir depois."""
+    deps = _cenario_simples()
+    relogio = {"agora": AGORA}
+    deps.agora = lambda: relogio["agora"]
+    fetch = deps.git.fetch
+
+    def fetch_lento(remoto):
+        relogio["agora"] += datetime.timedelta(minutes=2)
+        fetch(remoto)
+
+    deps.git.fetch = fetch_lento
 
     verificar(deps, "14.0.0")
 
@@ -1435,3 +1493,80 @@ def test_verificar_debug_loga_tempo_de_cada_etapa(caplog):
         "gravação",
     ):
         assert caplog.text.count(f"etapa {etapa}:") == 1
+
+
+class _GitQueContaLeituras(FakeGit):
+    """Espião: leituras de patch-id e de arquivos, unitárias e em lote."""
+
+    patch_id_chamadas: int = 0
+    patch_ids_chamadas: int = 0
+    changed_files_chamadas: int = 0
+    changed_files_lote_chamadas: int = 0
+
+    def patch_id(self, hash: str, /) -> str:
+        self.patch_id_chamadas += 1
+        return super().patch_id(hash)
+
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        self.patch_ids_chamadas += 1
+        return super().patch_ids(hashes)
+
+    def changed_files(self, hash: str, /) -> frozenset[str]:
+        self.changed_files_chamadas += 1
+        return super().changed_files(hash)
+
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        self.changed_files_lote_chamadas += 1
+        return super().changed_files_lote(hashes)
+
+
+def _verificar_lote_espiado() -> _GitQueContaLeituras:
+    """30 commits de origem ausentes do alvo, e 30 commits no intervalo do alvo
+    com a mesma mensagem: todos chegam aos níveis 3 e 4 do oráculo."""
+    git = _git(classe=_GitQueContaLeituras)
+    assert isinstance(git, _GitQueContaLeituras)
+    origens: list[CommitRef] = []
+    pai_origem, pai_alvo = "a0", "m0"
+    for i in range(30):
+        msg = f"ch123123 commit {i}"
+        git.add_commit(f"o{i}", pai_origem, msg, D)
+        git.add_commit(f"t{i}", pai_alvo, msg, D)
+        origens.append(
+            CommitRef(
+                hash_origem=f"o{i}",
+                parent=pai_origem,
+                chamado="123123",
+                commit_date=D,
+                msg=msg,
+            )
+        )
+        pai_origem, pai_alvo = f"o{i}", f"t{i}"
+    git.set_branch("14.0.0", pai_alvo)
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+    verificar(
+        _deps(
+            git,
+            FakeTaskSource(chamados={"14.0.0": ["123123"]}),
+            FakeCommitSource(por_chamado={"123123": origens}),
+            estado,
+        ),
+        "14.0.0",
+    )
+    return git
+
+
+def test_verificar_le_os_patch_ids_do_lote_num_processo_so():
+    """Um `git show | git patch-id` por commit custava ~1s por verificar."""
+    git = _verificar_lote_espiado()
+
+    assert git.patch_ids_chamadas == 1
+    assert git.patch_id_chamadas == 0
+
+
+def test_verificar_le_os_arquivos_do_nivel_4_num_processo_so():
+    """Um `git diff-tree` por commit do intervalo e por candidato do lote."""
+    git = _verificar_lote_espiado()
+
+    assert git.changed_files_lote_chamadas == 1
+    assert git.changed_files_chamadas == 0

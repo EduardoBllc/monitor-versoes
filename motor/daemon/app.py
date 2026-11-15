@@ -17,8 +17,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+from motor import agendador
 from motor import inscricoes as arquivo
-from motor.agendador import remover_agendador_antigo, rodar_comando_do_sistema
+from motor.agendador import remover_agendador_antigo
 from motor.config import SECAO_REPOS
 from motor.config_edicao import Alteracao, ConfigEditavel, gravar, ler_para_edicao
 from motor.daemon import PORTA_PADRAO as PORTA_PADRAO
@@ -536,21 +537,24 @@ def _abrir_navegador(url: str) -> None:
     webbrowser.open(url)
 
 
-def _rodar(app: FastAPI, porta: int) -> None:
+def _rodar(app: FastAPI, porta: int, abrir_navegador: bool) -> None:
     import threading
 
     import uvicorn
 
-    # Atrasa a abertura para o servidor já estar de pé; sem bloquear o uvicorn.
-    abrir = threading.Timer(
-        ATRASO_NAVEGADOR_S, _abrir_navegador, [f"http://127.0.0.1:{porta}/"]
-    )
-    abrir.daemon = True
-    abrir.start()
+    if abrir_navegador:
+        # Atrasa a abertura para o servidor já estar de pé; sem bloquear o uvicorn.
+        abrir = threading.Timer(
+            ATRASO_NAVEGADOR_S, _abrir_navegador, [f"http://127.0.0.1:{porta}/"]
+        )
+        abrir.daemon = True
+        abrir.start()
     uvicorn.run(app, host="127.0.0.1", port=porta)
 
 
-def servir(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
+def servir(
+    porta: int, ambiente_filhos: Mapping[str, str], abrir_navegador: bool
+) -> None:
     import socket
 
     with socket.socket() as sonda:
@@ -561,7 +565,7 @@ def servir(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
             sonda.bind(("127.0.0.1", porta))
         except OSError as erro:
             raise ErroDeEntrada(f"porta {porta} em uso; use --porta") from erro
-    remover_agendador_antigo(Path.home(), rodar_comando_do_sistema)
+    remover_agendador_antigo(Path.home(), agendador.rodar_comando_do_sistema)
     app = criar_app(
         runners_com_progresso,
         porta=porta,
@@ -569,4 +573,4 @@ def servir(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
         inscricoes_em=arquivo.caminho_arquivo(),
     )
     ligar_disparo(app, partial(rodada, ambiente_filhos))
-    _rodar(app, porta)
+    _rodar(app, porta, abrir_navegador)

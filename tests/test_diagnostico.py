@@ -25,6 +25,7 @@ from motor.config import (
     repos_configurados,
 )
 from motor.diagnostico import (
+    URL_ISSUE_DAEMON,
     Estado,
     Peca,
     PecaTestavel,
@@ -32,12 +33,15 @@ from motor.diagnostico import (
     diagnosticar,
     diagnosticar_peca,
     falhou,
+    peca_daemon,
 )
 from motor.errors import ErroDeEntrada
 from motor.instalacao import ARQUIVO_REGISTRO, ler_registro
 from motor.migracoes import head
 from motor.novidades import Cache, Novidade
+from motor.servico import COMANDO_CONFIGURAR, EXECUTAVEL, EstadoServico, Situacao
 from tests.config_repos import secao_repo
+from tests.fontes_falsas import HostFalso
 
 HEAD = "rev2"
 ENV_OK: dict[str, str] = {}
@@ -303,6 +307,7 @@ _PLUGINS = "conferir [tarefas] fonte e os plugins instalados"
         ("tests.fontes_falsas:FonteConstrutorQuebra", "", Estado.FALHA, _PLUGINS),
         ("tests.fontes_falsas:FonteFixa", "", Estado.NAO_VERIFICADA, ""),
         ("tests.fontes_falsas:FonteComCredencial", "certo", Estado.OK, ""),
+        ("tests.fontes_falsas:FonteSemToken", "", Estado.NAO_VERIFICADA, ""),
         (
             "tests.fontes_falsas:FonteComCredencial",
             "errado",
@@ -318,6 +323,7 @@ _PLUGINS = "conferir [tarefas] fonte e os plugins instalados"
         "sem-verificacao",
         "credencial-aceita",
         "credencial-recusada",
+        "sem-token",
     ],
 )
 def test_linha_tarefas_por_estado(
@@ -348,6 +354,17 @@ def test_linha_tarefas_cita_a_mensagem_da_falha(tmp_path, monkeypatch):
     por_peca, _ = _rodar(config_central=carregar_config_global)
 
     assert "construtor quebrou" in por_peca[Peca.TAREFAS].detalhe
+
+
+def test_linha_tarefas_cita_o_motivo_de_nao_ter_verificado(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text('[tarefas]\nfonte = "tests.fontes_falsas:FonteSemToken"\n')
+
+    por_peca, _ = _rodar(config_central=carregar_config_global)
+
+    assert "sem FONTE_FALSA_TOKEN" in por_peca[Peca.TAREFAS].detalhe
 
 
 # -- linha Fonte de PR -----------------------------------------------------------
@@ -627,6 +644,30 @@ def test_peca_prs_usa_o_plugin_da_config(tmp_path, monkeypatch, token, estado):
     assert (ONDE in linha.correcao) is (estado is Estado.FALHA)
 
 
+@pytest.mark.parametrize("token", ["certo", "errado"])
+def test_peca_prs_fecha_o_plugin_depois_de_verificar(tmp_path, monkeypatch, token):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HOST_FALSO_TOKEN", token)
+    fechados: list[bool] = []
+    monkeypatch.setattr(
+        HostFalso, "fechar", lambda self: fechados.append(True), raising=False
+    )
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text(
+        f'[{Tabela.PRS}]\n{Chave.FONTE} = "tests.fontes_falsas:HostFalso"\n'
+    )
+
+    diagnosticar_peca(
+        PecaTestavel.PRS,
+        config_central=carregar_config_global,
+        repos=_proibido,
+        onde=ONDE,
+    )
+
+    assert fechados == [True]
+
+
 def _proibido() -> dict[str, str | None]:
     raise AssertionError("não devia ler os repos")
 
@@ -736,3 +777,35 @@ def test_versao_com_registro_do_uv_ilegivel_fica_nao_verificada(monkeypatch, tmp
     assert por_peca[Peca.VERSAO].estado is Estado.NAO_VERIFICADA
     assert "registro do uv ilegível" in por_peca[Peca.VERSAO].detalhe
     assert not falhou(resultados)
+
+
+VER_LOG = "dica de log opaca"
+
+
+@pytest.mark.parametrize(
+    ("situacao", "estado", "correcao", "detalhe"),
+    [
+        (Situacao(EstadoServico.ATIVO), Estado.OK, "", ""),
+        (
+            Situacao(EstadoServico.DESLIGADO),
+            Estado.NAO_CONFIGURADO,
+            f"{EXECUTAVEL} {COMANDO_CONFIGURAR}",
+            "",
+        ),
+        (Situacao(EstadoServico.PARADO, VER_LOG), Estado.FALHA, VER_LOG, ""),
+        (
+            Situacao(EstadoServico.SEM_SUPORTE),
+            Estado.NAO_CONFIGURADO,
+            "",
+            URL_ISSUE_DAEMON,
+        ),
+    ],
+)
+def test_peca_daemon(situacao, estado, correcao, detalhe):
+    r = peca_daemon(situacao)
+
+    assert r.peca is Peca.DAEMON
+    assert r.estado is estado
+    assert r.correcao == correcao
+    assert detalhe in r.detalhe
+    assert falhou([r]) is (estado is Estado.FALHA)

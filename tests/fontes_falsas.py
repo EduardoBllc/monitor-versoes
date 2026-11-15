@@ -66,6 +66,23 @@ class FonteComCredencial:
             raise ErroDeEntrada("credencial recusada")
 
 
+class FonteSemToken:
+    """Oferece `verificar_credenciais` e diz que não verificou."""
+
+    referencia: ClassVar[Referencia] = REFERENCIA_CH
+
+    def __init__(
+        self, *, tarefas: Mapping[str, object], arquivos: tuple[str, ...]
+    ) -> None:
+        self.tarefas = tarefas
+
+    def fetch(self, versao: str, /) -> list[str]:
+        return []
+
+    def verificar_credenciais(self) -> str | None:
+        return "sem FONTE_FALSA_TOKEN"
+
+
 class FonteConstrutorQuebra:
     """Construtor que recusa a config com erro do operador."""
 

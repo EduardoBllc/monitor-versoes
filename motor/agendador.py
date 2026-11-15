@@ -22,6 +22,12 @@ class Acao(StrEnum):
     DAEMON_RELOAD = "daemon-reload"
     DISABLE = "disable"
     UNLOAD = "unload"
+    ENABLE = "enable"
+    RESTART = "restart"
+    IS_ACTIVE = "is-active"
+    LOAD = "load"
+    KICKSTART = "kickstart"
+    PRINT = "print"
 
 
 FLAG_AGORA = "--now"

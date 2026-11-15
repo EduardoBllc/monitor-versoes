@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Label, OptionList, Select, TabbedContent
+from textual.widgets import Checkbox, Input, Label, OptionList, Select, TabbedContent
 
 from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
@@ -21,6 +21,7 @@ from motor.config_edicao import (
     Campo,
     ConfigEditavel,
     Escopo,
+    GrupoPlugin,
     TipoCampo,
     ValorLido,
 )
@@ -49,6 +50,10 @@ VALOR_TOPO = "main"
 WORKTREES = VarAmbiente.WORKTREES_MANTIDAS
 WORKTREES_TEXTO = "5"
 CHAVE_TOKEN = "token"
+AVISO_VAZIO = "sem token o limite é baixo"
+CHAVE_PROJETO = "projeto"
+PLUGIN_A = "alfa"
+PLUGIN_B = "beta"
 
 
 def _escrever(texto: str) -> None:
@@ -293,3 +298,89 @@ def test_segredo_geral_no_repo_nao_tocado_nao_gera_alteracao():
     original = _config([campo], [lido], [NOME_REPO])
     chave = (NOME_REPO, Tabela.TAREFAS, CHAVE_TOKEN)
     assert alteracoes_do_formulario(original, {chave: ""}, [], []) == []
+
+
+def test_tui_config_aviso_vazio_do_segredo_some_ao_digitar():
+    campo = Campo(
+        Escopo.AMBIENTE,
+        TABELA_AMBIENTE,
+        SENHA,
+        TipoCampo.TEXTO,
+        "Senha",
+        segredo=True,
+        aviso_vazio=AVISO_VAZIO,
+    )
+
+    async def fluxo() -> None:
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(ConfigModal(_config([campo], [])))
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ConfigModal)
+            aviso = modal.query_one(f"#{modal.id_de(CHAVE_SENHA)}-aviso", Label)
+            assert str(aviso.content) == AVISO_VAZIO
+            assert aviso.display
+            modal.query_one(f"#{modal.id_de(CHAVE_SENHA)}", Input).value = SEGREDO
+            await pilot.pause()
+            assert not aviso.display
+
+    asyncio.run(fluxo())
+
+
+def test_tui_config_aviso_vazio_do_segredo_definido_volta_ao_apagar():
+    campo = Campo(
+        Escopo.AMBIENTE,
+        TABELA_AMBIENTE,
+        SENHA,
+        TipoCampo.TEXTO,
+        "Senha",
+        segredo=True,
+        aviso_vazio=AVISO_VAZIO,
+    )
+    lido = ValorLido(None, TABELA_AMBIENTE, SENHA, None, True, True)
+
+    async def fluxo() -> None:
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(ConfigModal(_config([campo], [lido])))
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ConfigModal)
+            aviso = modal.query_one(f"#{modal.id_de(CHAVE_SENHA)}-aviso", Label)
+            apagar = modal.query_one(f"#{modal.id_de(CHAVE_SENHA)}-apagar", Checkbox)
+            assert not aviso.display
+            apagar.value = True
+            await pilot.pause()
+            assert aviso.display
+
+    asyncio.run(fluxo())
+
+
+def test_tui_config_chave_de_dois_plugins_mostra_a_do_escolhido():
+    campos = [
+        Campo(
+            Escopo.GERAL,
+            Tabela.TAREFAS,
+            CHAVE_PROJETO,
+            TipoCampo.TEXTO,
+            nome,
+            origem=nome,
+            grupo=GrupoPlugin.TAREFAS,
+        )
+        for nome in (PLUGIN_A, PLUGIN_B)
+    ]
+    escolha = ValorLido(None, Tabela.TAREFAS, Chave.FONTE, PLUGIN_B, True, True)
+
+    async def fluxo() -> None:
+        app = _app()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(ConfigModal(_config(campos, [escolha], [NOME_REPO])))
+            await pilot.pause()
+            rotulos = [
+                str(r.content) for r in app.screen.query(".rotulo").results(Label)
+            ]
+            assert rotulos.count(PLUGIN_B) == 2  # aba Plugins e o repo
+            assert PLUGIN_A not in rotulos
+
+    asyncio.run(fluxo())

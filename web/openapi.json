@@ -1504,6 +1504,11 @@
             "title": "Exemplo",
             "default": ""
           },
+          "aviso_vazio": {
+            "type": "string",
+            "title": "Aviso Vazio",
+            "default": ""
+          },
           "grupo": {
             "anyOf": [
               {
@@ -2096,6 +2101,17 @@
               }
             ],
             "title": "Commit"
+          },
+          "subdiretorio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdiretorio"
           }
         },
         "type": "object",

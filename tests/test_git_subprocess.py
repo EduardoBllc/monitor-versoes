@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -408,6 +409,75 @@ def test_git_subprocess_commits_meta_nao_anda_pelos_ancestrais(tmp_path):
 
     assert set(lote) == {tip}
     assert lote[tip].parent != "", "esperava o primeiro pai preenchido"
+
+
+def test_lote_do_oraculo_igual_ao_por_commit(tmp_path):
+    """O lote substitui `patch_id`/`changed_files` em laco no oraculo: divergir
+    em raiz, rename, merge limpo ou commit vazio mudaria o veredito de presenca.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "checkout", "-b", "lado")
+    _run_git(repo_dir, "mv", "arquivo.txt", "renomeado.txt")
+    _run_git(repo_dir, "commit", "-m", "normal com rename")
+    _run_git(repo_dir, "checkout", "master")
+    _run_git(repo_dir, "merge", "--no-ff", "-m", "merge limpo", "lado")
+    _run_git(repo_dir, "commit", "--allow-empty", "-m", "vazio")
+
+    g = new_git_subprocess(repo_dir)
+    inexistente = "0" * 40
+    # raiz, normal com rename, merge limpo, vazio
+    hs = [g.resolve_ref(r) for r in ("master~2", "lado", "master^", "master")]
+    hs.append(inexistente)
+
+    def unitario(metodo, h):
+        try:
+            return metodo(h)
+        except MotorError:
+            return None
+
+    pids = {h: unitario(g.patch_id, h) for h in hs}
+    arquivos = {h: unitario(g.changed_files, h) for h in hs}
+    # sem o inexistente o lote roda inteiro; com ele, filtra os conhecidos e refaz
+    for lista in (hs[:-1], hs):
+        assert g.patch_ids(lista) == {h: pids[h] for h in lista if pids[h] is not None}
+        assert g.changed_files_lote(lista) == {
+            h: arquivos[h] for h in lista if arquivos[h] is not None
+        }
+    assert inexistente not in g.patch_ids(hs)
+    assert inexistente not in g.changed_files_lote(hs)
+
+
+def test_hash_desconhecido_nao_derruba_o_lote_para_um_processo_por_hash(
+    tmp_path, monkeypatch
+):
+    """Origem de PR squash com branch apagada no meio do lote: sem filtrar os
+    conhecidos, cada hash do lote voltava a custar um processo."""
+    repo_dir = init_repo_de_teste(tmp_path)
+    for i in range(20):
+        with open(os.path.join(repo_dir, f"f{i}.txt"), "w") as f:
+            f.write(f"{i}\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", f"c{i}")
+    g = new_git_subprocess(repo_dir)
+    hs = g._output(repo_dir, "rev-list", "master").split()
+    hs.insert(len(hs) // 2, "0" * 40)
+
+    processos = 0
+    original = subprocess.Popen
+
+    def contar(*args, **kwargs):
+        nonlocal processos
+        processos += 1
+        return original(*args, **kwargs)
+
+    # `subprocess.run` tambem sobe pelo Popen do modulo: conta todo processo
+    monkeypatch.setattr(subprocess, "Popen", contar)
+    # lote que falha, filtro dos conhecidos, lote refeito; o lote de patch-id
+    # e o par `show | patch-id`
+    for ler, esperados in ((g.patch_ids, 5), (g.changed_files_lote, 3)):
+        processos = 0
+        assert len(ler(hs)) == len(hs) - 1
+        assert processos == esperados
 
 
 def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):
@@ -1578,3 +1648,66 @@ def test_new_git_subprocess_nao_escreve_config_com_rerere_ja_ligado(tmp_path):
     (tmp_path / ".git" / "config.lock").write_text("")
 
     new_git_subprocess(repo_dir)
+
+
+def _par_origem_clone(tmp_path):
+    origem = tmp_path / "origem"
+    origem.mkdir()
+    _run_git(str(origem), "init", "-b", "master")
+    _config_identidade_local(str(origem))
+    (origem / "arquivo.txt").write_text("v1\n")
+    _run_git(str(origem), "add", "arquivo.txt")
+    _run_git(str(origem), "commit", "-m", "base")
+    _run_git(str(origem), "branch", "13.35.0")
+
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    _run_git(str(clone), "init", "-b", "master")
+    _config_identidade_local(str(clone))
+    _run_git(str(clone), "remote", "add", "origin", str(origem))
+    g = new_git_subprocess(str(clone))
+    g.fetch("origin")
+    return origem, clone, g
+
+
+def _commitar(dir_, nome: str) -> None:
+    (dir_ / nome).write_text(nome)
+    _run_git(str(dir_), "add", nome)
+    _run_git(str(dir_), "commit", "-m", nome)
+
+
+def test_avancar_para_remota_traz_commit_novo_sem_rede(tmp_path):
+    origem, clone, g = _par_origem_clone(tmp_path)
+    g.use_worktree("13.35.0")
+    _run_git(str(origem), "checkout", "13.35.0")
+    _commitar(origem, "novo.txt")
+    novo = _rev(str(origem), "HEAD")
+    g.fetch("origin")
+    _run_git(str(clone), "remote", "set-url", "origin", str(tmp_path / "inexistente"))
+
+    g.avancar_para_remota("13.35.0")
+
+    assert _rev(str(g._worktree_dir("13.35.0")), "HEAD") == novo
+
+
+def test_avancar_para_remota_sem_ref_de_rastreamento_e_noop(tmp_path):
+    _, clone, g = _par_origem_clone(tmp_path)
+    _run_git(str(clone), "branch", "13.36.0", "origin/13.35.0")
+    g.use_worktree("13.36.0")
+    antes = _rev(str(g._worktree_dir("13.36.0")), "HEAD")
+
+    g.avancar_para_remota("13.36.0")
+
+    assert _rev(str(g._worktree_dir("13.36.0")), "HEAD") == antes
+
+
+def test_avancar_para_remota_divergente_levanta(tmp_path):
+    origem, _, g = _par_origem_clone(tmp_path)
+    g.use_worktree("13.35.0")
+    _commitar(Path(g._worktree_dir("13.35.0")), "local.txt")
+    _run_git(str(origem), "checkout", "13.35.0")
+    _commitar(origem, "remoto.txt")
+    g.fetch("origin")
+
+    with pytest.raises(MotorError):
+        g.avancar_para_remota("13.35.0")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
 from motor.cronometro import Etapa, cronometrar
@@ -36,6 +37,7 @@ from motor.services.base_resolver import BaseResolver
 from motor.services.catalogo import Catalogo
 from motor.services.presence_oracle import PresenceOracle
 from motor.services.reconstrutor import varrer
+from motor.services.tarefas_adiantadas import TarefasAdiantadas
 from motor.services.target_resolver import TargetResolver
 
 logger = logging.getLogger(__name__)
@@ -192,6 +194,7 @@ def verificar(
     Por padrao, versao com tag devolve o snapshot congelado. Com ``auditar``,
     recalcula contra a tag sem alterar o snapshot nem criar worktree.
     """
+    versao = deps.versionamento().esquema.validar(versao)
     deps.progresso(Progresso("buscando refs do origin"))
 
     # Antes de ler as refs, nao depois: `fetch` e o unico ponto em que tag
@@ -200,14 +203,30 @@ def verificar(
     # `liberada_em` ainda NULL, e o congelamento abaixo seria pulado. O
     # substituir_atribuicoes do fim reescreveria o registro de uma versao que
     # ja saiu, que e exatamente a perda que o congelamento existe para evitar.
-    deps.git.fetch("origin")
-    return verificar_sem_fetch(
-        deps,
-        versao,
-        manter_worktree=manter_worktree,
-        auditar=auditar,
-        com_worktree=True,
-    )
+    #
+    # As tarefas da versao-alvo vem durante o fetch. Saindo antes de consulta-las
+    # (snapshot congelado, erro do fetch), resultado e erro da busca se perdem; o
+    # `with` espera a thread para a fonte nao seguir em uso depois do retorno.
+    # O plugin da fonte carrega na primeira `fetch`, ja na thread, e
+    # `FonteDaConfig.carregar` nao e thread-safe: nada na thread principal pode
+    # chamar `deps.referencia()` ou `deps.identidade_das_entradas()` antes do resolver.
+    # A busca adiantada já é leitura externa: a hora do carimbo congela antes dela.
+    inicio_da_varredura = deps.agora()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        adiantada = executor.submit(deps.tasks.fetch, versao)
+        deps.git.fetch("origin")
+        return verificar_sem_fetch(
+            replace(
+                deps,
+                tasks=TarefasAdiantadas(deps.tasks, versao, adiantada),
+                agora=lambda: inicio_da_varredura,
+            ),
+            versao,
+            manter_worktree=manter_worktree,
+            auditar=auditar,
+            com_worktree=True,
+        )
 
 
 def verificar_sem_fetch(
@@ -370,8 +389,7 @@ def preparar_worktree(deps: Deps, versao: str) -> None:
     with cronometrar(Etapa.WORKTREE):
         branch = deps.versionamento().branch(versao)
         deps.git.use_worktree(branch)
-        if deps.git.remote_branch_exists("origin", branch):
-            deps.git.pull_branch("origin", branch)
+        deps.git.avancar_para_remota(branch)
 
 
 def descartar_worktrees(deps: Deps, versao: str) -> None:
@@ -485,6 +503,8 @@ def _presenca(
 ) -> tuple[dict[str, Presence], list[CommitRef]]:
     presentes: dict[str, Presence] = {}
     suspeitos_conteudo: list[CommitRef] = []
+    ctx.oracle.precarregar_patch_ids(todos_os_hashes)
+    ctx.oracle.precarregar_arquivos(candidatos_conflito)
     for indice, (hash_, c) in enumerate(todos_os_hashes.items(), start=1):
         ctx.deps.progresso(
             Progresso("presença dos commits", indice, len(todos_os_hashes))

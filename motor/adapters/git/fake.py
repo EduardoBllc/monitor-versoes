@@ -67,7 +67,7 @@ class FakeGit:
     # fixture: patch-id por commit; ausente = "patchid-<hash>". Existe porque
     # dois commits distintos com o MESMO patch (branch rebasada e depois
     # mergeada de volta) e caso real, e o default por hash nao o representa.
-    patch_ids: dict[str, str] = field(default_factory=dict)
+    patch_id_por_commit: dict[str, str] = field(default_factory=dict)
     merge_predictions: dict[str, MergePrediction] = field(default_factory=dict)
     # fixture: commit conflitante -> arquivo -> commits culpados por linha.
     culpados_por_linha_por_commit: dict[str, dict[str, list[CommitRef]]] = field(
@@ -80,7 +80,7 @@ class FakeGit:
     )
     pulled: list[str] = field(
         default_factory=list
-    )  # espiao de teste: branches que sofreram pull_branch
+    )  # espiao de teste: branches avancadas por avancar_para_remota
     fetched: list[str] = field(
         default_factory=list
     )  # espiao de teste: remotos que sofreram fetch
@@ -222,12 +222,27 @@ class FakeGit:
     def patch_id(self, hash: str, /) -> str:
         if hash not in self.commits:
             raise NaoEncontrado(f"commit {hash} nao encontrado")
-        return self.patch_ids.get(hash, "patchid-" + hash)
+        return self._patch_id_conhecido(hash)
+
+    def _patch_id_conhecido(self, hash: str) -> str:
+        return self.patch_id_por_commit.get(hash, "patchid-" + hash)
 
     def changed_files(self, hash: str, /) -> frozenset[str]:
         if hash not in self.commits:
             raise NaoEncontrado(f"commit {hash} nao encontrado")
         return self.file_changes.get(hash, frozenset())
+
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        # sem passar por `patch_id` (nem `changed_files` no outro): espiao de
+        # teste conta unitario e lote em separado
+        return {h: self._patch_id_conhecido(h) for h in hashes if h in self.commits}
+
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        return {
+            h: self.file_changes.get(h, frozenset())
+            for h in hashes
+            if h in self.commits
+        }
 
     def resolve_ref(self, ref: str, /) -> str:
         if (m := _PREFIXO_REF_REMOTA.match(ref)) is not None:
@@ -422,10 +437,9 @@ class FakeGit:
             raise NaoEncontrado(f"branch {branch} nao existe")
         self.remotes[branch] = True
 
-    def pull_branch(self, remote: str, branch: str, /) -> None:
-        if branch not in self.branches:
-            raise NaoEncontrado(f"branch {branch} nao existe")
-        self.pulled.append(branch)
+    def avancar_para_remota(self, branch: str, /) -> None:
+        if branch in self.remote_refs:
+            self.pulled.append(branch)
 
     def fetch(self, remote: str, /) -> None:
         self.fetched.append(remote)

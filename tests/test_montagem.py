@@ -156,6 +156,28 @@ def test_construtor_do_host_que_levanta_vira_erro_de_entrada():
             host.prs_mergeadas(None)
 
 
+def test_fechar_chega_ao_plugin_carregado(monkeypatch):
+    fechados: list[bool] = []
+    monkeypatch.setattr(
+        HostFalso, "fechar", lambda self: fechados.append(True), raising=False
+    )
+    host = HostDaConfig(_config_com_host(), lambda: "")
+    host.commits_da_pr(1)
+
+    host.fechar()
+
+    assert fechados == [True]
+
+
+def test_fechar_sem_carregar_nao_instancia_o_plugin():
+    recebidos = len(HostFalso.recebidos)
+    host = HostDaConfig(_config_com_host(), lambda: "")
+
+    host.fechar()
+
+    assert len(HostFalso.recebidos) == recebidos
+
+
 def test_host_recebe_prs_arquivos_e_remote_nomeados():
     remotes: list[int] = []
 

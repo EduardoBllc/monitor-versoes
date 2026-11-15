@@ -100,8 +100,10 @@ class HostPr(Protocol):
     (docs/decisoes/036-fonte-de-pr-plugavel.md).
 
     Opcionais, lidos so se existirem: `verificar_credenciais()`, chamado pelo
-    `monitor-versoes diagnostico`, e `campos_config`, as chaves que o plugin
-    declara para a modal de configuracao.
+    `monitor-versoes diagnostico` (devolve `None` ao verificar, ou o motivo de
+    nao ter verificado); `fechar()`, chamado pelo nucleo ao fim de cada busca
+    para liberar conexoes e que nao deve levantar; e `campos_config`, as
+    chaves que o plugin declara para a modal de configuracao.
     """
 
     def prs_mergeadas(self, desde: datetime.datetime | None, /) -> Iterable[PrIndex]:
@@ -116,6 +118,7 @@ class HostPr(Protocol):
         """Commits da PR, sem merge commits e sem `chamado`.
 
         O nucleo cacheia o que vier: o filtro de merge commit tem de vir antes.
+        Pode ser chamada de várias threads ao mesmo tempo.
         """
         ...
 
@@ -125,7 +128,7 @@ class GitRepo(Protocol):
 
     **Assimetria entre fake e adapter:** FakeGit levanta `NaoEncontrado` em
     `merge_base`, `commit_meta`, `patch_id`, `changed_files`, `resolve_ref`,
-    `cherry_pick_x`, `remote_url`, `push_branch`, `pull_branch` e `read_file`.
+    `cherry_pick_x`, `remote_url`, `push_branch` e `read_file`.
     `GitSubprocess` funila essas mesmas condições por um `exit status` genérico
     sem classe — porque não sabe se falhou por conflito, permissão, objeto
     ausente ou bug de invocação, e adivinhar seria pior. **Não ramifique em
@@ -183,6 +186,14 @@ class GitRepo(Protocol):
 
     def changed_files(self, hash: str, /) -> frozenset[str]:
         """Caminhos alterados pelo commit (para o nível 4 do oráculo de presença)."""
+        ...
+
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        """`patch_id` em lote, de hashes completos; desconhecido, abreviado ou sem patch falta no retorno."""
+        ...
+
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        """`changed_files` em lote, de hashes completos; desconhecido ou abreviado falta no retorno."""
         ...
 
     def resolve_ref(self, ref: str, /) -> str:
@@ -290,8 +301,8 @@ class GitRepo(Protocol):
         """Publica branch no remoto (-u)."""
         ...
 
-    def pull_branch(self, remote: str, branch: str, /) -> None:
-        """Atualiza a branch local com o remoto (fast-forward only)."""
+    def avancar_para_remota(self, branch: str, /) -> None:
+        """Fast-forward da worktree até origin/<branch>, sem rede; no-op sem a ref."""
         ...
 
     def fetch(self, remote: str, /) -> None:
