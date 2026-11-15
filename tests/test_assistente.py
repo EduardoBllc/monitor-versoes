@@ -20,7 +20,7 @@ from prompt_toolkit.output import DummyOutput
 from motor import agendador, assistente, instalacao, plugins, servico
 from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
 from motor.agendador import ARQUIVO_TIMER, FLAG_AGORA, SYSTEMCTL, Acao, Sistema
-from motor.assistente import SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
+from motor.assistente import EMBUTIDOS, SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
     VAR_XDG_CACHE_HOME,
@@ -56,6 +56,7 @@ OUTRA_FONTE = "outra"
 HOST_NOVO = "host"
 WINDOWS = "win32"
 BITBUCKET = "bitbucket"
+NOMES_TAREFAS = [e.nome for e in EMBUTIDOS[GrupoPlugin.TAREFAS]]
 
 LIGAR = [
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
@@ -147,6 +148,15 @@ def cen(monkeypatch, tmp_path) -> Cenario:
     return c
 
 
+def _subir_ate(nome: str) -> str:
+    """Teclas de "Lista manual" (o padrão) até o embutido de tarefas `nome`."""
+    return CIMA * (len(NOMES_TAREFAS) - NOMES_TAREFAS.index(nome))
+
+
+def _descer_ate_lista_manual(atual: str) -> str:
+    return BAIXO * (len(NOMES_TAREFAS) - NOMES_TAREFAS.index(atual))
+
+
 def _rodar(
     *teclas: str, plataforma: str = Sistema.LINUX, comando: str = COMANDO_CONFIGURAR
 ) -> int:
@@ -164,7 +174,7 @@ def _rodar(
 
 
 def test_configurar_grava_so_as_duas_chaves(cen):
-    assert _rodar(CIMA, ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
+    assert _rodar(_subir_ate(JIRA), ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
     assert cen.config.read_text() == f"{cen.original}\n{COM_FONTES}"
 
 
@@ -172,7 +182,7 @@ def test_configurar_grava_so_as_duas_chaves(cen):
     ("teclas", "fontes"),
     [
         ((ENTER, ENTER, ENTER), {Tabela.TAREFAS: JIRA, Tabela.PRS: BITBUCKET}),
-        ((BAIXO, ENTER, BAIXO, ENTER, ENTER), {}),
+        ((_descer_ate_lista_manual(JIRA), ENTER, BAIXO, ENTER, ENTER), {}),
     ],
     ids=["mantem", "lista-manual-e-nenhuma"],
 )
@@ -184,19 +194,20 @@ def test_reconfigurar_parte_do_valor_atual(cen, teclas, fontes):
         assert cen.config.read_text() == cen.original
 
 
-def test_embutido_nao_instalado_instala_pelo_repo_do_motor(cen):
+@pytest.mark.parametrize("nome", NOMES_TAREFAS)
+def test_embutido_nao_instalado_instala_pelo_repo_do_motor(cen, nome):
     cen.pontos[GrupoPlugin.TAREFAS] = {}
-    cen.pacote = {GrupoPlugin.TAREFAS: {JIRA: FONTE}}
-    assert _rodar(CIMA, ENTER, ENTER, ENTER) == CodigoSaida.OK
+    cen.pacote = {GrupoPlugin.TAREFAS: {nome: FONTE}}
+    assert _rodar(_subir_ate(nome), ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert cen.instalados == [
-        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_PLUGINS}{JIRA}"
+        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_PLUGINS}{nome}"
     ]
-    assert cen.fontes() == {Tabela.TAREFAS: JIRA}
+    assert cen.fontes() == {Tabela.TAREFAS: nome}
 
 
 def test_embutido_instalado_sem_a_fonte_avisa_e_volta(cen, capsys):
     cen.pontos[GrupoPlugin.TAREFAS] = {}
-    assert _rodar(CIMA, ENTER, ENTER, ENTER, ENTER) == CodigoSaida.OK
+    assert _rodar(_subir_ate(JIRA), ENTER, ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert f"não registrou a fonte {JIRA}" in capsys.readouterr().out
     assert cen.config.read_text() == cen.original
 
@@ -255,7 +266,7 @@ def test_outro_plugin_sem_fonte_avisa_e_volta(cen, capsys):
 def test_ctrl_c_nao_grava(cen):
     cen.pontos[GrupoPlugin.TAREFAS] = {}
     cen.pacote = {GrupoPlugin.TAREFAS: {JIRA: FONTE}}
-    assert _rodar(CIMA, ENTER, CTRL_C) == CodigoSaida.INTERROMPIDO
+    assert _rodar(_subir_ate(JIRA), ENTER, CTRL_C) == CodigoSaida.INTERROMPIDO
     assert cen.config.read_text() == cen.original
     assert cen.comandos == []
     assert len(cen.instalados) == 1
