@@ -10,12 +10,14 @@ token, vira erro de entrada.
 
 ## Instalação
 
+Escolha o GitLab Issues no `monitor-versoes configurar`, ou:
+
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0 --with "monitor-versoes-gitlab @ git+https://github.com/EduardoBllc/monitor-versoes@v0.2.0#subdirectory=plugins/gitlab" # x-release-please-version
+monitor-versoes plugin instalar "git+https://github.com/EduardoBllc/monitor-versoes#subdirectory=plugins/gitlab"
 ```
 
-As tags do núcleo e do plugin devem ser a mesma. Para atualizar, rode o comando de novo com a
-nova tag nas duas URLs (veja "Instalação" no [README principal](../../README.md)).
+O plugin acompanha a tag do motor, e o `monitor-versoes atualizar-motor` o atualiza junto
+(veja "Instalação" no [README principal](../../README.md)).
 
 ## Configuração
 

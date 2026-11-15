@@ -21,7 +21,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
-from motor import cli_instalacao
+from motor import cli_instalacao, servico
+from motor.adapters.estado.engine import garantir_esquema
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
@@ -32,12 +33,13 @@ from motor.config import (
     carregar_config_global,
     carregar_config_repo,
     checar_backend,
+    database_url,
     repos_configurados,
     validar_nome_repo,
 )
 from motor.daemon import PORTA_PADRAO
 from motor.daemon.disparo import rodada
-from motor.diagnostico import diagnosticar, falhou, formatar
+from motor.diagnostico import diagnosticar, falhou, formatar, peca_daemon
 from motor.domain.commits import agrupar_por_chamado
 from motor.domain.inscricao import Desfecho, Resultado
 from motor.domain.referencia import FonteReferencia, formatar_referencia
@@ -61,7 +63,13 @@ from motor.engine.orfaos import (
 )
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, formatar_com_notas
+from motor.errors import (
+    CodigoSaida,
+    ErroDeEntrada,
+    MotorError,
+    RepoOcupado,
+    formatar_com_notas,
+)
 from motor.inscricoes import (
     INTERVALO_PADRAO,
     Inscricao,
@@ -171,7 +179,7 @@ def _migrar(_args: argparse.Namespace) -> None:
     print("migrações aplicadas")
 
 
-def _diagnostico(args: argparse.Namespace) -> None:
+def _imprimir_diagnostico(args: argparse.Namespace) -> bool:
     resultados = diagnosticar(
         os.environ,
         abrir_sessao=abrir_sessao,
@@ -183,13 +191,39 @@ def _diagnostico(args: argparse.Namespace) -> None:
         erro_ambiente=args.erro_central,
         novidades=novidades_do_cache,
     )
+    resultados.append(
+        peca_daemon(servico.situacao(Path.home(), servico.consultar_do_sistema))
+    )
     for resultado in resultados:
         print(formatar(resultado))
-    if falhou(resultados):
-        sys.exit(1)
+    return falhou(resultados)
+
+
+def _diagnostico(args: argparse.Namespace) -> None:
+    if _imprimir_diagnostico(args):
+        sys.exit(CodigoSaida.ERRO)
+
+
+def _configurar(args: argparse.Namespace) -> None:
+    from motor import assistente
+
+    def diagnosticar_migrado() -> bool:
+        # Sem isto, a primeira instalação acusaria FALHA na migração: nada abriu o banco ainda.
+        with contextlib.suppress(MotorError, OSError):
+            garantir_esquema(database_url())
+        return _imprimir_diagnostico(args)
+
+    assistente.configurar(diagnosticar_migrado)
+
+
+def _desinstalar(args: argparse.Namespace) -> None:
+    from motor import assistente
+
+    assistente.desinstalar()
 
 
 COMANDO_SERVE = "serve"
+COMANDO_DESINSTALAR = "desinstalar"
 COMANDO_TUI = "tui"
 COMANDO_INSCRICAO = "inscricao"
 
@@ -286,6 +320,8 @@ def _inscricao(args: argparse.Namespace) -> None:
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "migrar": _migrar,
     "diagnostico": _diagnostico,
+    servico.COMANDO_CONFIGURAR: _configurar,
+    COMANDO_DESINSTALAR: _desinstalar,
     COMANDO_INSCRICAO: _inscricao,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
@@ -431,6 +467,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_serve = sub.add_parser(COMANDO_SERVE, help="sobe a interface web local")
     p_serve.add_argument("--porta", type=int, default=PORTA_PADRAO)
+    p_serve.add_argument(
+        "--sem-navegador",
+        action="store_true",
+        help="não abre o navegador ao subir (o serviço de login usa)",
+    )
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
@@ -438,6 +479,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "diagnostico",
         help="checa cada peça da instalação e diz como corrigir o que falhar",
     )
+
+    sub.add_parser(
+        servico.COMANDO_CONFIGURAR,
+        help="assistente interativo: fontes, início no login e próximos passos",
+    )
+
+    sub.add_parser(COMANDO_DESINSTALAR)  # interno do install.sh: sem help
 
     p_insc = sub.add_parser(
         COMANDO_INSCRICAO, help="acompanha versões em segundo plano"
@@ -469,10 +517,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _iniciar_serve(porta: int, ambiente_filhos: Mapping[str, str]) -> None:
+def _iniciar_serve(
+    porta: int, ambiente_filhos: Mapping[str, str], abrir_navegador: bool
+) -> None:
     from motor.daemon.app import servir
 
-    servir(porta, ambiente_filhos)
+    servir(porta, ambiente_filhos, abrir_navegador)
 
 
 def _iniciar_tui() -> None:
@@ -774,6 +824,7 @@ _SEM_AVISO = frozenset(
         COMANDO_SERVE,
         COMANDO_TUI,
         COMANDO_INSCRICAO,
+        COMANDO_DESINSTALAR,
         cli_instalacao.COMANDO_PLUGIN,
         cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
     }
@@ -829,7 +880,7 @@ def main(argv: list[str] | None = None) -> None:
                 checar_backend()
 
             if args.comando == COMANDO_SERVE:
-                _iniciar_serve(args.porta, ambiente_filhos)
+                _iniciar_serve(args.porta, ambiente_filhos, not args.sem_navegador)
                 return
 
             if args.comando == COMANDO_TUI:
@@ -860,7 +911,7 @@ def main(argv: list[str] | None = None) -> None:
                     _limpar_progresso(relator)
         except MotorError as e:
             logging.error(formatar_com_notas(e))
-            sys.exit(1)
+            sys.exit(CodigoSaida.ERRO)
         except Exception:
             logging.exception("Erro interno fatal (bug). Traceback completo:")
             sys.exit(1)

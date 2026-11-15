@@ -20,6 +20,16 @@ O que deliberadamente NAO tem classe:
   `main()` ja roteia para o caminho de traceback.
 """
 
+from enum import IntEnum
+
+
+class CodigoSaida(IntEnum):
+    OK = 0
+    ERRO = 1
+    USO = 2  # o do argparse
+    ORIGEM_RECUSADA = 3
+    INTERROMPIDO = 130
+
 
 class MotorError(Exception):
     """Base de tudo o que o motor levanta de proposito."""
@@ -73,6 +83,10 @@ class ErroDeEntrada(MotorError):
     Variavel faltando no .env, flag incompativel, numero de versao malformado,
     campo de formulario invalido na TUI. Nao sai de porta nenhuma.
     """
+
+
+class OrigemRecusada(ErroDeEntrada):
+    """O registro do `uv` tem uma origem que o motor não sabe reinstalar."""
 
 
 class RepoOcupado(ErroDeEntrada):

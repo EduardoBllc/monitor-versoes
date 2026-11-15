@@ -1,0 +1,1 @@
+PLATAFORMA_WINDOWS = "win32"

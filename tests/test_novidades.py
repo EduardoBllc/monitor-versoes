@@ -48,6 +48,10 @@ URL_PLUGIN = "https://github.com/EduardoBllc/monitor-versoes-extra"
 COMMIT_ANTIGO = "a" * 40
 COMMIT_NOVO = "b" * 40
 COMANDO_MOTOR = f"{PACOTE_MOTOR} atualizar-motor"
+PLUGIN_JIRA = "monitor-versoes-jira"
+SUBDIR_JIRA = "plugins/jira"
+TAG_MOTOR = "v0.2.0"
+TAG_NOVA = "v0.3.0"
 AGORA = datetime(2026, 1, 1, 12, tzinfo=UTC)
 
 
@@ -172,6 +176,18 @@ def test_checar(
     esperado: tuple[Novidade, ...],
 ) -> None:
     assert checar(registro, instalados, _rodar_fixo(saida)).novidades == esperado
+
+
+def test_checar_ignora_plugins_do_repo_do_motor() -> None:
+    jira = Requisito(
+        PLUGIN_JIRA, git=URL_MOTOR, ref=TAG_MOTOR, subdiretorio=SUBDIR_JIRA
+    )
+    reg = Registro(Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG_MOTOR), (jira,))
+    instalados = {PACOTE_MOTOR: Origem(TipoOrigem.GIT, url=URL_MOTOR)}
+
+    achadas = checar(reg, instalados, _rodar_fixo(_remoto(tags=(TAG_MOTOR, TAG_NOVA))))
+
+    assert [n.pacote for n in achadas.novidades] == [PACOTE_MOTOR]
 
 
 def test_checar_aponta_origem_sem_resposta() -> None:

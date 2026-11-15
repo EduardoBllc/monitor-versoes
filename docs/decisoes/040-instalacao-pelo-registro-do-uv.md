@@ -18,7 +18,8 @@ instalou à mão entra nos comandos sem migrar nada.
 inteiro, e uma origem que aponta para uma branch puxaria a versão nova daquele plugin sem
 pedido. Fixada, instalar o plugin B não muda o A. A origem ainda solta, de instalações
 antigas, é fixada no commit já instalado na próxima ação que de fato reinstala: um "tudo em
-dia" não reinstala nada e a deixa como está. Só uma versão nova move uma origem, inclusive a
+dia" não reinstala nada e a deixa como está. A pasta local é exceção
+([042](042-instalador-e-daemon-no-login.md)). Só uma versão nova move uma origem, inclusive a
 do motor no `atualizar-motor`. Um commit à frente da última tag conta pela versão do pacote
 e não volta para a tag, então atualizar nunca rebaixa. Um plugin publicado por nome só
 reinstala com `plugin atualizar <pacote>`: no índice não há como saber se mudou, e contá-lo

@@ -20,6 +20,9 @@ from motor.errors import BackendIndisponivel, ErroDeEntrada
 SO_SEM_AGENDADOR = "win32"
 
 
+MOTIVO_FALHA = "falhou"
+
+
 class Registro:
     def __init__(self, falhar_em: str | None = None) -> None:
         self.comandos: list[list[str]] = []
@@ -28,7 +31,7 @@ class Registro:
     def __call__(self, cmd: list[str]) -> None:
         self.comandos.append(cmd)
         if self.falhar_em and self.falhar_em in cmd:
-            raise BackendIndisponivel("falhou")
+            raise BackendIndisponivel(MOTIVO_FALHA)
 
 
 def _instalar(sistema: Sistema, home: Path, monkeypatch: pytest.MonkeyPatch) -> None:

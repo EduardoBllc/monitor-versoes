@@ -56,10 +56,17 @@ uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc
 
 Plugins e atualizações passam pelo próprio motor. Um plugin vem por nome publicado ou por URL
 git (`https://…` ou `git@…`, inclusive de repositório privado, com a sua credencial), com
-`@<ref>` opcional no fim para uma tag ou um commit; caminho local não é aceito:
+`@<ref>` opcional no fim para uma tag ou um commit, e `#subdirectory=<pasta>` para um pacote
+dentro do repo. Uma pasta local também vale: ela é instalada como está, sem tag, e toda
+reinstalação a reconstrói dela, então a pasta tem de continuar no lugar (uma pasta editável é
+recusada). Os plugins do próprio repo do motor, como o Jira, ficam na tag do motor: o
+`plugin listar` os mostra como "repo do motor", sem aviso próprio, e só o `atualizar-motor`
+os move:
 
 ```bash
 monitor-versoes plugin instalar https://github.com/voce/meu-plugin.git
+monitor-versoes plugin instalar ~/projetos/meu-plugin                 # pasta local
+monitor-versoes plugin instalar "git+https://github.com/voce/repo#subdirectory=plugins/x"
 monitor-versoes plugin listar                # por grupo: pacote, versão, origem e versão nova
 monitor-versoes plugin atualizar [<pacote>]  # sem pacote, todos os de fora
 monitor-versoes plugin remover <pacote>      # o pacote, como o `plugin listar` mostra
@@ -73,7 +80,8 @@ fixa cada origem git numa tag ou num commit: nada muda de versão sem pedido. Um
 ainda solta, de instalação antiga, é fixada na próxima reinstalação; "tudo em dia" não
 reinstala. Um commit à frente da última tag conta pela versão do pacote e não volta para a
 tag: atualizar nunca rebaixa. No fim, ele diz o que
-mudou; se o `monitor-versoes serve` estiver rodando, reinicie-o. As mudanças de cada versão
+mudou; se o `monitor-versoes serve` estiver rodando, reinicie-o (com o início no login, que o
+`configurar` liga, o serviço reinicia sozinho). As mudanças de cada versão
 estão no [CHANGELOG.md](CHANGELOG.md).
 
 No máximo uma vez por dia, sem atrasar o comando, o motor confere se há versão nova do motor
@@ -86,7 +94,37 @@ checagem e os avisos, no `config.toml` central:
 checar = false
 ```
 
-O porquê: [040](docs/decisoes/040-instalacao-pelo-registro-do-uv.md).
+O porquê: [040](docs/decisoes/040-instalacao-pelo-registro-do-uv.md) e, para a pasta local e
+os plugins do repo do motor, [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
+
+### Configurar no terminal
+
+```bash
+monitor-versoes configurar
+```
+
+O assistente (precisa de terminal) pergunta, com setas, a fonte de tarefas e o host de PR, e
+grava só `[tarefas] fonte` e `[prs] fonte` no `config.toml` central: as outras chaves e os
+comentários ficam. Ao reconfigurar, cada pergunta vem com o valor atual marcado; "Lista
+manual" e "Nenhuma" removem a chave. Escolher um plugin que não está instalado o instala (o
+Jira, na tag do motor), e "Outro plugin" aceita caminho ou URL. As demais chaves de cada
+plugin se editam na web ou no arquivo.
+
+Em Linux e macOS ele também pergunta se o `serve` deve subir no login (padrão Sim na primeira
+configuração e, depois, o estado atual). Ligado, vira um serviço de usuário (systemd) ou um
+LaunchAgent, sem root, que roda `serve --sem-navegador` pelo executável do `uv` e é
+reiniciado após `plugin instalar`, `plugin remover`, `plugin atualizar`, `atualizar-motor`
+e `configurar`. Subir sem login fica fora. No Windows a pergunta não aparece. O `diagnostico` mostra a peça "Daemon". Ao fechar,
+o assistente roda o `diagnostico` e só oferece abrir o navegador se o `serve` responde.
+O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
+
+### Desinstalar
+
+O `install.sh --desinstalar` remove o serviço do login, o timer antigo das inscrições, a
+ferramenta e os plugins. Config, estado, inscrições e cache ficam, e os caminhos são
+impressos; ele só os apaga se você responder sim (padrão não, e sem terminal ficam sempre).
+Sem o motor, ou com ele quebrado, o script ainda remove os serviços e mantém os dados. À
+mão: `uv tool uninstall monitor-versoes`.
 
 Versões antigas instalavam o executável como `motor`; hoje ele é só `monitor-versoes`. Quem
 agenda o `inscricao rodar` à mão (veja "Sem o daemon") deve conferir o caminho absoluto do
@@ -318,6 +356,7 @@ o resto.
 
 `monitor-versoes serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
 (padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
+`--sem-navegador` sobe sem abrir o navegador: é como o serviço de login o roda.
 
 As operações seguem rodando se a aba fechar. O porquê em
 [decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md).
