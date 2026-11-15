@@ -13,7 +13,12 @@ from typing import Any
 import httpx
 import pytest
 
-from motor.adapters.commitsource.bitbucket import BitbucketPrs, parse_workspace_repo
+from motor.adapters.commitsource.bitbucket import (
+    _CAMPOS_COMMITS,
+    _CAMPOS_PRS,
+    BitbucketPrs,
+    parse_workspace_repo,
+)
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 # Corpo de JSON da API, igual ao alias do adapter.
@@ -115,6 +120,17 @@ def test_desde_vira_filtro_updated_on():
     assert "q" not in buscas[0].url.params
     assert buscas[1].url.params["q"] == f'updated_on >= "{desde.isoformat()}"'
     assert buscas[1].url.params["state"] == "MERGED"
+
+
+def test_pede_so_os_campos_usados():
+    buscas: list[httpx.Request] = []
+    host = _host(_handler_pr([], buscas=buscas))
+
+    host.prs_mergeadas(None)
+    host.commits_da_pr(7)
+
+    assert buscas[0].url.params["fields"] == _CAMPOS_PRS
+    assert buscas[1].url.params["fields"] == _CAMPOS_COMMITS
 
 
 def test_paginacao_segue_next():
