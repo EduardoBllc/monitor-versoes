@@ -26,11 +26,11 @@ from motor.instalacao import (
     Origem,
     Registro,
     Requisito,
+    TipoOrigem,
     do_repo_do_motor,
     ler_registro,
     normalizar,
     origens_instaladas,
-    url_do_motor,
 )
 
 ARQUIVO_CACHE = "novidades.json"
@@ -240,7 +240,8 @@ def checar(
     versao_instalada: VersaoInstalada = _versao_do_pacote,
 ) -> Checagem:
     achadas, sem_resposta, respondeu = [], [], False
-    url_motor = url_do_motor()
+    do_motor = instalados.get(PACOTE_MOTOR)
+    url_motor = do_motor.url if do_motor and do_motor.tipo is TipoOrigem.GIT else None
     for r in (reg.motor, *reg.plugins):
         # O plugin do repo do motor anda com a tag do motor: não tem versão própria.
         if r.git is None or do_repo_do_motor(r.git, r.subdiretorio, url_motor):

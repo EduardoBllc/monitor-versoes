@@ -256,7 +256,7 @@ def _atualizar(
         return replace(r, ref=ref_mais_nova(saida))
 
     novo = replace(reg, motor=alvo(reg.motor), plugins=tuple(map(alvo, reg.plugins)))
-    if normalizar(PACOTE_MOTOR) in nomes:
+    if normalizar(PACOTE_MOTOR) in nomes and novo.motor.ref is not None:
         novo = replace(
             novo,
             plugins=tuple(

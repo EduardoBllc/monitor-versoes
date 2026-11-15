@@ -139,7 +139,6 @@ def inst(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Instalacao:
     monkeypatch.setattr(cli_instalacao, "plugins_instalados", lambda: PLUGINS)
     monkeypatch.setattr(instalacao, "plugins_instalados", lambda: PLUGINS)
     monkeypatch.setattr(cli_instalacao, "url_do_motor", lambda: URL_MOTOR)
-    monkeypatch.setattr(novidades, "url_do_motor", lambda: URL_MOTOR)
     return falsa
 
 
@@ -639,3 +638,15 @@ def test_atualizar_motor_em_dia_alinha_plugin_do_repo_a_tag_do_motor(
     assert inst.comandos == [
         [*INICIO, LINHA_MOTOR, ArgUv.WITH, LINHA_JIRA.format(ref=TAG_MOTOR)]
     ]
+
+
+def test_atualizar_motor_sem_ref_nao_apaga_a_tag_do_plugin_do_repo(
+    inst: Instalacao,
+) -> None:
+    inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR,))
+    sem_ref = replace(MOTOR, ref=None)
+    inst.registros = [Registro(sem_ref, (_jira(TAG_MOTOR),))]
+
+    main([COMANDO_ATUALIZAR_MOTOR])
+
+    assert inst.comandos == []

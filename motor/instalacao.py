@@ -80,7 +80,7 @@ class ChaveDirectUrl(StrEnum):
     DIR = "dir_info"
     REVISAO = "requested_revision"
     COMMIT = "commit_id"
-    SUBDIRETORIO = "subdirectory"
+    SUBDIRETORIO = PARAMETRO_SUBDIRETORIO
 
 
 @dataclass(frozen=True)
