@@ -186,11 +186,11 @@ class GitRepo(Protocol):
         ...
 
     def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
-        """`patch_id` em lote; desconhecido ou sem patch falta no retorno."""
+        """`patch_id` em lote, de hashes completos; desconhecido, abreviado ou sem patch falta no retorno."""
         ...
 
     def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
-        """`changed_files` em lote; desconhecido falta no retorno."""
+        """`changed_files` em lote, de hashes completos; desconhecido ou abreviado falta no retorno."""
         ...
 
     def resolve_ref(self, ref: str, /) -> str:
