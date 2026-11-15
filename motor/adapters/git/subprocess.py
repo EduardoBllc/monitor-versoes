@@ -56,8 +56,8 @@ _LOTE_META = 500
 _PADRAO_CONFLITO = re.compile(r"^CONFLICT \([^)]*\): .* in (\S.*)$")
 _PADRAO_HUNK_ORIGEM = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 # So refs/remotes/origin/: e o unico remoto que o motor usa (todo entry point
-# faz fetch("origin"), e push/remote_branch_exists/avancar_para_remota fixam
-# o literal).
+# faz fetch("origin"), os chamadores de push/remote_branch_exists passam o
+# literal e avancar_para_remota o fixa).
 # Aceitar qualquer remoto aqui punha no conjunto aberto uma versao que o
 # BaseResolver depois nao resolve — ele so tenta refs/remotes/origin/.
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")

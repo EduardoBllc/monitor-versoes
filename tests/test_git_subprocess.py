@@ -1635,7 +1635,6 @@ def test_avancar_para_remota_sem_ref_de_rastreamento_e_noop(tmp_path):
 def test_avancar_para_remota_divergente_levanta(tmp_path):
     origem, _, g = _par_origem_clone(tmp_path)
     g.use_worktree("13.35.0")
-    _config_identidade_local(g._worktree_dir("13.35.0"))
     _commitar(Path(g._worktree_dir("13.35.0")), "local.txt")
     _run_git(str(origem), "checkout", "13.35.0")
     _commitar(origem, "remoto.txt")
