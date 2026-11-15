@@ -1488,6 +1488,7 @@ def test_verificar_debug_loga_tempo_de_cada_etapa(caplog):
         "worktree",
         "base",
         "tarefas",
+        "tarefas da versão-alvo, durante o fetch",
         "oráculo de presença",
         "simulação de conflitos",
         "gravação",

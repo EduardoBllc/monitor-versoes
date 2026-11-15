@@ -15,6 +15,7 @@ class Etapa(StrEnum):
     WORKTREE = "worktree"
     BASE = "base"
     TAREFAS = "tarefas"
+    TAREFAS_ALVO = "tarefas da versão-alvo, durante o fetch"
     VARREDURA_PRS = "varredura de PRs"
     COMMITS_PRS = "commits das PRs"
     ORACULO = "oráculo de presença"

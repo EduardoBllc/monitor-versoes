@@ -213,8 +213,13 @@ def verificar(
     # A busca adiantada já é leitura externa: a hora do carimbo congela antes dela.
     inicio_da_varredura = deps.agora()
 
+    def buscar_alvo() -> list[str]:
+        # Sem isto o custo da fonte some do --debug: `etapa tarefas` só mede a espera.
+        with cronometrar(Etapa.TAREFAS_ALVO):
+            return deps.tasks.fetch(versao)
+
     with ThreadPoolExecutor(max_workers=1) as executor:
-        adiantada = executor.submit(deps.tasks.fetch, versao)
+        adiantada = executor.submit(buscar_alvo)
         deps.git.fetch("origin")
         return verificar_sem_fetch(
             replace(
