@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from motor.config_edicao import GrupoPlugin
-from motor.errors import ErroDeEntrada
+from motor.errors import ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
     ARQUIVO_REGISTRO,
     PACOTE_MOTOR,
@@ -98,7 +98,7 @@ class DistFalsa:
             Origem(TipoOrigem.GIT, url=URL_PLUGIN, commit="abc123"),
         ),
         (None, Origem(TipoOrigem.INDICE)),
-        ({"url": "file:///x", "dir_info": {}}, Origem(TipoOrigem.LOCAL)),
+        ({"url": "file:///x/p", "dir_info": {}}, Origem(TipoOrigem.LOCAL, url="/x/p")),
     ],
 )
 def test_origem_do_pacote(direct_url: dict[str, Any] | None, esperado: Origem) -> None:
@@ -175,7 +175,6 @@ def test_fixar_soltos_mantem_tag_e_commit(ref: str) -> None:
 @pytest.mark.parametrize(
     "fonte",
     [
-        'directory = "/home/x/meu-plugin"',
         'editable = "/home/x/meu-plugin"',
         'path = "/home/x/meu_plugin-1.0-py3-none-any.whl"',
         'url = "https://example.com/meu_plugin-1.0.tar.gz"',
@@ -191,8 +190,26 @@ requirements = [
 ]
 """
     )
-    with pytest.raises(ErroDeEntrada, match=f"{PLUGIN}.*git ou nome publicado"):
+    with pytest.raises(OrigemRecusada, match=f"{PLUGIN}.*git ou nome publicado"):
         ler_registro(tmp_path)
+
+
+def test_registro_com_pasta_local_vira_requisito(tmp_path: Path) -> None:
+    pasta = tmp_path / "p"
+    pasta.mkdir()
+    (tmp_path / ARQUIVO_REGISTRO).write_text(
+        f"""\
+[tool]
+requirements = [
+    {{ name = "{PACOTE_MOTOR}", git = "{URL_MOTOR}?rev={TAG}" }},
+    {{ name = "{PLUGIN}", directory = "{pasta}" }},
+]
+"""
+    )
+    reg = ler_registro(tmp_path)
+    assert reg is not None
+    assert reg.plugins == (Requisito(PLUGIN, diretorio=str(pasta)),)
+    assert comando_reinstalar(reg)[-2:] == [ArgUv.WITH, f"{PLUGIN} @ file://{pasta}"]
 
 
 @pytest.mark.parametrize(

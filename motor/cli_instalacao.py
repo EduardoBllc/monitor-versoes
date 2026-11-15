@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from motor.config import diretorio_cache
-from motor.errors import ErroDeEntrada
+from motor.errors import CodigoSaida, ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
     PACOTE_MOTOR,
     PREFIXO_GIT,
@@ -73,6 +73,8 @@ def _ref_curta(ref: str | None) -> str:
 def _descrever(origem: Origem) -> str:
     if origem.tipo is TipoOrigem.GIT:
         return f"git {origem.url}@{_ref_curta(origem.ref or origem.commit)}"
+    if origem.tipo is TipoOrigem.LOCAL:
+        return f"{origem.tipo} {origem.url}"
     return str(origem.tipo)
 
 
@@ -147,7 +149,7 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
             f"  {shlex.join(cmd)}",
             file=sys.stderr,
         )
-        sys.exit(1)
+        sys.exit(CodigoSaida.ERRO)
     # O aviso guardado descreve a instalação que acabou de ser trocada.
     (Path(diretorio_cache()) / ARQUIVO_CACHE).unlink(missing_ok=True)
     depois = ler_registro()
@@ -162,16 +164,21 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
         url = f"ssh://{scp[1]}/{scp[2]}"
     if "://" not in url:
         # Nome publicado não tem barra, ":" nem começa com ponto (PEP 508).
-        if origem.startswith(".") or any(c in origem for c in _SEPARADORES):
-            raise ErroDeEntrada(
-                f"{origem}: caminho local não é aceito; instale de uma URL git "
-                "(https://… ou git@…) ou pelo nome publicado"
-            )
+        if origem.startswith((".", "~")) or any(c in origem for c in _SEPARADORES):
+            pasta = Path(origem).expanduser().resolve()
+            if not pasta.is_dir():
+                raise ErroDeEntrada(
+                    f"{origem}: não é uma pasta; instale de uma pasta local, de "
+                    "uma URL git (https://… ou git@…) ou pelo nome publicado"
+                )
+            return [*comando_reinstalar(reg), ArgUv.WITH, str(pasta)]
         return comando_reinstalar(
             replace(reg, plugins=(*reg.plugins, Requisito(origem)))
         )
     # O "@" do usuário (git@host) fica no netloc; só o do caminho é ref.
     partes = urlsplit(url)
+    subdiretorio = f"#{partes.fragment}" if partes.fragment else ""
+    partes = partes._replace(fragment="")
     caminho, arroba, ref_pedida = partes.path.rpartition("@")
     ref: str | None = ref_pedida
     if arroba:
@@ -182,6 +189,7 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
             )
         url = partes._replace(path=caminho).geturl()
     else:
+        url = partes.geturl()
         saida = ls_remote(url, rodar_git)
         ref = ref_mais_nova(saida) if saida else None
         if ref is None:
@@ -190,7 +198,11 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
                 "repositório git"
             )
     # Sem nome: o `uv` descobre o pacote e o grava no registro.
-    return [*comando_reinstalar(reg), ArgUv.WITH, f"{PREFIXO_GIT}{url}@{ref}"]
+    return [
+        *comando_reinstalar(reg),
+        ArgUv.WITH,
+        f"{PREFIXO_GIT}{url}@{ref}{subdiretorio}",
+    ]
 
 
 def _atualizar(
@@ -252,7 +264,16 @@ def plugin(args: argparse.Namespace) -> None:
 
 
 def atualizar_motor(_args: argparse.Namespace) -> None:
-    reg, origens = _preparar()
+    try:
+        reg, origens = _preparar()
+        if reg.motor.git is None:
+            raise OrigemRecusada(
+                f"o {PACOTE_MOTOR} não veio de um repositório git; atualize-o "
+                "por onde o instalou"
+            )
+    except OrigemRecusada as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(CodigoSaida.ORIGEM_RECUSADA)
     todos = (reg.motor, *reg.plugins)
     _atualizar(reg, origens, {normalizar(r.nome) for r in todos}, pedido=False)
 

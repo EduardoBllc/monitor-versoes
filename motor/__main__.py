@@ -61,7 +61,13 @@ from motor.engine.orfaos import (
 )
 from motor.engine.reconstruir_estado import reconstruir_estado
 from motor.engine.verificar import verificar
-from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, formatar_com_notas
+from motor.errors import (
+    CodigoSaida,
+    ErroDeEntrada,
+    MotorError,
+    RepoOcupado,
+    formatar_com_notas,
+)
 from motor.inscricoes import (
     INTERVALO_PADRAO,
     Inscricao,
@@ -860,7 +866,7 @@ def main(argv: list[str] | None = None) -> None:
                     _limpar_progresso(relator)
         except MotorError as e:
             logging.error(formatar_com_notas(e))
-            sys.exit(1)
+            sys.exit(CodigoSaida.ERRO)
         except Exception:
             logging.exception("Erro interno fatal (bug). Traceback completo:")
             sys.exit(1)

@@ -11,10 +11,10 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from importlib.metadata import Distribution, EntryPoint, distribution, entry_points
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
 from motor.config_edicao import GrupoPlugin
-from motor.errors import ErroDeEntrada
+from motor.errors import ErroDeEntrada, OrigemRecusada
 
 PACOTE_MOTOR = "monitor-versoes"
 UV = "uv"
@@ -67,7 +67,6 @@ class ChaveRegistro(StrEnum):
 
 
 _FONTES_SEM_SUPORTE = (
-    ChaveRegistro.DIRETORIO,
     ChaveRegistro.EDITAVEL,
     ChaveRegistro.CAMINHO,
     ChaveRegistro.URL,
@@ -85,7 +84,7 @@ class ChaveDirectUrl(StrEnum):
 @dataclass(frozen=True)
 class Origem:
     tipo: TipoOrigem
-    url: str | None = None  # git: sem o "git+"
+    url: str | None = None  # git: sem o "git+"; local: o caminho
     ref: str | None = None  # tag ou commit pedido; None = solta (segue a branch)
     commit: str | None = None  # commit instalado (direct_url.json)
 
@@ -107,6 +106,7 @@ class Requisito:
     extras: tuple[str, ...] = ()
     especificador: str | None = None
     subdiretorio: str | None = None
+    diretorio: str | None = None  # caminho absoluto da pasta local
 
 
 @dataclass(frozen=True)
@@ -134,7 +134,10 @@ def origem_do_pacote(dist: Distribution) -> Origem:
             commit=vcs.get(ChaveDirectUrl.COMMIT),
         )
     if ChaveDirectUrl.DIR in dados:
-        return Origem(TipoOrigem.LOCAL)
+        url = dados.get(ChaveDirectUrl.URL)
+        return Origem(
+            TipoOrigem.LOCAL, url=unquote(urlsplit(url).path) if url else None
+        )
     return Origem(TipoOrigem.INDICE)
 
 
@@ -167,9 +170,9 @@ def origens_instaladas() -> dict[str, Origem]:
 def _requisito(linha: Mapping[str, object]) -> Requisito:
     nome = str(linha[ChaveRegistro.NOME])
     if any(chave in linha for chave in _FONTES_SEM_SUPORTE):
-        raise ErroDeEntrada(
-            f"{nome} veio de caminho local, editável ou URL de arquivo; "
-            "as ações de plugin só lidam com origem git ou nome publicado"
+        raise OrigemRecusada(
+            f"{nome} veio de arquivo, editável ou URL de arquivo; as ações de "
+            "plugin só lidam com pasta local, origem git ou nome publicado"
         )
     bruto = linha.get(ChaveRegistro.GIT)
     git = ref = subdiretorio = None
@@ -188,8 +191,10 @@ def _requisito(linha: Mapping[str, object]) -> Requisito:
     extras = linha.get(ChaveRegistro.EXTRAS) or []
     if not isinstance(extras, list):
         raise TypeError(f"{nome}: {ChaveRegistro.EXTRAS} não é lista")
+    diretorio = linha.get(ChaveRegistro.DIRETORIO)
     return Requisito(
         nome=nome,
+        diretorio=str(diretorio) if diretorio is not None else None,
         git=git,
         ref=ref,
         extras=tuple(map(str, extras)),
@@ -245,10 +250,18 @@ def _escrever(r: Requisito) -> str:
         ref = f"@{r.ref}" if r.ref else ""
         sub = f"#{PARAMETRO_SUBDIRETORIO}={r.subdiretorio}" if r.subdiretorio else ""
         return f"{r.nome}{extras} @ {PREFIXO_GIT}{r.git}{ref}{sub}"
+    if r.diretorio is not None:
+        return f"{r.nome}{extras} @ {Path(r.diretorio).as_uri()}"
     return f"{r.nome}{extras}{r.especificador or ''}"
 
 
 def comando_reinstalar(reg: Registro) -> list[str]:
+    for r in (reg.motor, *reg.plugins):
+        if r.diretorio is not None and not Path(r.diretorio).is_dir():
+            raise ErroDeEntrada(
+                f"{r.nome}: a pasta {r.diretorio} não existe mais; restaure-a "
+                f"ou rode `{PACOTE_MOTOR} plugin remover {r.nome}`"
+            )
     comando = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL]
     if reg.python:
         comando += [ArgUv.PYTHON, reg.python]
