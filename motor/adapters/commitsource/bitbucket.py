@@ -37,6 +37,10 @@ JSON = dict[str, Any]
 
 _BASE_URL_PADRAO = "https://api.bitbucket.org/2.0"
 
+# Só o que o adapter lê, para encolher a resposta; `next` fica para a paginação.
+_CAMPOS_PRS = "values.id,values.title,values.source.branch.name,values.updated_on,next"
+_CAMPOS_COMMITS = "values.hash,values.parents.hash,values.date,values.message,next"
+
 # git@bitbucket.org:ws/repo.git  |  https://user@bitbucket.org/ws/repo(.git)
 _PADRAO_REMOTE = re.compile(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$")
 
@@ -173,6 +177,7 @@ class BitbucketPrs:
             "state": "MERGED",
             "sort": "updated_on",
             "pagelen": 50,
+            "fields": _CAMPOS_PRS,
         }
         if desde is not None:
             params["q"] = f'updated_on >= "{desde.isoformat()}"'
@@ -192,7 +197,10 @@ class BitbucketPrs:
         return [
             self._para_commit_ref(c)
             for c in self._paginar(
-                self._cliente(), auth, f"{self._prs_url()}/{pr_id}/commits", None
+                self._cliente(),
+                auth,
+                f"{self._prs_url()}/{pr_id}/commits",
+                {"fields": _CAMPOS_COMMITS},
             )
             # merge commit: cherry-pick -x não aceita sem -m, e o conteúdo
             # já vem pelos pais individuais. O núcleo cacheia o que vier,

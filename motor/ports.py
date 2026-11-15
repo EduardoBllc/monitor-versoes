@@ -128,7 +128,7 @@ class GitRepo(Protocol):
 
     **Assimetria entre fake e adapter:** FakeGit levanta `NaoEncontrado` em
     `merge_base`, `commit_meta`, `patch_id`, `changed_files`, `resolve_ref`,
-    `cherry_pick_x`, `remote_url`, `push_branch`, `pull_branch` e `read_file`.
+    `cherry_pick_x`, `remote_url`, `push_branch` e `read_file`.
     `GitSubprocess` funila essas mesmas condições por um `exit status` genérico
     sem classe — porque não sabe se falhou por conflito, permissão, objeto
     ausente ou bug de invocação, e adivinhar seria pior. **Não ramifique em
@@ -293,8 +293,8 @@ class GitRepo(Protocol):
         """Publica branch no remoto (-u)."""
         ...
 
-    def pull_branch(self, remote: str, branch: str, /) -> None:
-        """Atualiza a branch local com o remoto (fast-forward only)."""
+    def avancar_para_remota(self, branch: str, /) -> None:
+        """Fast-forward da worktree até origin/<branch>, sem rede; no-op sem a ref."""
         ...
 
     def fetch(self, remote: str, /) -> None:

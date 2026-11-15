@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from motor.adapters.commitsource.bitbucket import BitbucketPrs, parse_workspace_repo
+from motor.domain.types import CommitRef
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 
 # Corpo de JSON da API, igual ao alias do adapter.
@@ -115,6 +116,62 @@ def test_desde_vira_filtro_updated_on():
     assert "q" not in buscas[0].url.params
     assert buscas[1].url.params["q"] == f'updated_on >= "{desde.isoformat()}"'
     assert buscas[1].url.params["state"] == "MERGED"
+
+
+def _filtrar(item: Any, caminhos: list[list[str]]) -> Any:
+    """Mantém só os caminhos pedidos, descendo em listas como a API faz."""
+    if isinstance(item, list):
+        return [_filtrar(i, caminhos) for i in item]
+    saida: JSON = {}
+    for chave in {c[0] for c in caminhos}:
+        if chave not in item:
+            continue
+        resto = [c[1:] for c in caminhos if c[0] == chave]
+        saida[chave] = item[chave] if [] in resto else _filtrar(item[chave], resto)
+    return saida
+
+
+def _handler_com_fields(paginas: dict[str, Any]):
+    """Serve `paginas` por path, devolvendo só o que o `fields` pede."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        corpo = paginas[request.url.path]
+        # Como `_paginar` supõe, o `next` carrega a query (e o `fields`) da página atual.
+        campos = request.url.params.get("fields", "")
+        caminhos = [c.split(".") for c in campos.split(",") if c]
+        pedidos = [c[1:] for c in caminhos if c[0] == "values"]
+        filtrado: JSON = {"values": _filtrar(corpo["values"], pedidos)}
+        if ["next"] in caminhos and "next" in corpo:
+            filtrado["next"] = f"{corpo['next']}?fields={campos}"
+        return httpx.Response(200, json=filtrado)
+
+    return handler
+
+
+def test_com_fields_filtrados_o_resultado_continua_completo():
+    base = "/repositories/acme/monitor/pullrequests"
+    paginas = {
+        base: {"values": [_pr(1)], "next": f"http://testserver{base}/p2"},
+        f"{base}/p2": {"values": [_pr(2)]},
+        f"{base}/7/commits": {
+            "values": [_commit_bruto("merge1", ["a", "b"]), _commit_bruto("c1")],
+        },
+    }
+    host = _host(_handler_com_fields(paginas))
+
+    prs = host.prs_mergeadas(None)
+    [commit] = host.commits_da_pr(7)
+
+    quando = datetime.datetime(2026, 8, 1, 10, tzinfo=datetime.UTC)
+    assert [(p.pr_id, p.titulo, p.branch, p.updated_on) for p in prs] == [
+        (n, "ch255514 corrige logs", "feature/x", quando) for n in (1, 2)
+    ]
+    assert commit == CommitRef(
+        hash_origem="c1",
+        parent="p1",
+        commit_date=datetime.datetime(2024, 1, 2, 10, tzinfo=datetime.UTC),
+        msg="fix c1",
+    )
 
 
 def test_paginacao_segue_next():
