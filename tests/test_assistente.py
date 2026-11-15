@@ -377,6 +377,11 @@ def _dados_do_usuario(tmp_path, monkeypatch, cache_base=None) -> list[Path]:
     return [*pastas, *(Path(f"{banco}{s}") for s in SUFIXOS_SQLITE)]
 
 
+def _listados(dados: list[Path]) -> list[Path]:
+    """O que o relatório mostra: pasta dentro de outra listada (cache no Windows) some."""
+    return [d for d in dados if not any(o != d and d.is_relative_to(o) for o in dados)]
+
+
 def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
     cen.unit().parent.mkdir(parents=True)
@@ -411,7 +416,8 @@ def test_desinstalar_apaga_dados_so_com_sim(
 
     assert all(d.exists() is not apagou for d in dados)
     assert _linhas_do_relatorio(capsys) == {
-        f"{Situacao.REMOVIDO if apagou else Situacao.MANTIDO}: {d}" for d in dados
+        f"{Situacao.REMOVIDO if apagou else Situacao.MANTIDO}: {d}"
+        for d in _listados(dados)
     }
 
 
@@ -428,11 +434,11 @@ def test_desinstalar_falha_ao_apagar_mantem_e_explica(
     cen, tmp_path, monkeypatch, capsys
 ):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
-    cache = Path(diretorio_cache())
+    config = dados[0]
     rmtree = shutil.rmtree
 
     def rmtree_negado(caminho, *a, **k):
-        if Path(caminho) == cache:
+        if Path(caminho) == config:
             raise PermissionError(errno.EACCES, MOTIVO_NEGADO)
         rmtree(caminho, *a, **k)
 
@@ -440,10 +446,10 @@ def test_desinstalar_falha_ao_apagar_mantem_e_explica(
 
     assert _rodar(SIM, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
-    assert cache.exists()
-    assert not any(d.exists() for d in dados if d != cache)
+    assert config.exists()
+    assert not any(d.exists() for d in dados if d != config)
     saida = capsys.readouterr()
-    assert f"{Situacao.MANTIDO}: {cache}" in saida.out
+    assert f"{Situacao.MANTIDO}: {config}" in saida.out
     assert MOTIVO_NEGADO in saida.out
 
 
@@ -462,7 +468,7 @@ def test_desinstalar_banco_relativo_dentro_de_pasta_listada_aparece_uma_vez(
         Path(linha.split(": ", 1)[1]).resolve()
         for linha in _linhas_do_relatorio(capsys)
     }
-    assert listados == {d.resolve() for d in dados[:3]}
+    assert listados == {d.resolve() for d in _listados(dados[:3])}
 
 
 def test_desinstalar_sem_nada_diz_que_nao_ha_o_que_remover(cen, capsys):

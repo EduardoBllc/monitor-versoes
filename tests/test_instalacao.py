@@ -240,7 +240,7 @@ requirements = [
     reg = ler_registro(tmp_path)
     assert reg is not None
     assert reg.plugins == (Requisito(PLUGIN, diretorio=str(pasta)),)
-    assert comando_reinstalar(reg)[-2:] == [ArgUv.WITH, f"{PLUGIN} @ file://{pasta}"]
+    assert comando_reinstalar(reg)[-2:] == [ArgUv.WITH, f"{PLUGIN} @ {pasta.as_uri()}"]
 
 
 @pytest.mark.parametrize(
