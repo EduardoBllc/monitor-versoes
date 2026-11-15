@@ -206,9 +206,9 @@ def verificar(
     # As tarefas da versao-alvo vem durante o fetch. Saindo antes de consulta-las
     # (snapshot congelado, erro do fetch), resultado e erro da busca se perdem; o
     # `with` espera a thread para a fonte nao seguir em uso depois do retorno.
-    # A carga preguicosa do plugin agora acontece na thread: nada na thread
-    # principal pode chamar `deps.referencia()` ou `deps.identidade_das_entradas()`
-    # antes do resolver.
+    # O plugin da fonte carrega na primeira `fetch`, ja na thread, e
+    # `FonteDaConfig.carregar` nao e thread-safe: nada na thread principal pode
+    # chamar `deps.referencia()` ou `deps.identidade_das_entradas()` antes do resolver.
     with ThreadPoolExecutor(max_workers=1) as executor:
         adiantada = executor.submit(deps.tasks.fetch, versao)
         deps.git.fetch("origin")
