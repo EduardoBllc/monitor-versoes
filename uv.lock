@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "monitor-versoes",
     "monitor-versoes-github",
+    "monitor-versoes-gitlab",
     "monitor-versoes-jira",
 ]
 
@@ -672,6 +673,7 @@ anthropic = [
 dev = [
     { name = "httpx2" },
     { name = "monitor-versoes-github" },
+    { name = "monitor-versoes-gitlab" },
     { name = "monitor-versoes-jira" },
     { name = "mypy" },
     { name = "pre-commit" },
@@ -688,6 +690,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.16.0" },
     { name = "monitor-versoes-github", marker = "extra == 'dev'", editable = "plugins/github" },
+    { name = "monitor-versoes-gitlab", marker = "extra == 'dev'", editable = "plugins/gitlab" },
     { name = "monitor-versoes-jira", marker = "extra == 'dev'", editable = "plugins/jira" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.7.0" },
@@ -705,6 +708,21 @@ provides-extras = ["dev", "anthropic"]
 name = "monitor-versoes-github"
 version = "0.1.0"
 source = { editable = "plugins/github" }
+dependencies = [
+    { name = "httpx" },
+    { name = "monitor-versoes" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx" },
+    { name = "monitor-versoes", editable = "." },
+]
+
+[[package]]
+name = "monitor-versoes-gitlab"
+version = "0.1.0"
+source = { editable = "plugins/gitlab" }
 dependencies = [
     { name = "httpx" },
     { name = "monitor-versoes" },
