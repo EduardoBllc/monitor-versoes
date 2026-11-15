@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.162.0",
     "uvicorn>=0.54.0",
     "tomlkit>=0.13",
+    "questionary>=2.1",
 ]
 
 [project.optional-dependencies]

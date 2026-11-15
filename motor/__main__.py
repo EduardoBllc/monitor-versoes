@@ -177,7 +177,7 @@ def _migrar(_args: argparse.Namespace) -> None:
     print("migrações aplicadas")
 
 
-def _diagnostico(args: argparse.Namespace) -> None:
+def _imprimir_diagnostico(args: argparse.Namespace) -> bool:
     resultados = diagnosticar(
         os.environ,
         abrir_sessao=abrir_sessao,
@@ -194,8 +194,18 @@ def _diagnostico(args: argparse.Namespace) -> None:
     )
     for resultado in resultados:
         print(formatar(resultado))
-    if falhou(resultados):
-        sys.exit(1)
+    return falhou(resultados)
+
+
+def _diagnostico(args: argparse.Namespace) -> None:
+    if _imprimir_diagnostico(args):
+        sys.exit(CodigoSaida.ERRO)
+
+
+def _configurar(args: argparse.Namespace) -> None:
+    from motor import assistente
+
+    assistente.configurar(lambda: _imprimir_diagnostico(args))
 
 
 COMANDO_SERVE = "serve"
@@ -295,6 +305,7 @@ def _inscricao(args: argparse.Namespace) -> None:
 _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     "migrar": _migrar,
     "diagnostico": _diagnostico,
+    servico.COMANDO_CONFIGURAR: _configurar,
     COMANDO_INSCRICAO: _inscricao,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
@@ -451,6 +462,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "diagnostico",
         help="checa cada peça da instalação e diz como corrigir o que falhar",
+    )
+
+    sub.add_parser(
+        servico.COMANDO_CONFIGURAR,
+        help="assistente interativo: fontes, início no login e próximos passos",
     )
 
     p_insc = sub.add_parser(
