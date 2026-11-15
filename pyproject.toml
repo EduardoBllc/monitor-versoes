@@ -22,6 +22,7 @@ dev = [
     "pre-commit>=4.7.0",
     "httpx2>=2.16.0",
     "monitor-versoes-jira",
+    "monitor-versoes-github",
 ]
 anthropic = [
     "anthropic>=2.8,<3",
@@ -48,10 +49,11 @@ exata = "motor.atribuicoes:Exata"
 composta = "motor.atribuicoes:Composta"
 
 [tool.uv.workspace]
-members = ["plugins/jira"]
+members = ["plugins/jira", "plugins/github"]
 
 [tool.uv.sources]
 monitor-versoes-jira = { workspace = true }
+monitor-versoes-github = { workspace = true }
 
 [build-system]
 requires = ["setuptools"]
@@ -64,14 +66,14 @@ include = ["motor*"]
 motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "daemon/static/**/*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "plugins/jira/tests"]
+testpaths = ["tests", "plugins/jira/tests", "plugins/github/tests"]
 
 # O type checker e o que faz "adapter nao cumpre a porta" virar erro em vez de
 # surpresa em runtime: Protocol e estrutural, e a conformidade e verificada nos
 # pontos de atribuicao (motor/montagem.py e tests/test_conformidade.py).
 [tool.mypy]
 python_version = "3.14"
-files = ["motor", "tests", "plugins/jira"]
+files = ["motor", "tests", "plugins/jira", "plugins/github"]
 strict = true
 
 # Corpo de funcao de teste sem anotacao e ruido, nao defeito: exigir assinatura

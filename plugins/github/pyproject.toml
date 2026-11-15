@@ -1,0 +1,19 @@
+[project]
+name = "monitor-versoes-github"
+version = "0.1.0"
+description = "Fonte de tarefas do monitor-versoes para o GitHub Issues"
+requires-python = ">=3.14"
+dependencies = ["monitor-versoes", "httpx"]
+
+[project.entry-points."monitor_versoes.tarefas"]
+github = "monitor_versoes_github:FonteGithub"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["monitor_versoes_github*"]
+
+[tool.uv.sources]
+monitor-versoes = { workspace = true }
