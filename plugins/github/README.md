@@ -51,9 +51,10 @@ Use-o em `GITHUB_TOKEN`.
 O ID da tarefa é o número da issue: `#123` vira `123`. O plugin propõe a referência `#{id}`
 (alfabeto `0-9`), então um commit `corrige x #123` é atribuído a `123`.
 
-No GitHub, a mensagem de um merge com squash traz o número do PR (`corrige x (#195)`), que
-também casa com `#{id}`. Esse número só é atribuído a uma tarefa se existir uma issue com ele
-na versão.
+O commit só é atribuído à issue se a mensagem citar `#<issue>`. O squash acrescenta ao título
+o número do PR (`corrige x (#195)`), e não o da issue: sem `#<issue>` na mensagem, o commit
+não é achado para a issue. Cite a issue no título ou no corpo usado como mensagem do squash.
+Na extração livre (reconstruir o estado, por exemplo), vale a primeira referência da mensagem.
 
 A lista manual (`--task-source manual`) não herda essa referência: nela cada linha leva só
 o número, e o repo define `[referencia] padrao = "#{id}"`.
