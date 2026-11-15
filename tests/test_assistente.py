@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import errno
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -24,6 +26,7 @@ from motor.config import (
     VAR_XDG_CONFIG_HOME,
     Chave,
     Tabela,
+    VarAmbiente,
     caminho_config_global,
     diretorio_cache,
     diretorio_dados,
@@ -40,6 +43,7 @@ ENTER = "\r"
 CTRL_C = "\x03"
 SIM = "s"
 NAO = "n"
+MOTIVO_NEGADO = "sem permissão"
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes.git"
 URL_OUTRO = "https://example.com/outro-plugin.git"
@@ -322,7 +326,7 @@ def test_fechamento(
 
 def _dados_do_usuario(tmp_path, monkeypatch) -> list[Path]:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache-isolado"))
-    banco = Path(os.environ["DATABASE_SQLITE_PATH"])
+    banco = Path(os.environ[VarAmbiente.DATABASE_SQLITE_PATH])
     pastas = [
         Path(caminho_config_global()).parent,
         Path(diretorio_dados()),
@@ -370,6 +374,62 @@ def test_desinstalar_apaga_dados_so_com_sim(
     assert _rodar(*teclas, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
     assert all(d.exists() is not apagou for d in dados)
-    saida = capsys.readouterr().out
-    assert all(str(d) in saida for d in dados[:4])
-    assert saida.count(Situacao.REMOVIDO if apagou else Situacao.MANTIDO) >= 4
+    assert _linhas_do_relatorio(capsys) == {
+        f"{Situacao.REMOVIDO if apagou else Situacao.MANTIDO}: {d}" for d in dados
+    }
+
+
+def _linhas_do_relatorio(capsys) -> set[str]:
+    prefixos = tuple(f"{s}: " for s in Situacao)
+    return {
+        linha
+        for linha in capsys.readouterr().out.splitlines()
+        if linha.startswith(prefixos)
+    }
+
+
+def test_desinstalar_falha_ao_apagar_mantem_e_explica(
+    cen, tmp_path, monkeypatch, capsys
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    cache = Path(diretorio_cache())
+    rmtree = shutil.rmtree
+
+    def rmtree_negado(caminho, *a, **k):
+        if Path(caminho) == cache:
+            raise PermissionError(errno.EACCES, MOTIVO_NEGADO)
+        rmtree(caminho, *a, **k)
+
+    monkeypatch.setattr(shutil, "rmtree", rmtree_negado)
+
+    assert _rodar(SIM, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert cache.exists()
+    assert not any(d.exists() for d in dados if d != cache)
+    saida = capsys.readouterr()
+    assert f"{Situacao.MANTIDO}: {cache}" in saida.out
+    assert MOTIVO_NEGADO in saida.out
+
+
+def test_desinstalar_banco_relativo_dentro_de_pasta_listada_aparece_uma_vez(
+    cen, tmp_path, monkeypatch, capsys
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    monkeypatch.chdir(Path(diretorio_cache()).parent)
+    relativo = Path(diretorio_cache()).name + "/estado.db"
+    (Path(diretorio_cache()) / "estado.db").write_text("")
+    monkeypatch.setenv(VarAmbiente.DATABASE_SQLITE_PATH, relativo)
+
+    assert _rodar(ENTER, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert _linhas_do_relatorio(capsys) == {
+        f"{Situacao.MANTIDO}: {d}" for d in dados[:3]
+    }
+
+
+def test_desinstalar_sem_nada_diz_que_nao_ha_o_que_remover(cen, capsys):
+    shutil.rmtree(cen.config.parent)
+
+    assert _rodar(comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert "Nenhum dado" in capsys.readouterr().out

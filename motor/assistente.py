@@ -380,44 +380,20 @@ def configurar(imprimir_diagnostico: Callable[[], object]) -> None:
         sys.exit(CodigoSaida.INTERROMPIDO)
 
 
-def _caminhos_de_dados() -> tuple[list[Path], list[Path]]:
-    """Pastas e arquivos do SQLite fora do diretório de dados, só os que existem."""
-    dados = Path(diretorio_dados())
-    pastas = [Path(caminho_config_global()).parent, dados, Path(diretorio_cache())]
+def _caminhos_de_dados() -> list[Path]:
+    """Pastas e arquivos do SQLite (fora delas), só os que existem."""
+    pastas = [
+        Path(caminho_config_global()).parent.resolve(),
+        Path(diretorio_dados()).resolve(),
+        Path(diretorio_cache()).resolve(),
+    ]
     banco = os.environ.get(VarAmbiente.DATABASE_SQLITE_PATH, "").strip()
     arquivos = []
     if banco:
-        base = Path(banco).expanduser()
-        if dados not in base.parents:
+        base = Path(banco).expanduser().resolve()
+        if not any(p in base.parents for p in pastas):
             arquivos = [Path(f"{base}{s}") for s in SUFIXOS_SQLITE]
-    return (
-        [p for p in pastas if p.exists()],
-        [a for a in arquivos if a.exists()],
-    )
-
-
-def desinstalar() -> None:
-    home = Path.home()
-    if servico.ligado(home):
-        servico.desligar(
-            agendador.sistema_atual(), home, agendador.rodar_comando_do_sistema
-        )
-        marcar(Marca.OK, "serviço de login removido")
-    agendador.remover_agendador_antigo(home, agendador.rodar_comando_do_sistema)
-    pastas, arquivos = _caminhos_de_dados()
-    apagar = (
-        _terminal()
-        and bool(pastas or arquivos)
-        and _confirmar_apagar([*pastas, *arquivos])
-    )
-    if apagar:
-        for pasta in pastas:
-            shutil.rmtree(pasta, ignore_errors=True)
-        for arquivo in arquivos:
-            arquivo.unlink(missing_ok=True)
-    situacao = Situacao.REMOVIDO if apagar else Situacao.MANTIDO
-    for caminho in [*pastas, *arquivos]:
-        print(f"{situacao}: {caminho}")
+    return [c for c in [*pastas, *arquivos] if c.exists() or c.is_symlink()]
 
 
 def _confirmar_apagar(caminhos: list[Path]) -> bool:
@@ -428,3 +404,34 @@ def _confirmar_apagar(caminhos: list[Path]) -> bool:
         return confirmar("Apagar esses dados?", False)
     except KeyboardInterrupt:
         sys.exit(CodigoSaida.INTERROMPIDO)
+
+
+def _apagar(caminho: Path) -> bool:
+    try:
+        if caminho.is_dir() and not caminho.is_symlink():
+            shutil.rmtree(caminho)
+        else:
+            caminho.unlink()
+    except OSError as e:
+        marcar(Marca.FALHA, f"não foi possível apagar {caminho}: {e.strerror or e}")
+        return False
+    return True
+
+
+def desinstalar() -> None:
+    home = Path.home()
+    if servico.ligado(home):
+        servico.desligar(
+            agendador.sistema_atual(), home, agendador.rodar_comando_do_sistema
+        )
+        marcar(Marca.OK, "serviço de login removido")
+    agendador.remover_agendador_antigo(home, agendador.rodar_comando_do_sistema)
+    caminhos = _caminhos_de_dados()
+    if not caminhos:
+        print("Nenhum dado do monitor-versoes a remover.")
+        return
+    apagar = _terminal() and _confirmar_apagar(caminhos)
+    for caminho in caminhos:
+        removido = apagar and _apagar(caminho)
+        situacao = Situacao.REMOVIDO if removido else Situacao.MANTIDO
+        print(f"{situacao}: {caminho}")
