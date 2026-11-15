@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from motor import servico
-from motor.__main__ import main
+from motor.__main__ import COMANDO_SERVE, main
 from motor.agendador import FLAG_AGORA, LAUNCHCTL, SYSTEMCTL, Acao, Sistema
 from motor.errors import BackendIndisponivel
 from motor.servico import (
@@ -39,6 +39,8 @@ ATIVO_MACOS = "\tstate = running\n"
 OUTROS_ESTADOS = (None, "inactive\n", "\tstate = waiting\n")
 VER_LOG_LINUX = f"journalctl --user -u {ARQUIVO_SERVICE}"
 VER_LOG_MACOS = f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}"
+FLAG_PORTA = "--porta"
+FLAG_SEM_NAVEGADOR = ARGUMENTOS_SERVE[-1]
 
 pula_mac_no_windows = pytest.mark.skipif(
     sys.platform == PLATAFORMA_WINDOWS, reason="launchctl usa o uid do POSIX"
@@ -195,12 +197,20 @@ def test_executavel_motor_nao_depende_do_path(monkeypatch: pytest.MonkeyPatch) -
     assert exe.stem == servico.EXECUTAVEL
 
 
-def test_comando_do_sistema_que_falha_propaga(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("sistema", "acao"),
+    [
+        pytest.param(Sistema.LINUX, Acao.ENABLE, id="linux"),
+        pytest.param(Sistema.MACOS, Acao.LOAD, id="macos", marks=pula_mac_no_windows),
+    ],
+)
+def test_ligar_que_falha_propaga_e_nao_deixa_o_arquivo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema, acao: Acao
 ) -> None:
-    _como(Sistema.LINUX, monkeypatch)
+    _como(sistema, monkeypatch)
     with pytest.raises(BackendIndisponivel):
-        ligar(Sistema.LINUX, tmp_path, EXE, Registro(falhar_em=Acao.ENABLE))
+        ligar(sistema, tmp_path, EXE, Registro(falhar_em=acao))
+    assert not ligado(tmp_path)
 
 
 @pytest.mark.parametrize("sem_navegador", [False, True])
@@ -227,7 +237,9 @@ def test_serve_sem_navegador_nao_abre(
     monkeypatch.setattr(threading, "Timer", timer)
     monkeypatch.setattr(daemon_app, "_abrir_navegador", abertos.append)
 
-    main(["serve", "--porta", str(porta), *(["--sem-navegador"] * sem_navegador)])
+    main(
+        [COMANDO_SERVE, FLAG_PORTA, str(porta), *([FLAG_SEM_NAVEGADOR] * sem_navegador)]
+    )
 
     assert bool(abertos) is not sem_navegador
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TextIO
 
 from motor import cli_instalacao, servico
+from motor.adapters.estado.engine import garantir_esquema
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
@@ -32,6 +33,7 @@ from motor.config import (
     carregar_config_global,
     carregar_config_repo,
     checar_backend,
+    database_url,
     repos_configurados,
     validar_nome_repo,
 )
@@ -205,7 +207,13 @@ def _diagnostico(args: argparse.Namespace) -> None:
 def _configurar(args: argparse.Namespace) -> None:
     from motor import assistente
 
-    assistente.configurar(lambda: _imprimir_diagnostico(args))
+    def diagnosticar_migrado() -> bool:
+        # Sem isto, a primeira instalação acusaria FALHA na migração: nada abriu o banco ainda.
+        with contextlib.suppress(MotorError, OSError):
+            garantir_esquema(database_url())
+        return _imprimir_diagnostico(args)
+
+    assistente.configurar(diagnosticar_migrado)
 
 
 def _desinstalar(args: argparse.Namespace) -> None:

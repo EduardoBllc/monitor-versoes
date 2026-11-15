@@ -101,17 +101,25 @@ def ligar(
 ) -> None:
     arquivo = caminho(sistema, home)
     arquivo.parent.mkdir(parents=True, exist_ok=True)
-    if sistema is Sistema.MACOS:
-        _log_launchd(home).parent.mkdir(parents=True, exist_ok=True)
-        arquivo.write_bytes(_plist(executavel, home))
-        # Um job já carregado ignoraria o plist novo; descarregar antes é inócuo se não estiver.
-        with contextlib.suppress(BackendIndisponivel):
-            rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)])
-        rodar_comando([LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(arquivo)])
-        return
-    arquivo.write_text(_unit(executavel))
-    rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
-    rodar_comando([*SYSTEMCTL, Acao.ENABLE, FLAG_AGORA, ARQUIVO_SERVICE])
+    try:
+        if sistema is Sistema.MACOS:
+            _log_launchd(home).parent.mkdir(parents=True, exist_ok=True)
+            arquivo.write_bytes(_plist(executavel, home))
+            # Um job já carregado ignoraria o plist novo; descarregar antes é inócuo se não estiver.
+            with contextlib.suppress(BackendIndisponivel):
+                rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)])
+            rodar_comando([LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(arquivo)])
+            return
+        arquivo.write_text(_unit(executavel))
+        rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+        rodar_comando([*SYSTEMCTL, Acao.ENABLE, FLAG_AGORA, ARQUIVO_SERVICE])
+    except BackendIndisponivel:
+        # O arquivo é o que `ligado()` olha: deixá-lo sem o serviço de pé mente que está ligado.
+        arquivo.unlink(missing_ok=True)
+        if sistema is Sistema.LINUX:
+            with contextlib.suppress(BackendIndisponivel):
+                rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+        raise
 
 
 def desligar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:

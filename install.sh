@@ -176,6 +176,7 @@ instalar() {
 		sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)"
 	[ -n "$tag" ] || falha "nenhuma release encontrada em $URL_REPO; confira a conexão"
 	tag="v$tag"
+	ok "última release: $tag"
 	REQUISITO="$PACOTE @ git+$URL_REPO@$tag"
 
 	motor_do_uv || falha "o uv não respondeu a \`uv tool dir --bin\`; confira a instalação dele ($URL_INSTALADOR_UV)"

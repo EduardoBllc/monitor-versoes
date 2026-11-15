@@ -113,8 +113,8 @@ plugin se editam na web ou no arquivo.
 Em Linux e macOS ele também pergunta se o `serve` deve subir no login (padrão Sim na primeira
 configuração e, depois, o estado atual). Ligado, vira um serviço de usuário (systemd) ou um
 LaunchAgent, sem root, que roda `serve --sem-navegador` pelo executável do `uv` e é
-reiniciado após `plugin instalar`, `atualizar-motor` e `configurar`. Subir sem login fica
-fora. No Windows a pergunta não aparece. O `diagnostico` mostra a peça "Daemon". Ao fechar,
+reiniciado após `plugin instalar`, `plugin remover`, `plugin atualizar`, `atualizar-motor`
+e `configurar`. Subir sem login fica fora. No Windows a pergunta não aparece. O `diagnostico` mostra a peça "Daemon". Ao fechar,
 o assistente roda o `diagnostico` e só oferece abrir o navegador se o `serve` responde.
 O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
 

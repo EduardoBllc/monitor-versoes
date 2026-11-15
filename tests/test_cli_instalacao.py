@@ -39,6 +39,8 @@ from motor.novidades import (
     gravar_cache,
     linha_aviso,
 )
+from tests.test_agendador import MOTIVO_FALHA
+from tests.test_agendador import Registro as RegistroDeComandos
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes"
 PLUGIN_A = "monitor-versoes-extra"
@@ -685,3 +687,24 @@ def test_reinstalar_reinicia_o_servico_ligado(
     else:
         assert chamados == []
         assert f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o." in saida
+
+
+def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
+    arquivo = servico.caminho(Sistema.LINUX, Path.home())
+    arquivo.parent.mkdir(parents=True)
+    arquivo.write_text("")
+    monkeypatch.setattr("sys.platform", Sistema.LINUX)
+    monkeypatch.setattr(
+        agendador,
+        "rodar_comando_do_sistema",
+        RegistroDeComandos(falhar_em=Acao.RESTART),
+    )
+
+    main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
+
+    saida = capsys.readouterr().out
+    assert f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o." in saida
+    assert MOTIVO_FALHA in saida

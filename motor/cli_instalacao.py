@@ -16,7 +16,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from motor import agendador, servico
 from motor.config import diretorio_cache
-from motor.errors import CodigoSaida, ErroDeEntrada, OrigemRecusada
+from motor.errors import BackendIndisponivel, CodigoSaida, ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
     PACOTE_MOTOR,
     PARAMETRO_SUBDIRETORIO,
@@ -165,8 +165,15 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
     depois = ler_registro()
     for linha in _mudancas(antes, depois) if depois else []:
         print(linha)
-    if not servico.reiniciar_se_ligado(Path.home(), agendador.rodar_comando_do_sistema):
-        print(f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o.")
+    lembrete = f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o."
+    try:
+        if not servico.reiniciar_se_ligado(
+            Path.home(), agendador.rodar_comando_do_sistema
+        ):
+            print(lembrete)
+    except BackendIndisponivel as e:
+        # A reinstalação já deu certo; o reinício é só conveniência.
+        print(f"Não deu para reiniciar o serviço de login ({e}). {lembrete}")
 
 
 def _instalar(reg: Registro, origem: str) -> list[str]:

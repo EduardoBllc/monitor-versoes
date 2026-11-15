@@ -23,6 +23,7 @@ from motor.agendador import ARQUIVO_TIMER, FLAG_AGORA, SYSTEMCTL, Acao, Sistema
 from motor.assistente import SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
+    VAR_XDG_CACHE_HOME,
     VAR_XDG_CONFIG_HOME,
     Chave,
     Tabela,
@@ -32,7 +33,7 @@ from motor.config import (
     diretorio_dados,
 )
 from motor.config_edicao import GrupoPlugin
-from motor.diagnostico import Peca
+from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
 from motor.servico import ARQUIVO_SERVICE, COMANDO_CONFIGURAR, EXECUTAVEL
@@ -284,8 +285,8 @@ def test_ligar_e_desligar_no_login(cen, ligado, tecla, comandos):
 
 @pytest.mark.parametrize(
     ("com_config", "ligado", "comandos"),
-    [(False, False, LIGAR), (True, False, []), (True, True, [])],
-    ids=["primeira-vez-liga", "desligado-fica", "ligado-fica"],
+    [(False, False, LIGAR), (True, False, []), (True, True, LIGAR)],
+    ids=["primeira-vez-liga", "desligado-fica", "ligado-religa"],
 )
 def test_padrao_do_login(cen, com_config, ligado, comandos):
     if not com_config:
@@ -324,8 +325,15 @@ def test_fechamento(
     assert Peca.DAEMON in saida
 
 
+def test_configurar_no_primeiro_uso_nao_acusa_falta_de_migracao(cen, capsys):
+    assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
+    assert f"{Estado.FALHA.value}  {Peca.MIGRACAO}" not in capsys.readouterr().out
+
+
 def _dados_do_usuario(tmp_path, monkeypatch, cache_base=None) -> list[Path]:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_base or tmp_path / "cache-isolado"))
+    monkeypatch.setenv(
+        VAR_XDG_CACHE_HOME, str(cache_base or tmp_path / "cache-isolado")
+    )
     banco = Path(os.environ[VarAmbiente.DATABASE_SQLITE_PATH])
     pastas = [
         Path(caminho_config_global()).parent,

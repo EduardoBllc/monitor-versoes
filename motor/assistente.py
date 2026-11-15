@@ -318,7 +318,8 @@ def _alteracoes(
 
 
 def _aplicar_login(home: Path, quer: bool | None) -> None:
-    if quer is None or quer == servico.ligado(home):
+    # Sim sempre religa: repara um serviço parado e atualiza o caminho do executável.
+    if quer is None or (not quer and not servico.ligado(home)):
         return
     sistema = agendador.sistema_atual()
     try:
