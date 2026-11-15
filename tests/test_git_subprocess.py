@@ -1601,16 +1601,6 @@ def _par_origem_clone(tmp_path):
     return origem, clone, g
 
 
-def _head(dir_) -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=str(dir_),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-
-
 def _commitar(dir_, nome: str) -> None:
     (dir_ / nome).write_text(nome)
     _run_git(str(dir_), "add", nome)
@@ -1622,24 +1612,24 @@ def test_avancar_para_remota_traz_commit_novo_sem_rede(tmp_path):
     g.use_worktree("13.35.0")
     _run_git(str(origem), "checkout", "13.35.0")
     _commitar(origem, "novo.txt")
-    novo = _head(origem)
+    novo = _rev(str(origem), "HEAD")
     g.fetch("origin")
     _run_git(str(clone), "remote", "set-url", "origin", str(tmp_path / "inexistente"))
 
     g.avancar_para_remota("13.35.0")
 
-    assert _head(g._worktree_dir("13.35.0")) == novo
+    assert _rev(str(g._worktree_dir("13.35.0")), "HEAD") == novo
 
 
 def test_avancar_para_remota_sem_ref_de_rastreamento_e_noop(tmp_path):
     _, clone, g = _par_origem_clone(tmp_path)
     _run_git(str(clone), "branch", "13.36.0", "origin/13.35.0")
     g.use_worktree("13.36.0")
-    antes = _head(g._worktree_dir("13.36.0"))
+    antes = _rev(str(g._worktree_dir("13.36.0")), "HEAD")
 
     g.avancar_para_remota("13.36.0")
 
-    assert _head(g._worktree_dir("13.36.0")) == antes
+    assert _rev(str(g._worktree_dir("13.36.0")), "HEAD") == antes
 
 
 def test_avancar_para_remota_divergente_levanta(tmp_path):
