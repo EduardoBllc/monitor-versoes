@@ -1160,6 +1160,26 @@ def test_carimbo_leva_a_hora_do_inicio_da_varredura():
     assert carimbo.verificado_em == AGORA
 
 
+def test_carimbo_nao_e_posterior_a_busca_adiantada():
+    """As tarefas começam a ser lidas antes do fetch: a hora não pode vir depois."""
+    deps = _cenario_simples()
+    relogio = {"agora": AGORA}
+    deps.agora = lambda: relogio["agora"]
+    fetch = deps.git.fetch
+
+    def fetch_lento(remoto):
+        relogio["agora"] += datetime.timedelta(minutes=2)
+        fetch(remoto)
+
+    deps.git.fetch = fetch_lento
+
+    verificar(deps, "14.0.0")
+
+    carimbo = deps.estado.verificacao("r", "14.0.0")
+    assert carimbo is not None
+    assert carimbo.verificado_em == AGORA
+
+
 def _semver_com_tag_v() -> Versionamento:
     return Versionamento(
         esquema=Semver(), politica=Composta(), tag_liberacao="v{versao}"

@@ -209,11 +209,17 @@ def verificar(
     # O plugin da fonte carrega na primeira `fetch`, ja na thread, e
     # `FonteDaConfig.carregar` nao e thread-safe: nada na thread principal pode
     # chamar `deps.referencia()` ou `deps.identidade_das_entradas()` antes do resolver.
+    # A busca adiantada já é leitura externa: a hora do carimbo congela antes dela.
+    inicio_da_varredura = deps.agora()
     with ThreadPoolExecutor(max_workers=1) as executor:
         adiantada = executor.submit(deps.tasks.fetch, versao)
         deps.git.fetch("origin")
         return verificar_sem_fetch(
-            replace(deps, tasks=TarefasAdiantadas(deps.tasks, versao, adiantada)),
+            replace(
+                deps,
+                tasks=TarefasAdiantadas(deps.tasks, versao, adiantada),
+                agora=lambda: inicio_da_varredura,
+            ),
             versao,
             manter_worktree=manter_worktree,
             auditar=auditar,
