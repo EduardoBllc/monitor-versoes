@@ -39,7 +39,7 @@ from motor.errors import ErroDeEntrada
 from motor.instalacao import ARQUIVO_REGISTRO, ler_registro
 from motor.migracoes import head
 from motor.novidades import Cache, Novidade
-from motor.servico import EstadoServico, Situacao
+from motor.servico import COMANDO_CONFIGURAR, EXECUTAVEL, EstadoServico, Situacao
 from tests.config_repos import secao_repo
 
 HEAD = "rev2"
@@ -741,7 +741,7 @@ def test_versao_com_registro_do_uv_ilegivel_fica_nao_verificada(monkeypatch, tmp
     assert not falhou(resultados)
 
 
-VER_LOG = "journalctl --user -u monitor-versoes-serve.service"
+VER_LOG = "dica de log opaca"
 
 
 @pytest.mark.parametrize(
@@ -751,7 +751,7 @@ VER_LOG = "journalctl --user -u monitor-versoes-serve.service"
         (
             Situacao(EstadoServico.DESLIGADO),
             Estado.NAO_CONFIGURADO,
-            "monitor-versoes configurar",
+            f"{EXECUTAVEL} {COMANDO_CONFIGURAR}",
             "",
         ),
         (Situacao(EstadoServico.PARADO, VER_LOG), Estado.FALHA, VER_LOG, ""),

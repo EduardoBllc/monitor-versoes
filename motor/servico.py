@@ -28,6 +28,7 @@ ROTULO_LAUNCHD = "monitor-versoes.serve"
 ARQUIVO_PLIST = f"{ROTULO_LAUNCHD}.plist"
 ARQUIVO_LOG_LAUNCHD = "monitor-versoes-serve.log"
 EXECUTAVEL = "monitor-versoes"
+COMANDO_CONFIGURAR = "configurar"
 ARGUMENTOS_SERVE = ("serve", "--sem-navegador")
 
 FLAG_PERSISTIR = "-w"

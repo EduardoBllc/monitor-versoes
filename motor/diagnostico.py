@@ -24,7 +24,7 @@ from motor.montagem import (
     instanciar_provedor_sugestao,
 )
 from motor.novidades import Cache
-from motor.servico import EstadoServico, Situacao
+from motor.servico import COMANDO_CONFIGURAR, EXECUTAVEL, EstadoServico, Situacao
 
 URL_ISSUE_DAEMON = "https://github.com/EduardoBllc/monitor-versoes/issues/191"
 
@@ -144,7 +144,7 @@ def peca_daemon(situacao: Situacao) -> Resultado:
                 Peca.DAEMON,
                 Estado.NAO_CONFIGURADO,
                 "serviço de login desligado",
-                "monitor-versoes configurar",
+                f"{EXECUTAVEL} {COMANDO_CONFIGURAR}",
             )
         case EstadoServico.PARADO:
             return Resultado(

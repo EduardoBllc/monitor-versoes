@@ -39,7 +39,7 @@ from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR
 from motor.config import SECAO_REPOS
-from motor.diagnostico import Peca
+from motor.diagnostico import Estado, Peca, Resultado, formatar
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -55,6 +55,7 @@ from motor.inscricoes import Inscricao
 from motor.instalacao import PACOTE_MOTOR
 from motor.novidades import Cache, Novidade
 from motor.plugins import carregar_plugin
+from motor.servico import EstadoServico, Situacao
 from tests.config_repos import rotulo_secao, secao_repo
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 
@@ -1087,9 +1088,6 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
 
 
 def test_diagnostico_mostra_a_peca_daemon(monkeypatch, capsys):
-    from motor.diagnostico import Estado, Resultado, formatar
-    from motor.servico import EstadoServico, Situacao
-
     monkeypatch.setattr(cli, "head", lambda: "rev")
     monkeypatch.setattr(
         cli,
