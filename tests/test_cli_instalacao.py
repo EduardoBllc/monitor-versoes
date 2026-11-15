@@ -64,6 +64,11 @@ TAG_B_VELHA = "v1.0.0"
 TAG_B = "v1.2.0"
 EXTRA = "anthropic"
 CAMINHO_UV = "/usr/bin/uv"
+PLUGIN_JIRA = "monitor-versoes-jira"
+SUBDIR_JIRA = "plugins/jira"
+VERSAO_JIRA = "0.1.0"
+URL_JIRA = f"{URL_MOTOR}#subdirectory={SUBDIR_JIRA}"
+LINHA_JIRA = f"{PLUGIN_JIRA} @ git+{URL_MOTOR}@{{ref}}#subdirectory={SUBDIR_JIRA}"
 
 MOTOR = Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG_MOTOR, extras=(EXTRA,))
 LINHA_MOTOR = f"{PACOTE_MOTOR}[{EXTRA}] @ git+{URL_MOTOR}@{TAG_MOTOR}"
@@ -133,6 +138,8 @@ def inst(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Instalacao:
     monkeypatch.setattr(novidades, "disparar_renovacao", lambda _: None)
     monkeypatch.setattr(cli_instalacao, "plugins_instalados", lambda: PLUGINS)
     monkeypatch.setattr(instalacao, "plugins_instalados", lambda: PLUGINS)
+    monkeypatch.setattr(cli_instalacao, "url_do_motor", lambda: URL_MOTOR)
+    monkeypatch.setattr(novidades, "url_do_motor", lambda: URL_MOTOR)
     return falsa
 
 
@@ -536,3 +543,99 @@ def test_plugin_instalar_recusa_ref_que_nao_fixa(inst: Instalacao, ref: str) -> 
             _args(acao_plugin=AcaoPlugin.INSTALAR, origem=f"{URL_B_HTTPS}@{ref}")
         )
     assert inst.comandos == []
+
+
+def _jira(ref: str) -> Requisito:
+    return Requisito(PLUGIN_JIRA, git=URL_MOTOR, ref=ref, subdiretorio=SUBDIR_JIRA)
+
+
+def test_plugin_listar_mostra_repo_do_motor(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    jira = PluginInstalado(
+        GrupoPlugin.TAREFAS,
+        "jira",
+        PLUGIN_JIRA,
+        VERSAO_JIRA,
+        Origem(TipoOrigem.GIT, URL_MOTOR, TAG_MOTOR, COMMIT_A, SUBDIR_JIRA),
+    )
+    monkeypatch.setattr(cli_instalacao, "plugins_instalados", lambda: [jira])
+
+    main([COMANDO_PLUGIN, AcaoPlugin.LISTAR])
+
+    assert (
+        f"  jira: {PLUGIN_JIRA} {VERSAO_JIRA}, repo do motor ({SUBDIR_JIRA}) "
+        f"{TAG_MOTOR}\n"
+    ) in capsys.readouterr().out
+
+
+def test_plugin_do_repo_do_motor_instala_na_tag_do_motor(inst: Instalacao) -> None:
+    main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, f"{PREFIXO_GIT}{URL_JIRA}"])
+
+    assert inst.comandos == [
+        [
+            *INICIO,
+            LINHA_MOTOR,
+            ArgUv.WITH,
+            f"{PLUGIN_A} @ git+{URL_A}@{COMMIT_A}",
+            ArgUv.WITH,
+            f"{PREFIXO_GIT}{URL_MOTOR}@{TAG_MOTOR}#subdirectory={SUBDIR_JIRA}",
+        ]
+    ]
+    assert inst.consultados == []
+
+
+def test_plugin_do_repo_do_motor_recusa_ref_diferente_da_tag_do_motor(
+    inst: Instalacao,
+) -> None:
+    origem = f"{PREFIXO_GIT}{URL_MOTOR}@v9.9.9#subdirectory={SUBDIR_JIRA}"
+
+    with pytest.raises(ErroDeEntrada):
+        cli_instalacao.plugin(_args(acao_plugin=AcaoPlugin.INSTALAR, origem=origem))
+
+    assert inst.comandos == []
+
+
+@pytest.mark.parametrize("pacote", [PLUGIN_JIRA, None])
+def test_plugin_atualizar_nao_move_plugin_do_repo_do_motor(
+    inst: Instalacao, capsys, pacote: str | None
+) -> None:
+    inst.registros = [Registro(MOTOR, (_jira(TAG_MOTOR),))]
+
+    main([COMANDO_PLUGIN, AcaoPlugin.ATUALIZAR, *([pacote] if pacote else [])])
+
+    assert inst.comandos == []
+    assert inst.consultados == []
+    saida = capsys.readouterr().out
+    assert "acompanha o motor" in saida
+    assert f"{PACOTE_MOTOR} {COMANDO_ATUALIZAR_MOTOR}" in saida
+
+
+def test_atualizar_motor_leva_plugins_do_repo_a_mesma_tag(inst: Instalacao) -> None:
+    inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR, TAG_MOTOR_NOVA))
+    inst.registros = [Registro(MOTOR, (_jira(TAG_MOTOR),))]
+
+    main([COMANDO_ATUALIZAR_MOTOR])
+
+    assert inst.comandos == [
+        [
+            *INICIO,
+            f"{PACOTE_MOTOR}[{EXTRA}] @ git+{URL_MOTOR}@{TAG_MOTOR_NOVA}",
+            ArgUv.WITH,
+            LINHA_JIRA.format(ref=TAG_MOTOR_NOVA),
+        ]
+    ]
+    assert inst.consultados == [URL_MOTOR]
+
+
+def test_atualizar_motor_em_dia_alinha_plugin_do_repo_a_tag_do_motor(
+    inst: Instalacao,
+) -> None:
+    inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR,))
+    inst.registros = [Registro(MOTOR, (_jira(TAG_B_VELHA),))]
+
+    main([COMANDO_ATUALIZAR_MOTOR])
+
+    assert inst.comandos == [
+        [*INICIO, LINHA_MOTOR, ArgUv.WITH, LINHA_JIRA.format(ref=TAG_MOTOR)]
+    ]

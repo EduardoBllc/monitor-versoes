@@ -2096,6 +2096,17 @@
               }
             ],
             "title": "Commit"
+          },
+          "subdiretorio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subdiretorio"
           }
         },
         "type": "object",

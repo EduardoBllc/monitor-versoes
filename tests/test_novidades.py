@@ -174,6 +174,23 @@ def test_checar(
     assert checar(registro, instalados, _rodar_fixo(saida)).novidades == esperado
 
 
+def test_checar_ignora_plugins_do_repo_do_motor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(novidades, "url_do_motor", lambda: URL_MOTOR)
+    jira = Requisito(
+        "monitor-versoes-jira",
+        git=URL_MOTOR,
+        ref="v0.2.0",
+        subdiretorio="plugins/jira",
+    )
+    reg = Registro(Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref="v0.2.0"), (jira,))
+
+    achadas = checar(reg, {}, _rodar_fixo(_remoto(tags=("v0.2.0", "v0.3.0"))))
+
+    assert [n.pacote for n in achadas.novidades] == [PACOTE_MOTOR]
+
+
 def test_checar_aponta_origem_sem_resposta() -> None:
     assert checar(_registro("v0.2.0"), {}, _rodar_fixo(None)) == Checagem(
         (), (PACOTE_MOTOR,), respondeu=False

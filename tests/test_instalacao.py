@@ -19,6 +19,7 @@ from motor.instalacao import (
     Requisito,
     TipoOrigem,
     comando_reinstalar,
+    do_repo_do_motor,
     fixar_soltos,
     ler_registro,
     origem_do_pacote,
@@ -29,6 +30,7 @@ URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes"
 PLUGIN = "monitor-versoes-extra"
 URL_PLUGIN = "https://github.com/EduardoBllc/monitor-versoes-extra"
 TAG = "v0.2.0"
+SUBDIR_JIRA = "plugins/jira"
 
 # Formato real do `uv tool install`: a revisão vai na própria URL, em `?rev=`.
 RECIBO = f"""\
@@ -97,12 +99,41 @@ class DistFalsa:
             {"url": URL_PLUGIN, "vcs_info": {"vcs": "git", "commit_id": "abc123"}},
             Origem(TipoOrigem.GIT, url=URL_PLUGIN, commit="abc123"),
         ),
+        (
+            {
+                "url": URL_MOTOR,
+                "vcs_info": {"vcs": "git", "commit_id": "abc123"},
+                "subdirectory": SUBDIR_JIRA,
+            },
+            Origem(
+                TipoOrigem.GIT, url=URL_MOTOR, commit="abc123", subdiretorio=SUBDIR_JIRA
+            ),
+        ),
         (None, Origem(TipoOrigem.INDICE)),
         ({"url": "file:///x/p", "dir_info": {}}, Origem(TipoOrigem.LOCAL, url="/x/p")),
     ],
 )
 def test_origem_do_pacote(direct_url: dict[str, Any] | None, esperado: Origem) -> None:
     assert origem_do_pacote(DistFalsa(direct_url)) == esperado  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("url", "subdiretorio", "esperado"),
+    [
+        (URL_MOTOR, SUBDIR_JIRA, True),
+        (f"{URL_MOTOR}.git", SUBDIR_JIRA, True),
+        (f"{URL_MOTOR}/", SUBDIR_JIRA, True),
+        (f"{URL_MOTOR}.git/", SUBDIR_JIRA, True),
+        (URL_PLUGIN, SUBDIR_JIRA, False),
+        (URL_MOTOR, "docs/jira", False),
+        (URL_MOTOR, None, False),
+        (None, SUBDIR_JIRA, False),
+    ],
+)
+def test_do_repo_do_motor(
+    url: str | None, subdiretorio: str | None, esperado: bool
+) -> None:
+    assert do_repo_do_motor(url, subdiretorio, URL_MOTOR) is esperado
 
 
 def _ponto(grupo: str, nome: str, pacote: str, versao: str) -> SimpleNamespace:

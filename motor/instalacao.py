@@ -24,6 +24,7 @@ ARQUIVO_DIRECT_URL = "direct_url.json"
 PREFIXO_GIT = "git+"
 PARAMETRO_REV = "rev"
 PARAMETRO_SUBDIRETORIO = "subdirectory"
+PASTA_PLUGINS = "plugins/"
 # Ref que não muda sozinha: tag de versão ou SHA completo; o resto é branch.
 TAG_VERSAO = re.compile(r"v(\d+)\.(\d+)\.(\d+)")
 SHA_COMPLETO = re.compile(r"[0-9a-f]{40}")
@@ -79,6 +80,7 @@ class ChaveDirectUrl(StrEnum):
     DIR = "dir_info"
     REVISAO = "requested_revision"
     COMMIT = "commit_id"
+    SUBDIRETORIO = "subdirectory"
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,7 @@ class Origem:
     url: str | None = None  # git: sem o "git+"; local: o caminho
     ref: str | None = None  # tag ou commit pedido; None = solta (segue a branch)
     commit: str | None = None  # commit instalado (direct_url.json)
+    subdiretorio: str | None = None
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,7 @@ def origem_do_pacote(dist: Distribution) -> Origem:
             url=dados.get(ChaveDirectUrl.URL),
             ref=vcs.get(ChaveDirectUrl.REVISAO),
             commit=vcs.get(ChaveDirectUrl.COMMIT),
+            subdiretorio=dados.get(ChaveDirectUrl.SUBDIRETORIO),
         )
     if ChaveDirectUrl.DIR in dados:
         url = dados.get(ChaveDirectUrl.URL)
@@ -139,6 +143,27 @@ def origem_do_pacote(dist: Distribution) -> Origem:
             TipoOrigem.LOCAL, url=unquote(urlsplit(url).path) if url else None
         )
     return Origem(TipoOrigem.INDICE)
+
+
+def url_do_motor() -> str | None:
+    origem = origem_do_pacote(distribution(PACOTE_MOTOR))
+    return origem.url if origem.tipo is TipoOrigem.GIT else None
+
+
+def _sem_sufixo(url: str) -> str:
+    return url.rstrip("/").removesuffix(".git")
+
+
+def do_repo_do_motor(
+    url: str | None, subdiretorio: str | None, url_motor: str | None
+) -> bool:
+    return (
+        url is not None
+        and url_motor is not None
+        and subdiretorio is not None
+        and subdiretorio.startswith(PASTA_PLUGINS)
+        and _sem_sufixo(url) == _sem_sufixo(url_motor)
+    )
 
 
 def plugins_instalados(

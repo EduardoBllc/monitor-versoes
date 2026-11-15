@@ -748,6 +748,8 @@ export interface components {
             ref?: string | null;
             /** Commit */
             commit?: string | null;
+            /** Subdiretorio */
+            subdiretorio?: string | null;
         };
         /**
          * PecaTestavel

@@ -12,12 +12,13 @@ from dataclasses import replace
 from enum import StrEnum
 from itertools import groupby
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from motor.config import diretorio_cache
 from motor.errors import CodigoSaida, ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
     PACOTE_MOTOR,
+    PARAMETRO_SUBDIRETORIO,
     PREFIXO_GIT,
     SHA_COMPLETO,
     UV,
@@ -27,12 +28,14 @@ from motor.instalacao import (
     Requisito,
     TipoOrigem,
     comando_reinstalar,
+    do_repo_do_motor,
     fixar_soltos,
     ler_registro,
     normalizar,
     origens_instaladas,
     plugins_instalados,
     ref_fixa,
+    url_do_motor,
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
@@ -70,8 +73,11 @@ def _ref_curta(ref: str | None) -> str:
     return ref or ""
 
 
-def _descrever(origem: Origem) -> str:
+def _descrever(origem: Origem, url_motor: str | None) -> str:
     if origem.tipo is TipoOrigem.GIT:
+        if do_repo_do_motor(origem.url, origem.subdiretorio, url_motor):
+            ref = _ref_curta(origem.ref or origem.commit)
+            return f"repo do motor ({origem.subdiretorio}) {ref}"
         return f"git {origem.url}@{_ref_curta(origem.ref or origem.commit)}"
     if origem.tipo is TipoOrigem.LOCAL:
         return f"{origem.tipo} {origem.url}"
@@ -84,6 +90,7 @@ def _listar() -> None:
         if n.pacote == PACOTE_MOTOR:
             print(linha_aviso(n))
     novas = {normalizar(n.pacote): n.nova for n in todas}
+    url_motor = url_do_motor()
     for grupo, plugins in groupby(plugins_instalados(), key=lambda p: p.grupo):
         print(grupo.name.lower())
         for p in plugins:
@@ -91,7 +98,9 @@ def _listar() -> None:
             # O embutido é o motor: a versão nova dele já saiu na primeira linha.
             embutido = p.origem.tipo is TipoOrigem.EMBUTIDO
             seta = f" → {nova}" if nova and not embutido else ""
-            print(f"  {p.nome}: {p.pacote} {p.versao}, {_descrever(p.origem)}{seta}")
+            print(
+                f"  {p.nome}: {p.pacote} {p.versao}, {_descrever(p.origem, url_motor)}{seta}"
+            )
 
 
 def _preparar() -> tuple[Registro, dict[str, Origem]]:
@@ -177,11 +186,25 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
         )
     # O "@" do usuário (git@host) fica no netloc; só o do caminho é ref.
     partes = urlsplit(url)
-    subdiretorio = f"#{partes.fragment}" if partes.fragment else ""
+    fragmento = f"#{partes.fragment}" if partes.fragment else ""
+    subdiretorio = dict(parse_qsl(partes.fragment)).get(PARAMETRO_SUBDIRETORIO)
     partes = partes._replace(fragment="")
     caminho, arroba, ref_pedida = partes.path.rpartition("@")
+    sem_ref = partes._replace(path=caminho if arroba else partes.path).geturl()
+    do_motor = reg.motor.ref is not None and do_repo_do_motor(
+        sem_ref, subdiretorio, url_do_motor()
+    )
     ref: str | None = ref_pedida
-    if arroba:
+    if do_motor:
+        # O plugin do repo do motor anda com a tag do motor, não com a mais nova.
+        ref = reg.motor.ref
+        if arroba and ref_pedida != ref:
+            raise ErroDeEntrada(
+                f"{ref_pedida}: o plugin do repo do motor segue a tag do motor "
+                f"({ref}); omita o @ref ou use {ref}"
+            )
+        url = sem_ref
+    elif arroba:
         if not ref_fixa(ref_pedida):
             raise ErroDeEntrada(
                 f"ref `{ref_pedida}`: use uma tag vX.Y.Z ou um commit completo, "
@@ -201,7 +224,7 @@ def _instalar(reg: Registro, origem: str) -> list[str]:
     return [
         *comando_reinstalar(reg),
         ArgUv.WITH,
-        f"{PREFIXO_GIT}{url}@{ref}{subdiretorio}",
+        f"{PREFIXO_GIT}{url}@{ref}{fragmento}",
     ]
 
 
@@ -210,9 +233,13 @@ def _atualizar(
 ) -> None:
     publicados: list[str] = []
     sem_resposta: list[str] = []
+    url_motor = url_do_motor()
+
+    def do_motor(r: Requisito) -> bool:
+        return do_repo_do_motor(r.git, r.subdiretorio, url_motor)
 
     def alvo(r: Requisito) -> Requisito:
-        if normalizar(r.nome) not in nomes:
+        if normalizar(r.nome) not in nomes or do_motor(r):
             return r
         if r.git is None:
             # Sem checagem no índice: contá-lo sempre impediria o "tudo em dia".
@@ -229,6 +256,14 @@ def _atualizar(
         return replace(r, ref=ref_mais_nova(saida))
 
     novo = replace(reg, motor=alvo(reg.motor), plugins=tuple(map(alvo, reg.plugins)))
+    if normalizar(PACOTE_MOTOR) in nomes:
+        novo = replace(
+            novo,
+            plugins=tuple(
+                replace(p, ref=novo.motor.ref) if do_motor(p) else p
+                for p in novo.plugins
+            ),
+        )
     if novo == reg and not publicados:
         print(
             "Nada a reinstalar."
@@ -255,10 +290,21 @@ def plugin(args: argparse.Namespace) -> None:
             _reinstalar(reg, comando_reinstalar(replace(reg, plugins=restantes)))
         case AcaoPlugin.ATUALIZAR:
             pedidos = [_de_fora(reg, args.pacote)] if args.pacote else reg.plugins
+            url_motor = url_do_motor()
+            do_motor = [
+                p for p in pedidos if do_repo_do_motor(p.git, p.subdiretorio, url_motor)
+            ]
+            for p in do_motor:
+                print(
+                    f"{p.nome} acompanha o motor; atualize-o com "
+                    f"`{PACOTE_MOTOR} {COMANDO_ATUALIZAR_MOTOR}`."
+                )
+            if pedidos and len(do_motor) == len(pedidos):
+                return
             _atualizar(
                 reg,
                 origens,
-                {normalizar(p.nome) for p in pedidos},
+                {normalizar(p.nome) for p in pedidos if p not in do_motor},
                 pedido=bool(args.pacote),
             )
 
