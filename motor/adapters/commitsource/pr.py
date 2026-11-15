@@ -18,6 +18,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
+from motor.cronometro import Etapa, cronometrar
 from motor.domain.referencia import FonteReferencia, Referencia, regex_do_chamado
 from motor.domain.types import CommitRef, PrIndex
 from motor.ports import EstadoRepo, GitRepo, HostPr
@@ -83,7 +84,8 @@ class PrCommitSource:
         ref = self.referencia() if any(chamados) else None
 
         self.progresso(Progresso("varrendo PRs"))
-        self._varrer()
+        with cronometrar(Etapa.VARREDURA_PRS):
+            self._varrer()
         indice = self.estado.prs_indexadas(self.repo_estado)
 
         for posicao, chamado in enumerate(chamados, start=1):
@@ -132,11 +134,12 @@ class PrCommitSource:
         # Só as PRs que casam com um chamado pedido vão ao host. O índice tem
         # 1118 PRs num repo real; buscar os commits de todas encostaria no limite
         # de taxa para responder pergunta que ninguém fez.
-        novas = {
-            pr_id: self.host.commits_da_pr(pr_id)
-            for pr_id in pr_ids
-            if pr_id not in por_pr
-        }
+        with cronometrar(Etapa.COMMITS_PRS):
+            novas = {
+                pr_id: self.host.commits_da_pr(pr_id)
+                for pr_id in pr_ids
+                if pr_id not in por_pr
+            }
         # ponytail: PR cujos commits são todos merge commit grava vazio e vira
         # miss em todo run. Custa 1 request por run e não tem PR assim na
         # prática; se aparecer, o conserto é uma linha-sentinela por PR.

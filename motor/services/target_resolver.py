@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from motor.cronometro import Etapa, cronometrar
 from motor.domain.types import Alvo, TaskTarget
 from motor.errors import MotorError
 from motor.ports import CommitSource, TaskSource
@@ -42,7 +43,8 @@ class TargetResolver:
                 Progresso("chamados marcados no rastreador", indice, len(fontes))
             )
             try:
-                chamados = self.tasks.fetch(v)
+                with cronometrar(Etapa.TAREFAS):
+                    chamados = self.tasks.fetch(v)
             except MotorError as e:
                 # add_note em vez de embrulhar: o tipo do adapter tem de sobreviver a
                 # esta fronteira, senao BackendIndisponivel chega no chamador como

@@ -7,6 +7,7 @@ import logging
 import time
 from dataclasses import dataclass, replace
 
+from motor.cronometro import Etapa, cronometrar
 from motor.domain.commits import extrair_chamado, ordenar_por_grafo
 from motor.domain.reconcile import (
     FatosDoGit,
@@ -239,16 +240,19 @@ def verificar_sem_fetch(
             return _snapshot_congelado(deps, versao, info.liberada_em)
 
         if com_worktree:
-            preparar_worktree(deps, versao)
+            with cronometrar(Etapa.WORKTREE):
+                preparar_worktree(deps, versao)
         ref_alvo = versionamento.branch(versao)
 
-    base_commit = _base_commit(deps, catalogo, versao, info)
+    with cronometrar(Etapa.BASE):
+        base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
     # A politica decide de quais versoes vem as tarefas do alvo
     # (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md). `corte` e a data
     # do commit-base gravado — o mesmo que nao se recomputa acima, pelo mesmo
     # motivo.
-    corte = deps.git.commit_meta(base_commit).commit_date
+    with cronometrar(Etapa.BASE):
+        corte = deps.git.commit_meta(base_commit).commit_date
     fontes = versionamento.politica.fontes(
         versao,
         ContextoAtribuicao(
@@ -260,7 +264,6 @@ def verificar_sem_fetch(
         ),
     )
     resultado = resolver.resolve(versao, fontes, liberadas=situacao.liberadas)
-    logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
     exclusoes = deps.estado.exclusoes(deps.repo)
     sem_entrega = deps.estado.sem_entrega(deps.repo)
@@ -281,18 +284,15 @@ def verificar_sem_fetch(
 
     todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
 
-    t = time.monotonic()
-    presentes, suspeitos_conteudo = _presenca(ctx, todos_os_hashes, candidatos_conflito)
-    tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
-        ctx,
-        [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
-        presentes,
-    )
-    logger.debug(
-        "oraculo de presenca: %.3fs (%d commits)",
-        time.monotonic() - t,
-        len(todos_os_hashes),
-    )
+    with cronometrar(Etapa.ORACULO):
+        presentes, suspeitos_conteudo = _presenca(
+            ctx, todos_os_hashes, candidatos_conflito
+        )
+        tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
+            ctx,
+            [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
+            presentes,
+        )
 
     status = reconciliar(
         replace(resultado, tasks=alvo),
@@ -305,24 +305,25 @@ def verificar_sem_fetch(
 
     if not auditar:
         deps.progresso(Progresso("gravando estado"))
-        deps.estado.substituir_atribuicoes(
-            deps.repo, versao, atribuicoes_de(alvo, presentes)
-        )
-        deps.estado.gravar_verificacao(
-            deps.repo,
-            versao,
-            Verificacao(
-                tip=tip,
-                impressao=impressao_da_verificacao(
-                    exclusoes,
-                    sem_entrega,
-                    julgamentos,
-                    deps.identidade_das_entradas(),
+        with cronometrar(Etapa.GRAVACAO):
+            deps.estado.substituir_atribuicoes(
+                deps.repo, versao, atribuicoes_de(alvo, presentes)
+            )
+            deps.estado.gravar_verificacao(
+                deps.repo,
+                versao,
+                Verificacao(
+                    tip=tip,
+                    impressao=impressao_da_verificacao(
+                        exclusoes,
+                        sem_entrega,
+                        julgamentos,
+                        deps.identidade_das_entradas(),
+                    ),
+                    verificado_em=verificado_em,
+                    status=status,
                 ),
-                verificado_em=verificado_em,
-                status=status,
-            ),
-        )
+            )
 
     if not manter_worktree and not auditar:
         descartar_worktrees(deps, versao)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from dataclasses import replace
 
 import pytest
@@ -1416,3 +1417,14 @@ def test_gravar_julgamento_invalida_o_carimbo_e_verificar_o_renova(onde):
 
     verificar(deps, "14.0.0")
     assert verificacao_vigente(deps, "14.0.0") is not None
+
+
+def test_verificar_debug_loga_tempo_de_cada_etapa(caplog):
+    git = _git()
+    tasks = FakeTaskSource(chamados={"13.33.1": [], "14.0.0": []})
+    caplog.set_level(logging.DEBUG, logger="motor.cronometro")
+
+    verificar(_deps(git, tasks, FakeCommitSource(), _estado_com_repo()), "14.0.0")
+
+    for etapa in ("worktree", "base", "tarefas", "oráculo de presença", "gravação"):
+        assert f"etapa {etapa}:" in caplog.text
