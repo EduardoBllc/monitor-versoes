@@ -18,6 +18,7 @@ class Etapa(StrEnum):
     VARREDURA_PRS = "varredura de PRs"
     COMMITS_PRS = "commits das PRs"
     ORACULO = "oráculo de presença"
+    CONFLITOS = "simulação de conflitos"
     GRAVACAO = "gravação"
 
 

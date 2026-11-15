@@ -1426,5 +1426,12 @@ def test_verificar_debug_loga_tempo_de_cada_etapa(caplog):
 
     verificar(_deps(git, tasks, FakeCommitSource(), _estado_com_repo()), "14.0.0")
 
-    for etapa in ("worktree", "base", "tarefas", "oráculo de presença", "gravação"):
+    for etapa in (
+        "worktree",
+        "base",
+        "tarefas",
+        "oráculo de presença",
+        "simulação de conflitos",
+        "gravação",
+    ):
         assert caplog.text.count(f"etapa {etapa}:") == 1

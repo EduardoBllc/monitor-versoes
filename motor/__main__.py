@@ -795,7 +795,7 @@ def _avisar_versao_nova(args: argparse.Namespace) -> None:
 def _configurar_logging(debug: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.ERROR,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+        format="%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s"
         if debug
         else "%(levelname)s: %(message)s",
     )

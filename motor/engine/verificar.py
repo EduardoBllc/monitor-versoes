@@ -240,8 +240,7 @@ def verificar_sem_fetch(
             return _snapshot_congelado(deps, versao, info.liberada_em)
 
         if com_worktree:
-            with cronometrar(Etapa.WORKTREE):
-                preparar_worktree(deps, versao)
+            preparar_worktree(deps, versao)
         ref_alvo = versionamento.branch(versao)
 
     resolver = _target_resolver(deps)
@@ -287,6 +286,7 @@ def verificar_sem_fetch(
         presentes, suspeitos_conteudo = _presenca(
             ctx, todos_os_hashes, candidatos_conflito
         )
+    with cronometrar(Etapa.CONFLITOS):
         tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
             ctx,
             [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
@@ -366,10 +366,11 @@ def _preparar_auditoria(
 
 def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.progresso(Progresso("preparando worktree"))
-    branch = deps.versionamento().branch(versao)
-    deps.git.use_worktree(branch)
-    if deps.git.remote_branch_exists("origin", branch):
-        deps.git.pull_branch("origin", branch)
+    with cronometrar(Etapa.WORKTREE):
+        branch = deps.versionamento().branch(versao)
+        deps.git.use_worktree(branch)
+        if deps.git.remote_branch_exists("origin", branch):
+            deps.git.pull_branch("origin", branch)
 
 
 def descartar_worktrees(deps: Deps, versao: str) -> None:
