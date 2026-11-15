@@ -142,7 +142,7 @@ def _fonte(
     rotas: Mapping[str, list[httpx.Response]]
     | Callable[[httpx.Request], httpx.Response],
     *,
-    tarefas: Mapping[str, str] | None = None,
+    tarefas: Mapping[str, object] | None = None,
     env: Mapping[str, str] | None = None,
 ) -> tuple[FonteGitlab, list[httpx.Request]]:
     """Fonte com client falso; `rotas` responde em ordem por caminho da URL."""
@@ -216,9 +216,13 @@ def test_fetch_junta_paginas_pelo_iid() -> None:
 
 @pytest.mark.parametrize(
     ("projeto", "segmento"),
-    [(PROJETO, PROJETO_CODIFICADO), (PROJETO_ID, PROJETO_ID)],
+    [
+        (PROJETO, PROJETO_CODIFICADO),
+        (PROJETO_ID, PROJETO_ID),
+        (int(PROJETO_ID), PROJETO_ID),
+    ],
 )
-def test_fetch_projeto_vira_um_segmento(projeto: str, segmento: str) -> None:
+def test_fetch_projeto_vira_um_segmento(projeto: str | int, segmento: str) -> None:
     fonte, pedidos = _fonte(
         lambda r: (
             _pagina(_milestone(VERSAO))

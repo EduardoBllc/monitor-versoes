@@ -180,7 +180,9 @@ class FonteGitlab:
         return bruto.strip() if isinstance(bruto, str) else ""
 
     def _projeto(self) -> str:
-        projeto = self._tarefa(ChaveTarefas.PROJETO)
+        bruto = self._tarefas.get(ChaveTarefas.PROJETO)
+        numerico = isinstance(bruto, int) and not isinstance(bruto, bool)
+        projeto = str(bruto) if numerico else self._tarefa(ChaveTarefas.PROJETO)
         if not projeto:
             lida = " e ".join(self._arquivos) or "nenhuma"
             raise ErroDeEntrada(
