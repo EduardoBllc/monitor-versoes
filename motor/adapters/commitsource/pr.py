@@ -81,6 +81,16 @@ class PrCommitSource:
         return self._principal
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
+        try:
+            return self._resolve(chamados)
+        finally:
+            # O daemon monta por operação: sem isto o pool HTTP do host vive
+            # até o GC.
+            fechar = getattr(self.host, "fechar", None)
+            if fechar is not None:
+                fechar()
+
+    def _resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
         # Antes da varredura: a falta de padrão não pode custar rede nem
         # escrita no índice. Sem chamado a casar, não há o que exigir.

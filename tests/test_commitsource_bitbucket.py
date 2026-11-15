@@ -306,3 +306,34 @@ def test_sem_cliente_injetado_reaproveita_um_cliente(monkeypatch):
     host.commits_da_pr(8)
 
     assert len(criados) == 1
+
+
+def test_fechar_fecha_so_o_cliente_proprio(monkeypatch):
+    # O daemon monta por operação: sem fechar, o pool keep-alive vive até o GC.
+    original = httpx.Client
+    criados: list[httpx.Client] = []
+
+    def fabrica(*args: Any, **kwargs: Any) -> httpx.Client:
+        cliente = original(transport=httpx.MockTransport(_handler_pr([])))
+        criados.append(cliente)
+        return cliente
+
+    monkeypatch.setattr(httpx, "Client", fabrica)
+    proprio = BitbucketPrs(
+        prs={"fonte": "bitbucket"},
+        arquivos=("/cfg/config.toml",),
+        remote_url=lambda: REMOTE,
+        base_url="http://testserver",
+    )
+    proprio.commits_da_pr(7)
+    proprio.fechar()
+    assert criados[0].is_closed
+
+    proprio.commits_da_pr(8)
+    assert len(criados) == 2, "depois de fechar, a próxima chamada cria outro"
+    assert not criados[1].is_closed
+
+    injetado = _host(_handler_pr([]))
+    injetado.commits_da_pr(7)
+    injetado.fechar()
+    assert not injetado._client.is_closed, "o injetado é de quem injetou"

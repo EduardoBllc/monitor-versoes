@@ -36,6 +36,7 @@ class FakeHostPr:
     desde_pedidos: list[datetime.datetime | None] = field(default_factory=list)
     commits_pedidos: list[int] = field(default_factory=list)
     err_por_pr: dict[int, Exception] = field(default_factory=dict)
+    fechamentos: int = 0
     _trava: threading.Lock = field(
         default_factory=threading.Lock, init=False, repr=False
     )
@@ -52,3 +53,6 @@ class FakeHostPr:
         if pr_id in self.err_por_pr:
             raise self.err_por_pr[pr_id]
         return list(self.commits.get(pr_id, []))
+
+    def fechar(self) -> None:
+        self.fechamentos += 1

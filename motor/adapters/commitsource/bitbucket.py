@@ -101,6 +101,7 @@ class BitbucketPrs:
         # Cliente injetado pertence a quem injetou; sem ele, um criado na
         # primeira requisição e reaproveitado (um handshake TLS, não um por PR).
         self._client = client
+        self._injetado = client
         self._trava_cliente = threading.Lock()
         self._base_url = base_url or _BASE_URL_PADRAO
         self._workspace_repo: tuple[str, str] | None = None
@@ -137,6 +138,13 @@ class BitbucketPrs:
             if self._client is None:
                 self._client = httpx.Client()
             return self._client
+
+    def fechar(self) -> None:
+        """Fecha o cliente próprio; o injetado é de quem injetou."""
+        with self._trava_cliente:
+            if self._client is not None and self._client is not self._injetado:
+                self._client.close()
+                self._client = None
 
     def verificar_credenciais(self) -> None:
         """Chamada autenticada de leitura (`GET /user`), independente de repo.

@@ -12,7 +12,7 @@ import io
 from rich.console import Console
 
 from motor.__main__ import _escrever_progresso, _relator_do_cli
-from motor.adapters.commitsource.fake import FakeCommitSource
+from motor.adapters.commitsource.fake import FakeCommitSource, FakeHostPr
 from motor.adapters.commitsource.grep import GrepCommitSource
 from motor.adapters.commitsource.pr import PrCommitSource
 from motor.adapters.estado.fake import FakeEstado
@@ -95,7 +95,6 @@ def test_fonte_de_pr_relata_a_varredura_e_depois_os_chamados():
     conhecido antes, entao vem como fase sem contagem. Os chamados continuam
     contados: e o que o operador usa para saber quanto falta.
     """
-    from motor.adapters.commitsource.fake import FakeHostPr
     from motor.adapters.estado.fake import FakeEstado
     from motor.domain.types import RepoInfo
 
@@ -122,7 +121,6 @@ def test_fonte_de_pr_relata_a_varredura_e_depois_os_chamados():
 
 
 def test_fonte_de_pr_relata_cada_pr_buscada():
-    from motor.adapters.commitsource.fake import FakeHostPr
 
     def pr(pr_id: int) -> PrIndex:
         return PrIndex(pr_id=pr_id, titulo=f"ch1 pr {pr_id}")

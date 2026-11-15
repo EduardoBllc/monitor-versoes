@@ -283,6 +283,15 @@ def test_falha_numa_pr_propaga_tipo_e_nao_grava_lote():
         _fonte(host, _git_com_master("c1", "c3"), estado).resolve(["111111", "222222"])
 
     assert estado.commits_de_pr(REPO_ESTADO, [7, 8, 9]) == {}
+    assert host.fechamentos == 1, "o pool do host fecha mesmo com falha"
+
+
+def test_resolve_fecha_o_host_ao_terminar():
+    host = FakeHostPr([_pr(7)], {7: [_commit("c1")]})
+
+    _fonte(host, _git_com_master("c1")).resolve(["255514"])
+
+    assert host.fechamentos == 1
 
 
 # -- varredura incremental -----------------------------------------------------
