@@ -71,10 +71,20 @@ def _numero(item: object) -> int:
     return numero
 
 
+def _sob_a_base(url: httpx.URL, base: httpx.URL) -> bool:
+    return (url.scheme, url.host, url.port) == (
+        base.scheme,
+        base.host,
+        base.port,
+    ) and url.raw_path.startswith(base.raw_path.rstrip(b"/") + b"/")
+
+
 def _traduzir_status(resp: httpx.Response, token: str, repo: str | None) -> None:
     """Status de erro da API como erro do motor, na ordem da tabela da spec."""
     status = resp.status_code
-    alvo = f"o repo {repo!r}" if repo else "a conta"
+    alvo, ao_alvo = (
+        (f"o repo {repo!r}", f"ao repo {repo!r}") if repo else ("a conta", "à conta")
+    )
     if status == httpx.codes.TOO_MANY_REQUESTS or (
         status == httpx.codes.FORBIDDEN
         and (
@@ -97,12 +107,19 @@ def _traduzir_status(resp: httpx.Response, token: str, repo: str | None) -> None
         )
     if status == httpx.codes.FORBIDDEN:
         raise ErroDeEntrada(
-            f"sem acesso a {alvo} ({status}): confira o {VarGithub.TOKEN}"
+            f"sem acesso {ao_alvo} ({status}): confira o {VarGithub.TOKEN}"
         )
     if status == httpx.codes.NOT_FOUND:
+        if repo is None:
+            raise ErroDeEntrada(
+                f"a API do GitHub não foi encontrada ({status}): "
+                f"confira [{Tabela.TAREFAS}] {ChaveTarefas.API_URL}"
+            )
+        # Repo privado pedido sem token também responde 404.
         raise ErroDeEntrada(
             f"{alvo} não foi encontrado ou o token não tem acesso: "
             f"confira [{Tabela.TAREFAS}] {ChaveTarefas.REPO}"
+            + ("" if token else f" ou defina [{TABELA_AMBIENTE}] {VarGithub.TOKEN}")
         )
     if status != httpx.codes.OK:
         raise BackendIndisponivel(f"GitHub respondeu {status}")
@@ -222,16 +239,17 @@ class FonteGithub:
         self, caminho: str, params: Mapping[str, str], repo: str
     ) -> list[object]:
         """Todos os itens de uma lista paginada pelo cabeçalho `Link`."""
-        url = self._base() + caminho
+        base = self._base()
+        url: str | httpx.URL = base + caminho
         pedido: Mapping[str, str] | None = {
             **params,
             _Param.POR_PAGINA: str(_POR_PAGINA),
         }
-        pedidas: set[str] = set()
+        pedidas: set[httpx.URL] = set()
         itens: list[object] = []
         while True:
-            resp = self._get(url, pedido, repo)
-            pedidas.add(str(resp.request.url))
+            resp = self._get(str(url), pedido, repo)
+            pedidas.add(resp.request.url)
             try:
                 corpo = resp.json()
             except ValueError as e:
@@ -241,11 +259,22 @@ class FonteGithub:
                     f"resposta do GitHub em formato inesperado: {corpo!r}"
                 )
             itens.extend(corpo)
-            proxima = resp.links.get(_LINK_PROXIMA, {}).get(_LINK_URL)
-            if proxima is None:
+            bruta = resp.links.get(_LINK_PROXIMA, {}).get(_LINK_URL)
+            if bruta is None:
                 return itens
+            try:
+                proxima = httpx.URL(bruta)
+            except httpx.InvalidURL as e:
+                raise RespostaInvalida(
+                    f"GitHub mandou página inválida {bruta!r}"
+                ) from e
+            # O token iria junto: só segue página sob a api_url configurada.
+            if not _sob_a_base(proxima, httpx.URL(base)):
+                raise RespostaInvalida(
+                    f"GitHub apontou página fora de {base}: {bruta!r}"
+                )
             if proxima in pedidas:
-                raise RespostaInvalida(f"GitHub repetiu a página {proxima!r}")
+                raise RespostaInvalida(f"GitHub repetiu a página {bruta!r}")
             # A URL do `Link` já traz todos os parâmetros.
             url, pedido = proxima, None
 

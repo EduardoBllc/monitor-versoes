@@ -67,11 +67,13 @@ o número, e o repo define `[referencia] padrao = "#{id}"`.
 | Milestone com o título da versão não existe no repo | entrada |
 | 401 sem token (repo exige autenticação) ou com token recusado | entrada |
 | 403 sem acesso ao repo | entrada |
-| 404: repo inexistente ou token sem acesso a ele | entrada |
+| 404: repo inexistente ou token sem acesso a ele; ou API não encontrada na `api_url` | entrada |
+| Página seguinte da lista fora da `api_url`, inválida ou repetida | resposta inválida |
 | Limite de requisições (429, ou 403 com limite esgotado) | serviço indisponível |
 | Falha de rede ou outro status | serviço indisponível |
 
-Milestone sem issues devolve lista vazia.
+A página seguinte só é seguida se estiver sob a `api_url`, para não enviar o token a outro
+host. Milestone sem issues devolve lista vazia.
 
 ### Diagnóstico
 
