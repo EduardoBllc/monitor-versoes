@@ -15,7 +15,7 @@ import os
 import re
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any, NamedTuple
@@ -48,7 +48,8 @@ def _cronometrar(*args: str) -> Iterator[None]:
         logger.debug("git %s: %.3fs", " ".join(args), time.monotonic() - inicio)
 
 
-#: Hashes por chamada de `commits_meta`. Existe pelo limite de tamanho de
+#: Hashes por processo nas leituras em lote (`commits_meta`, `patch_ids`,
+#: `changed_files_lote`). Existe pelo limite de tamanho de
 #: linha de comando do SO (ARG_MAX): 500 hashes de 40 caracteres dao ~20 KB,
 #: ordens de magnitude abaixo do limite de qualquer plataforma que rode isto.
 _LOTE_META = 500
@@ -77,6 +78,9 @@ class _Estagio(IntEnum):
 
 #: Modo de entrada do índice para submódulo: o oid é commit, não blob.
 _MODO_GITLINK = "160000"
+
+#: `%(objecttype)` do `cat-file --batch-check` para objeto que é commit.
+_TIPO_COMMIT = "commit"
 
 
 class _Entrada(NamedTuple):
@@ -248,6 +252,17 @@ def _parse_metas(out: str) -> dict[str, CommitRef]:
             msg=campos[3],
             parent=campos[2].split(" ")[0],
         )
+    return resultado
+
+
+def _por_hash[T](metodo: Callable[[str], T], lote: list[str]) -> dict[str, T]:
+    """Fallback de lote que falhou: um processo por hash, omitindo os que falham."""
+    resultado: dict[str, T] = {}
+    for h in lote:
+        try:
+            resultado[h] = metodo(h)
+        except MotorError:
+            continue
     return resultado
 
 
@@ -513,10 +528,76 @@ class GitSubprocess:
         return [h for h in out.splitlines() if h in pedidos]
 
     def patch_id(self, hash: str, /) -> str:
-        with _cronometrar("show", hash, "|", "patch-id"):
+        pids = self._patch_ids_do_lote([hash])
+        if not pids:
+            raise RespostaInvalida(f"patch-id vazio para {hash}")
+        # next(iter) e nao pids[hash]: o git devolve o hash completo, e quem
+        # chama pode ter passado um abreviado.
+        return next(iter(pids.values()))
+
+    def changed_files(self, hash: str, /) -> frozenset[str]:
+        out = self._output(
+            self.repo_path, "diff-tree", "--no-commit-id", "--name-only", "-r", hash
+        )
+        return frozenset(nome for nome in out.split("\n") if nome != "")
+
+    def patch_ids(self, hashes: list[str], /) -> dict[str, str]:
+        return self._em_lotes(hashes, self._patch_ids_do_lote, self.patch_id)
+
+    def _em_lotes[T](
+        self,
+        hashes: list[str],
+        ler_lote: Callable[[list[str]], dict[str, T]],
+        ler_um: Callable[[str], T],
+    ) -> dict[str, T]:
+        encontrados: dict[str, T] = {}
+        for inicio in range(0, len(hashes), _LOTE_META):
+            lote = hashes[inicio : inicio + _LOTE_META]
+            try:
+                encontrados.update(ler_lote(lote))
+                continue
+            except MotorError:
+                # um hash desconhecido derruba o lote inteiro: refaz so com os
+                # commits que existem, e o por hash fica de ultimo recurso
+                try:
+                    conhecidos = self._commits_conhecidos(lote)
+                except MotorError:
+                    encontrados.update(_por_hash(ler_um, lote))
+                    continue
+            # lista vazia nao vai ao git: `show`/`log` sem revisao assumem HEAD
+            if not conhecidos:
+                continue
+            try:
+                encontrados.update(ler_lote(conhecidos))
+            except MotorError:
+                encontrados.update(_por_hash(ler_um, conhecidos))
+        return encontrados
+
+    def _commits_conhecidos(self, lote: list[str]) -> list[str]:
+        with _cronometrar("cat-file", "--batch-check", f"({len(lote)} hashes)"):
+            proc = _rodar_git(
+                ["git", "cat-file", "--batch-check=%(objecttype)"],
+                cwd=self.repo_path,
+                input="".join(f"{h}\n" for h in lote),
+            )
+        if proc.returncode != 0:
+            raise MotorError(
+                f"git cat-file --batch-check: exit status {proc.returncode}: "
+                f"{_saida_git_publica(proc.stderr)}"
+            )
+        # uma linha por hash, na ordem; o desconhecido sai "<hash> missing"
+        tipos = proc.stdout.splitlines()
+        if len(tipos) != len(lote):
+            raise RespostaInvalida(
+                f"cat-file --batch-check: {len(tipos)} linhas para {len(lote)} hashes"
+            )
+        return [h for h, tipo in zip(lote, tipos, strict=True) if tipo == _TIPO_COMMIT]
+
+    def _patch_ids_do_lote(self, lote: list[str]) -> dict[str, str]:
+        with _cronometrar("show", f"({len(lote)} hashes)", "|", "patch-id"):
             try:
                 show = subprocess.Popen(
-                    ["git", "show", hash],
+                    ["git", "show", *lote],
                     cwd=self.repo_path,
                     stdout=subprocess.PIPE,
                     # O erro levantado abaixo so usa o returncode, entao esse
@@ -525,7 +606,7 @@ class GitSubprocess:
                     stderr=subprocess.DEVNULL,
                 )
             except OSError as e:
-                raise BackendIndisponivel(f"git show {hash}: {e}") from e
+                raise BackendIndisponivel(f"git show {' '.join(lote)}: {e}") from e
             try:
                 patch = _rodar_git(
                     ["git", "patch-id", "--stable"],
@@ -537,22 +618,48 @@ class GitSubprocess:
                     show.stdout.close()
                 show_ret = show.wait()
         if show_ret != 0:
-            raise MotorError(f"git show {hash}: exit status {show_ret}")
+            raise MotorError(f"git show {' '.join(lote)}: exit status {show_ret}")
         if patch.returncode != 0:
             raise MotorError(
                 "git patch-id --stable: exit status "
                 f"{patch.returncode}: {_saida_git_publica(patch.stderr)}"
             )
-        campos = patch.stdout.split()
-        if not campos:
-            raise RespostaInvalida(f"patch-id vazio para {hash}")
-        return campos[0]
+        # uma linha `<patch-id> <commit>` por commit com patch
+        pids: dict[str, str] = {}
+        for linha in patch.stdout.splitlines():
+            match linha.split():
+                case [pid, commit]:
+                    pids[commit] = pid
+                case _:
+                    raise RespostaInvalida(f"linha inesperada do patch-id: {linha!r}")
+        return pids
 
-    def changed_files(self, hash: str, /) -> frozenset[str]:
+    def changed_files_lote(self, hashes: list[str], /) -> dict[str, frozenset[str]]:
+        return self._em_lotes(hashes, self._changed_files_do_lote, self.changed_files)
+
+    def _changed_files_do_lote(self, lote: list[str]) -> dict[str, frozenset[str]]:
+        # Sem `--ignore-missing`: o hash desconhecido tem de faltar no
+        # retorno, e so a falha do lote o distingue de commit sem arquivo.
+        # showRoot=false e --no-renames imitam o `diff-tree` unitario.
         out = self._output(
-            self.repo_path, "diff-tree", "--no-commit-id", "--name-only", "-r", hash
+            self.repo_path,
+            "-c",
+            "log.showRoot=false",
+            "log",
+            "--no-walk=unsorted",
+            "--no-renames",
+            "--no-show-signature",
+            "--name-only",
+            f"--format={SEPARADOR_REGISTRO}%H",
+            *lote,
         )
-        return frozenset(nome for nome in out.split("\n") if nome != "")
+        # `_output` faz strip(), e o Python conta \x1e como espaço: o
+        # separador do primeiro registro some, por isso o filtro e nao [1:].
+        encontrados: dict[str, frozenset[str]] = {}
+        for bruta in filter(None, out.split(SEPARADOR_REGISTRO)):
+            commit, *nomes = bruta.split("\n")
+            encontrados[commit] = frozenset(n for n in nomes if n != "")
+        return encontrados
 
     def resolve_ref(self, ref: str, /) -> str:
         # ^{commit} descasca tag anotada: as tags de release deste projeto sao

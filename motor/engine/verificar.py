@@ -500,6 +500,8 @@ def _presenca(
 ) -> tuple[dict[str, Presence], list[CommitRef]]:
     presentes: dict[str, Presence] = {}
     suspeitos_conteudo: list[CommitRef] = []
+    ctx.oracle.precarregar_patch_ids(todos_os_hashes)
+    ctx.oracle.precarregar_arquivos(candidatos_conflito)
     for indice, (hash_, c) in enumerate(todos_os_hashes.items(), start=1):
         ctx.deps.progresso(
             Progresso("presença dos commits", indice, len(todos_os_hashes))

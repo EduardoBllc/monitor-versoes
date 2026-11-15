@@ -411,6 +411,75 @@ def test_git_subprocess_commits_meta_nao_anda_pelos_ancestrais(tmp_path):
     assert lote[tip].parent != "", "esperava o primeiro pai preenchido"
 
 
+def test_lote_do_oraculo_igual_ao_por_commit(tmp_path):
+    """O lote substitui `patch_id`/`changed_files` em laco no oraculo: divergir
+    em raiz, rename, merge limpo ou commit vazio mudaria o veredito de presenca.
+    """
+    repo_dir = init_repo_de_teste(tmp_path)
+    _run_git(repo_dir, "checkout", "-b", "lado")
+    _run_git(repo_dir, "mv", "arquivo.txt", "renomeado.txt")
+    _run_git(repo_dir, "commit", "-m", "normal com rename")
+    _run_git(repo_dir, "checkout", "master")
+    _run_git(repo_dir, "merge", "--no-ff", "-m", "merge limpo", "lado")
+    _run_git(repo_dir, "commit", "--allow-empty", "-m", "vazio")
+
+    g = new_git_subprocess(repo_dir)
+    inexistente = "0" * 40
+    # raiz, normal com rename, merge limpo, vazio
+    hs = [g.resolve_ref(r) for r in ("master~2", "lado", "master^", "master")]
+    hs.append(inexistente)
+
+    def unitario(metodo, h):
+        try:
+            return metodo(h)
+        except MotorError:
+            return None
+
+    pids = {h: unitario(g.patch_id, h) for h in hs}
+    arquivos = {h: unitario(g.changed_files, h) for h in hs}
+    # sem o inexistente o lote roda inteiro; com ele, filtra os conhecidos e refaz
+    for lista in (hs[:-1], hs):
+        assert g.patch_ids(lista) == {h: pids[h] for h in lista if pids[h] is not None}
+        assert g.changed_files_lote(lista) == {
+            h: arquivos[h] for h in lista if arquivos[h] is not None
+        }
+    assert inexistente not in g.patch_ids(hs)
+    assert inexistente not in g.changed_files_lote(hs)
+
+
+def test_hash_desconhecido_nao_derruba_o_lote_para_um_processo_por_hash(
+    tmp_path, monkeypatch
+):
+    """Origem de PR squash com branch apagada no meio do lote: sem filtrar os
+    conhecidos, cada hash do lote voltava a custar um processo."""
+    repo_dir = init_repo_de_teste(tmp_path)
+    for i in range(20):
+        with open(os.path.join(repo_dir, f"f{i}.txt"), "w") as f:
+            f.write(f"{i}\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", f"c{i}")
+    g = new_git_subprocess(repo_dir)
+    hs = g._output(repo_dir, "rev-list", "master").split()
+    hs.insert(len(hs) // 2, "0" * 40)
+
+    processos = 0
+    original = subprocess.Popen
+
+    def contar(*args, **kwargs):
+        nonlocal processos
+        processos += 1
+        return original(*args, **kwargs)
+
+    # `subprocess.run` tambem sobe pelo Popen do modulo: conta todo processo
+    monkeypatch.setattr(subprocess, "Popen", contar)
+    # lote que falha, filtro dos conhecidos, lote refeito; o lote de patch-id
+    # e o par `show | patch-id`
+    for ler, esperados in ((g.patch_ids, 5), (g.changed_files_lote, 3)):
+        processos = 0
+        assert len(ler(hs)) == len(hs) - 1
+        assert processos == esperados
+
+
 def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):
     """O filho tem data de autor ANTERIOR a do pai — e o que o rebase deixa. A
     ordem tem de vir do grafo; hash ausente falta, e lista vazia nao vira
