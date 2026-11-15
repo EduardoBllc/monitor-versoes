@@ -1,7 +1,9 @@
-import { Button, Group, NumberInput, PasswordInput, Select, Switch, Text, TextInput, Tooltip } from "@mantine/core";
+import { Button, Group, Stack, NumberInput, PasswordInput, Select, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 import { TipoCampo } from "../api/enums";
 import {
   EstadoSegredo,
+  avisoVazio,
+  ehSwitch,
   chaveDe,
   estadoSegredo,
   opcoesDe,
@@ -32,17 +34,30 @@ function Rotulo({ linha }: { linha: Linha }) {
   );
 }
 
-export function Entrada({
-  linha,
-  valores,
-  mudar,
-  descricao,
-}: {
+export function Entrada(props: PropsEntrada) {
+  const { linha, valores } = props;
+  const { campo, lido } = linha;
+  const k = chaveDe(linha.repo, linha.tabela, linha.chave);
+  const aviso = campo && !ehSwitch(linha) && avisoVazio(campo, valores[k], lido?.definido === true);
+  if (!aviso) return <EntradaCampo {...props} />;
+  return (
+    <Stack gap={4}>
+      <EntradaCampo {...props} />
+      <Text size="xs" c="yellow.8" role="status">
+        ⚠ {aviso}
+      </Text>
+    </Stack>
+  );
+}
+
+interface PropsEntrada {
   linha: Linha;
   valores: Valores;
   mudar: (k: string, v: Escalar) => void;
   descricao?: string;
-}) {
+}
+
+function EntradaCampo({ linha, valores, mudar, descricao }: PropsEntrada) {
   const k = chaveDe(linha.repo, linha.tabela, linha.chave);
   const { campo, lido } = linha;
   const label = <Rotulo linha={linha} />;

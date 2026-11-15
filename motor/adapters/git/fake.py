@@ -80,7 +80,7 @@ class FakeGit:
     )
     pulled: list[str] = field(
         default_factory=list
-    )  # espiao de teste: branches que sofreram pull_branch
+    )  # espiao de teste: branches avancadas por avancar_para_remota
     fetched: list[str] = field(
         default_factory=list
     )  # espiao de teste: remotos que sofreram fetch
@@ -422,10 +422,9 @@ class FakeGit:
             raise NaoEncontrado(f"branch {branch} nao existe")
         self.remotes[branch] = True
 
-    def pull_branch(self, remote: str, branch: str, /) -> None:
-        if branch not in self.branches:
-            raise NaoEncontrado(f"branch {branch} nao existe")
-        self.pulled.append(branch)
+    def avancar_para_remota(self, branch: str, /) -> None:
+        if branch in self.remote_refs:
+            self.pulled.append(branch)
 
     def fetch(self, remote: str, /) -> None:
         self.fetched.append(remote)

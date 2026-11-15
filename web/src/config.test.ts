@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { AcaoAlteracao, Escopo, TipoCampo } from "./api/enums";
-import type { ConfigEditavel } from "./api/tipos";
+import type { Campo, ConfigEditavel } from "./api/tipos";
 import { TABELA_AMBIENTE } from "./apoioTeste";
 import {
   ORIGEM_MOTOR,
   EstadoSegredo,
   alteracoesDe,
+  avisoVazio,
   chaveDe,
+  ehSwitch,
   estadoSegredo,
   linhasDe,
   opcoesDe,
@@ -40,6 +42,7 @@ const original: ConfigEditavel = {
       origem: ORIGEM_MOTOR,
       descricao: "",
       exemplo: "",
+      aviso_vazio: "",
     },
     {
       escopo: Escopo.AMBIENTE,
@@ -52,6 +55,7 @@ const original: ConfigEditavel = {
       origem: ORIGEM_MOTOR,
       descricao: "",
       exemplo: "",
+      aviso_vazio: "",
     },
   ],
   valores: [
@@ -211,5 +215,71 @@ describe("textoDe", () => {
     expect(textoDe(PORTA)).toBe(PORTA);
     expect(textoDe(Number(PORTA))).toBe(PORTA);
     expect(textoDe(null)).toBe("");
+  });
+});
+
+describe("avisoVazio", () => {
+  const AVISO = "sem token o limite é baixo";
+  const campo = (segredo: boolean, aviso_vazio = AVISO): Campo => ({
+    escopo: Escopo.GERAL,
+    tabela: null,
+    chave: "k",
+    tipo: TipoCampo.TEXTO,
+    rotulo: "K",
+    segredo,
+    opcoes: [],
+    origem: ORIGEM_MOTOR,
+    descricao: "",
+    exemplo: "",
+    aviso_vazio,
+  });
+
+  it("campo sem aviso nunca avisa", () => {
+    expect(avisoVazio(campo(false, ""), "", false)).toBeUndefined();
+    expect(avisoVazio(campo(true, ""), null, false)).toBeUndefined();
+  });
+
+  it("segredo avisa quando não definido e não tocado, ou marcado para apagar", () => {
+    expect(avisoVazio(campo(true), undefined, false)).toBe(AVISO);
+    expect(avisoVazio(campo(true), "", false)).toBe(AVISO);
+    expect(avisoVazio(campo(true), null, true)).toBe(AVISO);
+    expect(avisoVazio(campo(true), "x", false)).toBeUndefined();
+    expect(avisoVazio(campo(true), undefined, true)).toBeUndefined();
+  });
+
+  it("texto avisa quando vazio", () => {
+    for (const v of [undefined, null, ""]) expect(avisoVazio(campo(false), v, false)).toBe(AVISO);
+    expect(avisoVazio(campo(false), "x", false)).toBeUndefined();
+  });
+});
+
+describe("ehSwitch", () => {
+  const campo: Campo = {
+    escopo: Escopo.GERAL,
+    tabela: null,
+    chave: "k",
+    tipo: TipoCampo.TEXTO,
+    rotulo: "K",
+    segredo: false,
+    opcoes: [],
+    origem: ORIGEM_MOTOR,
+    descricao: "",
+    exemplo: "",
+    aviso_vazio: "x",
+  };
+  const lido = (valor: boolean | string) => ({
+    repo: null,
+    tabela: null,
+    chave: "k",
+    valor,
+    definido: true,
+    editavel: true,
+  });
+
+  it("valor booleano de campo texto vira Switch; tipo declarado não", () => {
+    expect(ehSwitch({ repo: null, tabela: null, chave: "k", campo, lido: lido(true) })).toBe(true);
+    expect(ehSwitch({ repo: null, tabela: null, chave: "k", campo, lido: lido("a") })).toBe(false);
+    const inteiro = { ...campo, tipo: TipoCampo.INTEIRO };
+    expect(ehSwitch({ repo: null, tabela: null, chave: "k", campo: inteiro, lido: lido(true) })).toBe(false);
   });
 });
