@@ -284,8 +284,8 @@ def test_verificar_credenciais_nao_precisa_de_repo():
     host.verificar_credenciais()
 
 
-def test_sem_cliente_injetado_reaproveita_um_cliente(monkeypatch):
-    # Um cliente por requisição pagava um handshake TLS por PR.
+@pytest.fixture
+def clientes_criados(monkeypatch) -> list[httpx.Client]:
     original = httpx.Client
     criados: list[httpx.Client] = []
 
@@ -295,45 +295,52 @@ def test_sem_cliente_injetado_reaproveita_um_cliente(monkeypatch):
         return cliente
 
     monkeypatch.setattr(httpx, "Client", fabrica)
+    return criados
+
+
+def _host_proprio() -> BitbucketPrs:
+    return BitbucketPrs(
+        prs={"fonte": "bitbucket"},
+        arquivos=("/cfg/config.toml",),
+        remote_url=lambda: REMOTE,
+        base_url="http://testserver",
+    )
+
+
+def test_sem_cliente_injetado_reaproveita_um_cliente(clientes_criados):
+    # Um cliente por requisição pagava um handshake TLS por PR.
+    host = _host_proprio()
+
+    host.commits_da_pr(7)
+    host.commits_da_pr(8)
+
+    assert len(clientes_criados) == 1
+
+
+def test_fechar_fecha_o_cliente_proprio_e_a_proxima_chamada_recria(clientes_criados):
+    # O daemon monta por operação: sem fechar, o pool keep-alive vive até o GC.
+    host = _host_proprio()
+    host.commits_da_pr(7)
+    host.fechar()
+    assert clientes_criados[0].is_closed
+
+    host.commits_da_pr(8)
+
+    assert len(clientes_criados) == 2
+    assert not clientes_criados[1].is_closed
+
+
+def test_fechar_nao_fecha_o_cliente_injetado():
+    cliente = httpx.Client(transport=httpx.MockTransport(_handler_pr([])))
     host = BitbucketPrs(
         prs={"fonte": "bitbucket"},
         arquivos=("/cfg/config.toml",),
         remote_url=lambda: REMOTE,
         base_url="http://testserver",
+        client=cliente,
     )
-
     host.commits_da_pr(7)
-    host.commits_da_pr(8)
 
-    assert len(criados) == 1
+    host.fechar()
 
-
-def test_fechar_fecha_so_o_cliente_proprio(monkeypatch):
-    # O daemon monta por operação: sem fechar, o pool keep-alive vive até o GC.
-    original = httpx.Client
-    criados: list[httpx.Client] = []
-
-    def fabrica(*args: Any, **kwargs: Any) -> httpx.Client:
-        cliente = original(transport=httpx.MockTransport(_handler_pr([])))
-        criados.append(cliente)
-        return cliente
-
-    monkeypatch.setattr(httpx, "Client", fabrica)
-    proprio = BitbucketPrs(
-        prs={"fonte": "bitbucket"},
-        arquivos=("/cfg/config.toml",),
-        remote_url=lambda: REMOTE,
-        base_url="http://testserver",
-    )
-    proprio.commits_da_pr(7)
-    proprio.fechar()
-    assert criados[0].is_closed
-
-    proprio.commits_da_pr(8)
-    assert len(criados) == 2, "depois de fechar, a próxima chamada cria outro"
-    assert not criados[1].is_closed
-
-    injetado = _host(_handler_pr([]))
-    injetado.commits_da_pr(7)
-    injetado.fechar()
-    assert not injetado._client.is_closed, "o injetado é de quem injetou"
+    assert not cliente.is_closed

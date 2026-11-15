@@ -436,6 +436,9 @@ filtro pela principal) é do núcleo. O construtor recebe só nomeados (`prs`, o
 mesclado; `arquivos`, os arquivos lidos; `remote_url`, uma função que devolve a URL do
 `origin`) e não faz I/O: credencial e URL se cobram na primeira chamada. Registre a classe no
 grupo `monitor_versoes.prs`; `verificar_credenciais()` é opcional e o `diagnostico` a usa.
+`commits_da_pr` pode ser chamada de várias threads ao mesmo tempo, então estado mutável do
+plugin precisa de trava. `fechar()`, também opcional, é chamado ao fim de cada busca (e pelo
+`diagnostico`) para liberar conexões.
 
 ### Fontes de tasks e de commits
 

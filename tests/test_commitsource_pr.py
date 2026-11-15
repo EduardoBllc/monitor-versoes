@@ -283,13 +283,19 @@ def test_falha_numa_pr_propaga_tipo_e_nao_grava_lote():
         _fonte(host, _git_com_master("c1", "c3"), estado).resolve(["111111", "222222"])
 
     assert estado.commits_de_pr(REPO_ESTADO, [7, 8, 9]) == {}
-    assert host.fechamentos == 1, "o pool do host fecha mesmo com falha"
 
 
-def test_resolve_fecha_o_host_ao_terminar():
-    host = FakeHostPr([_pr(7)], {7: [_commit("c1")]})
+@pytest.mark.parametrize("falha", [False, True])
+def test_resolve_fecha_o_host_ao_terminar(falha):
+    err: dict[int, Exception] = {7: BackendIndisponivel("boom")} if falha else {}
+    host = FakeHostPr([_pr(7)], {7: [_commit("c1")]}, err_por_pr=err)
+    fonte = _fonte(host, _git_com_master("c1"))
 
-    _fonte(host, _git_com_master("c1")).resolve(["255514"])
+    if falha:
+        with pytest.raises(BackendIndisponivel):
+            fonte.resolve(["255514"])
+    else:
+        fonte.resolve(["255514"])
 
     assert host.fechamentos == 1
 
