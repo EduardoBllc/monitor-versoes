@@ -282,6 +282,7 @@ def verificar_sem_fetch(
 
     todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
 
+    logger.debug("%s: %d commits", Etapa.ORACULO, len(todos_os_hashes))
     with cronometrar(Etapa.ORACULO):
         presentes, suspeitos_conteudo = _presenca(
             ctx, todos_os_hashes, candidatos_conflito
