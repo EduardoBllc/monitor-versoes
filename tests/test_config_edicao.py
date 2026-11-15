@@ -71,6 +71,14 @@ class FonteTokenAberto:
     )
 
 
+class FonteProjetoInteiro:
+    campos_config = (
+        Campo(
+            Escopo.GERAL, Tabela.TAREFAS, CHAVE_PROJETO, TipoCampo.INTEIRO, "Projeto"
+        ),
+    )
+
+
 CHAVE_TOKEN = "MINHA_FONTE_TOKEN"
 CHAVE_PIN = "MINHA_FONTE_PIN"
 
@@ -329,6 +337,50 @@ def test_valor_invalido_nao_muda_o_arquivo(tmp_path, alteracao):
     with pytest.raises(ErroDeEntrada):
         gravar([alteracao], ler_para_edicao().versao)
     assert _bytes() == antes
+
+
+PROJETO_TEXTO = "grupo/projeto"
+NOME_REPO = "a"
+
+
+def _projeto_texto_e_inteiro(monkeypatch) -> None:
+    _instalar(
+        monkeypatch,
+        _ep(NOME_OUTRO, "tests.test_config_edicao:FonteProjetoInteiro"),
+        _ep(NOME_PLUGIN, "tests.test_config_edicao:FonteFalsa"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("fonte_topo", "fonte_repo"), [(NOME_PLUGIN, None), (NOME_OUTRO, NOME_PLUGIN)]
+)
+def test_campo_de_plugin_valida_pela_declaracao_do_escolhido(
+    monkeypatch, tmp_path, fonte_topo, fonte_repo
+):
+    _projeto_texto_e_inteiro(monkeypatch)
+    texto = f'[tarefas]\n{Chave.FONTE} = "{fonte_topo}"\n'
+    repo = None if fonte_repo is None else NOME_REPO
+    if repo is not None:
+        texto += (
+            f"[repos.{repo}]\n{CHAVE_CAMINHO} = '{tmp_path}'\n"
+            f'[repos.{repo}.tarefas]\n{Chave.FONTE} = "{fonte_repo}"\n'
+        )
+    _escrever(texto)
+    gravar(
+        [_definir(PROJETO_TEXTO, CHAVE_PROJETO, Tabela.TAREFAS, repo)],
+        ler_para_edicao().versao,
+    )
+    assert PROJETO_TEXTO in _bytes().decode()
+
+
+def test_campo_de_plugin_recusa_valor_invalido_para_o_escolhido(monkeypatch):
+    _projeto_texto_e_inteiro(monkeypatch)
+    _escrever(f'[tarefas]\n{Chave.FONTE} = "{NOME_OUTRO}"\n')
+    with pytest.raises(ErroDeEntrada):
+        gravar(
+            [_definir(PROJETO_TEXTO, CHAVE_PROJETO, Tabela.TAREFAS)],
+            ler_para_edicao().versao,
+        )
 
 
 def test_versao_velha_recusada():
