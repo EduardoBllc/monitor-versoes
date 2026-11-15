@@ -144,7 +144,7 @@ def instalar_plugin(origem: str) -> bool:
         AcaoPlugin.INSTALAR,
         origem,
     ]
-    return subprocess.run(cmd, check=False).returncode == 0
+    return subprocess.run(cmd, check=False).returncode == CodigoSaida.OK
 
 
 def marcar(marca: Marca, texto: str) -> None:
@@ -248,7 +248,14 @@ def _instalar_embutido(p: Pergunta, embutido: Embutido, url_motor: str | None) -
     if origem is None or not instalar_plugin(origem):
         marcar(Marca.FALHA, f"não foi possível instalar o {embutido.rotulo}")
         return False
-    return embutido.nome in _fontes(p.grupo)
+    if embutido.nome not in _fontes(p.grupo):
+        marcar(
+            Marca.FALHA,
+            f"o {embutido.rotulo} foi instalado, mas não registrou a fonte "
+            f"{embutido.nome}",
+        )
+        return False
+    return True
 
 
 def _escolher(p: Pergunta, atual: str | None, url_motor: str | None) -> str | None:

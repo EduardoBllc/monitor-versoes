@@ -24,6 +24,7 @@ from enum import IntEnum
 
 
 class CodigoSaida(IntEnum):
+    OK = 0
     ERRO = 1
     USO = 2  # o do argparse
     ORIGEM_RECUSADA = 3

@@ -23,6 +23,7 @@ from motor.config import VAR_XDG_CONFIG_HOME, Chave, Tabela, caminho_config_glob
 from motor.config_edicao import GrupoPlugin
 from motor.diagnostico import Peca
 from motor.errors import CodigoSaida
+from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
 from motor.servico import ARQUIVO_SERVICE, COMANDO_CONFIGURAR, EXECUTAVEL
 
 BAIXO = "\x1b[B"
@@ -32,7 +33,6 @@ CTRL_C = "\x03"
 SIM = "s"
 NAO = "n"
 
-SAIDA_OK = 0
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes.git"
 URL_OUTRO = "https://example.com/outro-plugin.git"
 FONTE = "tests.fontes_falsas:FonteFixa"
@@ -145,11 +145,11 @@ def _rodar(*teclas: str, plataforma: str = Sistema.LINUX) -> int:
             except SystemExit as e:
                 assert isinstance(e.code, int)
                 return e.code
-    return SAIDA_OK
+    return CodigoSaida.OK
 
 
 def test_configurar_grava_so_as_duas_chaves(cen):
-    assert _rodar(CIMA, ENTER, CIMA, ENTER, ENTER) == SAIDA_OK
+    assert _rodar(CIMA, ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
     assert cen.config.read_text() == f"{cen.original}\n{COM_FONTES}"
 
 
@@ -163,7 +163,7 @@ def test_configurar_grava_so_as_duas_chaves(cen):
 )
 def test_reconfigurar_parte_do_valor_atual(cen, teclas, fontes):
     cen.escrever(f"{cen.original}\n{COM_FONTES}")
-    assert _rodar(*teclas) == SAIDA_OK
+    assert _rodar(*teclas) == CodigoSaida.OK
     assert cen.fontes() == fontes
     if fontes:
         assert cen.config.read_text() == cen.original
@@ -172,12 +172,21 @@ def test_reconfigurar_parte_do_valor_atual(cen, teclas, fontes):
 def test_embutido_nao_instalado_instala_pelo_repo_do_motor(cen):
     cen.pontos[GrupoPlugin.TAREFAS] = {}
     cen.pacote = {GrupoPlugin.TAREFAS: {JIRA: FONTE}}
-    assert _rodar(CIMA, ENTER, ENTER, ENTER) == SAIDA_OK
-    assert cen.instalados == [f"git+{URL_MOTOR}#subdirectory=plugins/{JIRA}"]
+    assert _rodar(CIMA, ENTER, ENTER, ENTER) == CodigoSaida.OK
+    assert cen.instalados == [
+        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_PLUGINS}{JIRA}"
+    ]
     assert cen.fontes() == {Tabela.TAREFAS: JIRA}
 
 
-@pytest.mark.parametrize("saida", [SAIDA_OK, CodigoSaida.ERRO])
+def test_embutido_instalado_sem_a_fonte_avisa_e_volta(cen, capsys):
+    cen.pontos[GrupoPlugin.TAREFAS] = {}
+    assert _rodar(CIMA, ENTER, ENTER, ENTER, ENTER) == CodigoSaida.OK
+    assert f"não registrou a fonte {JIRA}" in capsys.readouterr().out
+    assert cen.config.read_text() == cen.original
+
+
+@pytest.mark.parametrize("saida", [CodigoSaida.OK, CodigoSaida.ERRO])
 def test_instalar_plugin_chama_o_plugin_instalar_do_motor(monkeypatch, saida):
     chamados: list[list[str]] = []
 
@@ -186,7 +195,7 @@ def test_instalar_plugin_chama_o_plugin_instalar_do_motor(monkeypatch, saida):
         return subprocess.CompletedProcess(cmd, saida)
 
     monkeypatch.setattr(subprocess, "run", rodar)
-    assert assistente.instalar_plugin(URL_OUTRO) is (saida == SAIDA_OK)
+    assert assistente.instalar_plugin(URL_OUTRO) is (saida == CodigoSaida.OK)
     assert chamados == [
         [
             sys.executable,
@@ -207,7 +216,7 @@ def test_outro_plugin_instala_e_escolhe_a_fonte(cen, tmp_path, tipo):
     else:
         origem, escolha_tipo = URL_OUTRO, BAIXO + ENTER
     teclas = (BAIXO, ENTER, escolha_tipo, origem, ENTER, ENTER, ENTER)
-    assert _rodar(*teclas) == SAIDA_OK
+    assert _rodar(*teclas) == CodigoSaida.OK
     assert cen.instalados == [origem]
     assert cen.fontes() == {Tabela.TAREFAS: FONTE_NOVA}
 
@@ -215,14 +224,14 @@ def test_outro_plugin_instala_e_escolhe_a_fonte(cen, tmp_path, tipo):
 def test_outro_plugin_com_varias_fontes_pergunta_qual(cen):
     cen.pacote = {GrupoPlugin.TAREFAS: {FONTE_NOVA: FONTE, OUTRA_FONTE: FONTE}}
     teclas = (BAIXO, ENTER, BAIXO, ENTER, URL_OUTRO, ENTER, BAIXO, ENTER)
-    assert _rodar(*teclas, ENTER, ENTER) == SAIDA_OK
+    assert _rodar(*teclas, ENTER, ENTER) == CodigoSaida.OK
     assert cen.fontes() == {Tabela.TAREFAS: OUTRA_FONTE}
 
 
 def test_outro_plugin_sem_fonte_avisa_e_volta(cen, capsys):
     cen.pacote = {GrupoPlugin.PRS: {HOST_NOVO: HOST}}
     outro = (BAIXO, ENTER, BAIXO, ENTER, URL_OUTRO, ENTER)
-    assert _rodar(*outro, ENTER, ENTER, ENTER) == SAIDA_OK
+    assert _rodar(*outro, ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert "não fornece fonte de tarefas" in capsys.readouterr().out
     assert cen.instalados == [URL_OUTRO]
     assert cen.config.read_text() == cen.original
@@ -237,10 +246,10 @@ def test_ctrl_c_nao_grava(cen):
     assert len(cen.instalados) == 1
 
 
-def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, capsys, caplog):
+def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, caplog):
     monkeypatch.setattr(assistente, "_terminal", lambda: False)
     assert _rodar() == CodigoSaida.ERRO
-    assert "interativo" in capsys.readouterr().err + caplog.text
+    assert "interativo" in caplog.text
     assert cen.config.read_text() == cen.original
     assert cen.instalados == []
 
@@ -254,7 +263,7 @@ def test_ligar_e_desligar_no_login(cen, ligado, tecla, comandos):
     if ligado:
         cen.unit().parent.mkdir(parents=True)
         cen.unit().write_text("")
-    assert _rodar(ENTER, ENTER, tecla) == SAIDA_OK
+    assert _rodar(ENTER, ENTER, tecla) == CodigoSaida.OK
     assert cen.comandos == comandos
     assert cen.unit().exists() is not ligado
 
@@ -270,13 +279,13 @@ def test_padrao_do_login(cen, com_config, ligado, comandos):
     if ligado:
         cen.unit().parent.mkdir(parents=True)
         cen.unit().write_text("")
-    assert _rodar(ENTER, ENTER, ENTER) == SAIDA_OK
+    assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert cen.comandos == comandos
     assert cen.unit().exists() is (ligado or not com_config)
 
 
 def test_windows_nao_pergunta_o_login(cen):
-    assert _rodar(ENTER, ENTER, plataforma=WINDOWS) == SAIDA_OK
+    assert _rodar(ENTER, ENTER, plataforma=WINDOWS) == CodigoSaida.OK
     assert cen.comandos == []
 
 
@@ -294,7 +303,7 @@ def test_fechamento(
 ):
     monkeypatch.setattr(assistente, "_serve_responde", lambda esperar: serve)
     monkeypatch.setattr(assistente, "_ambiente_grafico", lambda: grafico)
-    assert _rodar(ENTER, ENTER, ENTER, *teclas) == SAIDA_OK
+    assert _rodar(ENTER, ENTER, ENTER, *teclas) == CodigoSaida.OK
     saida = capsys.readouterr().out
     assert cen.abertos == abertos
     assert no_stdout in saida
