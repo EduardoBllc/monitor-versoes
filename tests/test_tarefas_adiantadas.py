@@ -16,9 +16,14 @@ OUTRA = "16.9.0"
 @dataclass
 class _FonteContadora:
     chamadas: list[str] = field(default_factory=list)
+    adiantada: Future[list[str]] | None = None
+    # adiantada.done() no instante de cada chamada
+    adiantada_terminada: list[bool] = field(default_factory=list)
 
     def fetch(self, versao: str, /) -> list[str]:
         self.chamadas.append(versao)
+        if self.adiantada is not None:
+            self.adiantada_terminada.append(self.adiantada.done())
         return [f"ch-{versao}"]
 
 
@@ -32,14 +37,14 @@ def test_alvo_vem_do_adiantado_sem_chamar_a_fonte():
 
 
 def test_outra_versao_espera_o_adiantado_e_usa_a_fonte():
-    fonte = _FonteContadora()
     adiantada: Future[list[str]] = Future()
+    fonte = _FonteContadora(adiantada=adiantada)
     threading.Timer(0.05, adiantada.set_result, args=(["123"],)).start()
 
     resultado = TarefasAdiantadas(fonte, ALVO, adiantada).fetch(OUTRA)
 
     # a fonte nao e thread-safe: so pode ser chamada com o adiantado terminado
-    assert adiantada.done()
+    assert fonte.adiantada_terminada == [True]
     assert resultado == [f"ch-{OUTRA}"]
     assert fonte.chamadas == [OUTRA]
 
