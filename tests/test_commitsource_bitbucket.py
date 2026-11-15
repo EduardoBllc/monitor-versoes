@@ -136,7 +136,7 @@ def _handler_com_fields(paginas: dict[str, Any]):
 
     def handler(request: httpx.Request) -> httpx.Response:
         corpo = paginas[request.url.path]
-        # Como a API real, o `next` carrega a query (e o `fields`) da página atual.
+        # Como `_paginar` supõe, o `next` carrega a query (e o `fields`) da página atual.
         campos = request.url.params.get("fields", "")
         caminhos = [c.split(".") for c in campos.split(",") if c]
         pedidos = [c[1:] for c in caminhos if c[0] == "values"]
