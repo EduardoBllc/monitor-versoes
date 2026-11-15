@@ -20,7 +20,7 @@ from prompt_toolkit.output import DummyOutput
 from motor import agendador, assistente, instalacao, plugins, servico
 from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
 from motor.agendador import ARQUIVO_TIMER, FLAG_AGORA, SYSTEMCTL, Acao, Sistema
-from motor.assistente import SUFIXOS_SQLITE, OrigemOutro, Situacao
+from motor.assistente import SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
     VAR_XDG_CONFIG_HOME,
@@ -469,3 +469,35 @@ def test_desinstalar_pasta_dentro_de_outra_nao_e_listada_a_parte(
     listados = {linha.split(": ", 1)[1] for linha in _linhas_do_relatorio(capsys)}
     assert str(Path(diretorio_cache())) not in listados
     assert not any(d.exists() for d in dados)
+
+
+def test_desinstalar_banco_dentro_de_pasta_link_fica_com_o_alvo(
+    cen, tmp_path, monkeypatch, capsys
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    alvo = tmp_path / "alvo-fora"
+    _trocar_por_link(dados[1], alvo)
+    banco = dados[1] / "estado.db"
+    banco.write_text("")
+    monkeypatch.setenv(VarAmbiente.DATABASE_SQLITE_PATH, str(banco))
+
+    assert _rodar(SIM, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert not dados[1].is_symlink()
+    assert (alvo / "estado.db").exists()
+    assert Marca.FALHA not in capsys.readouterr().out
+
+
+def test_desinstalar_banco_que_e_diretorio_nao_passa_por_rmtree(
+    cen, tmp_path, monkeypatch, capsys
+):
+    banco = tmp_path / "banco-dir.db"
+    (banco / "dentro").mkdir(parents=True)
+    monkeypatch.setenv(VarAmbiente.DATABASE_SQLITE_PATH, str(banco))
+
+    assert _rodar(SIM, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
+
+    assert (banco / "dentro").exists()
+    saida = capsys.readouterr().out
+    assert Marca.FALHA in saida
+    assert f"{Situacao.MANTIDO}: {banco}" in saida

@@ -387,16 +387,16 @@ def _existe(caminho: Path) -> bool:
 def _sem_aninhados(candidatos: list[Path]) -> list[Path]:
     """O `.resolve()` só compara; quem fica é o caminho original.
 
-    Uma pasta dentro de outra listada sai junto com ela, salvo se a de fora é
-    um link (só o link é removido).
+    Um caminho dentro de outro listado sai junto com ele; se o de fora é um
+    link, o de dentro é conteúdo do alvo e fica intocado.
     """
 
     def dentro(c: Path, fora: Path) -> bool:
-        return (
-            fora is not c
-            and not fora.is_symlink()
-            and fora.resolve() in c.resolve().parents
-        )
+        if fora is c:
+            return False
+        if fora.is_symlink():
+            return fora in c.parents
+        return fora.resolve() in c.resolve().parents
 
     vistos: set[Path] = set()
     unicos = []
@@ -407,7 +407,7 @@ def _sem_aninhados(candidatos: list[Path]) -> list[Path]:
     return [c for c in unicos if not any(dentro(c, f) for f in unicos)]
 
 
-def _caminhos_de_dados() -> list[Path]:
+def _caminhos_de_dados() -> tuple[list[Path], list[Path]]:
     """Pastas e arquivos do SQLite (fora delas), só os que existem."""
     pastas = [
         Path(os.path.abspath(p))
@@ -422,7 +422,11 @@ def _caminhos_de_dados() -> list[Path]:
     if banco:
         base = Path(os.path.abspath(Path(banco).expanduser()))
         arquivos = [Path(f"{base}{s}") for s in SUFIXOS_SQLITE]
-    return _sem_aninhados([c for c in [*pastas, *arquivos] if _existe(c)])
+    listados = _sem_aninhados([c for c in [*pastas, *arquivos] if _existe(c)])
+    return (
+        [c for c in listados if c in pastas],
+        [c for c in listados if c in arquivos],
+    )
 
 
 def _descrever(caminho: Path) -> str:
@@ -441,9 +445,9 @@ def _confirmar_apagar(caminhos: list[Path]) -> bool:
         sys.exit(CodigoSaida.INTERROMPIDO)
 
 
-def _apagar(caminho: Path) -> bool:
+def _apagar(caminho: Path, pasta: bool) -> bool:
     try:
-        if caminho.is_dir() and not caminho.is_symlink():
+        if pasta and caminho.is_dir() and not caminho.is_symlink():
             shutil.rmtree(caminho)
         else:
             caminho.unlink()
@@ -461,12 +465,13 @@ def desinstalar() -> None:
         )
         marcar(Marca.OK, "serviço de login removido")
     agendador.remover_agendador_antigo(home, agendador.rodar_comando_do_sistema)
-    caminhos = _caminhos_de_dados()
+    pastas, arquivos = _caminhos_de_dados()
+    caminhos = [*pastas, *arquivos]
     if not caminhos:
         print("Nenhum dado do monitor-versoes a remover.")
         return
     apagar = _terminal() and _confirmar_apagar(caminhos)
     for caminho in caminhos:
-        removido = apagar and _apagar(caminho)
+        removido = apagar and _apagar(caminho, pasta=caminho in pastas)
         situacao = Situacao.REMOVIDO if removido else Situacao.MANTIDO
         print(f"{situacao}: {_descrever(caminho)}")
