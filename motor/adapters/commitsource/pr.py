@@ -16,12 +16,16 @@ from __future__ import annotations
 import datetime
 import re
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 
 from motor.domain.referencia import FonteReferencia, Referencia, regex_do_chamado
 from motor.domain.types import CommitRef, PrIndex
 from motor.ports import EstadoRepo, GitRepo, HostPr
 from motor.progresso import Progresso, RelatorProgresso, silencioso
+
+# Requisições simultâneas ao host: teto fixo para não encostar no limite de taxa.
+_TETO_HOST = 4
 
 
 def _padrao_do_chamado(ref: Referencia, chamado: str) -> re.Pattern[str]:
@@ -77,6 +81,16 @@ class PrCommitSource:
         return self._principal
 
     def resolve(self, chamados: list[str], /) -> dict[str, list[CommitRef]]:
+        try:
+            return self._resolve(chamados)
+        finally:
+            # O daemon monta por operação: sem isto o pool HTTP do host vive
+            # até o GC.
+            fechar = getattr(self.host, "fechar", None)
+            if fechar is not None:
+                fechar()
+
+    def _resolve(self, chamados: list[str]) -> dict[str, list[CommitRef]]:
         resultado: dict[str, list[CommitRef]] = {}
         # Antes da varredura: a falta de padrão não pode custar rede nem
         # escrita no índice. Sem chamado a casar, não há o que exigir.
@@ -85,6 +99,16 @@ class PrCommitSource:
         self.progresso(Progresso("varrendo PRs"))
         self._varrer()
         indice = self.estado.prs_indexadas(self.repo_estado)
+        prs_do_chamado: dict[str, list[int]] = {}
+        if ref is not None:
+            for chamado in filter(None, chamados):
+                padrao = _padrao_do_chamado(ref, chamado)
+                prs_do_chamado[chamado] = [
+                    pr.pr_id for pr in indice if _casa(pr, padrao)
+                ]
+        por_pr = self._commits_das_prs(
+            list(dict.fromkeys(p for ids in prs_do_chamado.values() for p in ids))
+        )
 
         for posicao, chamado in enumerate(chamados, start=1):
             # Relata antes de filtrar: o total é o tamanho do lote pedido, e
@@ -95,8 +119,7 @@ class PrCommitSource:
             )
             if not chamado:  # sem ID não tem como casar PR
                 continue
-            assert ref is not None  # algum chamado não vazio existe
-            commits = self._commits_do_chamado(ref, chamado, indice)
+            commits = self._commits_do_chamado(chamado, prs_do_chamado[chamado], por_pr)
             if commits:
                 resultado[chamado] = commits
         return resultado
@@ -122,28 +145,37 @@ class PrCommitSource:
         # chega aqui, então a marca não avança por cima de um índice furado.
         self.estado.gravar_varredura(self.repo_estado, self.nome_host, prs, inicio)
 
-    def _commits_do_chamado(
-        self, ref: Referencia, chamado: str, indice: list[PrIndex]
-    ) -> list[CommitRef]:
-        padrao = _padrao_do_chamado(ref, chamado)
-        pr_ids = [pr.pr_id for pr in indice if _casa(pr, padrao)]
-
-        por_pr = self.estado.commits_de_pr(self.repo_estado, pr_ids)
+    def _commits_das_prs(self, pr_ids: list[int]) -> dict[int, list[CommitRef]]:
+        """Commits das PRs do lote: do cache, e o que faltar do host em paralelo."""
         # Só as PRs que casam com um chamado pedido vão ao host. O índice tem
         # 1118 PRs num repo real; buscar os commits de todas encostaria no limite
         # de taxa para responder pergunta que ninguém fez.
-        novas = {
-            pr_id: self.host.commits_da_pr(pr_id)
-            for pr_id in pr_ids
-            if pr_id not in por_pr
-        }
+        por_pr = self.estado.commits_de_pr(self.repo_estado, pr_ids)
+        faltam = [pr_id for pr_id in pr_ids if pr_id not in por_pr]
+        if not faltam:
+            return por_pr
+        novas: dict[int, list[CommitRef]] = {}
+        with ThreadPoolExecutor(max_workers=_TETO_HOST) as pool:
+            futuros = {pool.submit(self.host.commits_da_pr, p): p for p in faltam}
+            try:
+                for posicao, futuro in enumerate(as_completed(futuros), start=1):
+                    novas[futuros[futuro]] = futuro.result()
+                    # No thread principal: o relator não é seguro entre threads.
+                    self.progresso(Progresso("commits das PRs", posicao, len(faltam)))
+            except BaseException:
+                pool.shutdown(cancel_futures=True)
+                raise
+        # Só depois de todas: lote parcial no cache faria o próximo run dar o
+        # chamado por resolvido sem a PR que falhou.
         # ponytail: PR cujos commits são todos merge commit grava vazio e vira
         # miss em todo run. Custa 1 request por run e não tem PR assim na
         # prática; se aparecer, o conserto é uma linha-sentinela por PR.
-        if novas:
-            self.estado.gravar_commits_de_pr(self.repo_estado, novas)
-        por_pr |= novas
+        self.estado.gravar_commits_de_pr(self.repo_estado, novas)
+        return por_pr | novas
 
+    def _commits_do_chamado(
+        self, chamado: str, pr_ids: list[int], por_pr: dict[int, list[CommitRef]]
+    ) -> list[CommitRef]:
         vistos: set[str] = set()
         commits: list[CommitRef] = []
         for pr_id in pr_ids:

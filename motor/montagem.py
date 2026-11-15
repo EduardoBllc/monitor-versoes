@@ -241,6 +241,11 @@ class HostDaConfig:
     def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
         return self.carregar().commits_da_pr(pr_id)
 
+    def fechar(self) -> None:
+        fechar = getattr(self._carregado, "fechar", None)
+        if fechar is not None:
+            fechar()
+
 
 def montar_task_source(
     config: ConfigProjeto, *, fonte: str = "config", lista_manual: str = ""

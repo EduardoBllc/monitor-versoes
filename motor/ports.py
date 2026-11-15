@@ -101,8 +101,9 @@ class HostPr(Protocol):
 
     Opcionais, lidos so se existirem: `verificar_credenciais()`, chamado pelo
     `monitor-versoes diagnostico` (devolve `None` ao verificar, ou o motivo de
-    nao ter verificado), e `campos_config`, as chaves que o plugin
-    declara para a modal de configuracao.
+    nao ter verificado); `fechar()`, chamado pelo nucleo ao fim de cada busca
+    para liberar conexoes e que nao deve levantar; e `campos_config`, as
+    chaves que o plugin declara para a modal de configuracao.
     """
 
     def prs_mergeadas(self, desde: datetime.datetime | None, /) -> Iterable[PrIndex]:
@@ -117,6 +118,7 @@ class HostPr(Protocol):
         """Commits da PR, sem merge commits e sem `chamado`.
 
         O nucleo cacheia o que vier: o filtro de merge commit tem de vir antes.
+        Pode ser chamada de várias threads ao mesmo tempo.
         """
         ...
 

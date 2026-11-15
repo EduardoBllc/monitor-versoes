@@ -16,10 +16,10 @@ Auth: Authorization: Basic base64(email:token). Paginação pelo campo `next`.
 from __future__ import annotations
 
 import base64
-import contextlib
 import datetime
 import os
 import re
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from enum import StrEnum
 from typing import Any
@@ -102,8 +102,11 @@ class BitbucketPrs:
         self._prs = prs
         self._arquivos = arquivos
         self._remote_url = remote_url
-        # Cliente injetado pertence a quem injetou; sem ele, um por requisição.
+        # Cliente injetado pertence a quem injetou; sem ele, um criado na
+        # primeira requisição e reaproveitado (um handshake TLS, não um por PR).
         self._client = client
+        self._injetado = client
+        self._trava_cliente = threading.Lock()
         self._base_url = base_url or _BASE_URL_PADRAO
         self._workspace_repo: tuple[str, str] | None = None
 
@@ -132,13 +135,20 @@ class BitbucketPrs:
         workspace, repo = self._workspace_repo
         return f"{self._base_url}/repositories/{workspace}/{repo}/pullrequests"
 
-    @contextlib.contextmanager
-    def _cliente(self) -> Iterator[httpx.Client]:
-        if self._client is not None:
-            yield self._client
-            return
-        with httpx.Client() as client:
-            yield client
+    def _cliente(self) -> httpx.Client:
+        # Trava: `commits_da_pr` roda em várias threads, e a primeira chamada
+        # pode ser concorrente.
+        with self._trava_cliente:
+            if self._client is None:
+                self._client = httpx.Client()
+            return self._client
+
+    def fechar(self) -> None:
+        """Fecha o cliente próprio; o injetado é de quem injetou."""
+        with self._trava_cliente:
+            if self._client is not None and self._client is not self._injetado:
+                self._client.close()
+                self._client = None
 
     def verificar_credenciais(self) -> None:
         """Chamada autenticada de leitura (`GET /user`), independente de repo.
@@ -147,13 +157,12 @@ class BitbucketPrs:
         `monitor-versoes diagnostico`.
         """
         auth = self._auth_header()
-        with self._cliente() as client:
-            try:
-                resp = client.get(
-                    f"{self._base_url}/user", headers={"Authorization": auth}
-                )
-            except httpx.HTTPError as e:
-                raise BackendIndisponivel(f"consultando o Bitbucket: {e}") from e
+        try:
+            resp = self._cliente().get(
+                f"{self._base_url}/user", headers={"Authorization": auth}
+            )
+        except httpx.HTTPError as e:
+            raise BackendIndisponivel(f"consultando o Bitbucket: {e}") from e
         if resp.status_code != httpx.codes.OK:
             raise BackendIndisponivel(
                 f"Bitbucket respondeu {resp.status_code} ao validar a credencial"
@@ -172,35 +181,32 @@ class BitbucketPrs:
         }
         if desde is not None:
             params["q"] = f'updated_on >= "{desde.isoformat()}"'
-        # Lista, não gerador: a paginação inteira acontece aqui, dentro do
-        # cliente aberto. Extrai (e valida a forma) antes de filtrar: `.get` num
-        # item que não é dict estouraria AttributeError cru.
+        # Extrai (e valida a forma) antes de filtrar: `.get` num item que não
+        # é dict estouraria AttributeError cru.
         # Credencial antes do remote: a falta dela é o erro que o operador
         # precisa ver primeiro.
         auth = self._auth_header()
-        with self._cliente() as client:
-            indices = [
-                self._para_pr_index(pr)
-                for pr in self._paginar(client, auth, self._prs_url(), params)
-            ]
+        indices = [
+            self._para_pr_index(pr)
+            for pr in self._paginar(self._cliente(), auth, self._prs_url(), params)
+        ]
         return [indice for indice in indices if indice.pr_id]
 
     def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
         auth = self._auth_header()
-        with self._cliente() as client:
-            return [
-                self._para_commit_ref(c)
-                for c in self._paginar(
-                    client,
-                    auth,
-                    f"{self._prs_url()}/{pr_id}/commits",
-                    {"fields": _CAMPOS_COMMITS},
-                )
-                # merge commit: cherry-pick -x não aceita sem -m, e o conteúdo
-                # já vem pelos pais individuais. O núcleo cacheia o que vier,
-                # então o filtro tem de ser aqui.
-                if c.get("hash") and len(c.get("parents") or []) <= 1
-            ]
+        return [
+            self._para_commit_ref(c)
+            for c in self._paginar(
+                self._cliente(),
+                auth,
+                f"{self._prs_url()}/{pr_id}/commits",
+                {"fields": _CAMPOS_COMMITS},
+            )
+            # merge commit: cherry-pick -x não aceita sem -m, e o conteúdo
+            # já vem pelos pais individuais. O núcleo cacheia o que vier,
+            # então o filtro tem de ser aqui.
+            if c.get("hash") and len(c.get("parents") or []) <= 1
+        ]
 
     @staticmethod
     def _para_pr_index(pr: JSON) -> PrIndex:
