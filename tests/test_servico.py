@@ -12,7 +12,7 @@ import pytest
 
 from motor import servico
 from motor.__main__ import COMANDO_SERVE, main
-from motor.agendador import FLAG_AGORA, LAUNCHCTL, SYSTEMCTL, Acao, Sistema
+from motor.agendador import LAUNCHCTL, SYSTEMCTL, Acao, Sistema
 from motor.errors import BackendIndisponivel
 from motor.servico import (
     ARGUMENTOS_SERVE,
@@ -86,7 +86,8 @@ def test_ligar_cria_o_servico_e_sobe(
         assert "Restart=on-failure" in texto
         assert registro.comandos == [
             [*SYSTEMCTL, Acao.DAEMON_RELOAD],
-            [*SYSTEMCTL, Acao.ENABLE, FLAG_AGORA, ARQUIVO_SERVICE],
+            [*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE],
+            [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE],
         ]
     else:
         dados = plistlib.loads(arquivo.read_bytes())
@@ -200,7 +201,8 @@ def test_executavel_motor_nao_depende_do_path(monkeypatch: pytest.MonkeyPatch) -
 @pytest.mark.parametrize(
     ("sistema", "acao"),
     [
-        pytest.param(Sistema.LINUX, Acao.ENABLE, id="linux"),
+        pytest.param(Sistema.LINUX, Acao.ENABLE, id="linux-enable"),
+        pytest.param(Sistema.LINUX, Acao.RESTART, id="linux-restart"),
         pytest.param(Sistema.MACOS, Acao.LOAD, id="macos", marks=pula_mac_no_windows),
     ],
 )

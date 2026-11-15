@@ -112,7 +112,9 @@ def ligar(
             return
         arquivo.write_text(_unit(executavel))
         rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
-        rodar_comando([*SYSTEMCTL, Acao.ENABLE, FLAG_AGORA, ARQUIVO_SERVICE])
+        rodar_comando([*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE])
+        # `enable --now` não reinicia uma unit ativa, que seguiria com o ExecStart antigo.
+        rodar_comando([*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE])
     except BackendIndisponivel:
         # O arquivo é o que `ligado()` olha: deixá-lo sem o serviço de pé mente que está ligado.
         arquivo.unlink(missing_ok=True)
