@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import pty
 import shutil
 import subprocess
 import sys
@@ -31,6 +30,7 @@ URL_INSTALADOR_UV = "https://astral.sh/uv/install.sh"
 ULTIMA_TAG = "v0.10.0"
 VERSAO_ANTIGA = "v0.2.0"
 TAGS_REMOTAS = (VERSAO_ANTIGA, "v0.9.0", ULTIMA_TAG, "v1.0.0-rc1", "latest")
+SUBPASTA_JIRA = "#subdirectory=plugins/jira"
 PLUGIN_GIT = (
     "git+https://github.com/exemplo/monitor-versoes-plugin"
     "@99ffe18fdf9f7268abfaf2c611f87e4b10db50c5"
@@ -257,6 +257,7 @@ def test_ja_instalado_roda_atualizar_motor(maquina):
     assert not [c for c in maquina.chamadas() if c.startswith("uv tool install")]
 
 
+@pytest.mark.parametrize("sufixo_repo", ["", ".git"])
 @pytest.mark.parametrize(
     ("sonda", "atualizar"),
     [
@@ -265,12 +266,14 @@ def test_ja_instalado_roda_atualizar_motor(maquina):
     ],
 )
 def test_instalacao_que_o_atualizar_motor_nao_atende_reinstala_e_lista_plugins(
-    maquina, sonda, atualizar
+    maquina, sonda, atualizar, sufixo_repo
 ):
+    jira = f"git+{URL_REPO}{sufixo_repo}@{VERSAO_ANTIGA}{SUBPASTA_JIRA}"
     pasta = maquina.raiz / "plugum"
     linha = (
         f"{PACOTE_MOTOR} {VERSAO_ANTIGA} [extras: anthropic] "
-        f"[with: monitor-versoes-plugin {PLUGIN_GIT}, plugumfile://{pasta}]"
+        f"[with: monitor-versoes-plugin {PLUGIN_GIT}, plugumfile://{pasta}, "
+        f"monitor-versoes-jira {jira}]"
     )
     maquina.env |= {
         Var.SAIDA_SONDA: str(sonda),
@@ -287,6 +290,7 @@ def test_instalacao_que_o_atualizar_motor_nao_atende_reinstala_e_lista_plugins(
     instalar = f"{servico.EXECUTAVEL} {COMANDO_PLUGIN} {AcaoPlugin.INSTALAR}"
     assert f"{instalar} '{PLUGIN_GIT}'" in r.stdout
     assert f"{instalar} '{pasta}'" in r.stdout
+    assert f"{instalar} 'git+{URL_REPO}{sufixo_repo}{SUBPASTA_JIRA}'" in r.stdout
 
 
 @pytest.mark.parametrize(
@@ -359,6 +363,8 @@ def test_sem_terminal_ou_sem_configurar_nao_abre_o_configurar(maquina, args):
 
 
 def test_com_terminal_roda_o_configurar_no_tty(maquina):
+    import pty
+
     sh = str(maquina.sistema / "sh")
     pid, fd = pty.fork()
     if pid == 0:  # pragma: no cover - filho, com o pty como terminal de controle
