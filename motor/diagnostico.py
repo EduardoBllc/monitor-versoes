@@ -26,8 +26,6 @@ from motor.montagem import (
 from motor.novidades import Cache
 from motor.servico import COMANDO_CONFIGURAR, EXECUTAVEL, EstadoServico, Situacao
 
-URL_ISSUE_DAEMON = "https://github.com/EduardoBllc/monitor-versoes/issues/191"
-
 
 class Peca(enum.StrEnum):
     AMBIENTE = "Ambiente"
@@ -157,7 +155,7 @@ def peca_daemon(situacao: Situacao) -> Resultado:
             return Resultado(
                 Peca.DAEMON,
                 Estado.NAO_CONFIGURADO,
-                f"sem suporte neste sistema ({URL_ISSUE_DAEMON})",
+                "sem suporte neste sistema",
             )
 
 

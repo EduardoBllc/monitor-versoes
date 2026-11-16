@@ -128,6 +128,8 @@ def _terminal() -> bool:
 
 
 def _ambiente_grafico() -> bool:
+    if sys.platform == Sistema.WINDOWS:
+        return True
     if sys.platform == Sistema.MACOS:
         return VAR_SSH not in os.environ
     return any(os.environ.get(v) for v in VARS_DISPLAY)
@@ -148,6 +150,17 @@ def instalar_plugin(origem: str) -> bool:
         ).returncode
         == CodigoSaida.OK
     )
+
+
+def _terminar_se_windows() -> None:
+    """No Windows o plugin é instalado por um ajudante que reinstala o motor."""
+    if sys.platform != Sistema.WINDOWS:
+        return
+    marcar(Marca.OK, "plugin entregue à reinstalação; nada foi gravado")
+    print(
+        f"Quando ela terminar, rode `{servico.EXECUTAVEL} {servico.COMANDO_CONFIGURAR}` de novo."
+    )
+    sys.exit(CodigoSaida.OK)
 
 
 def marcar(marca: Marca, texto: str) -> None:
@@ -237,6 +250,7 @@ def _outro_plugin(p: Pergunta, antes: set[str]) -> str | None:
     if not instalar_plugin(_pedir_origem()):
         marcar(Marca.FALHA, "a instalação do plugin falhou (o erro está acima)")
         return None
+    _terminar_se_windows()
     novas = sorted(_fontes(p.grupo) - antes)
     if not novas:
         marcar(Marca.FALHA, f"o pacote não fornece {p.tipo}; escolha outra opção")
@@ -251,6 +265,7 @@ def _instalar_embutido(p: Pergunta, embutido: Embutido, url_motor: str | None) -
     if origem is None or not instalar_plugin(origem):
         marcar(Marca.FALHA, f"não foi possível instalar o {embutido.rotulo}")
         return False
+    _terminar_se_windows()
     if embutido.nome not in _fontes(p.grupo):
         marcar(
             Marca.FALHA,

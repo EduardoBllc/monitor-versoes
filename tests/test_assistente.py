@@ -329,9 +329,54 @@ def test_padrao_do_login(cen, com_config, ligado, comandos):
     assert cen.unit().exists() is (ligado or not com_config)
 
 
-def test_windows_nao_pergunta_o_login(cen):
+def test_sistema_sem_suporte_nao_pergunta_o_login(cen):
     assert _rodar(ENTER, ENTER, sistema=None) == CodigoSaida.OK
     assert cen.comandos == []
+
+
+def test_windows_pergunta_o_login_e_liga_pelo_agendador(cen, monkeypatch):
+    ligadas: list[tuple[object, ...]] = []
+    monkeypatch.setattr(servico, "ligar", lambda *args: ligadas.append(args))
+    assert _rodar(ENTER, ENTER, SIM, sistema=Sistema.WINDOWS) == CodigoSaida.OK
+    assert ligadas == [
+        (
+            Sistema.WINDOWS,
+            Path.home(),
+            servico.executavel_servico(),
+            agendador.rodar_comando_do_sistema,
+        )
+    ]
+
+
+class _SysWindows:
+    """O `sys` do assistente em Windows; o asyncio do teste segue no real."""
+
+    platform = Sistema.WINDOWS
+
+    def __getattr__(self, nome: str) -> object:
+        return getattr(sys, nome)
+
+
+def test_windows_conta_como_ambiente_grafico(cen, monkeypatch):
+    for var in assistente.VARS_DISPLAY:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(servico, "serve_responde", lambda esperar: True)
+    monkeypatch.setattr(assistente, "sys", _SysWindows())
+    assert _rodar(ENTER, ENTER, ENTER, SIM) == CodigoSaida.OK
+    assert cen.abertos == [servico.ENDERECO_WEB]
+
+
+def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
+    cen, monkeypatch, capsys
+):
+    cen.pontos[GrupoPlugin.TAREFAS] = {}
+    gravados: list[object] = []
+    monkeypatch.setattr(assistente, "sys", _SysWindows())
+    monkeypatch.setattr(assistente, "gravar", lambda *args: gravados.append(args))
+    assert _rodar(_subir_ate(JIRA), ENTER) == CodigoSaida.OK
+    assert len(cen.instalados) == 1
+    assert gravados == []
+    assert f"{EXECUTAVEL} {COMANDO_CONFIGURAR}" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
