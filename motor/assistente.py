@@ -152,9 +152,13 @@ def instalar_plugin(origem: str) -> bool:
     )
 
 
+def _para_depois_de_instalar() -> bool:
+    return sys.platform == Sistema.WINDOWS
+
+
 def _terminar_se_windows() -> None:
     """No Windows o plugin é instalado por um ajudante que reinstala o motor."""
-    if sys.platform != Sistema.WINDOWS:
+    if not _para_depois_de_instalar():
         return
     marcar(Marca.OK, "plugin entregue à reinstalação; nada foi gravado")
     print(

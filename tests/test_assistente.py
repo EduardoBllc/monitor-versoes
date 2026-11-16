@@ -131,6 +131,11 @@ class Cenario:
         return servico.caminho(Sistema.LINUX, Path.home())
 
 
+@pytest.fixture(autouse=True)
+def _sem_parada_do_windows(monkeypatch):
+    monkeypatch.setattr(assistente, "_para_depois_de_instalar", lambda: False)
+
+
 @pytest.fixture
 def cen(monkeypatch, tmp_path) -> Cenario:
     monkeypatch.setenv(VAR_XDG_CONFIG_HOME, str(tmp_path / "xdg"))
@@ -384,7 +389,7 @@ def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
 ):
     cen.pontos[GrupoPlugin.TAREFAS] = {}
     gravados: list[object] = []
-    monkeypatch.setattr(assistente, "sys", _SysWindows())
+    monkeypatch.setattr(assistente, "_para_depois_de_instalar", lambda: True)
     monkeypatch.setattr(assistente, "gravar", lambda *args: gravados.append(args))
     assert _rodar(_subir_ate(JIRA), ENTER) == CodigoSaida.OK
     assert len(cen.instalados) == 1
@@ -416,6 +421,9 @@ def test_fechamento(
 def test_configurar_no_primeiro_uso_nao_acusa_falta_de_migracao(cen, capsys):
     assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert f"{Estado.FALHA.value}  {Peca.MIGRACAO}" not in capsys.readouterr().out
+
+
+TAREFA_EXISTE = ""  # `consultar_do_sistema` devolve texto se existe, None se não
 
 
 def _dados_do_usuario(tmp_path, monkeypatch, cache_base=None) -> list[Path]:
@@ -465,17 +473,24 @@ def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
     cen, tmp_path, monkeypatch
 ):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
-    monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: "")
+    monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: TAREFA_EXISTE)
 
     assert (
         _rodar(NAO, sistema=Sistema.WINDOWS, comando=COMANDO_DESINSTALAR)
         == CodigoSaida.OK
     )
 
-    pares = {(c[1], c[3]) for c in cen.comandos}
-    for tarefa in (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES):
-        assert (AcaoSchtasks.END, tarefa) in pares
-        assert (AcaoSchtasks.DELETE, tarefa) in pares
+    tarefas = (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES)
+    ordem = [
+        (acao, tarefa)
+        for _, acao, _, tarefa, *_ in cen.comandos
+        if tarefa in tarefas and acao != AcaoSchtasks.QUERY
+    ]
+    for tarefa in tarefas:
+        assert [a for a, t in ordem if t == tarefa] == [
+            AcaoSchtasks.END,
+            AcaoSchtasks.DELETE,
+        ]
     assert all(d.exists() for d in dados)
 
 
