@@ -6,8 +6,8 @@
 
 | Caso                                  | Sinal                     | Ação                                                          |
 | ------------------------------------- | ------------------------- | ------------------------------------------------------------- |
-| Task nova marcada p/ versão           | em Tickio, fora do estado | aplica + registra                                             |
-| Task desmarcada do alvo               | no estado, fora do Tickio | **avisa**; remoção é decisão humana (reverter é destrutivo)   |
+| Task nova marcada p/ versão           | na fonte, fora do estado  | aplica + registra                                             |
+| Task desmarcada do alvo               | no estado, fora da fonte  | **avisa**; remoção é decisão humana (reverter é destrutivo)   |
 | Commit do estado sumiu                | no estado, fora do git    | **alerta forte** — estado corrompido/rebase; não auto-corrige |
 | Pick manual sem o tool                | no git, fora do estado    | **avisa**; oferece regularizar o estado                       |
 | Grep pegou commit que não deve entrar | candidato                 | vira exclusão, com motivo                                     |

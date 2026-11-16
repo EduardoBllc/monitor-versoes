@@ -12,7 +12,7 @@ núcleo: o padrão é a `exata`, em que o alvo de `V` são só as tarefas marcad
 ([026](026-esquema-e-atribuicao-plugaveis.md)). "Com tag" abaixo é o critério de liberada em
 uso, e a ordem é a do esquema.
 
-Uma tarefa marcada para a versão `V` no Tickio vale para `V` **e para toda versão em
+Uma tarefa marcada para a versão `V` na fonte de tarefas vale para `V` **e para toda versão em
 construção (sem tag) cujo número seja maior**. Não é preciso remarcar a tarefa a cada versão
 nova que abre. Visto do lado da versão, que é como o motor precisa:
 

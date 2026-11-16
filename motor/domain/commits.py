@@ -1,4 +1,4 @@
-"""Porte de internal/domain/commits.go."""
+"""Commits x chamados: casamento, extração, agrupamento e ordem."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Porte de internal/services/base_resolver.go."""
+"""Base de uma versão: a ref que o esquema aponta e o commit dela."""
 
 from __future__ import annotations
 

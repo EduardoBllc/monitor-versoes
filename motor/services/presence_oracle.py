@@ -1,4 +1,4 @@
-"""Porte de internal/services/presence_oracle.go."""
+"""Oráculo de presença: o commit de origem está na branch, mesmo com outro hash?"""
 
 from __future__ import annotations
 

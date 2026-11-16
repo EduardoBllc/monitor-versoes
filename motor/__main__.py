@@ -1,6 +1,4 @@
-"""Porte de cmd/motor/main.go.
-
-CLI fina: so parseia argumentos, monta Deps e chama o engine. Sem logica de
+"""CLI fina: so parseia argumentos, monta Deps e chama o engine. Sem logica de
 dominio aqui.
 """
 

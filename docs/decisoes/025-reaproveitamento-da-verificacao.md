@@ -13,8 +13,9 @@ impressão das exclusões, do "sem entrega" e dos julgamentos de órfão, hora e
 o lote de novo. O carimbo **vale só se as quatro condições** se cumprem:
 
 - **existe**: sem carimbo, nada a reaproveitar;
-- **tem até 5 minutos** (`VALIDADE_VERIFICACAO`, constante): o Tickio e as demais branches
-  mudam fora do nosso alcance, e a idade limita o quanto o resultado pode ter envelhecido.
+- **tem até 5 minutos** (`VALIDADE_VERIFICACAO`, constante): a fonte de tarefas e as demais
+  branches mudam fora do nosso alcance, e a idade limita o quanto o resultado pode ter
+  envelhecido.
   A hora é a do início da varredura, antes das leituras externas, e carimbo com hora no
   futuro (relógio adiantado em outra máquina) não vale;
 - **o tip é o mesmo**: outro commit na branch (inclusive picks de um `atualizar` anterior,
@@ -39,8 +40,8 @@ carimbo só poupa a simulação, nunca a checagem que protege versão liberada.
 aparece na aplicação e vira checkpoint. Dois casos conhecidos:
 
 - Tag criada em **outra** versão nesse intervalo não invalida o carimbo, e pode mudar a
-  distribuição do alvo ([005](005-alvo-distribuicao-entre-versoes.md)), como uma mudança no
-  Tickio — a mesma classe de risco que a validade já cobre. O congelamento dessa outra
+  distribuição do alvo ([005](005-alvo-distribuicao-entre-versoes.md)), como uma mudança na
+  fonte de tarefas — a mesma classe de risco que a validade já cobre. O congelamento dessa outra
   versão fica para o próximo `verificar`.
 - A prévia da TUI mantém a worktree se o operador cancelar; é checkout descartável que o
   próximo GC limpa.
