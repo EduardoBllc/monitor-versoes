@@ -57,6 +57,15 @@ jobs:
       - run: choco install make --no-progress
         if: runner.os == 'Windows'
       - run: uv sync --all-extras --locked --python 3.14
+      # O Chromium baixado depende só da versão do Playwright travada no lock.
+      - id: playwright
+        if: matrix.alvo == 'web-e2e'
+        run: echo "versao=$(jq -r '.packages["node_modules/@playwright/test"].version' web/package-lock.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6.1.0
+        if: matrix.alvo == 'web-e2e'
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.versao }}
       # O navegador e as libs de sistema dele não vêm no `npm ci`; o `npm ci`
       # antes garante que o `npx` use a versão travada no lock.
       - run: cd web && npm ci && npx playwright install --with-deps chromium

@@ -69,4 +69,4 @@ web-dist:
 
 # Jornadas no navegador contra o daemon real, servindo o build versionado.
 web-e2e:
-	cd web && npm ci && npx playwright test
+	cd web && npm ci && npm run e2e
