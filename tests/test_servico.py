@@ -319,6 +319,24 @@ VAR_CONFIG_EXE = "EXE"
 NS = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
 USUARIO = ("DOMINIO", "fulano")
 PADRAO_INICIO = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d"
+XPATH_USUARIO = "Triggers/LogonTrigger/UserId"
+XPATH_INICIO = "Triggers/TimeTrigger/StartBoundary"
+INTERVALO_REPETICAO = "PT1M"
+LOGON_INTERATIVO = "InteractiveToken"
+NIVEL_MINIMO = "LeastPrivilege"
+POLITICA_IGNORAR = "IgnoreNew"
+SEM_LIMITE = "PT0S"
+FALSO = "false"
+XML_ESPERADO = {
+    "Triggers/TimeTrigger/Repetition/Interval": INTERVALO_REPETICAO,
+    "Principals/Principal/LogonType": LOGON_INTERATIVO,
+    "Principals/Principal/RunLevel": NIVEL_MINIMO,
+    "Settings/MultipleInstancesPolicy": POLITICA_IGNORAR,
+    "Settings/DisallowStartIfOnBatteries": FALSO,
+    "Settings/StopIfGoingOnBatteries": FALSO,
+    "Settings/ExecutionTimeLimit": SEM_LIMITE,
+    "Actions/Exec/Command": EXE_WINDOWS,
+}
 
 
 def _schtasks(acao: AcaoSchtasks, *resto: str) -> list[str]:
@@ -345,24 +363,17 @@ def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
         _schtasks(AcaoSchtasks.CREATE, FLAG_XML, arquivo, FLAG_FORCAR_SCHTASKS),
         _schtasks(AcaoSchtasks.RUN),
     ]
-    raiz = ET.fromstring(xmls[0].split("?>", 1)[1])
+    (xml,) = xmls
+    raiz = ET.fromstring(xml.split("?>", 1)[1])
 
     def texto(caminho: str) -> str | None:
-        return raiz.findtext(caminho.replace("/", f"/{NS}").join([NS, ""]))
+        return raiz.findtext("/".join(NS + p for p in caminho.split("/")))
 
-    assert texto("Triggers/LogonTrigger/UserId") == "\\".join(USUARIO)
-    assert re.fullmatch(
-        PADRAO_INICIO, texto("Triggers/TimeTrigger/StartBoundary") or ""
-    )
-    assert texto("Triggers/TimeTrigger/Repetition/Interval") == "PT1M"
+    assert texto(XPATH_USUARIO) == "\\".join(USUARIO)
+    assert re.fullmatch(PADRAO_INICIO, texto(XPATH_INICIO) or "")
     assert raiz.find(f".//{NS}Repetition/{NS}Duration") is None
-    assert texto("Principals/Principal/LogonType") == "InteractiveToken"
-    assert texto("Principals/Principal/RunLevel") == "LeastPrivilege"
-    assert texto("Settings/MultipleInstancesPolicy") == "IgnoreNew"
-    assert texto("Settings/DisallowStartIfOnBatteries") == "false"
-    assert texto("Settings/StopIfGoingOnBatteries") == "false"
-    assert texto("Settings/ExecutionTimeLimit") == "PT0S"
-    assert texto("Actions/Exec/Command") == EXE_WINDOWS
+    for xpath, esperado in XML_ESPERADO.items():
+        assert texto(xpath) == esperado, xpath
     assert not Path(arquivo).exists()
 
 
