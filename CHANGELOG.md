@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/EduardoBllc/monitor-versoes/compare/v0.4.0...v0.4.1) (2026-11-16)
+
+
+### Correções
+
+* plugin instalar ignora o [tool.uv.sources] dos plugins ([#217](https://github.com/EduardoBllc/monitor-versoes/issues/217)) ([75ef790](https://github.com/EduardoBllc/monitor-versoes/commit/75ef790251a6f537f9a05933d5cce12bbcd70cc3))
+
 ## [0.4.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.3.0...v0.4.0) (2026-11-16)
 
 
