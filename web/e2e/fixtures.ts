@@ -123,10 +123,21 @@ export function git(manifesto: Manifesto, cwd: string, ...args: string[]): strin
   }).trim();
 }
 
+/** Dispara as inscrições vencidas, como o agendador do sistema faz. */
+export function rodarInscricoes(manifesto: Manifesto, raiz: string): void {
+  execFileSync("uv", uv(RAIZ_DO_PROJETO, "monitor-versoes", "inscricao", "rodar"), {
+    cwd: raiz,
+    env: { ...ambienteBase(), ...manifesto.ambiente },
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: MONTAGEM_CENARIO_MS,
+  });
+}
+
 export const test = base.extend<{
   raizDoProjeto: string;
   daemon: Daemon;
   manifesto: Manifesto;
+  raiz: string;
   adicionarChamado: (versao: string, chamado: string) => Promise<void>;
 }>({
   raizDoProjeto: [RAIZ_DO_PROJETO, { option: true }],
@@ -171,6 +182,7 @@ export const test = base.extend<{
     }
   },
   manifesto: async ({ daemon }, use) => use(daemon.manifesto),
+  raiz: async ({ daemon }, use) => use(daemon.raiz),
   // O motor relê o mapa a cada consulta: muda o estado vivo sem tocar no snapshot.
   adicionarChamado: async ({ daemon }, use) =>
     use(async (versao, chamado) => {

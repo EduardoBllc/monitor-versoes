@@ -207,3 +207,96 @@ export async function julgarOrfao(
   await dialogo.getByRole("textbox", { name: CampoModal.MOTIVO, exact: true }).fill(motivo);
   await dialogo.getByRole("button", { name: BotaoModal.GRAVAR, exact: true }).click();
 }
+
+enum DialogoInscricoes {
+  TITULO = "Inscrições",
+}
+
+enum BotaoInscricoes {
+  INSCREVER = "Inscrever selecionada",
+  REMOVER = "Remover",
+}
+
+enum TextoInscricao {
+  NUNCA_EXECUTOU = "nunca executou",
+}
+
+const dialogoInscricoes = (page: Page): Locator =>
+  page.getByRole("dialog", { name: DialogoInscricoes.TITULO, exact: true });
+
+export function linhaDaInscricao(page: Page, versao: string): Locator {
+  return dialogoInscricoes(page).getByRole("row").filter({ hasText: versao });
+}
+
+export async function inscreverSelecionada(page: Page): Promise<void> {
+  await dialogoInscricoes(page)
+    .getByRole("button", { name: BotaoInscricoes.INSCREVER, exact: true })
+    .click();
+}
+
+export async function removerInscricao(page: Page, versao: string): Promise<void> {
+  await linhaDaInscricao(page, versao)
+    .getByRole("button", { name: BotaoInscricoes.REMOVER, exact: true })
+    .click();
+}
+
+export function inscricaoNuncaExecutou(page: Page, versao: string): Locator {
+  return linhaDaInscricao(page, versao).getByText(TextoInscricao.NUNCA_EXECUTOU);
+}
+
+/** A notificação da rodada: título "versão · repo". */
+export function avisoDaRodada(page: Page, versao: string, repo: string): Locator {
+  return page.getByText(`${versao} · ${repo}`, { exact: true });
+}
+
+enum DialogoConfig {
+  TITULO = "Configuração",
+}
+
+enum BotaoConfig {
+  TESTAR = "Testar",
+  SALVAR = "Salvar",
+}
+
+export enum CampoRepo {
+  PISO = "Piso de versão",
+}
+
+const dialogoConfig = (page: Page): Locator =>
+  page.getByRole("dialog", { name: DialogoConfig.TITULO, exact: true });
+
+/** Vai à seção pelo nome na lateral (o do repo, para as seções de repositório). */
+export async function abrirSecaoDaConfiguracao(page: Page, nome: string): Promise<void> {
+  await dialogoConfig(page)
+    .getByRole("navigation")
+    .getByRole("button", { name: nome })
+    .click();
+}
+
+export function campoDaConfiguracao(page: Page, campo: CampoRepo): Locator {
+  return dialogoConfig(page).getByLabel(campo);
+}
+
+export async function testarSecao(page: Page): Promise<void> {
+  await dialogoConfig(page)
+    .getByRole("button", { name: BotaoConfig.TESTAR, exact: true })
+    .click();
+}
+
+export function resultadoDoTeste(page: Page, nome: string): Locator {
+  return dialogoConfig(page).getByText(`✓ ${nome}`, { exact: true });
+}
+
+export async function salvarConfiguracao(page: Page): Promise<void> {
+  await dialogoConfig(page)
+    .getByRole("button", { name: BotaoConfig.SALVAR, exact: true })
+    .click();
+}
+
+enum AvisoConfig {
+  SALVA = "Configuração salva",
+}
+
+export function avisoConfiguracaoSalva(page: Page): Locator {
+  return page.getByText(AvisoConfig.SALVA, { exact: true });
+}
