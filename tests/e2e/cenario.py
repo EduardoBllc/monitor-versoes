@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     VAR_APPDATA,
     VAR_LOCALAPPDATA,
@@ -40,6 +41,14 @@ ARQUIVO_CONFLITO = "conflito.txt"
 ARQUIVO_VAZIO = "vazio.txt"
 VERSAO_NOVA = "1.7.0"
 DATA_INICIAL = datetime.datetime(2026, 1, 5, 9, 0, tzinfo=datetime.UTC)
+
+
+class VarProcesso(StrEnum):
+    """Variáveis isoladas que o motor não nomeia em constante."""
+
+    HOME = "HOME"
+    PYTHONPATH = "PYTHONPATH"
+    DATABASE_BACKEND = "DATABASE_BACKEND"
 
 
 class PapelVersao(StrEnum):
@@ -125,11 +134,11 @@ def _ambiente(raiz: Path) -> dict[str, str]:
         VAR_LOCALAPPDATA: str(raiz / "localappdata"),
         VAR_APPDATA: str(raiz / "appdata"),
         # Dados e travas moram em `~/.local/share`, e o git lê o `~/.gitconfig`.
-        "HOME": str(raiz / "home"),
-        "PYTHONPATH": str(RAIZ_DO_PROJETO),
-        "DATABASE_BACKEND": "",
-        "BITBUCKET_TOKEN": "",
-        "BITBUCKET_EMAIL": "",
+        VarProcesso.HOME: str(raiz / "home"),
+        VarProcesso.PYTHONPATH: str(RAIZ_DO_PROJETO),
+        VarProcesso.DATABASE_BACKEND: "",
+        VarBitbucket.TOKEN: "",
+        VarBitbucket.EMAIL: "",
     }
 
 
