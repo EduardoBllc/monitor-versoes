@@ -1,5 +1,3 @@
-"""Porte de internal/adapters/git/fake_test.go."""
-
 import datetime
 import inspect
 

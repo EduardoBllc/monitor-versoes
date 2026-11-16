@@ -1,5 +1,3 @@
-"""Porte de internal/services/base_resolver_test.go."""
-
 import datetime
 
 import pytest

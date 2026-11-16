@@ -1,5 +1,3 @@
-"""Porte de internal/services/presence_oracle_test.go."""
-
 import datetime
 
 import pytest
