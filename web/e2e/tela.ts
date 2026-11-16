@@ -13,6 +13,8 @@ export enum Acao {
   ORFAOS = "Órfãos",
   INSCRICOES = "Inscrições",
   CONFIGURACAO = "Configuração",
+  RESOLVER_NA_WEB = "Resolver na web",
+  MARCAR_RESOLVIDO = "Marcar resolvido",
 }
 
 enum Rotulo {
@@ -126,4 +128,20 @@ export async function confirmarAbortar(page: Page): Promise<void> {
     .getByRole("dialog", { name: Dialogo.ABORTAR, exact: true })
     .getByRole("button", { name: Botao.ABORTAR, exact: true })
     .click();
+}
+
+/** Os lados do bloco em conflito, como o editor web os oferece. */
+export enum LadoConflito {
+  THEIRS = "Aceitar theirs",
+  OURS = "Aceitar ours",
+}
+
+/** Abre o arquivo na lista do editor de conflito. */
+export async function abrirArquivoDoConflito(page: Page, caminho: string): Promise<void> {
+  await page.getByText(caminho, { exact: true }).click();
+}
+
+// O "Aceitar" é ação inline do Monaco, sem papel acessível: o texto visível é o contrato.
+export async function aceitarLado(page: Page, lado: LadoConflito): Promise<void> {
+  await page.getByText(lado, { exact: true }).first().click();
 }
