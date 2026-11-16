@@ -10,6 +10,7 @@ import type { PapelVersao } from "./papeis";
 export interface Manifesto {
   repo: string;
   repo_sem_checkout: string;
+  clone: string;
   versoes: Record<PapelVersao, string>;
   chamados: Record<PapelVersao, string>;
   arquivo_conflito: string;

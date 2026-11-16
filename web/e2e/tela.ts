@@ -72,3 +72,58 @@ export function avisoAuditoria(page: Page): Locator {
 export function avisoSemCommits(page: Page, chamado: string): Locator {
   return page.getByText(`Chamados sem commits: ${chamado}`);
 }
+
+enum Dialogo {
+  ATUALIZACAO = "Atualização",
+  ABORTAR = "Abortar cherry-pick",
+}
+
+enum Botao {
+  APLICAR_LOTE = "Aplicar e publicar",
+  ABORTAR = "Abortar",
+}
+
+enum Aviso {
+  BLOQUEIO = "Atualização bloqueada",
+  VAZIO_REGISTRADO = "registrados como commit vazio",
+}
+
+const PREFIXO_TITULO_LOTE = "Atualizar";
+
+/** A confirmação do lote, aberta pela prévia do Atualizar. */
+export function confirmacaoLote(page: Page, versao: string): Locator {
+  return page.getByRole("dialog", { name: `${PREFIXO_TITULO_LOTE} ${versao}`, exact: true });
+}
+
+export function chamadoNoLote(page: Page, versao: string, chamado: string): Locator {
+  return confirmacaoLote(page, versao).getByText(`#${chamado} ·`);
+}
+
+export async function confirmarLote(page: Page, versao: string): Promise<void> {
+  await confirmacaoLote(page, versao)
+    .getByRole("button", { name: Botao.APLICAR_LOTE, exact: true })
+    .click();
+}
+
+export function resultadoAtualizacao(page: Page): Locator {
+  return page.getByRole("dialog", { name: Dialogo.ATUALIZACAO, exact: true });
+}
+
+export async function fecharDialogo(page: Page): Promise<void> {
+  await page.keyboard.press("Escape");
+}
+
+export function avisoBloqueio(page: Page): Locator {
+  return page.getByText(Aviso.BLOQUEIO);
+}
+
+export function avisoVazioRegistrado(page: Page): Locator {
+  return page.getByText(Aviso.VAZIO_REGISTRADO);
+}
+
+export async function confirmarAbortar(page: Page): Promise<void> {
+  await page
+    .getByRole("dialog", { name: Dialogo.ABORTAR, exact: true })
+    .getByRole("button", { name: Botao.ABORTAR, exact: true })
+    .click();
+}

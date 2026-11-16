@@ -88,6 +88,7 @@ _COM_ARQUIVO_PROPRIO = (*_APLICADOS, PapelVersao.FALTANTES)
 class Manifesto:
     repo: str
     repo_sem_checkout: str
+    clone: str
     versoes: dict[PapelVersao, str]
     chamados: dict[PapelVersao, str]
     arquivo_conflito: str
@@ -236,6 +237,7 @@ def montar(raiz: Path) -> Manifesto:
     return Manifesto(
         repo=NOME_REPO,
         repo_sem_checkout=NOME_SEM_CHECKOUT,
+        clone=str(clone),
         versoes=dict(VERSOES),
         chamados=dict(CHAMADOS),
         arquivo_conflito=ARQUIVO_CONFLITO,
