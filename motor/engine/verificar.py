@@ -8,6 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
+from motor.cronometro import Etapa, cronometrar
 from motor.domain.commits import extrair_chamado, ordenar_por_grafo
 from motor.domain.reconcile import (
     FatosDoGit,
@@ -211,8 +212,14 @@ def verificar(
     # chamar `deps.referencia()` ou `deps.identidade_das_entradas()` antes do resolver.
     # A busca adiantada já é leitura externa: a hora do carimbo congela antes dela.
     inicio_da_varredura = deps.agora()
+
+    def buscar_alvo() -> list[str]:
+        # Sem isto o custo da fonte some do --debug: `etapa tarefas` só mede a espera.
+        with cronometrar(Etapa.TAREFAS_ALVO):
+            return deps.tasks.fetch(versao)
+
     with ThreadPoolExecutor(max_workers=1) as executor:
-        adiantada = executor.submit(deps.tasks.fetch, versao)
+        adiantada = executor.submit(buscar_alvo)
         deps.git.fetch("origin")
         return verificar_sem_fetch(
             replace(
@@ -260,13 +267,14 @@ def verificar_sem_fetch(
             preparar_worktree(deps, versao)
         ref_alvo = versionamento.branch(versao)
 
-    base_commit = _base_commit(deps, catalogo, versao, info)
     resolver = _target_resolver(deps)
     # A politica decide de quais versoes vem as tarefas do alvo
     # (docs/decisoes/026-esquema-e-atribuicao-plugaveis.md). `corte` e a data
     # do commit-base gravado — o mesmo que nao se recomputa acima, pelo mesmo
     # motivo.
-    corte = deps.git.commit_meta(base_commit).commit_date
+    with cronometrar(Etapa.BASE):
+        base_commit = _base_commit(deps, catalogo, versao, info)
+        corte = deps.git.commit_meta(base_commit).commit_date
     fontes = versionamento.politica.fontes(
         versao,
         ContextoAtribuicao(
@@ -278,7 +286,6 @@ def verificar_sem_fetch(
         ),
     )
     resultado = resolver.resolve(versao, fontes, liberadas=situacao.liberadas)
-    logger.debug("resolver.resolve: %.3fs", time.monotonic() - inicio)
 
     exclusoes = deps.estado.exclusoes(deps.repo)
     sem_entrega = deps.estado.sem_entrega(deps.repo)
@@ -299,18 +306,17 @@ def verificar_sem_fetch(
 
     todos_os_hashes, candidatos_conflito = _hashes_do_lote(alvo, anteriores)
 
-    t = time.monotonic()
-    presentes, suspeitos_conteudo = _presenca(ctx, todos_os_hashes, candidatos_conflito)
-    tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
-        ctx,
-        [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
-        presentes,
-    )
-    logger.debug(
-        "oraculo de presenca: %.3fs (%d commits)",
-        time.monotonic() - t,
-        len(todos_os_hashes),
-    )
+    logger.debug("%s: %d commits", Etapa.ORACULO, len(todos_os_hashes))
+    with cronometrar(Etapa.ORACULO):
+        presentes, suspeitos_conteudo = _presenca(
+            ctx, todos_os_hashes, candidatos_conflito
+        )
+    with cronometrar(Etapa.CONFLITOS):
+        tip, ordem, conflitantes, conflito_causado_por = _simular_conflitos(
+            ctx,
+            [c for hash_, c in todos_os_hashes.items() if hash_ in candidatos_conflito],
+            presentes,
+        )
 
     status = reconciliar(
         replace(resultado, tasks=alvo),
@@ -323,24 +329,25 @@ def verificar_sem_fetch(
 
     if not auditar:
         deps.progresso(Progresso("gravando estado"))
-        deps.estado.substituir_atribuicoes(
-            deps.repo, versao, atribuicoes_de(alvo, presentes)
-        )
-        deps.estado.gravar_verificacao(
-            deps.repo,
-            versao,
-            Verificacao(
-                tip=tip,
-                impressao=impressao_da_verificacao(
-                    exclusoes,
-                    sem_entrega,
-                    julgamentos,
-                    deps.identidade_das_entradas(),
+        with cronometrar(Etapa.GRAVACAO):
+            deps.estado.substituir_atribuicoes(
+                deps.repo, versao, atribuicoes_de(alvo, presentes)
+            )
+            deps.estado.gravar_verificacao(
+                deps.repo,
+                versao,
+                Verificacao(
+                    tip=tip,
+                    impressao=impressao_da_verificacao(
+                        exclusoes,
+                        sem_entrega,
+                        julgamentos,
+                        deps.identidade_das_entradas(),
+                    ),
+                    verificado_em=verificado_em,
+                    status=status,
                 ),
-                verificado_em=verificado_em,
-                status=status,
-            ),
-        )
+            )
 
     if not manter_worktree and not auditar:
         descartar_worktrees(deps, versao)
@@ -384,9 +391,10 @@ def _preparar_auditoria(
 
 def preparar_worktree(deps: Deps, versao: str) -> None:
     deps.progresso(Progresso("preparando worktree"))
-    branch = deps.versionamento().branch(versao)
-    deps.git.use_worktree(branch)
-    deps.git.avancar_para_remota(branch)
+    with cronometrar(Etapa.WORKTREE):
+        branch = deps.versionamento().branch(versao)
+        deps.git.use_worktree(branch)
+        deps.git.avancar_para_remota(branch)
 
 
 def descartar_worktrees(deps: Deps, versao: str) -> None:

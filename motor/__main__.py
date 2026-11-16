@@ -843,6 +843,17 @@ def _avisar_versao_nova(args: argparse.Namespace) -> None:
         pass
 
 
+def _configurar_logging(debug: bool) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.ERROR,
+        format="%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s"
+        if debug
+        else "%(levelname)s: %(message)s",
+    )
+    if debug:
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     # Antes do `.env` do cwd: os filhos do daemon reaplicam só o central (031).
@@ -859,12 +870,7 @@ def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
     args.erro_central = erro_central
 
-    logging.basicConfig(
-        level=logging.DEBUG if getattr(args, "debug", False) else logging.ERROR,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-        if getattr(args, "debug", False)
-        else "%(levelname)s: %(message)s",
-    )
+    _configurar_logging(getattr(args, "debug", False))
 
     # Antes de abrir o banco: erro de flag nao depende de conexao, e conectar
     # primeiro esconderia a flag errada atras de um "banco inacessivel".

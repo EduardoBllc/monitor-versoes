@@ -9,6 +9,7 @@ host real se testa no arquivo dele.
 from __future__ import annotations
 
 import datetime
+import logging
 
 import pytest
 
@@ -436,3 +437,15 @@ def test_pr_com_padrao_entre_colchetes_casa_na_branch_colada():
     # A ponta `]` não é do alfabeto: o lado direito fica livre.
     prs = [_pr(1, titulo="outra", branch="[PAY-12]x")]
     assert _casadas(prs, Referencia("[{id}]"), "PAY-12") == ["c2"]
+
+
+def test_pr_debug_loga_uma_linha_por_etapa(caplog):
+    host = FakeHostPr(
+        [_pr(1), _pr(2, chamado="255515")], {1: [_commit("c1")], 2: [_commit("c2")]}
+    )
+    caplog.set_level(logging.DEBUG, logger="motor.cronometro")
+
+    _fonte(host, _git_com_master("c1", "c2")).resolve(["255514", "255515"])
+
+    assert caplog.text.count("etapa varredura de PRs:") == 1
+    assert caplog.text.count("etapa commits das PRs:") == 1

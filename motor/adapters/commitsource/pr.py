@@ -19,6 +19,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 
+from motor.cronometro import Etapa, cronometrar
 from motor.domain.referencia import FonteReferencia, Referencia, regex_do_chamado
 from motor.domain.types import CommitRef, PrIndex
 from motor.ports import EstadoRepo, GitRepo, HostPr
@@ -97,31 +98,35 @@ class PrCommitSource:
         ref = self.referencia() if any(chamados) else None
 
         self.progresso(Progresso("varrendo PRs"))
-        self._varrer()
+        with cronometrar(Etapa.VARREDURA_PRS):
+            self._varrer()
         indice = self.estado.prs_indexadas(self.repo_estado)
-        prs_do_chamado: dict[str, list[int]] = {}
-        if ref is not None:
-            for chamado in filter(None, chamados):
-                padrao = _padrao_do_chamado(ref, chamado)
-                prs_do_chamado[chamado] = [
-                    pr.pr_id for pr in indice if _casa(pr, padrao)
-                ]
-        por_pr = self._commits_das_prs(
-            list(dict.fromkeys(p for ids in prs_do_chamado.values() for p in ids))
-        )
-
-        for posicao, chamado in enumerate(chamados, start=1):
-            # Relata antes de filtrar: o total é o tamanho do lote pedido, e
-            # uma barra que pula números por causa de chamado vazio confunde
-            # mais do que informa.
-            self.progresso(
-                Progresso("commits dos chamados nas PRs", posicao, len(chamados))
+        with cronometrar(Etapa.COMMITS_PRS):
+            prs_do_chamado: dict[str, list[int]] = {}
+            if ref is not None:
+                for chamado in filter(None, chamados):
+                    padrao = _padrao_do_chamado(ref, chamado)
+                    prs_do_chamado[chamado] = [
+                        pr.pr_id for pr in indice if _casa(pr, padrao)
+                    ]
+            por_pr = self._commits_das_prs(
+                list(dict.fromkeys(p for ids in prs_do_chamado.values() for p in ids))
             )
-            if not chamado:  # sem ID não tem como casar PR
-                continue
-            commits = self._commits_do_chamado(chamado, prs_do_chamado[chamado], por_pr)
-            if commits:
-                resultado[chamado] = commits
+
+            for posicao, chamado in enumerate(chamados, start=1):
+                # Relata antes de filtrar: o total é o tamanho do lote pedido, e
+                # uma barra que pula números por causa de chamado vazio confunde
+                # mais do que informa.
+                self.progresso(
+                    Progresso("commits dos chamados nas PRs", posicao, len(chamados))
+                )
+                if not chamado:  # sem ID não tem como casar PR
+                    continue
+                commits = self._commits_do_chamado(
+                    chamado, prs_do_chamado[chamado], por_pr
+                )
+                if commits:
+                    resultado[chamado] = commits
         return resultado
 
     def _varrer(self) -> None:
