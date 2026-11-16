@@ -307,6 +307,8 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
             ).returncode
     except RepoOcupado:
         return ADIADO
+    except MotorError:
+        return SEM_PROCESSO
     except subprocess.TimeoutExpired:
         return TEMPO_ESGOTADO
     except OSError:

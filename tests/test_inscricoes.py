@@ -14,7 +14,7 @@ import pytest
 
 from motor.adapters.notificador.fake import FakeNotificador
 from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
-from motor.errors import ErroDeEntrada, RepoOcupado, RespostaInvalida
+from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, RespostaInvalida
 from motor.inscricoes import (
     ADIADO,
     ARQUIVO_INSCRICOES,
@@ -22,6 +22,7 @@ from motor.inscricoes import (
     LIMITE_EXECUCAO_S,
     MENSAGEM_SEM_RESULTADO,
     MENSAGEM_TEMPO_ESGOTADO,
+    NOME_TRAVA_INSCRICOES,
     PREFIXO_TITULO,
     SEM_PROCESSO,
     TEMPO_ESGOTADO,
@@ -368,7 +369,7 @@ def test_disparar_subprocesso_segura_a_trava_enquanto_o_filho_roda(
 
     def falso(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
         try:
-            travar_arquivo("x", caminho_trava_inscricoes())
+            travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes())
         except RepoOcupado:
             recusou.append(True)
         return subprocess.CompletedProcess(cmd, 0)
@@ -376,7 +377,7 @@ def test_disparar_subprocesso_segura_a_trava_enquanto_o_filho_roda(
     monkeypatch.setattr(subprocess, "run", falso)
     assert disparar_subprocesso(_insc(), {}) == 0
     assert recusou == [True]
-    with travar_arquivo("x", caminho_trava_inscricoes()):
+    with travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes()):
         pass
 
 
@@ -390,8 +391,30 @@ def test_disparo_com_trava_ocupada_adia_a_inscricao(
     salvar(arq, [_insc()])
     antes = arq.read_bytes()
     fake = FakeNotificador()
-    with travar_arquivo("x", caminho_trava_inscricoes()):
+    with travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes()):
         assert disparar_subprocesso(_insc(), {}) == ADIADO
         rodar(arq, HORA, lambda i: disparar_subprocesso(i, {}), fake)
     assert arq.read_bytes() == antes
     assert fake.enviadas == []
+
+
+def test_trava_inutilizavel_nao_aborta_a_rodada(
+    arq: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def falha(nome: str, arquivo: Path) -> None:
+        raise MotorError("sem acesso à trava")
+
+    monkeypatch.setattr("motor.inscricoes.travar_arquivo", falha)
+    salvar(arq, [_insc(Repo.A), _insc(Repo.B)])
+    chamadas: list[str] = []
+
+    def disparar(i: Inscricao) -> int:
+        chamadas.append(i.repo)
+        return disparar_subprocesso(i, {})
+
+    rodar(arq, HORA, disparar, FakeNotificador())
+    assert chamadas == [Repo.A, Repo.B]
+    for i in carregar(arq):
+        assert i.ultima is not None
+        assert i.ultima.desfecho == Desfecho.ERRO
+        assert i.ultima.mensagem == MENSAGEM_SEM_RESULTADO.format(codigo=SEM_PROCESSO)
