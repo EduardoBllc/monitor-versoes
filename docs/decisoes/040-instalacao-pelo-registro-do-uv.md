@@ -47,7 +47,7 @@ plugins, as versões e o aviso com o comando a rodar no terminal.
 [039](039-versionamento-por-tag.md), que não alcança um índice de pacotes. O plugin por nome
 instala e atualiza pelo `uv`, só sem o aviso de versão nova.
 
-**Reinstalação que falha preserva a anterior.** O `uv tool install --reinstall` resolve e
+**Reinstalação que falha preserva a anterior (fora do Windows; lá, ver a [043](043-reinstalacao-no-windows-por-ajudante.md)).** O `uv tool install --reinstall` resolve e
 constrói tudo antes de trocar o ambiente: conferido com `pyproject.toml` inválido e com
 conflito de dependência, e nos dois o motor continuou respondendo. Por isso não há uma
 resolução prévia separada. Se o `uv` falhar, o comando imprime a linha completa para
