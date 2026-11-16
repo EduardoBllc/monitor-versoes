@@ -233,7 +233,9 @@ def test_embutido_instalado_sem_a_fonte_avisa_e_volta(cen, capsys):
 def test_instalar_plugin_chama_o_plugin_instalar_do_motor(monkeypatch, saida):
     chamados: list[list[str]] = []
 
-    def rodar(cmd: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+    def rodar(
+        cmd: list[str], check: bool, **_: object
+    ) -> subprocess.CompletedProcess[str]:
         chamados.append(cmd)
         return subprocess.CompletedProcess(cmd, saida)
 

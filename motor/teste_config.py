@@ -10,6 +10,7 @@ import tempfile
 import tomllib
 from dataclasses import asdict
 
+from motor import console
 from motor.config import (
     AMBIENTE_PADRAO,
     SECAO_REPOS,
@@ -70,6 +71,7 @@ def testar(
                 errors="replace",
                 timeout=TIMEOUT_TESTE,
                 check=False,
+                creationflags=console.FLAGS_SEM_JANELA,
             )
         except subprocess.TimeoutExpired:
             return _falha(peca, f"{TEMPO_ESGOTADO} ({TIMEOUT_TESTE} s)")

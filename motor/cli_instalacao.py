@@ -14,7 +14,7 @@ from itertools import groupby
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
-from motor import agendador, servico
+from motor import agendador, console, servico
 from motor.config import diretorio_cache
 from motor.errors import BackendIndisponivel, CodigoSaida, ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
@@ -65,7 +65,9 @@ class AcaoPlugin(StrEnum):
 
 
 def executar_uv(cmd: list[str]) -> int:
-    return subprocess.run(cmd, check=False).returncode
+    return subprocess.run(
+        cmd, check=False, creationflags=console.FLAGS_SEM_JANELA
+    ).returncode
 
 
 def _ref_curta(ref: str | None) -> str:

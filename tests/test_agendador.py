@@ -3,11 +3,17 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from motor import console, novidades, teste_config
+from motor.adapters.git.subprocess import _rodar_git
 from motor.agendador import (
+    NOME_TAREFA_INSCRICOES,
+    SCHTASKS,
     Acao,
+    AcaoSchtasks,
     Sistema,
     caminhos,
     instalado,
@@ -15,7 +21,11 @@ from motor.agendador import (
     rodar_comando_do_sistema,
     sistema_atual,
 )
+from motor.config_edicao import ler_para_edicao
+from motor.diagnostico import PecaTestavel
 from motor.errors import BackendIndisponivel, ErroDeEntrada
+from motor.inscricoes import disparar_subprocesso
+from tests.test_inscricoes import _insc
 
 SO_SEM_AGENDADOR = "sunos5"
 
@@ -98,3 +108,54 @@ def test_rodar_comando_traduz_erros(
     monkeypatch.setattr(subprocess, "run", levanta)
     with pytest.raises(BackendIndisponivel):
         rodar_comando_do_sistema(["x"])
+
+
+def test_remover_agendador_antigo_windows_apaga_a_tarefa_manual(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "platform", Sistema.WINDOWS.value)
+    registro = Registro()
+    assert remover_agendador_antigo(tmp_path, registro)
+    assert [c[1] for c in registro.comandos] == [
+        AcaoSchtasks.QUERY,
+        AcaoSchtasks.END,
+        AcaoSchtasks.DELETE,
+    ]
+    assert all(
+        c[0] == SCHTASKS and NOME_TAREFA_INSCRICOES in c for c in registro.comandos
+    )
+    assert "timer antigo das inscrições removido" in capsys.readouterr().err
+
+
+def test_remover_agendador_antigo_windows_sem_tarefa(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", Sistema.WINDOWS.value)
+    registro = Registro(falhar_em=AcaoSchtasks.QUERY)
+    assert not remover_agendador_antigo(tmp_path, registro)
+    assert len(registro.comandos) == 1
+
+
+def test_sem_console_processos_nao_abrem_janela(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentinela = 1 << 29
+    monkeypatch.setattr(console, "FLAGS_SEM_JANELA", sentinela)
+    flags: list[int] = []
+
+    def falso(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
+        flags.append(kw["creationflags"])
+        if "timeout" in kw:
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    monkeypatch.setattr(novidades, "_ssh_da_config", lambda: None)
+    _rodar_git(["git", "--version"])
+    disparar_subprocesso(_insc(), {})
+    novidades.rodar_git(["git", "--version"], {})
+    teste_config.testar([], ler_para_edicao().versao, PecaTestavel.PRS, None)
+    assert len(flags) == 4
+    assert all(f & sentinela for f in flags)

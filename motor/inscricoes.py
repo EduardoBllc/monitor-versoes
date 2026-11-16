@@ -16,6 +16,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from motor import console
 from motor.config import diretorio_dados
 from motor.domain.inscricao import (
     Desfecho,
@@ -296,7 +297,7 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
             env=dict(env),
             timeout=LIMITE_EXECUCAO_S,
             start_new_session=nova_sessao,
-            creationflags=flags,
+            creationflags=flags | console.FLAGS_SEM_JANELA,
         ).returncode
     except subprocess.TimeoutExpired:
         return TEMPO_ESGOTADO

@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape
 
 import httpx
 
+from motor import console
 from motor.agendador import (
     FLAG_AGORA,
     FLAG_FORCAR_SCHTASKS,
@@ -337,12 +338,19 @@ def consultar_do_sistema(cmd: list[str]) -> str | None:
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                creationflags=console.FLAGS_SEM_JANELA,
             )
         except subprocess.CalledProcessError, OSError:
             return None
         return ""
     try:
-        feito = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        feito = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            creationflags=console.FLAGS_SEM_JANELA,
+        )
     except subprocess.CalledProcessError, OSError:
         return None
     return feito.stdout

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
+from motor import console
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 
 ARQUIVO_SERVICE = "monitor-versoes-inscricoes.service"
@@ -20,6 +21,7 @@ SCHTASKS = "schtasks"
 FLAG_TAREFA = "/tn"
 FLAG_XML = "/xml"
 FLAG_FORCAR_SCHTASKS = "/f"
+NOME_TAREFA_INSCRICOES = "monitor-versoes-inscricoes"
 
 
 class Acao(StrEnum):
@@ -94,10 +96,13 @@ def remover_agendador_antigo(home: Path, rodar_comando: Comando) -> bool:
         sistema = sistema_atual()
     except ErroDeEntrada:
         return False
-    # O Windows nunca teve timer antigo: `caminhos` não cobre esse sistema.
-    if sistema is Sistema.WINDOWS or not instalado(sistema, home):
+    if sistema is Sistema.WINDOWS:
+        if not _remover_tarefa_antiga(rodar_comando):
+            return False
+    elif not instalado(sistema, home):
         return False
-    desagendar(sistema, home, rodar_comando)
+    else:
+        desagendar(sistema, home, rodar_comando)
     print(
         "timer antigo das inscrições removido: o `serve` passou a dispará-las",
         file=sys.stderr,
@@ -105,11 +110,29 @@ def remover_agendador_antigo(home: Path, rodar_comando: Comando) -> bool:
     return True
 
 
+def _remover_tarefa_antiga(rodar_comando: Comando) -> bool:
+    """A tarefa manual `monitor-versoes-inscricoes`: o `query` falhar quer dizer que não existe."""
+    tarefa = [FLAG_TAREFA, NOME_TAREFA_INSCRICOES]
+    try:
+        rodar_comando([SCHTASKS, AcaoSchtasks.QUERY, *tarefa])
+    except BackendIndisponivel:
+        return False
+    # Parar a tarefa que não está rodando não pode impedir a remoção.
+    with contextlib.suppress(BackendIndisponivel):
+        rodar_comando([SCHTASKS, AcaoSchtasks.END, *tarefa])
+    rodar_comando([SCHTASKS, AcaoSchtasks.DELETE, *tarefa, FLAG_FORCAR_SCHTASKS])
+    return True
+
+
 def rodar_comando_do_sistema(cmd: list[str]) -> None:
     # O `stderr` do `schtasks` vem na página OEM do console: decodificar com rigor quebraria.
     try:
         subprocess.run(
-            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            creationflags=console.FLAGS_SEM_JANELA,
         )
     except subprocess.CalledProcessError as e:
         detalhe = (e.stderr or b"").decode(errors="replace").strip()

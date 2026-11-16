@@ -22,7 +22,7 @@ from prompt_toolkit.key_binding import (
 )
 from prompt_toolkit.keys import Keys
 
-from motor import agendador, instalacao, plugins, servico
+from motor import agendador, console, instalacao, plugins, servico
 from motor.agendador import Sistema
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
@@ -142,7 +142,12 @@ def instalar_plugin(origem: str) -> bool:
         AcaoPlugin.INSTALAR,
         origem,
     ]
-    return subprocess.run(cmd, check=False).returncode == CodigoSaida.OK
+    return (
+        subprocess.run(
+            cmd, check=False, creationflags=console.FLAGS_SEM_JANELA
+        ).returncode
+        == CodigoSaida.OK
+    )
 
 
 def marcar(marca: Marca, texto: str) -> None:
