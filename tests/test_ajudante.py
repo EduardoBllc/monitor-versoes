@@ -17,8 +17,10 @@ from motor.ajudante import (
     ARQUIVO_COMANDO,
     ARQUIVO_RESULTADO,
     ARQUIVO_SCRIPT,
+    PASTA_REINSTALACAO,
     POLITICA_BYPASS,
     POWERSHELL,
+    PRAZO_PROCESSOS_S,
     VAR_ESTADO,
     ArgPowershell,
     entregar,
@@ -49,9 +51,17 @@ CODIGO_FALHA_UV = 1
 MOTOR_FALSO = "motor"
 PYTHON_DO_VENV = Path("Scripts", "python.exe")
 VAR_PATH = "PATH"
+PASTA_FALSOS = "falsos"
+PASTA_BIN = "bin"
+PASTA_AMBIENTE = "ambiente"
+PASTA_VENV = "venv"
+ARQUIVO_LOG = "log.txt"
+ARQUIVO_ESTADO = "estado"
 PRAZO_CURTO_S = 2
+# Bem maior que a espera do PID: a ordem no log não depende da velocidade do runner.
+PRAZO_LONGO_S = 60
 LIMITE_TESTE_S = 120
-ESPERA_DO_PID_S = 2
+ESPERA_DO_PID_S = 3
 MARCA_PID = "pid encerrado"
 PROCESSO_DE_TESTE_S = 60
 
@@ -82,13 +92,13 @@ def test_entregar_grava_o_estado_e_dispara(
     pasta = pasta_reinstalacao()
     pasta.mkdir(parents=True)
     (pasta / ARQUIVO_RESULTADO).write_text(CONTEUDO_VELHO)
-    bin_uv = tmp_path / "bin"
+    bin_uv = tmp_path / PASTA_BIN
     monkeypatch.setattr(
         shutil,
         "which",
         lambda nome: str(bin_uv / nome) if nome == PACOTE_MOTOR else None,
     )
-    estado = tmp_path / "estado"
+    estado = tmp_path / ARQUIVO_ESTADO
     monkeypatch.setenv(VAR_ESTADO, str(estado))
     disparo = Disparo()
 
@@ -117,6 +127,8 @@ def test_entregar_grava_o_estado_e_dispara(
             str(bin_uv),
             ArgPowershell.PIDS,
             f"{os.getpid()},{os.getppid()}",
+            ArgPowershell.PRAZO_PROCESSOS,
+            str(PRAZO_PROCESSOS_S),
         ]
     ]
     assert estado.read_text() == str(PID_AJUDANTE)
@@ -150,19 +162,19 @@ def _rodar(
     ambiente: Path | None = None,
     prazo_s: int = PRAZO_CURTO_S,
 ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
-    falsos = tmp_path / "falsos"
+    falsos = tmp_path / PASTA_FALSOS
     falsos.mkdir()
-    log = tmp_path / "log.txt"
+    log = tmp_path / ARQUIVO_LOG
     _falso(falsos, UV, log, codigo_uv)
     _falso(falsos, SCHTASKS, log)
     motor = _falso(falsos, MOTOR_FALSO, log)
-    pasta = tmp_path / "reinstalacao"
+    pasta = tmp_path / PASTA_REINSTALACAO
     pasta.mkdir()
     (pasta / ARQUIVO_COMANDO).write_text(json.dumps(CMD))
-    bin_uv = tmp_path / "bin"
+    bin_uv = tmp_path / PASTA_BIN
     bin_uv.mkdir()
     if ambiente is None:
-        ambiente = tmp_path / "ambiente"
+        ambiente = tmp_path / PASTA_AMBIENTE
         ambiente.mkdir()
     script = Path(ajudante.__file__).with_name(ARQUIVO_SCRIPT)
     saida = subprocess.run(
@@ -202,7 +214,7 @@ def _schtasks(acao: AcaoSchtasks) -> str:
 
 @so_windows
 def test_ajudante_espera_os_pids_roda_o_uv_e_sobe_o_servico(tmp_path: Path) -> None:
-    log = tmp_path / "log.txt"
+    log = tmp_path / ARQUIVO_LOG
     lento = subprocess.Popen(
         [
             sys.executable,
@@ -212,7 +224,9 @@ def test_ajudante_espera_os_pids_roda_o_uv_e_sobe_o_servico(tmp_path: Path) -> N
         ]
     )
     try:
-        saida, linhas, pasta = _rodar(tmp_path, pids=f"{lento.pid},{_pid_encerrado()}")
+        saida, linhas, pasta = _rodar(
+            tmp_path, pids=f"{lento.pid},{_pid_encerrado()}", prazo_s=PRAZO_LONGO_S
+        )
     finally:
         lento.wait()
 
@@ -241,7 +255,7 @@ def test_ajudante_com_uv_que_falha(tmp_path: Path) -> None:
 
 @so_windows
 def test_ajudante_desiste_com_processo_vivo_do_ambiente(tmp_path: Path) -> None:
-    ambiente = tmp_path / "venv"
+    ambiente = tmp_path / PASTA_VENV
     venv.create(ambiente)
     vivo = subprocess.Popen(
         [

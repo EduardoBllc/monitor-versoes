@@ -303,17 +303,16 @@ def registro_para_json(reg: Registro) -> str:
     return json.dumps(asdict(reg))
 
 
-def _requisito_de_json(campos: Any) -> Requisito:
+def _requisito_de_json(campos: dict[str, Any]) -> Requisito:
     r = Requisito(**campos)
     # O JSON devolve os extras como lista.
     return replace(r, extras=tuple(r.extras))
 
 
 def registro_de_json(texto: str) -> Registro:
-    # Os campos aninhados chegam como dict e são trocados logo abaixo.
-    reg = Registro(**json.loads(texto))
-    return replace(
-        reg,
-        motor=_requisito_de_json(reg.motor),
-        plugins=tuple(map(_requisito_de_json, reg.plugins)),
+    d = json.loads(texto)
+    return Registro(
+        motor=_requisito_de_json(d["motor"]),
+        plugins=tuple(map(_requisito_de_json, d["plugins"])),
+        python=d["python"],
     )

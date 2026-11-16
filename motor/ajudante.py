@@ -11,7 +11,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
-from motor import servico
+from motor import console, servico
 from motor.config import diretorio_dados
 from motor.errors import ErroDeEntrada, RepoOcupado
 from motor.inscricoes import NOME_TRAVA_INSCRICOES
@@ -60,8 +60,8 @@ def _disparar(cmd: list[str]) -> int:
     # Ramo literal: as flags só existem no Windows (ver `trava.py`).
     if sys.platform != "win32":
         return subprocess.Popen(cmd).pid
-    # Sem CREATE_NO_WINDOW: o ajudante escreve no console de quem chamou.
-    grupo = subprocess.CREATE_NEW_PROCESS_GROUP
+    # Com console, FLAGS_SEM_JANELA é 0: o ajudante escreve no console de quem chamou.
+    grupo = subprocess.CREATE_NEW_PROCESS_GROUP | console.FLAGS_SEM_JANELA
     try:
         # Fora do job do terminal, para não morrer junto com o trampolim.
         return subprocess.Popen(
@@ -82,8 +82,9 @@ def entregar(
             "há uma inscrição em andamento; espere ela terminar e rode de novo"
         ) from None
     pasta = pasta_reinstalacao()
-    shutil.rmtree(pasta, ignore_errors=True)
-    pasta.mkdir(parents=True)
+    pasta.mkdir(parents=True, exist_ok=True)
+    for nome in (ARQUIVO_RESULTADO, ARQUIVO_ANTES, ARQUIVO_COMANDO, ARQUIVO_SCRIPT):
+        (pasta / nome).unlink(missing_ok=True)
     (pasta / ARQUIVO_ANTES).write_text(registro_para_json(antes), encoding=CODIFICACAO)
     (pasta / ARQUIVO_COMANDO).write_text(json.dumps(cmd), encoding=CODIFICACAO)
     # O original mora no ambiente que o `uv` vai trocar.
@@ -110,6 +111,8 @@ def entregar(
             ArgPowershell.PIDS,
             # O pai é o trampolim `monitor-versoes.exe`, que também trava a troca.
             f"{os.getpid()},{os.getppid()}",
+            ArgPowershell.PRAZO_PROCESSOS,
+            str(PRAZO_PROCESSOS_S),
         ]
     )
     if estado := os.environ.get(VAR_ESTADO):

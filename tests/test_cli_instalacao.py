@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import shlex
 import shutil
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -46,7 +45,6 @@ from motor.novidades import (
     gravar_cache,
     linha_aviso,
 )
-from tests.plataforma import PLATAFORMA_WINDOWS
 from tests.test_agendador import MOTIVO_FALHA
 from tests.test_agendador import Registro as RegistroDeComandos
 
@@ -135,6 +133,12 @@ PLUGINS = [
         Origem(TipoOrigem.INDICE),
     ),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _reinstala_direto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Em todo sistema, o caminho que chama o `uv` daqui; o do ajudante tem teste próprio."""
+    monkeypatch.setattr(cli_instalacao, "_reinstala_pelo_ajudante", lambda: False)
 
 
 @pytest.fixture
@@ -721,7 +725,7 @@ def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
 def test_reinstalar_no_windows_entrega_ao_ajudante(
     inst: Instalacao, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(sys, "platform", PLATAFORMA_WINDOWS)
+    monkeypatch.setattr(cli_instalacao, "_reinstala_pelo_ajudante", lambda: True)
     entregues: list[tuple[Registro, list[str]]] = []
     monkeypatch.setattr(
         ajudante, "entregar", lambda antes, cmd: entregues.append((antes, cmd))

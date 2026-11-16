@@ -16,7 +16,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Ambiente,
     [Parameter(Mandatory = $true)][string]$Bin,
     [Parameter(Mandatory = $true)][string]$Pids,
-    [int]$PrazoProcessos = 60
+    [Parameter(Mandatory = $true)][int]$PrazoProcessos
 )
 
 $SCHTASKS = 'schtasks'
@@ -35,12 +35,11 @@ function Wait-AmbienteLivre {
         [string]$Ambiente,
         [string]$Bin,
         [string]$Executaveis,
-        [int]$Prazo,
+        [datetime]$Limite,
         [int]$IntervaloMs
     )
     $raiz = [IO.Path]::GetFullPath($Ambiente).TrimEnd('\') + '\'
     $pastaBin = [IO.Path]::GetFullPath($Bin).TrimEnd('\')
-    $limite = (Get-Date).AddSeconds($Prazo)
     while ($true) {
         $vivos = @(Get-Process | Where-Object {
                 $caminho = $_.Path
@@ -51,7 +50,7 @@ function Wait-AmbienteLivre {
                     )
                 )
             })
-        if ($vivos.Count -eq 0 -or (Get-Date) -ge $limite) {
+        if ($vivos.Count -eq 0 -or (Get-Date) -ge $Limite) {
             return $vivos
         }
         Start-Sleep -Milliseconds $IntervaloMs
@@ -70,9 +69,12 @@ try {
 
 $resultado = $RESULTADO_FALHA
 $servicoLigado = $false
+# Um prazo só para a espera dos PIDs e a do ambiente.
+$limite = (Get-Date).AddSeconds($PrazoProcessos)
 try {
     foreach ($id in ($Pids -split ',')) {
-        Wait-Process -Id ([int]$id) -Timeout $PrazoProcessos -ErrorAction SilentlyContinue
+        $restante = [Math]::Max(1, [int][Math]::Ceiling(($limite - (Get-Date)).TotalSeconds))
+        Wait-Process -Id ([int]$id) -Timeout $restante -ErrorAction SilentlyContinue
     }
 
     & $SCHTASKS /query /tn $TAREFA_SERVE *> $null
@@ -81,7 +83,7 @@ try {
         & $SCHTASKS /end /tn $TAREFA_SERVE *> $null
     }
 
-    $vivos = @(Wait-AmbienteLivre -Ambiente $Ambiente -Bin $Bin -Executaveis $EXECUTAVEIS_DO_MOTOR -Prazo $PrazoProcessos -IntervaloMs $INTERVALO_MS)
+    $vivos = @(Wait-AmbienteLivre -Ambiente $Ambiente -Bin $Bin -Executaveis $EXECUTAVEIS_DO_MOTOR -Limite $limite -IntervaloMs $INTERVALO_MS)
     if ($vivos.Count -gt 0) {
         Write-Output 'A reinstalação não começou: estes processos ainda usam o monitor-versoes.'
         foreach ($processo in $vivos) {
@@ -102,8 +104,11 @@ try {
             $codigoUv = $RESULTADO_FALHA
         }
         if ($codigoUv -eq 0) {
-            & $Motor $COMANDO_POS_REINSTALAR
             $resultado = $RESULTADO_OK
+            & $Motor $COMANDO_POS_REINSTALAR
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output 'A reinstalação deu certo, mas não deu para listar o que mudou (o erro está acima).'
+            }
         } else {
             Write-Output 'A reinstalação falhou (o erro do uv está acima). Para tentar à mão:'
             Write-Output "  $linha"

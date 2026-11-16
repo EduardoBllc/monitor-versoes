@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import logging
@@ -12,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from motor import inscricoes
 from motor.adapters.notificador.fake import FakeNotificador
 from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
 from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, RespostaInvalida
@@ -336,6 +338,10 @@ def test_disparar_subprocesso_monta_o_comando(
 
     monkeypatch.setattr(subprocess, "run", falso)
     monkeypatch.setattr(sys, "platform", SO_POSIX)
+    # A trava escolhe fcntl/msvcrt pelo `sys.platform`, que aqui é falso.
+    monkeypatch.setattr(
+        inscricoes, "travar_arquivo", lambda _nome, _arquivo: contextlib.nullcontext()
+    )
     i = _insc()
     ambiente = {"CHAVE_PAI": "v"}
     assert disparar_subprocesso(i, ambiente) == 0

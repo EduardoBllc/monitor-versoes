@@ -168,9 +168,13 @@ def pos_reinstalar(_args: argparse.Namespace) -> None:
     _depois_do_uv(ajudante.ler_antes())
 
 
+def _reinstala_pelo_ajudante() -> bool:
+    # O `uv` não troca o ambiente com um processo dele vivo, nem este.
+    return sys.platform == Sistema.WINDOWS
+
+
 def _reinstalar(antes: Registro, cmd: list[str]) -> None:
-    if sys.platform == Sistema.WINDOWS:
-        # O `uv` não troca o ambiente com um processo dele vivo, nem este.
+    if _reinstala_pelo_ajudante():
         ajudante.entregar(antes, cmd)
         print("A reinstalação continua num processo à parte, neste console.")
         return
