@@ -26,8 +26,9 @@ from motor.domain.inscricao import (
     consolidar,
     eventos,
 )
-from motor.errors import ErroDeEntrada, MotorError, RespostaInvalida
+from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, RespostaInvalida
 from motor.ports import Notificador
+from motor.trava import caminho_trava_inscricoes, travar_arquivo
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ INTERVALO_PADRAO = "30m"
 ARQUIVO_INSCRICOES = "inscricoes.json"
 SEM_PROCESSO = -1
 TEMPO_ESGOTADO = -2
+ADIADO = -3
+NOME_TRAVA_INSCRICOES = "inscrições"
 # Folga para o pior `atualizar`; sem limite, um filho travado prende o oneshot e para todas.
 LIMITE_EXECUCAO_S = 60 * 60
 SEGUNDOS_POR_MINUTO = 60
@@ -267,6 +270,8 @@ def rodar(
 ) -> None:
     for i in vencidas(carregar(caminho), agora):
         codigo = disparar(i)
+        if codigo == ADIADO:
+            continue
         existe, depois = _ultima_de(caminho, i.repo, i.versao)
         if existe and depois == i.ultima:
             mensagem = (
@@ -291,14 +296,17 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
     else:
         nova_sessao, flags = True, 0
     try:
-        return subprocess.run(
-            cmd,
-            check=False,
-            env=dict(env),
-            timeout=LIMITE_EXECUCAO_S,
-            start_new_session=nova_sessao,
-            creationflags=flags | console.FLAGS_SEM_JANELA,
-        ).returncode
+        with travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes()):
+            return subprocess.run(
+                cmd,
+                check=False,
+                env=dict(env),
+                timeout=LIMITE_EXECUCAO_S,
+                start_new_session=nova_sessao,
+                creationflags=flags | console.FLAGS_SEM_JANELA,
+            ).returncode
+    except RepoOcupado:
+        return ADIADO
     except subprocess.TimeoutExpired:
         return TEMPO_ESGOTADO
     except OSError:

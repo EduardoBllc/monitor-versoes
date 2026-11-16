@@ -77,15 +77,23 @@ class Trava:
         self.soltar()
 
 
+def caminho_trava_inscricoes() -> Path:
+    return diretorio_travas() / "inscricoes.lock"
+
+
 def travar(nome: str, caminho: str) -> Trava:
-    """Toma o lock do clone ou levanta `RepoOcupado` sem esperar.
+    """Toma o lock do clone ou levanta `RepoOcupado` sem esperar."""
+    return travar_arquivo(nome, caminho_trava(caminho))
+
+
+def travar_arquivo(nome: str, arquivo: Path) -> Trava:
+    """Toma o lock de `arquivo` ou levanta `RepoOcupado` sem esperar.
 
     O lock é por descritor aberto: dois `travar` no mesmo processo também se
     excluem, e é isso que recusa a segunda operação do daemon no mesmo repo. O
     fd de `os.open` não é herdável, então um `git` filho órfão não mantém o repo
     travado depois que o motor morre.
     """
-    arquivo = caminho_trava(caminho)
     try:
         arquivo.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(arquivo, os.O_RDWR | os.O_CREAT, 0o644)

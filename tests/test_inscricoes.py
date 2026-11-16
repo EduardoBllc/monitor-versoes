@@ -14,8 +14,9 @@ import pytest
 
 from motor.adapters.notificador.fake import FakeNotificador
 from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
-from motor.errors import ErroDeEntrada, RespostaInvalida
+from motor.errors import ErroDeEntrada, RepoOcupado, RespostaInvalida
 from motor.inscricoes import (
+    ADIADO,
     ARQUIVO_INSCRICOES,
     CAMPO_CLONE_ANTIGO,
     LIMITE_EXECUCAO_S,
@@ -37,6 +38,7 @@ from motor.inscricoes import (
     salvar,
     vencidas,
 )
+from motor.trava import caminho_trava_inscricoes, travar_arquivo
 
 HORA = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 MIN30 = datetime.timedelta(minutes=30)
@@ -357,3 +359,39 @@ def test_disparar_subprocesso_monta_o_comando(
 )
 def test_formatar_intervalo(intervalo: datetime.timedelta, esperado: str) -> None:
     assert formatar_intervalo(intervalo) == esperado
+
+
+def test_disparar_subprocesso_segura_a_trava_enquanto_o_filho_roda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recusou: list[bool] = []
+
+    def falso(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        try:
+            travar_arquivo("x", caminho_trava_inscricoes())
+        except RepoOcupado:
+            recusou.append(True)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    assert disparar_subprocesso(_insc(), {}) == 0
+    assert recusou == [True]
+    with travar_arquivo("x", caminho_trava_inscricoes()):
+        pass
+
+
+def test_disparo_com_trava_ocupada_adia_a_inscricao(
+    arq: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def nao_deve_rodar(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        raise AssertionError("o filho não deveria rodar")
+
+    monkeypatch.setattr(subprocess, "run", nao_deve_rodar)
+    salvar(arq, [_insc()])
+    antes = arq.read_bytes()
+    fake = FakeNotificador()
+    with travar_arquivo("x", caminho_trava_inscricoes()):
+        assert disparar_subprocesso(_insc(), {}) == ADIADO
+        rodar(arq, HORA, lambda i: disparar_subprocesso(i, {}), fake)
+    assert arq.read_bytes() == antes
+    assert fake.enviadas == []
