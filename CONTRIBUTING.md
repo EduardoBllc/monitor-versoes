@@ -43,7 +43,7 @@ O estado de desenvolvimento serve para usar o CLI à mão sem tocar produção.
 ## Verificações
 
 ```bash
-make check   # ruff format --check, ruff check (e shellcheck do install.sh), mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist
+make check   # ruff format --check, ruff check (e shellcheck do install.sh), mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist, web-e2e (Playwright)
 make fmt     # formata e aplica os fixes automáticos do ruff
 ```
 
@@ -77,6 +77,8 @@ O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
 `make web-e2e` roda as specs do Playwright (`web/e2e/`) contra o daemon real: cada
 teste monta um cenário git numa pasta temporária e sobe o `serve` servindo o build
 versionado. Na primeira vez, instale o navegador com `cd web && npx playwright install chromium`.
+Roda só em Linux e macOS: o encerramento do daemon mata o grupo de processos, o que não
+existe no Windows (lá o CI roda só o pytest).
 
 As specs não localizam elementos nem encadeiam cliques: seletores e sequências de
 interação vivem em `web/e2e/tela.ts`, e as specs só asserem desfechos (veredito, estado

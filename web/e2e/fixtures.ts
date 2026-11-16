@@ -164,16 +164,6 @@ export function git(manifesto: Manifesto, cwd: string, ...args: string[]): strin
   }).trim();
 }
 
-/** Dispara as inscrições vencidas, como o agendador do sistema faz. */
-export function rodarInscricoes(manifesto: Manifesto, raiz: string): void {
-  execFileSync("uv", uv(RAIZ_DO_PROJETO, "monitor-versoes", "inscricao", "rodar"), {
-    cwd: raiz,
-    env: { ...ambienteBase(), ...manifesto.ambiente },
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: MONTAGEM_CENARIO_MS,
-  });
-}
-
 /** Segura o lock do clone num processo à parte; `soltar` libera. */
 export interface TravaSegurada {
   soltar: () => Promise<void>;

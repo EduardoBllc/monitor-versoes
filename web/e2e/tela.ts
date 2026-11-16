@@ -82,8 +82,8 @@ enum Formato {
   SEPARADOR = "·",
 }
 
-// Cobre o intervalo de consulta da web às inscrições (15 s) com folga.
-const ESPERA_AVISO_DA_RODADA_MS = 30_000;
+// Disparo do daemon (a cada 60 s, decisão 041) + consulta da web (15 s) + folga.
+const ESPERA_AVISO_DA_RODADA_MS = 90_000;
 
 const literal = (texto: string): string => texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
