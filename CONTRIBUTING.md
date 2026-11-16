@@ -103,13 +103,14 @@ O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
    marca como resolvida quando o ajuste a encerra. Resposta escrita por IA termina com a
    linha `🤖 _Resposta do Claude Code_`.
 4. **Na sessão local com IA, abrir o PR não encerra o trabalho.** Vale só fora do GitHub
-   Actions; o agente do Actions segue o [ciclo da issue](#ciclo-da-issue). A IA só dá o trabalho por pronto
-   quando o PR não tem conflito com a `main`, os checks estão verdes e o último resumo da
-   "Revisão IA" traz `**Veredito:** aprovaria`. Até lá, ela resolve o conflito, corrige o
-   check vermelho e atende a revisão como no passo 3; depois do push, pede nova revisão
-   com `@claude review`, porque push em PR do dono não dispara a revisão. O laço para na
-   3ª revisão ou quando seguir exigiria uma decisão do dono: aí ela relata o que ficou
-   pendente. O merge continua humano.
+   Actions; o agente do Actions segue o [ciclo da issue](#ciclo-da-issue). A IA só dá o
+   trabalho por pronto quando o PR não tem conflito com a `main`, os checks estão verdes e
+   o último resumo da "Revisão IA" traz `**Veredito:** aprovaria`. Até lá, ela resolve o
+   conflito, corrige o check vermelho e atende a revisão como no passo 3; depois do push,
+   pede nova revisão com `@claude review`, porque push em PR do dono não dispara a
+   revisão. O laço para no 3º resumo da "Revisão IA" (contando o da abertura do PR) ou
+   quando seguir exigiria uma decisão do dono: aí ela relata o que ficou pendente. O merge
+   continua humano.
 
 ## Ciclo da issue
 
