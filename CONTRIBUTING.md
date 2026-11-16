@@ -72,6 +72,15 @@ npm run tipos        # depois de mudar a API
 O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
 `web/src/api/esquema.ts`) são versionados: rode `make web-dist` antes de commitar.
 
+### Jornadas no navegador
+
+`make web-e2e` roda as specs do Playwright (`web/e2e/`) contra o daemon real: cada
+teste monta um cenário git numa pasta temporária e sobe o `serve` servindo o build
+versionado. Na primeira vez, instale o navegador com `cd web && npx playwright install chromium`.
+
+As specs não localizam elementos: todo seletor vive em `web/e2e/tela.ts`. Mudar a
+tela muda só esse arquivo.
+
 ## Armadilhas do ambiente
 
 | Sintoma | Causa e saída |

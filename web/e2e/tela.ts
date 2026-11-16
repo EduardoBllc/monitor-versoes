@@ -1,0 +1,52 @@
+import type { Locator, Page } from "@playwright/test";
+
+/** Único arquivo que conhece a tela: as specs só falam por estas funções. */
+
+export enum Acao {
+  VERIFICAR = "Verificar",
+  AUDITAR = "Auditar tag agora",
+  ATUALIZAR = "Atualizar",
+  CONTINUAR = "Continuar",
+  REGISTRAR_VAZIO = "Registrar vazio",
+  ABORTAR = "Abortar",
+  NOVA_VERSAO = "Nova versão",
+  ORFAOS = "Órfãos",
+  INSCRICOES = "Inscrições",
+  CONFIGURACAO = "Configuração",
+}
+
+enum Rotulo {
+  REPO = "Repositório",
+  VERSAO = "Versão",
+}
+
+function caminho(repo: string, versao?: string): string {
+  const base = `/r/${encodeURIComponent(repo)}`;
+  return versao === undefined ? base : `${base}/v/${encodeURIComponent(versao)}`;
+}
+
+export async function abrir(page: Page, repo: string, versao?: string): Promise<void> {
+  await page.goto(caminho(repo, versao));
+}
+
+export function acao(page: Page, a: Acao): Locator {
+  return page.getByRole("button", { name: a, exact: true });
+}
+
+export function versaoEscolhida(page: Page): Locator {
+  return page.getByRole("combobox", { name: Rotulo.VERSAO, exact: true });
+}
+
+export function chamadoListado(page: Page, chamado: string): Locator {
+  return page.getByText(`#${chamado}`, { exact: true }).first();
+}
+
+/** Abre a lista de repositórios e devolve a opção do nome. */
+export async function opcaoRepo(page: Page, nome: string): Promise<Locator> {
+  await page.getByRole("combobox", { name: Rotulo.REPO, exact: true }).click();
+  return page.getByRole("option", { name: nome, exact: true });
+}
+
+export function erro(page: Page): Locator {
+  return page.getByRole("alert").first();
+}
