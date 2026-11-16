@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
 Instala, atualiza ou desinstala o monitor-versoes no Windows.
 
@@ -10,6 +10,8 @@ desinstalar); este script só prepara o git, o uv e o executável.
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1))) -SemConfigurar
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1))) -Desinstalar
 #>
+# Sem BOM: o irm não o remove, e o BOM quebraria o `irm | iex`. O preço é o 5.1 pelo `-File` ler os acentos como ANSI.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseBOMForUnicodeEncodedFile', '', Justification = 'O irm não remove o BOM, que quebraria o irm | iex.')]
 [CmdletBinding(DefaultParameterSetName = 'Instalar')]
 param(
     [Parameter(ParameterSetName = 'Instalar')][switch]$SemConfigurar,
@@ -60,8 +62,9 @@ $SAIDA_ERRO = 1
 $SAIDA_USO = 2
 $SAIDA_ORIGEM_RECUSADA = 3
 $SAIDA_INTERROMPIDO = 130
-$MARCA_OK = '✔'
-$MARCA_FALHA = '✖'
+# Por código: pelo `-File` no 5.1, sem BOM, o literal viraria lixo ANSI.
+$MARCA_OK = [string][char]0x2714
+$MARCA_FALHA = [string][char]0x2716
 
 function Test-Comando {
     param([string]$Nome)

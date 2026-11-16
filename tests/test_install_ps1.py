@@ -78,6 +78,8 @@ VIVO = "VIVO"
 DICA_PATH = "uv tool update-shell"
 AVISO_BANCO = "DATABASE_SQLITE_PATH"
 FRASE_UV_FICOU = "O uv continua instalado"
+FRASE_SEM_GIT = "git não encontrado"
+FRASE_ULTIMA_RELEASE = f"última release: {ULTIMA_TAG}"
 SAIDA_UV_NAO_INSTALADO = 2
 PAGINA_OEM = 437
 RESULTADO_OK = "0"
@@ -253,6 +255,11 @@ class Maquina:
         shutil.copy(self.env[Var.MOTOR], self.toolbin)
 
     @property
+    def le_utf8_pelo_file(self) -> bool:
+        """Sem BOM, o 5.1 lê o `-File` como ANSI: só o 7 mostra os acentos certos."""
+        return Path(self.casca).stem.lower() == PWSH
+
+    @property
     def motor(self) -> Path:
         return self.toolbin / f"{servico.EXECUTAVEL}{SUFIXO_CMD}"
 
@@ -290,7 +297,7 @@ class Maquina:
     def rodar_bloco(
         self, *args: str, antes: str | None = None, depois: str
     ) -> subprocess.CompletedProcess[str]:
-        """Como o `irm … | iex`: o texto baixado, BOM incluído, vira um bloco na sessão."""
+        """Como o `irm … | iex`: o texto baixado em UTF-8 vira um bloco na sessão."""
         carregar = (
             f"$c = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes('{SCRIPT}')); "
             f"& ([scriptblock]::Create($c)) {' '.join(args)}"
@@ -404,6 +411,8 @@ def test_sem_git_para_antes_de_instalar(maquina, com_winget):
 
     assert r.returncode != CodigoSaida.OK
     assert (INSTALAR_GIT_WINGET if com_winget else URL_GIT_WINDOWS) in r.stdout
+    if maquina.le_utf8_pelo_file:
+        assert FRASE_SEM_GIT in r.stdout
     assert not [c for c in maquina.chamadas() if c.startswith(Falso.UV)]
 
 
@@ -625,6 +634,8 @@ def test_codificacao_restaurada(maquina, falha):
     )
 
     assert (MARCA_FALHA in r.stdout) is falha, r.stdout + r.stderr
+    # Pelo `iex`, os acentos chegam certos no 5.1 e no 7.
+    assert (FRASE_SEM_GIT if falha else FRASE_ULTIMA_RELEASE) in r.stdout
     assert r.stdout.splitlines()[-1] == str(PAGINA_OEM)
 
 
@@ -704,6 +715,11 @@ def test_fora_do_windows_aponta_o_install_sh():
     assert URL_INSTALL_SH in r.stdout
 
 
-@pytest.mark.parametrize("script", [SCRIPT, AJUDANTE], ids=lambda p: p.name)
-def test_arquivo_tem_bom(script):
-    assert script.read_bytes()[: len(BOM_UTF8)] == BOM_UTF8
+def test_arquivo_tem_bom():
+    # O ajudante roda pelo `-File`: sem BOM, o 5.1 leria os acentos como ANSI.
+    assert AJUDANTE.read_bytes()[: len(BOM_UTF8)] == BOM_UTF8
+
+
+def test_install_ps1_sem_bom():
+    # O `irm` não remove o BOM, e o parser do PowerShell não o trata como espaço.
+    assert SCRIPT.read_bytes()[: len(BOM_UTF8)] != BOM_UTF8
