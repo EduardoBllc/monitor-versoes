@@ -30,6 +30,10 @@ const PASSO_ESPERA_MS = 200;
 const MONTAGEM_CENARIO_MS = 60_000;
 const ENCERRAMENTO_DAEMON_MS = 5_000;
 
+const ESPERA_TRAVA_MS = 30_000;
+// Mesmo valor de `PRONTO` em tests/e2e/segurar_trava.py.
+const SINAL_TRAVA_PRONTA = "pronto";
+
 const NOME_MAPA = "mapa.json";
 
 const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -131,6 +135,52 @@ export function rodarInscricoes(manifesto: Manifesto, raiz: string): void {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: MONTAGEM_CENARIO_MS,
   });
+}
+
+/** Segura o lock do clone num processo à parte; `soltar` libera. */
+export interface TravaSegurada {
+  soltar: () => Promise<void>;
+}
+
+export async function segurarTrava(manifesto: Manifesto, raiz: string): Promise<TravaSegurada> {
+  const processo = spawn(
+    "uv",
+    uv(RAIZ_DO_PROJETO, "python", "-m", "tests.e2e.segurar_trava", manifesto.repo),
+    {
+      cwd: raiz,
+      env: { ...ambienteBase(), ...manifesto.ambiente },
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  const soltar = () => encerrar(processo);
+  let stdout = "";
+  let stderr = "";
+  processo.stderr?.on("data", (d: Buffer) => (stderr += d.toString()));
+  try {
+    await new Promise<void>((ok, falha) => {
+      const prazo = setTimeout(
+        () => falha(new Error(`trava não ficou pronta em ${ESPERA_TRAVA_MS} ms:\n${stderr}`)),
+        ESPERA_TRAVA_MS,
+      );
+      processo.once("error", falha);
+      processo.once("exit", (codigo) =>
+        falha(new Error(`auxiliar da trava saiu (${codigo}):\n${stderr}`)),
+      );
+      processo.stdout?.on("data", (d: Buffer) => {
+        stdout += d.toString();
+        if (stdout.includes(SINAL_TRAVA_PRONTA)) {
+          clearTimeout(prazo);
+          processo.removeAllListeners("exit");
+          ok();
+        }
+      });
+    });
+  } catch (e) {
+    await soltar();
+    throw e;
+  }
+  return { soltar };
 }
 
 export const test = base.extend<{

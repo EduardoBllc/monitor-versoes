@@ -300,3 +300,11 @@ enum AvisoConfig {
 export function avisoConfiguracaoSalva(page: Page): Locator {
   return page.getByText(AvisoConfig.SALVA, { exact: true });
 }
+
+enum AvisoOcupado {
+  RECUSA = "ocupado por outra operação",
+}
+
+export function avisoRepoOcupado(page: Page): Locator {
+  return page.getByText(AvisoOcupado.RECUSA);
+}
