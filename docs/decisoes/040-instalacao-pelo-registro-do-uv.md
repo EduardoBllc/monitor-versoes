@@ -25,6 +25,12 @@ e não volta para a tag, então atualizar nunca rebaixa. Um plugin publicado por
 reinstala com `plugin atualizar <pacote>`: no índice não há como saber se mudou, e contá-lo
 em toda atualização em lote impediria o "tudo em dia".
 
+**Quem instala decide a ref do motor.** O `[tool.uv.sources]` de um plugin serve ao
+desenvolvimento dele, e é comum apontar o motor para a `main`. O `uv` aplica essas fontes
+também ao resolver o plugin como dependência, e a ref de dev colide com a tag que o comando
+fixou. Por isso a instalação roda com `--no-sources`. O custo: uma pasta local que só acha um
+pacote irmão por `path` ou `workspace` precisa declarar essa dependência publicada ou por URL.
+
 **A checagem de versão nova roda fora do caminho do comando, com cache.** Um `git ls-remote`
 por origem custa rede a cada comando. O resultado fica num cache em arquivo de 24 h, e um
 processo destacado o renova: o comando nunca espera, e o aviso pode sair só na execução
