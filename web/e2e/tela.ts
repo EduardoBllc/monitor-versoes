@@ -145,3 +145,65 @@ export async function abrirArquivoDoConflito(page: Page, caminho: string): Promi
 export async function aceitarLado(page: Page, lado: LadoConflito): Promise<void> {
   await page.getByText(lado, { exact: true }).first().click();
 }
+
+enum DialogoModal {
+  NOVA_VERSAO = "Nova versão",
+}
+
+enum CampoModal {
+  NUMERO = "número",
+  CHAMADO = "Chamado",
+  MOTIVO = "Motivo",
+}
+
+enum BotaoModal {
+  CRIAR = "Criar e publicar",
+  GRAVAR = "Gravar",
+}
+
+const dialogoNovaVersao = (page: Page): Locator =>
+  page.getByRole("dialog", { name: DialogoModal.NOVA_VERSAO, exact: true });
+
+export function sugestaoDeVersao(page: Page, numero: string): Locator {
+  return dialogoNovaVersao(page).getByRole("button", { name: new RegExp(`^${numero}\\b`) });
+}
+
+export async function digitarNumeroDaVersao(page: Page, numero: string): Promise<void> {
+  await dialogoNovaVersao(page).getByLabel(CampoModal.NUMERO).fill(numero);
+}
+
+export function recusaDeVersaoExistente(page: Page, numero: string): Locator {
+  return dialogoNovaVersao(page).getByText(`versao ${numero} ja existe`);
+}
+
+export function criarEPublicar(page: Page): Locator {
+  return dialogoNovaVersao(page).getByRole("button", { name: BotaoModal.CRIAR, exact: true });
+}
+
+/** Abre a lista de versões e devolve a opção do número. */
+export async function opcaoVersao(page: Page, numero: string): Promise<Locator> {
+  await versaoEscolhida(page).click();
+  return page.getByRole("option", { name: new RegExp(`^${numero}\\b`) });
+}
+
+const dialogoOrfaos = (page: Page, repo: string, versao: string): Locator =>
+  page.getByRole("dialog", { name: `Órfãos de ${repo} ${versao}`, exact: true });
+
+export function linhaDoOrfao(page: Page, repo: string, versao: string, assunto: string): Locator {
+  return dialogoOrfaos(page, repo, versao).getByRole("row").filter({ hasText: assunto });
+}
+
+export async function julgarOrfao(
+  page: Page,
+  repo: string,
+  versao: string,
+  assunto: string,
+  chamado: string,
+  motivo: string,
+): Promise<void> {
+  const dialogo = dialogoOrfaos(page, repo, versao);
+  await linhaDoOrfao(page, repo, versao, assunto).click();
+  await dialogo.getByRole("textbox", { name: CampoModal.CHAMADO, exact: true }).fill(chamado);
+  await dialogo.getByRole("textbox", { name: CampoModal.MOTIVO, exact: true }).fill(motivo);
+  await dialogo.getByRole("button", { name: BotaoModal.GRAVAR, exact: true }).click();
+}

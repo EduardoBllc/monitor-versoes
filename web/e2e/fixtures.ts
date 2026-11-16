@@ -1,5 +1,5 @@
 import { test as base } from "@playwright/test";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -111,6 +111,16 @@ async function encerrar(processo: ChildProcess): Promise<void> {
   } catch {
     // ESRCH: o grupo já acabou.
   }
+}
+
+// Ambiente do cenário: o git não lê a config de quem roda.
+export function git(manifesto: Manifesto, cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, {
+    cwd,
+    env: { ...process.env, ...manifesto.ambiente },
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 }
 
 export const test = base.extend<{

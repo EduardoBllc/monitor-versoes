@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { expect, test, type Manifesto } from "./fixtures";
+import { expect, git, test, type Manifesto } from "./fixtures";
 import { PapelVersao } from "./papeis";
 import {
   Acao,
@@ -17,13 +16,8 @@ import {
 
 const MARCADOR_CONFLITO = "<<<<<<<";
 
-function arquivoNaBranch(manifesto: Manifesto, versao: string): string {
-  return execFileSync("git", ["show", `${versao}:${manifesto.arquivo_conflito}`], {
-    cwd: manifesto.clone,
-    env: { ...process.env, ...manifesto.ambiente },
-    encoding: "utf-8",
-  });
-}
+const arquivoNaBranch = (manifesto: Manifesto, versao: string): string =>
+  git(manifesto, manifesto.clone, "show", `${versao}:${manifesto.arquivo_conflito}`);
 
 test("conflito resolvido no editor web continua sozinho e a versão fica verde", async ({
   page,

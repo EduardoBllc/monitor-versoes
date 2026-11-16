@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { expect, test, type Manifesto } from "./fixtures";
+import { expect, git, test, type Manifesto } from "./fixtures";
 import { PapelVersao } from "./papeis";
 import {
   Acao,
@@ -16,16 +15,6 @@ import {
 } from "./tela";
 
 const TRAILER_CHERRY_PICK = "cherry picked from commit";
-
-// Ambiente do cenário: o git não lê a config de quem roda.
-function git(manifesto: Manifesto, cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, {
-    cwd,
-    env: { ...process.env, ...manifesto.ambiente },
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
-}
 
 const pontaDaBranch = (manifesto: Manifesto, versao: string): string =>
   git(manifesto, manifesto.clone, "rev-parse", versao);
