@@ -183,9 +183,10 @@ class PrCommitCache(Base):
     resolucao: e ela, nao este cache, que impede o falso-verde de um commit de
     correcao numa PR nova.
 
-    Fica de fora de proposito: `chamado`, que vem do casamento com o indice e nao da PR, e
-    `is_ancestor(hash, principal)`, que e volatil — uma PR mergeada numa branch que
-    ainda nao chegou na principal viraria commit escondido para sempre.
+    Fica de fora de proposito: `chamado`, que vem do casamento com o indice e
+    nao da PR, e `is_ancestor(hash, principal)`, que e volatil — uma PR mergeada
+    numa branch que ainda nao chegou na principal viraria commit escondido para
+    sempre.
     """
 
     __tablename__ = "pr_commit_cache"
