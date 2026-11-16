@@ -32,6 +32,8 @@ a documentação. O conteúdo está nas fontes abaixo, não aqui.
   quando não há `CLAUDE.md`.
 - **Antes de dar um trabalho por pronto, rode o portão** (`make check`, ver
   [CONTRIBUTING.md](CONTRIBUTING.md#verificações)) e relate o resultado. Falha
-  de ambiente se declara, não se esconde nem se contorna.
+  de ambiente se declara, não se esconde nem se contorna. Em sessão local (fora do
+  GitHub Actions), trabalho que abriu PR só fica pronto quando o PR está pronto para o
+  dono ([CONTRIBUTING.md](CONTRIBUTING.md#fluxo), passo 4).
 - **Código e doc divergem?** Não escolha um lado por reflexo: investigue a
   intenção (histórico, issue, decisão) e corrija o que estiver errado.
