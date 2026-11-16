@@ -50,3 +50,21 @@ export async function opcaoRepo(page: Page, nome: string): Promise<Locator> {
 export function erro(page: Page): Locator {
   return page.getByRole("alert").first();
 }
+
+enum Veredito {
+  VERDE = "VERDE",
+  PENDENCIAS = "Pendências encontradas",
+  AUDITORIA = "Auditoria da tag — snapshot não alterado",
+}
+
+export function vereditoVerde(page: Page): Locator {
+  return page.getByText(Veredito.VERDE, { exact: true });
+}
+
+export function vereditoPendencias(page: Page): Locator {
+  return page.getByText(Veredito.PENDENCIAS);
+}
+
+export function avisoAuditoria(page: Page): Locator {
+  return page.getByText(Veredito.AUDITORIA);
+}
