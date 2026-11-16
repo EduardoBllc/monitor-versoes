@@ -1,6 +1,8 @@
 """Serviço e reinstalação de verdade no Windows, com o motor que o job do CI instala do commit.
 
-Os testes rodam em ordem e cada um parte do estado que o anterior deixou.
+Os testes rodam em ordem sobre a tarefa que `servico_ligado` cria e apaga.
+O `LOCALAPPDATA` é o `tmp_path` do `conftest`, não o do job: o motor roda como
+filho do teste, e o `resultado` é lido no mesmo ambiente que ele herda.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import subprocess
 import sysconfig
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -64,7 +66,6 @@ NS_TAREFA = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
 VALORES_DA_TAREFA = {
     "t:Triggers/t:TimeTrigger/t:Repetition/t:Interval": "PT1M",
     "t:Principals/t:Principal/t:LogonType": "InteractiveToken",
-    "t:Principals/t:Principal/t:RunLevel": "LeastPrivilege",
     "t:Settings/t:MultipleInstancesPolicy": "IgnoreNew",
     "t:Settings/t:DisallowStartIfOnBatteries": "false",
     "t:Settings/t:StopIfGoingOnBatteries": "false",
@@ -72,6 +73,13 @@ VALORES_DA_TAREFA = {
 }
 CAMINHO_COMANDO = "t:Actions/t:Exec/t:Command"
 CAMINHO_LOGON = "t:Triggers/t:LogonTrigger"
+CAMINHO_RUN_LEVEL = "t:Principals/t:Principal/t:RunLevel"
+RUN_LEVEL_SEM_ELEVACAO = "LeastPrivilege"
+PS_SAIDA_UTF8 = "[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false"
+PS_EXPORTAR_TAREFA = (
+    f"{PS_SAIDA_UTF8}; Export-ScheduledTask -TaskName '{NOME_TAREFA_SERVE}'"
+)
+PS_MATAR_SERVE = f"Stop-Process -Name '{servico.EXECUTAVEL_SERVE}' -Force -ErrorAction SilentlyContinue"
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get(VAR_INTEGRACAO_WINDOWS),
@@ -141,11 +149,7 @@ def _ler(arquivo: Path) -> str:
 
 
 def _tarefa_xml() -> ET.Element:
-    saida = _powershell(
-        "[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false; "
-        f"Export-ScheduledTask -TaskName '{NOME_TAREFA_SERVE}'"
-    )
-    return ET.fromstring(saida.strip())
+    return ET.fromstring(_powershell(PS_EXPORTAR_TAREFA).strip())
 
 
 def _consultar_tarefa() -> str | None:
@@ -154,27 +158,37 @@ def _consultar_tarefa() -> str | None:
     )
 
 
-def test_ligar_sobe_o_serve():
+@pytest.fixture(scope="module")
+def servico_ligado() -> Iterator[str]:
     serve = _serve_instalado()
     servico.ligar(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
+    yield serve
+    # O `desligar` tolera a tarefa já apagada; o serve que sobrar morre aqui.
+    servico.desligar(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
+    _powershell(PS_MATAR_SERVE)
 
-    # O primeiro início compila o ambiente novo: passa do prazo do `serve_responde`.
+
+def test_ligar_sobe_o_serve(servico_ligado):
+    # O primeiro início no runner pode passar dos 10 s do `serve_responde(esperar=True)`.
     assert _serve_de_pe(PRAZO_SERVE_SUBIR_S)
     tarefa = _tarefa_xml()
-    assert tarefa.findtext(CAMINHO_COMANDO, namespaces=NS_TAREFA) == serve
+    assert tarefa.findtext(CAMINHO_COMANDO, namespaces=NS_TAREFA) == servico_ligado
     assert tarefa.find(CAMINHO_LOGON, NS_TAREFA) is not None
     for caminho, valor in VALORES_DA_TAREFA.items():
         assert tarefa.findtext(caminho, namespaces=NS_TAREFA) == valor, caminho
+    # O Export omite o RunLevel quando é o padrão; o que importa é nunca elevar.
+    run_level = tarefa.findtext(CAMINHO_RUN_LEVEL, namespaces=NS_TAREFA)
+    assert run_level in (None, RUN_LEVEL_SEM_ELEVACAO)
 
 
-def test_serve_morto_volta():
-    _powershell(f"Stop-Process -Name '{servico.EXECUTAVEL_SERVE}' -Force")
+def test_serve_morto_volta(servico_ligado):
+    _powershell(PS_MATAR_SERVE)
 
     assert _serve_caiu()
     assert _serve_de_pe(PRAZO_SERVE_VOLTAR_S)
 
 
-def test_plugin_instalar_com_o_servico_ligado():
+def test_plugin_instalar_com_o_servico_ligado(servico_ligado):
     sha = subprocess.run(
         [GIT, *REV_PARSE], cwd=RAIZ, capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -197,7 +211,7 @@ def test_plugin_instalar_com_o_servico_ligado():
     assert _serve_de_pe(PRAZO_SERVE_SUBIR_S)
 
 
-def test_desligar_apaga_a_tarefa():
+def test_desligar_apaga_a_tarefa(servico_ligado):
     servico.desligar(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
 
     assert _consultar_tarefa() is None

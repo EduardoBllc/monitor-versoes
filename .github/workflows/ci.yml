@@ -61,8 +61,7 @@ jobs:
     # desliga o Agendador de Tarefas de verdade.
     name: instalador windows
     runs-on: windows-latest
-    env:
-      UV_LOCKED: "1"
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.0
@@ -114,11 +113,11 @@ jobs:
         run: uv tool install --python 3.14 "monitor-versoes @ git+file:///$(pwd -W)@$(git rev-parse HEAD)"
       - name: integração do serviço e da reinstalação
         shell: bash
+        # Sem LOCALAPPDATA e APPDATA: o `conftest` os troca pelo `tmp_path` de cada teste.
         env:
-          LOCALAPPDATA: ${{ runner.temp }}\integracao\local
-          APPDATA: ${{ runner.temp }}\integracao\roaming
           UV_TOOL_DIR: ${{ runner.temp }}\integracao\tools
           UV_TOOL_BIN_DIR: ${{ runner.temp }}\integracao\bin
+          UV_LOCKED: "1"
           MONITOR_VERSOES_INTEGRACAO_WINDOWS: "1"
         # Teste pulado é conferência que não aconteceu: o passo falha.
         run: |
