@@ -60,6 +60,7 @@ from tests.config_repos import rotulo_secao, secao_repo
 from tests.fontes_falsas import REFERENCIA_CH, FonteFixa
 
 D = datetime.datetime(2026, 1, 1)
+SCRIPT_INSCRICOES = "monitor-versoes-inscricoes"
 
 
 # -- parser -------------------------------------------------------------------
@@ -1252,7 +1253,7 @@ def test_executavel_sem_console_roda_as_inscricoes_sem_stdout_nem_stderr(
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     alvo = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"][
         "gui-scripts"
-    ]["monitor-versoes-inscricoes"]
+    ][SCRIPT_INSCRICOES]
     vistos: list[Any] = []
     monkeypatch.setattr(disparo, "rodar", lambda *a: vistos.append(a))
     monkeypatch.setattr(sys, "stdout", None)
@@ -1275,7 +1276,7 @@ def test_main_serve_grava_o_log_e_trunca(monkeypatch, tmp_path):
     cli.main_serve()
     log = tmp_path / "dados" / servico.ARQUIVO_LOG_SERVE
     assert log.read_text(encoding="utf-8").split() == ["saida", "2", "erro", "2"]
-    assert chamadas == [["serve", "--sem-navegador"]] * 2
+    assert chamadas == [list(servico.ARGUMENTOS_SERVE)] * 2
 
 
 def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp_path):

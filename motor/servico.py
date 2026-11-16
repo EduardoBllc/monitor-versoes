@@ -310,7 +310,7 @@ def situacao(
         if responde():
             return Situacao(EstadoServico.ATIVO)
         log = Path(diretorio_dados()) / ARQUIVO_LOG_SERVE
-        return Situacao(EstadoServico.PARADO, f"Get-Content -Wait {log}")
+        return Situacao(EstadoServico.PARADO, f"Get-Content -Wait '{log}'")
     if not caminho(sistema, home).exists():
         return Situacao(EstadoServico.DESLIGADO)
     if sistema is Sistema.MACOS:

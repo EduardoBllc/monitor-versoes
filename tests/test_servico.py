@@ -6,6 +6,7 @@ import re
 import socket
 import sys
 import sysconfig
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -313,6 +314,10 @@ def test_ligar_no_macos_com_o_job_ja_carregado_recarrega(
 
 EXE_WINDOWS = r"C:\venv\Scripts\monitor-versoes-serve.exe"
 SAIDA_ALEMA = "FEHLER: Das System kann die angegebene Datei nicht finden."
+SUFIXO_EXE = ".exe"
+VAR_CONFIG_EXE = "EXE"
+NS = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
+USUARIO = ("DOMINIO", "fulano")
 PADRAO_INICIO = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d"
 
 
@@ -320,7 +325,11 @@ def _schtasks(acao: AcaoSchtasks, *resto: str) -> list[str]:
     return [SCHTASKS, acao, FLAG_TAREFA, NOME_TAREFA_SERVE, *resto]
 
 
-def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(tmp_path: Path) -> None:
+def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("USERDOMAIN", USUARIO[0])
+    monkeypatch.setenv("USERNAME", USUARIO[1])
     chamadas: list[list[str]] = []
     xmls: list[str] = []
 
@@ -336,10 +345,24 @@ def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(tmp_path: Path) -> None:
         _schtasks(AcaoSchtasks.CREATE, FLAG_XML, arquivo, FLAG_FORCAR_SCHTASKS),
         _schtasks(AcaoSchtasks.RUN),
     ]
-    (xml,) = xmls
-    assert re.search(f"<StartBoundary>{PADRAO_INICIO}</StartBoundary>", xml)
-    assert f"<Command>{EXE_WINDOWS}</Command>" in xml
-    assert "<Interval>PT1M</Interval>" in xml
+    raiz = ET.fromstring(xmls[0].split("?>", 1)[1])
+
+    def texto(caminho: str) -> str | None:
+        return raiz.findtext(caminho.replace("/", f"/{NS}").join([NS, ""]))
+
+    assert texto("Triggers/LogonTrigger/UserId") == "\\".join(USUARIO)
+    assert re.fullmatch(
+        PADRAO_INICIO, texto("Triggers/TimeTrigger/StartBoundary") or ""
+    )
+    assert texto("Triggers/TimeTrigger/Repetition/Interval") == "PT1M"
+    assert raiz.find(f".//{NS}Repetition/{NS}Duration") is None
+    assert texto("Principals/Principal/LogonType") == "InteractiveToken"
+    assert texto("Principals/Principal/RunLevel") == "LeastPrivilege"
+    assert texto("Settings/MultipleInstancesPolicy") == "IgnoreNew"
+    assert texto("Settings/DisallowStartIfOnBatteries") == "false"
+    assert texto("Settings/StopIfGoingOnBatteries") == "false"
+    assert texto("Settings/ExecutionTimeLimit") == "PT0S"
+    assert texto("Actions/Exec/Command") == EXE_WINDOWS
     assert not Path(arquivo).exists()
 
 
@@ -367,7 +390,8 @@ def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     )
     parado = situacao(tmp_path, _devolvendo(SAIDA_ALEMA), lambda: False)
     assert parado.estado is EstadoServico.PARADO
-    assert ARQUIVO_LOG_SERVE in parado.ver_log
+    assert parado.ver_log.endswith(f"{ARQUIVO_LOG_SERVE}'")
+    assert parado.ver_log.startswith("Get-Content -Wait '")
     assert (
         situacao(tmp_path, _devolvendo(""), lambda: True).estado is EstadoServico.ATIVO
     )
@@ -387,6 +411,6 @@ def test_executavel_servico_windows_tem_exe(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(
         sysconfig,
         "get_config_var",
-        lambda nome: ".exe" if nome == "EXE" else None,
+        lambda nome: SUFIXO_EXE if nome == VAR_CONFIG_EXE else None,
     )
-    assert executavel_servico().endswith(f"{EXECUTAVEL_SERVE}.exe")
+    assert executavel_servico().endswith(f"{EXECUTAVEL_SERVE}{SUFIXO_EXE}")
