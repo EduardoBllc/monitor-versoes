@@ -34,12 +34,27 @@ sem adaptação:
 
 | Ferramenta | Para quê | Instalação |
 | --- | --- | --- |
-| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: veja "Windows" |
+| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | Linux e macOS: o `install.sh` instala se faltar; Windows: veja "Windows" |
 | git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install`; Windows: [Git for Windows](https://git-scm.com/download/win) |
 
 ## Instalação
 
-Em um diretório de trabalho qualquer (não precisa clonar o repositório):
+No Linux e no macOS, em um terminal (não precisa clonar o repositório):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh
+```
+
+O script confere o git (sem ele, para e diz como instalar), instala o `uv` se faltar e o motor
+na última release, e abre o `monitor-versoes configurar` (veja "Configurar no terminal"). Já
+instalado, ele roda o `atualizar-motor`, que preserva os plugins e o extra. Opções:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh -s -- --sem-configurar
+curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh -s -- --desinstalar
+```
+
+À mão, ou no Windows (veja "Windows"), pelo `uv`:
 
 ```bash
 uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.4.0 # x-release-please-version
@@ -120,7 +135,11 @@ O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
 
 ### Desinstalar
 
-O `install.sh --desinstalar` remove o serviço do login, o timer antigo das inscrições, a
+```bash
+curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh -s -- --desinstalar
+```
+
+Ele remove o serviço do login, o timer antigo das inscrições, a
 ferramenta e os plugins. Config, estado, inscrições e cache ficam, e os caminhos são
 impressos; ele só os apaga se você responder sim (padrão não, e sem terminal ficam sempre).
 Sem o motor, ou com ele quebrado, o script ainda remove os serviços e mantém os dados. À
