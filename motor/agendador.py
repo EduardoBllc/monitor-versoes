@@ -16,6 +16,10 @@ ARQUIVO_TIMER = "monitor-versoes-inscricoes.timer"
 ARQUIVO_PLIST = "monitor-versoes.inscricoes.plist"
 SYSTEMCTL = ("systemctl", "--user")
 LAUNCHCTL = "launchctl"
+SCHTASKS = "schtasks"
+FLAG_TAREFA = "/tn"
+FLAG_XML = "/xml"
+FLAG_FORCAR_SCHTASKS = "/f"
 
 
 class Acao(StrEnum):
@@ -30,6 +34,14 @@ class Acao(StrEnum):
     PRINT = "print"
 
 
+class AcaoSchtasks(StrEnum):
+    CREATE = "/create"
+    DELETE = "/delete"
+    END = "/end"
+    RUN = "/run"
+    QUERY = "/query"
+
+
 FLAG_AGORA = "--now"
 
 Comando = Callable[[list[str]], None]
@@ -38,6 +50,7 @@ Comando = Callable[[list[str]], None]
 class Sistema(StrEnum):
     LINUX = "linux"
     MACOS = "darwin"
+    WINDOWS = "win32"
 
 
 def sistema_atual() -> Sistema:
@@ -81,7 +94,8 @@ def remover_agendador_antigo(home: Path, rodar_comando: Comando) -> bool:
         sistema = sistema_atual()
     except ErroDeEntrada:
         return False
-    if not instalado(sistema, home):
+    # O Windows nunca teve timer antigo: `caminhos` não cobre esse sistema.
+    if sistema is Sistema.WINDOWS or not instalado(sistema, home):
         return False
     desagendar(sistema, home, rodar_comando)
     print(
@@ -92,11 +106,13 @@ def remover_agendador_antigo(home: Path, rodar_comando: Comando) -> bool:
 
 
 def rodar_comando_do_sistema(cmd: list[str]) -> None:
+    # O `stderr` do `schtasks` vem na página OEM do console: decodificar com rigor quebraria.
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
     except subprocess.CalledProcessError as e:
-        raise BackendIndisponivel(
-            f"{' '.join(cmd)}: {e} {(e.stderr or '').strip()}".strip()
-        ) from e
+        detalhe = (e.stderr or b"").decode(errors="replace").strip()
+        raise BackendIndisponivel(f"{' '.join(cmd)}: {e} {detalhe}".strip()) from e
     except OSError as e:
         raise BackendIndisponivel(f"{' '.join(cmd)}: {e}") from e

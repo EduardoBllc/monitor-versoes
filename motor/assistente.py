@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,7 +14,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-import httpx
 import questionary
 from prompt_toolkit.key_binding import (
     KeyBindings,
@@ -42,14 +40,9 @@ from motor.config_edicao import (
     gravar,
     ler_para_edicao,
 )
-from motor.daemon import PORTA_PADRAO
 from motor.errors import CodigoSaida, ErroDeEntrada, MotorError
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PREFIXO_GIT
 
-ENDERECO_WEB = f"http://127.0.0.1:{PORTA_PADRAO}/"
-PRAZO_SUBIDA_S = 10
-INTERVALO_SONDA_S = 0.5
-TIMEOUT_SONDA_S = 2
 ARGS_PYTHON = ("-P", "-m")
 MODULO_MOTOR = "motor"
 PREFIXOS_GIT = ("https://", "git@")
@@ -132,19 +125,6 @@ PERGUNTAS = (
 
 def _terminal() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
-
-
-def _serve_responde(esperar: bool) -> bool:
-    limite = time.monotonic() + (PRAZO_SUBIDA_S if esperar else 0)
-    while True:
-        try:
-            if httpx.get(ENDERECO_WEB, timeout=TIMEOUT_SONDA_S).is_success:
-                return True
-        except httpx.HTTPError:
-            pass
-        if time.monotonic() >= limite:
-            return False
-        time.sleep(INTERVALO_SONDA_S)
 
 
 def _ambiente_grafico() -> bool:
@@ -331,7 +311,7 @@ def _aplicar_login(home: Path, quer: bool | None) -> None:
             servico.ligar(
                 sistema,
                 home,
-                servico.executavel_motor(),
+                servico.executavel_servico(),
                 agendador.rodar_comando_do_sistema,
             )
         else:
@@ -344,14 +324,14 @@ def _aplicar_login(home: Path, quer: bool | None) -> None:
 
 def _fechar(imprimir_diagnostico: Callable[[], object], home: Path) -> None:
     imprimir_diagnostico()
-    if not _serve_responde(esperar=servico.ligado(home)):
+    if not servico.serve_responde(esperar=servico.ligado(home)):
         print(
             f"Para terminar a configuração na web, rode `{servico.EXECUTAVEL} serve`."
         )
     elif not _ambiente_grafico():
-        print(f"Configuração na web: {ENDERECO_WEB} (→ Configuração)")
+        print(f"Configuração na web: {servico.ENDERECO_WEB} (→ Configuração)")
     elif confirmar("Abrir a configuração da web no navegador?", True):
-        webbrowser.open(ENDERECO_WEB)
+        webbrowser.open(servico.ENDERECO_WEB)
 
 
 def configurar(imprimir_diagnostico: Callable[[], object]) -> None:

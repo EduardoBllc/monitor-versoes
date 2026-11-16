@@ -139,7 +139,7 @@ def cen(monkeypatch, tmp_path) -> Cenario:
     monkeypatch.setattr(plugins, "entry_points", pontos)
     monkeypatch.setattr(assistente, "instalar_plugin", instalar)
     monkeypatch.setattr(assistente, "_terminal", lambda: True)
-    monkeypatch.setattr(assistente, "_serve_responde", lambda esperar: False)
+    monkeypatch.setattr(servico, "serve_responde", lambda esperar: False)
     monkeypatch.setattr(webbrowser, "open", c.abertos.append)
     monkeypatch.setattr(instalacao, "url_do_motor", lambda: URL_MOTOR)
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", c.comandos.append)
@@ -335,8 +335,8 @@ def test_windows_nao_pergunta_o_login(cen):
 @pytest.mark.parametrize(
     ("serve", "grafico", "teclas", "abertos", "no_stdout"),
     [
-        (True, True, (SIM,), [assistente.ENDERECO_WEB], ""),
-        (True, False, (), [], assistente.ENDERECO_WEB),
+        (True, True, (SIM,), [servico.ENDERECO_WEB], ""),
+        (True, False, (), [], servico.ENDERECO_WEB),
         (False, True, (), [], f"{EXECUTAVEL} {COMANDO_SERVE}"),
     ],
     ids=["abre", "sem-grafico", "sem-serve"],
@@ -344,7 +344,7 @@ def test_windows_nao_pergunta_o_login(cen):
 def test_fechamento(
     cen, monkeypatch, capsys, serve, grafico, teclas, abertos, no_stdout
 ):
-    monkeypatch.setattr(assistente, "_serve_responde", lambda esperar: serve)
+    monkeypatch.setattr(servico, "serve_responde", lambda esperar: serve)
     monkeypatch.setattr(assistente, "_ambiente_grafico", lambda: grafico)
     assert _rodar(ENTER, ENTER, ENTER, *teclas) == CodigoSaida.OK
     saida = capsys.readouterr().out

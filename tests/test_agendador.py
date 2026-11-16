@@ -17,7 +17,7 @@ from motor.agendador import (
 )
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 
-SO_SEM_AGENDADOR = "win32"
+SO_SEM_AGENDADOR = "sunos5"
 
 
 MOTIVO_FALHA = "falhou"
@@ -41,7 +41,7 @@ def _instalar(sistema: Sistema, home: Path, monkeypatch: pytest.MonkeyPatch) -> 
         caminho.touch()
 
 
-@pytest.mark.parametrize("sistema", list(Sistema))
+@pytest.mark.parametrize("sistema", [Sistema.LINUX, Sistema.MACOS])
 def test_remover_agendador_antigo_instalado_remove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema
 ) -> None:
