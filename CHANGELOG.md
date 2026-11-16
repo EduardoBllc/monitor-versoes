@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.3.0...v0.4.0) (2026-11-16)
+
+
+### Novidades
+
+* instalador sh, configurar interativo e daemon no login ([#212](https://github.com/EduardoBllc/monitor-versoes/issues/212)) ([39c3b14](https://github.com/EduardoBllc/monitor-versoes/commit/39c3b14de398364eabbf63c604215701f6390ad9))
+* plugins de fonte de tarefas do GitHub Issues e do GitLab Issues ([#204](https://github.com/EduardoBllc/monitor-versoes/issues/204)) ([c10e9f2](https://github.com/EduardoBllc/monitor-versoes/commit/c10e9f23f93272a8e715424c2441634da7e74ee2))
+
 ## [0.3.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.2.0...v0.3.0) (2026-11-14)
 
 
