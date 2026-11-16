@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from motor import inscricoes
+from motor import console, inscricoes
 from motor.adapters.notificador.fake import FakeNotificador
 from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
 from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, RespostaInvalida
@@ -353,7 +353,7 @@ def test_disparar_subprocesso_monta_o_comando(
     assert visto["env"] == ambiente
     assert visto["timeout"] == LIMITE_EXECUCAO_S
     assert visto["start_new_session"] is True
-    assert visto["creationflags"] == 0
+    assert visto["creationflags"] == console.FLAGS_SEM_JANELA
 
 
 @pytest.mark.parametrize(
