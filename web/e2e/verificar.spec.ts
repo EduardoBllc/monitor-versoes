@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { RecursoApi, expect, rotaApi, test } from "./fixtures";
 import { PapelVersao } from "./papeis";
 import {
   Acao,
@@ -32,7 +32,7 @@ test("auditar tag mantém o snapshot congelado", async ({
   adicionarChamado,
 }) => {
   const versao = manifesto.versoes[PapelVersao.LIBERADA];
-  const url = `/api/repos/${encodeURIComponent(manifesto.repo)}/versoes/${encodeURIComponent(versao)}/chamados`;
+  const url = rotaApi(manifesto.repo, RecursoApi.CHAMADOS, versao);
   const antes = await (await request.get(url)).json();
   await adicionarChamado(versao, CHAMADO_NOVO_NO_MAPA);
   await abrir(page, manifesto.repo, versao);

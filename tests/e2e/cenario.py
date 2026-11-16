@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import secrets
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -39,6 +40,9 @@ NOME_SEM_CHECKOUT = "sem-checkout"
 PRINCIPAL = "main"
 ARQUIVO_CONFLITO = "conflito.txt"
 ARQUIVO_VAZIO = "vazio.txt"
+CONTEUDO_THEIRS_CONFLITO = "v2\n"
+ASSUNTO_ORFAO = "ajuste sem tarefa"
+NOME_MAPA = "mapa.json"
 VERSAO_NOVA = "1.7.0"
 DATA_INICIAL = datetime.datetime(2026, 1, 5, 9, 0, tzinfo=datetime.UTC)
 
@@ -91,8 +95,13 @@ class Manifesto:
     clone: str
     versoes: dict[PapelVersao, str]
     chamados: dict[PapelVersao, str]
+    pasta_sem_checkout: str
     arquivo_conflito: str
+    conteudo_theirs_conflito: str
+    assunto_orfao: str
     versao_nova: str
+    mapa: str
+    config: str
     ambiente: dict[str, str]
 
 
@@ -159,7 +168,9 @@ def _semear(git: _Git, semente: Path) -> None:
         for papel in _COM_ARQUIVO_PROPRIO
     }
     na_main(CHAMADO_CULPADO, {ARQUIVO_CONFLITO: "v1\n"})
-    na_main(CHAMADOS[PapelVersao.CONFLITO], {ARQUIVO_CONFLITO: "v2\n"})
+    na_main(
+        CHAMADOS[PapelVersao.CONFLITO], {ARQUIVO_CONFLITO: CONTEUDO_THEIRS_CONFLITO}
+    )
     na_main(CHAMADOS[PapelVersao.VAZIO], {ARQUIVO_VAZIO: "b\n"})
 
     for papel in _APLICADOS:
@@ -174,12 +185,13 @@ def _semear(git: _Git, semente: Path) -> None:
         {ARQUIVO_VAZIO: "b\n", "extra.txt": "extra\n"},
     )
     git(semente, "checkout", VERSOES[PapelVersao.ORFAO])
-    git.commit(semente, "ajuste sem tarefa", {"orfao.txt": "orfao\n"})
+    git.commit(semente, ASSUNTO_ORFAO, {"orfao.txt": "orfao\n"})
     git(semente, "checkout", PRINCIPAL)
 
 
-def _config(raiz: Path, ambiente: dict[str, str], clone: Path, mapa: Path) -> None:
-    central = Path(ambiente[VAR_XDG_CONFIG_HOME]) / "monitor-versoes" / "config.toml"
+def _config(
+    central: Path, clone: Path, mapa: Path, sem_checkout: str, pasta: Path
+) -> None:
     central.parent.mkdir(parents=True)
     central.write_text(
         "[atualizacoes]\n"
@@ -191,7 +203,7 @@ def _config(raiz: Path, ambiente: dict[str, str], clone: Path, mapa: Path) -> No
         'padrao = "ch{id}"\n\n'
         + secao_repo(NOME_REPO, clone)
         + "\n"
-        + secao_repo(NOME_SEM_CHECKOUT, raiz / "sem-checkout")
+        + secao_repo(sem_checkout, pasta)
     )
 
 
@@ -218,11 +230,16 @@ def montar(raiz: Path) -> Manifesto:
     git(raiz, "clone", str(origin), str(clone))
     git.identidade(clone)
 
-    mapa = raiz / "mapa.json"
+    mapa = raiz / NOME_MAPA
     mapa.write_text(
         json.dumps({VERSOES[p]: [chamado] for p, chamado in CHAMADOS.items()})
     )
-    _config(raiz, ambiente, clone, mapa)
+    central = Path(ambiente[VAR_XDG_CONFIG_HOME]) / "monitor-versoes" / "config.toml"
+    # Nome único por cenário: o fixture o procura em /api/repos para saber que a
+    # porta é do seu daemon, e não de outro que a pegou antes.
+    sem_checkout = f"{NOME_SEM_CHECKOUT}-{secrets.token_hex(4)}"
+    pasta_sem_checkout = raiz / sem_checkout
+    _config(central, clone, mapa, sem_checkout, pasta_sem_checkout)
 
     with _ambiente_aplicado(ambiente):
         repo = next(r for r in repos_do_ambiente() if r.nome == NOME_REPO)
@@ -236,12 +253,17 @@ def montar(raiz: Path) -> Manifesto:
 
     return Manifesto(
         repo=NOME_REPO,
-        repo_sem_checkout=NOME_SEM_CHECKOUT,
+        repo_sem_checkout=sem_checkout,
         clone=str(clone),
+        pasta_sem_checkout=str(pasta_sem_checkout),
         versoes=dict(VERSOES),
         chamados=dict(CHAMADOS),
         arquivo_conflito=ARQUIVO_CONFLITO,
+        conteudo_theirs_conflito=CONTEUDO_THEIRS_CONFLITO,
+        assunto_orfao=ASSUNTO_ORFAO,
         versao_nova=VERSAO_NOVA,
+        mapa=str(mapa),
+        config=str(central),
         ambiente=ambiente,
     )
 

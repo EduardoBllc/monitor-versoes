@@ -1,15 +1,18 @@
-import { expect, git, test, type Manifesto } from "./fixtures";
+import { RecursoApi, expect, git, rotaApi, test, type Manifesto } from "./fixtures";
 import { PapelVersao } from "./papeis";
 import {
   Acao,
+  abortarBloqueio,
   abrir,
   acao,
+  atualizarLote,
   avisoBloqueio,
   avisoVazioRegistrado,
   chamadoNoLote,
-  confirmarAbortar,
   confirmarLote,
+  continuarComoVazio,
   fecharDialogo,
+  previaDoLote,
   resultadoAtualizacao,
   vereditoVerde,
 } from "./tela";
@@ -25,7 +28,7 @@ test("atualizar aplica o lote com trailer e a versão fica verde", async ({
 }) => {
   const versao = manifesto.versoes[PapelVersao.FALTANTES];
   await abrir(page, manifesto.repo, versao);
-  await acao(page, Acao.ATUALIZAR).click();
+  await previaDoLote(page);
   await expect(
     chamadoNoLote(page, versao, manifesto.chamados[PapelVersao.FALTANTES]),
   ).toBeVisible();
@@ -43,12 +46,11 @@ test("pick sem alteração entra como commit vazio e a versão fica verde", asyn
   page,
   manifesto,
 }) => {
-  // O motor registra sozinho o pick que sai vazio no lote: "Registrar vazio" só aparece
+  // O motor registra sozinho o pick que sai vazio no lote: o registro manual só existe
   // quando uma resolução de conflito zera o diff (teste seguinte).
   const versao = manifesto.versoes[PapelVersao.VAZIO];
   await abrir(page, manifesto.repo, versao);
-  await acao(page, Acao.ATUALIZAR).click();
-  await confirmarLote(page, versao);
+  await atualizarLote(page, versao);
   await expect(avisoVazioRegistrado(page)).toBeVisible();
   await fecharDialogo(page);
   await acao(page, Acao.VERIFICAR).click();
@@ -62,16 +64,21 @@ test("conflito resolvido sem alteração conclui com Registrar vazio", async ({
 }) => {
   const versao = manifesto.versoes[PapelVersao.CONFLITO];
   await abrir(page, manifesto.repo, versao);
-  await acao(page, Acao.ATUALIZAR).click();
-  await confirmarLote(page, versao);
+  await atualizarLote(page, versao);
   await expect(avisoBloqueio(page)).toBeVisible();
-  const [pendencia] = (await (
-    await request.get(`/api/repos/${encodeURIComponent(manifesto.repo)}/pendencias`)
+  const pendencias = (await (
+    await request.get(rotaApi(manifesto.repo, RecursoApi.PENDENCIAS))
   ).json()) as { resultado: { worktree: string } }[];
+  expect(pendencias).toHaveLength(1);
   // Fica com o lado do alvo: a resolução zera o diff do commit.
-  git(manifesto, pendencia!.resultado.worktree, "checkout", "--ours", manifesto.arquivo_conflito);
-  await acao(page, Acao.CONTINUAR).click();
-  await acao(page, Acao.REGISTRAR_VAZIO).click();
+  git(
+    manifesto,
+    pendencias[0]!.resultado.worktree,
+    "checkout",
+    "--ours",
+    manifesto.arquivo_conflito,
+  );
+  await continuarComoVazio(page);
   await expect(avisoVazioRegistrado(page)).toBeVisible();
   await fecharDialogo(page);
   await acao(page, Acao.VERIFICAR).click();
@@ -85,11 +92,9 @@ test("abortar o bloqueio devolve as ações e não mexe na branch", async ({
   const versao = manifesto.versoes[PapelVersao.CONFLITO];
   const antes = pontaDaBranch(manifesto, versao);
   await abrir(page, manifesto.repo, versao);
-  await acao(page, Acao.ATUALIZAR).click();
-  await confirmarLote(page, versao);
+  await atualizarLote(page, versao);
   await expect(avisoBloqueio(page)).toBeVisible();
-  await acao(page, Acao.ABORTAR).click();
-  await confirmarAbortar(page);
+  await abortarBloqueio(page);
   await expect(acao(page, Acao.ATUALIZAR)).toBeEnabled();
   await expect(acao(page, Acao.CONTINUAR)).toBeHidden();
   expect(pontaDaBranch(manifesto, versao)).toBe(antes);
@@ -101,8 +106,7 @@ test("recarregar a página mantém o bloqueio e suas ações", async ({
 }) => {
   const versao = manifesto.versoes[PapelVersao.CONFLITO];
   await abrir(page, manifesto.repo, versao);
-  await acao(page, Acao.ATUALIZAR).click();
-  await confirmarLote(page, versao);
+  await atualizarLote(page, versao);
   await expect(avisoBloqueio(page)).toBeVisible();
   await page.reload();
   await expect(avisoBloqueio(page)).toBeVisible();

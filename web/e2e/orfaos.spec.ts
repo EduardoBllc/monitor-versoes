@@ -1,10 +1,8 @@
-import { expect, test } from "./fixtures";
+import { RecursoApi, expect, rotaApi, test } from "./fixtures";
 import { PapelVersao } from "./papeis";
-import { Acao, abrir, acao, julgarOrfao, linhaDoOrfao } from "./tela";
+import { abrir, abrirOrfaos, julgarOrfao, linhaDoOrfao, orfaoJulgado } from "./tela";
 
-const ASSUNTO_ORFAO = "ajuste sem tarefa";
 const MOTIVO = "veio de outra frente";
-const JULGADO_COMO = (chamado: string) => `pertence a ${chamado}`;
 
 interface Orfao {
   assunto: string;
@@ -16,21 +14,20 @@ test("órfãos lista o commit sem referência e julgá-lo o marca como julgado",
   manifesto,
   request,
 }) => {
+  const { repo, assunto_orfao: assunto } = manifesto;
   const versao = manifesto.versoes[PapelVersao.ORFAO];
   const chamado = manifesto.chamados[PapelVersao.VERDE];
-  const url = `/api/repos/${encodeURIComponent(manifesto.repo)}/versoes/${encodeURIComponent(versao)}/orfaos`;
-  await abrir(page, manifesto.repo, versao);
-  await acao(page, Acao.ORFAOS).click();
-  const linha = linhaDoOrfao(page, manifesto.repo, versao, ASSUNTO_ORFAO);
-  await expect(linha).toBeVisible();
+  await abrir(page, repo, versao);
+  await abrirOrfaos(page);
+  await expect(linhaDoOrfao(page, repo, versao, assunto)).toBeVisible();
 
-  await julgarOrfao(page, manifesto.repo, versao, ASSUNTO_ORFAO, chamado, MOTIVO);
+  await julgarOrfao(page, repo, versao, assunto, chamado, MOTIVO);
 
-  // A tela não remove o julgado: mantém a linha com o rótulo e o motivo.
-  await expect(linha).toContainText(JULGADO_COMO(chamado));
-  await expect(linha).toContainText(MOTIVO);
-  const orfaos = (await (await request.get(url)).json()) as Orfao[];
-  expect(orfaos.find((o) => o.assunto === ASSUNTO_ORFAO)?.julgamento).toMatchObject({
+  await expect(orfaoJulgado(page, repo, versao, assunto, chamado, MOTIVO)).toBeVisible();
+  const orfaos = (await (
+    await request.get(rotaApi(repo, RecursoApi.ORFAOS, versao))
+  ).json()) as Orfao[];
+  expect(orfaos.find((o) => o.assunto === assunto)?.julgamento).toMatchObject({
     chamado,
     motivo: MOTIVO,
   });

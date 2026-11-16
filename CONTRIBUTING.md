@@ -78,8 +78,9 @@ O build (`motor/daemon/static/`) e os tipos gerados (`web/openapi.json`,
 teste monta um cenário git numa pasta temporária e sobe o `serve` servindo o build
 versionado. Na primeira vez, instale o navegador com `cd web && npx playwright install chromium`.
 
-As specs não localizam elementos: todo seletor vive em `web/e2e/tela.ts`. Mudar a
-tela muda só esse arquivo.
+As specs não localizam elementos nem encadeiam cliques: seletores e sequências de
+interação vivem em `web/e2e/tela.ts`, e as specs só asserem desfechos (veredito, estado
+pela API, estado no git). Mudar a tela muda só esse arquivo.
 
 ## Armadilhas do ambiente
 
