@@ -34,7 +34,7 @@ sem adaptação:
 
 | Ferramenta | Para quê | Instalação |
 | --- | --- | --- |
-| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | Linux e macOS: o `install.sh` instala se faltar; Windows: veja "Windows" |
+| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | Linux e macOS: o `install.sh` instala se faltar (à mão: `curl -LsSf https://astral.sh/uv/install.sh \| sh`); Windows: veja "Windows" |
 | git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install`; Windows: [Git for Windows](https://git-scm.com/download/win) |
 
 ## Instalação
@@ -47,7 +47,10 @@ curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/in
 
 O script confere o git (sem ele, para e diz como instalar), instala o `uv` se faltar e o motor
 na última release, e abre o `monitor-versoes configurar` (veja "Configurar no terminal"). Já
-instalado, ele roda o `atualizar-motor`, que preserva os plugins e o extra. Opções:
+instalado, ele roda o `atualizar-motor`, que preserva os plugins e o extra; numa instalação
+sem esse comando (v0.2.0) ou de origem local, ele reinstala o motor e lista os plugins que
+precisam ser reinstalados com `plugin instalar`. Sem terminal, ele pula o `configurar` e diz
+para rodá-lo depois. Opções:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh -s -- --sem-configurar
