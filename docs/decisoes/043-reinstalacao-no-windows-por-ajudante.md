@@ -24,7 +24,8 @@ mostra no console. Chamar o `uv` de dentro não funciona: o próprio processo tr
 60 s. Se algum sobrar (uma TUI aberta, um `serve` manual), ele não toca no ambiente: lista os
 processos e pede para fechá-los e rodar o comando de novo. Sem prazo, um processo esquecido
 travaria o ajudante para sempre. O serviço sobe de novo ao fim, inclusive quando o `uv` falhou ou
-o prazo estourou.
+o prazo estourou. Encerrar só não basta: o gatilho de 1 minuto da tarefa subiria o `serve` no meio
+do `uv`; por isso a tarefa fica desativada da parada até a volta.
 
 **O `pos-reinstalar` roda no ambiente novo.** O resumo do que mudou depende do código novo, e o
 processo antigo já saiu. O ajudante chama o `pos-reinstalar` do ambiente reinstalado, só quando o

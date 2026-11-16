@@ -15,6 +15,8 @@ import pytest
 from motor import ajudante, config, servico
 from motor.__main__ import COMANDO_DESINSTALAR
 from motor.agendador import (
+    FLAG_ATIVAR_SCHTASKS,
+    FLAG_DESATIVAR_SCHTASKS,
     FLAG_FORCAR_SCHTASKS,
     FLAG_TAREFA,
     NOME_TAREFA_INSCRICOES,
@@ -372,6 +374,10 @@ def _schtasks(acao: AcaoSchtasks, tarefa: str = NOME_TAREFA_SERVE) -> str:
     return f"{SCHTASKS} {acao} {FLAG_TAREFA} {tarefa}"
 
 
+def _schtasks_serve(acao: AcaoSchtasks, flag: str) -> str:
+    return f"{_schtasks(acao)} {flag}"
+
+
 def _configurar() -> str:
     return f"{servico.EXECUTAVEL} {servico.COMANDO_CONFIGURAR}"
 
@@ -538,9 +544,14 @@ def test_servico_ligado_encerra_antes_e_sobe_depois_do_uv(maquina, caminho):
 
     assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
     chamadas = maquina.chamadas()
-    uv = chamadas.index(_instalacao(ULTIMA_TAG, reinstalar=reinstalar))
-    assert chamadas.index(_schtasks(AcaoSchtasks.END)) < uv
-    assert chamadas.index(_schtasks(AcaoSchtasks.RUN)) > uv
+    ordem = [
+        _schtasks_serve(AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS),
+        _schtasks(AcaoSchtasks.END),
+        _instalacao(ULTIMA_TAG, reinstalar=reinstalar),
+        _schtasks_serve(AcaoSchtasks.CHANGE, FLAG_ATIVAR_SCHTASKS),
+        _schtasks(AcaoSchtasks.RUN),
+    ]
+    assert [c for c in chamadas if c in ordem] == ordem
 
 
 def _processo_do_ambiente(maquina: Maquina, codigo: str) -> subprocess.Popen[bytes]:

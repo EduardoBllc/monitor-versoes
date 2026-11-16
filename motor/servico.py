@@ -194,6 +194,9 @@ def _ligar_windows(executavel: str, rodar_comando: Comando) -> None:
         "w", encoding="utf-16", suffix=".xml", delete=False
     ) as xml:
         xml.write(_xml_tarefa(executavel))
+    # Com IgnoreNew, o `/run` deixaria de pé o serve antigo; parar o que não roda é inócuo.
+    with contextlib.suppress(BackendIndisponivel):
+        rodar_comando(_tarefa(AcaoSchtasks.END))
     try:
         rodar_comando(
             _tarefa(AcaoSchtasks.CREATE, FLAG_XML, xml.name, FLAG_FORCAR_SCHTASKS)

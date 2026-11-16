@@ -19,7 +19,11 @@ param(
     [Parameter(Mandatory = $true)][int]$PrazoProcessos
 )
 
+# Os mesmos nomes de motor/agendador.py.
 $SCHTASKS = 'schtasks'
+$ACAO_ALTERAR = '/change'
+$FLAG_DESATIVAR = '/disable'
+$FLAG_ATIVAR = '/enable'
 $TAREFA_SERVE = 'monitor-versoes-serve'
 $COMANDO_POS_REINSTALAR = 'pos-reinstalar'
 $ARQUIVO_COMANDO = 'comando.json'
@@ -80,6 +84,8 @@ try {
     & $SCHTASKS /query /tn $TAREFA_SERVE *> $null
     $servicoLigado = $LASTEXITCODE -eq 0
     if ($servicoLigado) {
+        # Desativada, o gatilho de 1 min não sobe o serve no meio do uv.
+        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_DESATIVAR *> $null
         & $SCHTASKS /end /tn $TAREFA_SERVE *> $null
     }
 
@@ -116,6 +122,7 @@ try {
     }
 } finally {
     if ($servicoLigado) {
+        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_ATIVAR *> $null
         & $SCHTASKS /run /tn $TAREFA_SERVE *> $null
     }
     Set-Content -LiteralPath (Join-Path -Path $Pasta -ChildPath $ARQUIVO_RESULTADO) -Value $resultado -NoNewline -Encoding Ascii

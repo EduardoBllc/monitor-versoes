@@ -79,7 +79,11 @@ PS_SAIDA_UTF8 = "[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
 PS_EXPORTAR_TAREFA = (
     f"{PS_SAIDA_UTF8}; Export-ScheduledTask -TaskName '{NOME_TAREFA_SERVE}'"
 )
-PS_MATAR_SERVE = f"Stop-Process -Name '{servico.EXECUTAVEL_SERVE}' -Force -ErrorAction SilentlyContinue"
+# Filtrar em vez de `-Name`: sem processo, o `-Name` erra e o `-Command` sai com 1.
+PS_MATAR_SERVE = (
+    f"Get-Process | Where-Object {{ $_.Name -eq '{servico.EXECUTAVEL_SERVE}' }}"
+    " | Stop-Process -Force"
+)
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get(VAR_INTEGRACAO_WINDOWS),

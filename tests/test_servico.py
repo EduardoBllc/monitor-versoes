@@ -358,8 +358,9 @@ def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
 
     ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, rodar)
 
-    arquivo = chamadas[0][chamadas[0].index(FLAG_XML) + 1]
+    arquivo = chamadas[1][chamadas[1].index(FLAG_XML) + 1]
     assert chamadas == [
+        _schtasks(AcaoSchtasks.END),
         _schtasks(AcaoSchtasks.CREATE, FLAG_XML, arquivo, FLAG_FORCAR_SCHTASKS),
         _schtasks(AcaoSchtasks.RUN),
     ]
@@ -375,6 +376,16 @@ def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
     for xpath, esperado in XML_ESPERADO.items():
         assert texto(xpath) == esperado, xpath
     assert not Path(arquivo).exists()
+
+
+def test_ligar_windows_sem_tarefa_anterior_cria_e_roda(tmp_path: Path) -> None:
+    registro = Registro(falhar_em=AcaoSchtasks.END)
+    ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
+    assert [cmd[1] for cmd in registro.comandos] == [
+        AcaoSchtasks.END,
+        AcaoSchtasks.CREATE,
+        AcaoSchtasks.RUN,
+    ]
 
 
 def test_ligar_windows_que_falha_apaga_a_tarefa(tmp_path: Path) -> None:

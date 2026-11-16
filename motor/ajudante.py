@@ -17,6 +17,8 @@ from motor.errors import ErroDeEntrada, RepoOcupado
 from motor.inscricoes import NOME_TRAVA_INSCRICOES
 from motor.instalacao import (
     PACOTE_MOTOR,
+    UV,
+    ArgUv,
     Registro,
     registro_de_json,
     registro_para_json,
@@ -56,6 +58,23 @@ def ler_antes() -> Registro:
     return registro_de_json(arquivo.read_text(encoding=CODIFICACAO))
 
 
+def _bin_uv() -> Path:
+    # O mesmo do Get-DirUv do install.ps1: o `which` pode achar outra instalação ou nenhuma.
+    try:
+        feito = subprocess.run(
+            [UV, ArgUv.TOOL, ArgUv.DIR, ArgUv.BIN],
+            capture_output=True,
+            text=True,
+            check=True,
+            creationflags=console.FLAGS_SEM_JANELA,
+        )
+    except subprocess.CalledProcessError, OSError:
+        feito = None
+    if feito and (pasta := feito.stdout.strip()):
+        return Path(pasta.splitlines()[0])
+    return Path(shutil.which(PACOTE_MOTOR) or servico.executavel_motor()).parent
+
+
 def _disparar(cmd: list[str]) -> int:
     # Ramo literal: as flags só existem no Windows (ver `trava.py`).
     if sys.platform != "win32":
@@ -91,7 +110,7 @@ def entregar(
     script = pasta / ARQUIVO_SCRIPT
     shutil.copyfile(Path(__file__).with_name(ARQUIVO_SCRIPT), script)
     # O `uv tool install` também sobrescreve os `monitor-versoes*.exe` desta pasta.
-    bin_uv = Path(shutil.which(PACOTE_MOTOR) or servico.executavel_motor()).parent
+    bin_uv = _bin_uv()
     pid = disparar(
         [
             POWERSHELL,

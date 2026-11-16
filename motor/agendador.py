@@ -21,6 +21,8 @@ SCHTASKS = "schtasks"
 FLAG_TAREFA = "/tn"
 FLAG_XML = "/xml"
 FLAG_FORCAR_SCHTASKS = "/f"
+FLAG_DESATIVAR_SCHTASKS = "/disable"
+FLAG_ATIVAR_SCHTASKS = "/enable"
 NOME_TAREFA_INSCRICOES = "monitor-versoes-inscricoes"
 
 
@@ -37,6 +39,7 @@ class Acao(StrEnum):
 
 
 class AcaoSchtasks(StrEnum):
+    CHANGE = "/change"
     CREATE = "/create"
     DELETE = "/delete"
     END = "/end"

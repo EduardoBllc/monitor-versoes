@@ -40,6 +40,8 @@ class ArgUv(StrEnum):
     PYTHON = "--python"
     WITH = "--with"
     UPGRADE_PACKAGE = "--upgrade-package"
+    DIR = "dir"
+    BIN = "--bin"
 
 
 class ArgGit(StrEnum):

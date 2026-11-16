@@ -44,6 +44,9 @@ $CMD_DESINSTALAR = 'desinstalar'
 $CMD_PLUGIN_INSTALAR = 'plugin instalar'
 # Os mesmos nomes de motor/servico.py, motor/agendador.py e motor/ajudante.py.
 $SCHTASKS = 'schtasks'
+$ACAO_ALTERAR = '/change'
+$FLAG_DESATIVAR = '/disable'
+$FLAG_ATIVAR = '/enable'
 $TAREFA_SERVE = 'monitor-versoes-serve'
 $TAREFA_INSCRICOES = 'monitor-versoes-inscricoes'
 $VAR_AJUDANTE_ESTADO = 'MONITOR_VERSOES_AJUDANTE_ESTADO'
@@ -144,6 +147,8 @@ function Invoke-UvComServico {
     param([string[]]$Argumentos, [string]$Falha)
     $ligado = Test-ServicoLigado
     if ($ligado) {
+        # Desativada, o gatilho de 1 min não sobe o serve no meio do uv.
+        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_DESATIVAR *> $null
         & $SCHTASKS /end /tn $TAREFA_SERVE *> $null
     }
     try {
@@ -154,6 +159,7 @@ function Invoke-UvComServico {
         }
     } finally {
         if ($ligado) {
+            & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_ATIVAR *> $null
             & $SCHTASKS /run /tn $TAREFA_SERVE *> $null
         }
     }
