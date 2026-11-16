@@ -178,13 +178,12 @@ class JulgamentoOrfao(Base):
 class PrCommitCache(Base):
     """Commits de uma PR mergeada do host — cache puro de fato imutavel.
 
-    Existe para cortar o `GET /pullrequests/{id}/commits`, que hoje roda uma vez
-    por PR a cada `verificar`. A busca das PRs do chamado continua batendo na
-    API toda vez: e ela que descobre PR nova, e cachea-la esconderia um commit
-    de correcao — falso-verde, que e o modo de falha que o motor existe para
-    evitar.
+    Corta o `GET /pullrequests/{id}/commits` das PRs ja vistas. Quem descobre PR
+    nova e a varredura incremental (`PrMergeada`, `VarreduraPr`), que roda a cada
+    resolucao: e ela, nao este cache, que impede o falso-verde de um commit de
+    correcao numa PR nova.
 
-    Fica de fora de proposito: `chamado`, que vem da busca e nao da PR, e
+    Fica de fora de proposito: `chamado`, que vem do casamento com o indice e nao da PR, e
     `is_ancestor(hash, principal)`, que e volatil — uma PR mergeada numa branch que
     ainda nao chegou na principal viraria commit escondido para sempre.
     """
