@@ -136,10 +136,12 @@ async function esperar(
 
 async function encerrar(processo: ChildProcess): Promise<void> {
   const pid = processo.pid;
-  if (pid === undefined || saiu(processo)) return;
-  const fim = new Promise((r) => processo.once("exit", r));
-  sinalizarGrupo(pid, "SIGTERM");
-  await Promise.race([fim, pausa(ENCERRAMENTO_DAEMON_MS)]);
+  if (pid === undefined) return;
+  if (!saiu(processo)) {
+    const fim = new Promise((r) => processo.once("exit", r));
+    sinalizarGrupo(pid, "SIGTERM");
+    await Promise.race([fim, pausa(ENCERRAMENTO_DAEMON_MS)]);
+  }
   // O grupo inteiro: o `uv run` pode ter saído deixando o daemon para trás.
   sinalizarGrupo(pid, "SIGKILL");
 }
