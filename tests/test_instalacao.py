@@ -24,6 +24,8 @@ from motor.instalacao import (
     ler_registro,
     origem_do_pacote,
     plugins_instalados,
+    registro_de_json,
+    registro_para_json,
 )
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes"
@@ -31,6 +33,7 @@ PLUGIN = "monitor-versoes-extra"
 URL_PLUGIN = "https://github.com/EduardoBllc/monitor-versoes-extra"
 TAG = "v0.2.0"
 SUBDIR_JIRA = "plugins/jira"
+EXTRAS = ("anthropic", "dev")
 
 # Formato real do `uv tool install`: a revisão vai na própria URL, em `?rev=`.
 RECIBO = f"""\
@@ -252,3 +255,14 @@ def test_registro_ilegivel_vira_erro_de_entrada(tmp_path: Path, conteudo: str) -
     (tmp_path / ARQUIVO_REGISTRO).write_text(conteudo)
     with pytest.raises(ErroDeEntrada, match="registro do uv ilegível"):
         ler_registro(tmp_path)
+
+
+def test_registro_ida_e_volta_em_json(tmp_path: Path) -> None:
+    reg = Registro(
+        Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG),
+        (
+            Requisito(PLUGIN, git=URL_PLUGIN, ref=TAG, extras=EXTRAS),
+            Requisito(PLUGIN, diretorio=str(tmp_path)),
+        ),
+    )
+    assert registro_de_json(registro_para_json(reg)) == reg

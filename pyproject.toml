@@ -68,7 +68,12 @@ build-backend = "setuptools.build_meta"
 include = ["motor*"]
 
 [tool.setuptools.package-data]
-motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "daemon/static/**/*"]
+motor = [
+    "migracoes/script.py.mako",
+    "migracoes/versions/*.py",
+    "daemon/static/**/*",
+    "ajudante_windows.ps1",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "plugins/jira/tests", "plugins/github/tests", "plugins/gitlab/tests"]

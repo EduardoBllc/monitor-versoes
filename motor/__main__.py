@@ -332,6 +332,7 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     COMANDO_INSCRICAO: _inscricao,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
+    cli_instalacao.COMANDO_POS_REINSTALAR: cli_instalacao.pos_reinstalar,
 }
 
 
@@ -834,6 +835,7 @@ _SEM_AVISO = frozenset(
         COMANDO_DESINSTALAR,
         cli_instalacao.COMANDO_PLUGIN,
         cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
+        cli_instalacao.COMANDO_POS_REINSTALAR,
     }
 )
 

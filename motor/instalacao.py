@@ -7,10 +7,11 @@ import re
 import sys
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from importlib.metadata import Distribution, EntryPoint, distribution, entry_points
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
 from motor.config_edicao import GrupoPlugin
@@ -296,3 +297,23 @@ def comando_reinstalar(reg: Registro) -> list[str]:
     for plugin in reg.plugins:
         comando += [ArgUv.WITH, _escrever(plugin)]
     return comando
+
+
+def registro_para_json(reg: Registro) -> str:
+    return json.dumps(asdict(reg))
+
+
+def _requisito_de_json(campos: Any) -> Requisito:
+    r = Requisito(**campos)
+    # O JSON devolve os extras como lista.
+    return replace(r, extras=tuple(r.extras))
+
+
+def registro_de_json(texto: str) -> Registro:
+    # Os campos aninhados chegam como dict e são trocados logo abaixo.
+    reg = Registro(**json.loads(texto))
+    return replace(
+        reg,
+        motor=_requisito_de_json(reg.motor),
+        plugins=tuple(map(_requisito_de_json, reg.plugins)),
+    )

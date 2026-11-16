@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import shlex
 import shutil
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -10,10 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from motor import agendador, cli_instalacao, instalacao, novidades, servico
+from motor import agendador, ajudante, cli_instalacao, instalacao, novidades, servico
 from motor.__main__ import main
 from motor.agendador import SYSTEMCTL, Acao, Sistema
-from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR, COMANDO_PLUGIN, AcaoPlugin
+from motor.cli_instalacao import (
+    COMANDO_ATUALIZAR_MOTOR,
+    COMANDO_PLUGIN,
+    COMANDO_POS_REINSTALAR,
+    AcaoPlugin,
+)
 from motor.config import Chave, Tabela, caminho_config_global, diretorio_cache
 from motor.config_edicao import GrupoPlugin
 from motor.errors import CodigoSaida, ErroDeEntrada
@@ -28,6 +34,7 @@ from motor.instalacao import (
     Registro,
     Requisito,
     TipoOrigem,
+    registro_para_json,
 )
 from motor.novidades import (
     ARQUIVO_CACHE,
@@ -39,6 +46,7 @@ from motor.novidades import (
     gravar_cache,
     linha_aviso,
 )
+from tests.plataforma import PLATAFORMA_WINDOWS
 from tests.test_agendador import MOTIVO_FALHA
 from tests.test_agendador import Registro as RegistroDeComandos
 
@@ -708,3 +716,39 @@ def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
     saida = capsys.readouterr().out
     assert f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o." in saida
     assert MOTIVO_FALHA in saida
+
+
+def test_reinstalar_no_windows_entrega_ao_ajudante(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", PLATAFORMA_WINDOWS)
+    entregues: list[tuple[Registro, list[str]]] = []
+    monkeypatch.setattr(
+        ajudante, "entregar", lambda antes, cmd: entregues.append((antes, cmd))
+    )
+    antes = Registro(MOTOR, ())
+    cmd = [*INICIO, LINHA_MOTOR]
+
+    cli_instalacao._reinstalar(antes, cmd)
+
+    assert entregues == [(antes, cmd)]
+    assert inst.comandos == []
+
+
+def test_pos_reinstalar_imprime_mudancas_e_apaga_o_cache(
+    inst: Instalacao, capsys
+) -> None:
+    antes = Registro(MOTOR, (_jira(TAG_MOTOR),))
+    inst.registros = [Registro(MOTOR, (_jira(TAG_MOTOR_NOVA),))]
+    pasta = ajudante.pasta_reinstalacao()
+    pasta.mkdir(parents=True)
+    (pasta / ajudante.ARQUIVO_ANTES).write_text(registro_para_json(antes))
+    _cache().parent.mkdir(parents=True)
+    _cache().write_text("{}")
+
+    main([COMANDO_POS_REINSTALAR])
+
+    assert (
+        capsys.readouterr().out == f"  {PLUGIN_JIRA}: {TAG_MOTOR} → {TAG_MOTOR_NOVA}\n"
+    )
+    assert not _cache().exists()
