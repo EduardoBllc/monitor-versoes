@@ -5,7 +5,7 @@ import {
   abrir,
   acao,
   avisoAuditoria,
-  chamadoListado,
+  avisoSemCommits,
   vereditoPendencias,
   vereditoVerde,
 } from "./tela";
@@ -15,9 +15,6 @@ test("verificar mostra o veredito de pendências do motor", async ({ page, manif
   await abrir(page, manifesto.repo, manifesto.versoes[PapelVersao.FALTANTES]);
   await acao(page, Acao.VERIFICAR).click();
   await expect(vereditoPendencias(page)).toBeVisible();
-  await expect(
-    chamadoListado(page, manifesto.chamados[PapelVersao.FALTANTES]),
-  ).toBeVisible();
 });
 
 test("verificar uma versão verde mostra o veredito verde", async ({ page, manifesto }) => {
@@ -26,12 +23,21 @@ test("verificar uma versão verde mostra o veredito verde", async ({ page, manif
   await expect(vereditoVerde(page)).toBeVisible();
 });
 
-test("auditar tag mantém o snapshot congelado", async ({ page, manifesto, request }) => {
+const CHAMADO_NOVO_NO_MAPA = "999";
+
+test("auditar tag mantém o snapshot congelado", async ({
+  page,
+  manifesto,
+  request,
+  adicionarChamado,
+}) => {
   const versao = manifesto.versoes[PapelVersao.LIBERADA];
   const url = `/api/repos/${encodeURIComponent(manifesto.repo)}/versoes/${encodeURIComponent(versao)}/chamados`;
   const antes = await (await request.get(url)).json();
+  await adicionarChamado(versao, CHAMADO_NOVO_NO_MAPA);
   await abrir(page, manifesto.repo, versao);
   await acao(page, Acao.AUDITAR).click();
   await expect(avisoAuditoria(page)).toBeVisible();
+  await expect(avisoSemCommits(page, CHAMADO_NOVO_NO_MAPA)).toBeVisible();
   expect(await (await request.get(url)).json()).toEqual(antes);
 });

@@ -68,3 +68,7 @@ export function vereditoPendencias(page: Page): Locator {
 export function avisoAuditoria(page: Page): Locator {
   return page.getByText(Veredito.AUDITORIA);
 }
+
+export function avisoSemCommits(page: Page, chamado: string): Locator {
+  return page.getByText(`Chamados sem commits: ${chamado}`);
+}

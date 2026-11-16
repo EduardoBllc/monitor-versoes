@@ -1,6 +1,6 @@
 import { test as base } from "@playwright/test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -20,6 +20,7 @@ export interface Manifesto {
 interface Daemon {
   manifesto: Manifesto;
   url: string;
+  raiz: string;
 }
 
 const RAIZ_DO_PROJETO = resolve(import.meta.dirname, "..", "..");
@@ -27,6 +28,8 @@ const ESPERA_DAEMON_MS = 30_000;
 const PASSO_ESPERA_MS = 200;
 const MONTAGEM_CENARIO_MS = 60_000;
 const ENCERRAMENTO_DAEMON_MS = 5_000;
+
+const NOME_MAPA = "mapa.json";
 
 const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -113,6 +116,7 @@ export const test = base.extend<{
   raizDoProjeto: string;
   daemon: Daemon;
   manifesto: Manifesto;
+  adicionarChamado: (versao: string, chamado: string) => Promise<void>;
 }>({
   raizDoProjeto: [RAIZ_DO_PROJETO, { option: true }],
   daemon: async ({ raizDoProjeto }, use) => {
@@ -147,7 +151,7 @@ export const test = base.extend<{
       const url = `http://127.0.0.1:${porta}`;
       try {
         await esperar(url, processo, () => falhaAoSubir, () => stderr);
-        await use({ manifesto, url });
+        await use({ manifesto, url, raiz });
       } finally {
         await encerrar(processo);
       }
@@ -156,6 +160,14 @@ export const test = base.extend<{
     }
   },
   manifesto: async ({ daemon }, use) => use(daemon.manifesto),
+  // O motor relê o mapa a cada consulta: muda o estado vivo sem tocar no snapshot.
+  adicionarChamado: async ({ daemon }, use) =>
+    use(async (versao, chamado) => {
+      const arquivo = join(daemon.raiz, NOME_MAPA);
+      const mapa = JSON.parse(await readFile(arquivo, "utf-8")) as Record<string, string[]>;
+      mapa[versao] = [...(mapa[versao] ?? []), chamado];
+      await writeFile(arquivo, JSON.stringify(mapa));
+    }),
   baseURL: async ({ daemon }, use) => use(daemon.url),
 });
 
