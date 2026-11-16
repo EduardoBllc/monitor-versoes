@@ -20,7 +20,15 @@ from prompt_toolkit.output import DummyOutput
 
 from motor import agendador, assistente, instalacao, plugins, servico
 from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
-from motor.agendador import ARQUIVO_TIMER, FLAG_AGORA, SYSTEMCTL, Acao, Sistema
+from motor.agendador import (
+    ARQUIVO_TIMER,
+    FLAG_AGORA,
+    NOME_TAREFA_INSCRICOES,
+    SYSTEMCTL,
+    Acao,
+    AcaoSchtasks,
+    Sistema,
+)
 from motor.assistente import EMBUTIDOS, SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
@@ -37,7 +45,12 @@ from motor.config_edicao import GrupoPlugin
 from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
-from motor.servico import ARQUIVO_SERVICE, COMANDO_CONFIGURAR, EXECUTAVEL
+from motor.servico import (
+    ARQUIVO_SERVICE,
+    COMANDO_CONFIGURAR,
+    EXECUTAVEL,
+    NOME_TAREFA_SERVE,
+)
 
 BAIXO = "\x1b[B"
 CIMA = "\x1b[A"
@@ -445,6 +458,24 @@ def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
         [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_TIMER],
         [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     ]
+    assert all(d.exists() for d in dados)
+
+
+def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
+    cen, tmp_path, monkeypatch
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: "")
+
+    assert (
+        _rodar(NAO, sistema=Sistema.WINDOWS, comando=COMANDO_DESINSTALAR)
+        == CodigoSaida.OK
+    )
+
+    pares = {(c[1], c[3]) for c in cen.comandos}
+    for tarefa in (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES):
+        assert (AcaoSchtasks.END, tarefa) in pares
+        assert (AcaoSchtasks.DELETE, tarefa) in pares
     assert all(d.exists() for d in dados)
 
 
