@@ -75,7 +75,7 @@ LINHA_JIRA = f"{PLUGIN_JIRA} @ git+{URL_MOTOR}@{{ref}}#subdirectory={SUBDIR_JIRA
 
 MOTOR = Requisito(PACOTE_MOTOR, git=URL_MOTOR, ref=TAG_MOTOR, extras=(EXTRA,))
 LINHA_MOTOR = f"{PACOTE_MOTOR}[{EXTRA}] @ git+{URL_MOTOR}@{TAG_MOTOR}"
-INICIO = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL]
+INICIO = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL, ArgUv.NO_SOURCES]
 
 
 def _remoto(*, tags: tuple[str, ...] = (), head: str = COMMIT_NOVO) -> str:

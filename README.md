@@ -77,7 +77,8 @@ git (`https://…` ou `git@…`, inclusive de repositório privado, com a sua cr
 `@<ref>` opcional no fim para uma tag ou um commit, e `#subdirectory=<pasta>` para um pacote
 dentro do repo. Uma pasta local também vale: ela é instalada como está, sem tag, e toda
 reinstalação a reconstrói dela, então a pasta tem de continuar no lugar (uma pasta editável é
-recusada). Os plugins do próprio repo do motor, como o Jira, ficam na tag do motor: o
+recusada). O `[tool.uv.sources]` de um plugin não entra na instalação, então uma dependência
+que ele só acha por `path` ou `workspace` precisa vir publicada ou por URL. Os plugins do próprio repo do motor, como o Jira, ficam na tag do motor: o
 `plugin listar` os mostra como "repo do motor", sem aviso próprio, e só o `atualizar-motor`
 os move:
 

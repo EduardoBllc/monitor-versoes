@@ -35,6 +35,7 @@ class ArgUv(StrEnum):
     TOOL = "tool"
     INSTALL = "install"
     REINSTALL = "--reinstall"
+    NO_SOURCES = "--no-sources"
     PYTHON = "--python"
     WITH = "--with"
     UPGRADE_PACKAGE = "--upgrade-package"
@@ -287,7 +288,8 @@ def comando_reinstalar(reg: Registro) -> list[str]:
                 f"{r.nome}: a pasta {r.diretorio} não existe mais; restaure-a "
                 f"ou rode `{PACOTE_MOTOR} plugin remover {r.nome}`"
             )
-    comando = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL]
+    # O `[tool.uv.sources]` de um plugin (ex.: motor @main para dev) colidiria com a ref do motor.
+    comando = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL, ArgUv.NO_SOURCES]
     if reg.python:
         comando += [ArgUv.PYTHON, reg.python]
     comando.append(_escrever(reg.motor))
