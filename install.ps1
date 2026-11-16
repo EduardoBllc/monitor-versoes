@@ -17,6 +17,8 @@ param(
 )
 # No `iex` ele é vazio: só pelo `-File` uma falha termina o processo.
 $comoArquivo = [bool]$PSCommandPath
+# Pelo `iex`, o script roda na sessão do usuário: valem as preferências dela
+# (`$ErrorActionPreference` e afins), e as funções e constantes ficam definidas lá.
 
 $URL_REPO = 'https://github.com/EduardoBllc/monitor-versoes'
 $URL_INSTALL_SH = 'https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh'
@@ -25,6 +27,7 @@ $URL_INSTALADOR_UV = 'https://astral.sh/uv/install.ps1'
 $URL_DESINSTALAR_UV = 'https://docs.astral.sh/uv/getting-started/installation/#uninstallation'
 $VAR_URL_INSTALADOR_UV = 'MONITOR_VERSOES_URL_INSTALADOR_UV'
 $PASTA_BIN_INSTALADOR_UV = '.local\bin'
+$VAR_PRAZO_PROCESSOS = 'MONITOR_VERSOES_PRAZO_PROCESSOS_S'
 $INSTALAR_GIT_WINGET = 'winget install --id Git.Git -e'
 $EDICAO_CORE = 'Core'
 $GIT = 'git'
@@ -47,6 +50,10 @@ $PASTA_CACHE = 'cache'
 $PASTA_REINSTALACAO = 'reinstalacao'
 $ARQUIVO_RESULTADO = 'resultado'
 $RESULTADO_OK = '0'
+# O mesmo PRAZO_PROCESSOS_S de motor/ajudante.py.
+$PRAZO_PROCESSOS_S = 60
+$EXECUTAVEIS_DO_MOTOR = 'monitor-versoes*.exe'
+$INTERVALO_MS = 500
 # Os de CodigoSaida em motor/errors.py.
 $SAIDA_OK = 0
 $SAIDA_ERRO = 1
@@ -61,12 +68,67 @@ function Test-Comando {
     [bool](Get-Command -Name $Nome -CommandType Application -ErrorAction SilentlyContinue)
 }
 
-function Get-BinUv {
-    $bin = & $UV tool dir --bin 2> $null
-    if ($LASTEXITCODE -eq $SAIDA_OK -and $bin) {
-        return ([string]($bin | Select-Object -First 1)).Trim()
+function Get-DirUv {
+    param([switch]$Bin)
+    $argumentos = @('tool', 'dir')
+    if ($Bin) {
+        $argumentos += '--bin'
+    }
+    $pasta = & $UV @argumentos 2> $null
+    if ($LASTEXITCODE -eq $SAIDA_OK -and $pasta) {
+        return ([string]($pasta | Select-Object -First 1)).Trim()
     }
     return $null
+}
+
+# Cópia do Wait-AmbienteLivre de motor/ajudante_windows.ps1: o `iex` não tem
+# como importar, e o original mora no ambiente que o uv troca.
+function Wait-AmbienteLivre {
+    # Devolve os processos que ainda usam o ambiente quando o prazo acaba.
+    param(
+        [string]$Ambiente,
+        [string]$Bin,
+        [string]$Executaveis,
+        [datetime]$Limite,
+        [int]$IntervaloMs
+    )
+    $raiz = [IO.Path]::GetFullPath($Ambiente).TrimEnd('\') + '\'
+    $pastaBin = [IO.Path]::GetFullPath($Bin).TrimEnd('\')
+    while ($true) {
+        $vivos = @(Get-Process | Where-Object {
+                $caminho = $_.Path
+                $caminho -and (
+                    $caminho.StartsWith($raiz, [StringComparison]::OrdinalIgnoreCase) -or (
+                        (Split-Path -Path $caminho -Parent) -eq $pastaBin -and
+                        (Split-Path -Path $caminho -Leaf) -like $Executaveis
+                    )
+                )
+            })
+        if ($vivos.Count -eq 0 -or (Get-Date) -ge $Limite) {
+            return $vivos
+        }
+        Start-Sleep -Milliseconds $IntervaloMs
+    }
+}
+
+function Assert-AmbienteLivre {
+    # O uv com um processo do ambiente vivo falha com `Access is denied` e deixa o ambiente pela metade.
+    $prazo = [Environment]::GetEnvironmentVariable($VAR_PRAZO_PROCESSOS)
+    if (-not $prazo) {
+        $prazo = $PRAZO_PROCESSOS_S
+    }
+    $ferramentas = Get-DirUv
+    $bin = Get-DirUv -Bin
+    if (-not $ferramentas -or -not $bin) {
+        return
+    }
+    $ambiente = Join-Path -Path $ferramentas -ChildPath $PACOTE
+    $limite = (Get-Date).AddSeconds([int]$prazo)
+    $vivos = @(Wait-AmbienteLivre -Ambiente $ambiente -Bin $bin -Executaveis $EXECUTAVEIS_DO_MOTOR -Limite $limite -IntervaloMs $INTERVALO_MS)
+    if ($vivos.Count -gt 0) {
+        $lista = ($vivos | ForEach-Object { "  $($_.Id) $($_.Path)" }) -join [Environment]::NewLine
+        throw "estes processos ainda usam o monitor-versoes:$([Environment]::NewLine)$lista$([Environment]::NewLine)Feche-os e rode o script de novo."
+    }
 }
 
 function Test-ServicoLigado {
@@ -82,6 +144,7 @@ function Invoke-UvComServico {
         & $SCHTASKS /end /tn $TAREFA_SERVE *> $null
     }
     try {
+        Assert-AmbienteLivre
         & $UV @Argumentos
         if ($LASTEXITCODE -ne $SAIDA_OK) {
             throw $Falha
@@ -148,7 +211,7 @@ function Invoke-Atualizacao {
     }
     # Sem PID, o motor não precisou reinstalar; com ele, o ajudante decide o resultado.
     if ($idAjudante) {
-        Wait-Process -Id ([int]$idAjudante) -ErrorAction SilentlyContinue
+        Wait-Process -Id ([int]$idAjudante.Trim()) -ErrorAction SilentlyContinue
         $arquivo = Join-Path -Path $env:LOCALAPPDATA -ChildPath "$PASTA_APP\$PASTA_REINSTALACAO\$ARQUIVO_RESULTADO"
         $resultado = Get-Content -LiteralPath $arquivo -Raw -ErrorAction SilentlyContinue
         if ("$resultado".Trim() -ne $RESULTADO_OK) {
@@ -176,7 +239,10 @@ function Invoke-Instalacao {
     if (-not (Test-Comando -Nome $UV)) {
         # Num processo filho: um `exit` do instalador fecharia a janela de quem usou o `iex`.
         & $POWERSHELL -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod -Uri '$urlInstaladorUv' | Invoke-Expression"
-        $binInstalador = $env:XDG_BIN_HOME
+        $binInstalador = $env:UV_INSTALL_DIR
+        if (-not $binInstalador) {
+            $binInstalador = $env:XDG_BIN_HOME
+        }
         if (-not $binInstalador) {
             $binInstalador = Join-Path -Path $env:USERPROFILE -ChildPath $PASTA_BIN_INSTALADOR_UV
         }
@@ -196,7 +262,7 @@ function Invoke-Instalacao {
     Write-Output "$MARCA_OK última release: $tag"
     $requisito = "$PACOTE @ git+$URL_REPO@$tag"
 
-    $bin = Get-BinUv
+    $bin = Get-DirUv -Bin
     if (-not $bin) {
         throw "o uv não respondeu a ``uv tool dir --bin``; confira a instalação dele ($urlInstaladorUv)"
     }
@@ -227,7 +293,7 @@ function Invoke-Desinstalacao {
     $temUv = Test-Comando -Nome $UV
     $codigo = $SAIDA_ERRO
     if ($temUv) {
-        $bin = Get-BinUv
+        $bin = Get-DirUv -Bin
         if ($bin) {
             $motor = Join-Path -Path $bin -ChildPath $EXECUTAVEL
             if (Test-Comando -Nome $motor) {
@@ -258,6 +324,7 @@ function Invoke-Desinstalacao {
     }
     $instalado = & $UV tool list 2> $null | Where-Object { $_ -like "$PACOTE *" }
     if ($instalado) {
+        Assert-AmbienteLivre
         & $UV tool uninstall $PACOTE
         if ($LASTEXITCODE -ne $SAIDA_OK) {
             throw "uv tool uninstall $PACOTE falhou; rode-o de novo à mão"

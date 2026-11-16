@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import venv
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -22,6 +23,7 @@ from motor.agendador import (
 )
 from motor.ajudante import (
     ARQUIVO_RESULTADO,
+    PASTA_REINSTALACAO,
     POLITICA_BYPASS,
     POWERSHELL,
     VAR_ESTADO,
@@ -61,6 +63,13 @@ PLUGIN_GIT = (
     "git+https://github.com/exemplo/monitor-versoes-plugin"
     "@99ffe18fdf9f7268abfaf2c611f87e4b10db50c5"
 )
+NOME_PLUGIN_GIT = "monitor-versoes-plugin"
+NOME_PLUGIN_LOCAL = "plugum"
+NOME_PLUGIN_JIRA = "monitor-versoes-jira"
+EXTRAS_UV = "[extras: anthropic]"
+PREFIXO_TAG_LS_REMOTE = "0000\\trefs/tags/"
+ARG_PYTHON_CODIGO = "-c"
+CODIFICACAO = "utf-8"
 MARCA_OK = "✔"
 MARCA_FALHA = "✖"
 MARCA_CONSOLE = "stdin-console"
@@ -74,16 +83,37 @@ PAGINA_OEM = 437
 RESULTADO_OK = "0"
 RESULTADO_FALHA = "1"
 ESPERA_DO_AJUDANTE_S = 2
+ESPERA_DO_PROCESSO_S = 3
+PROCESSO_LONGO_S = 60
+PRAZO_CURTO_S = 1
+MARCA_PROCESSO_FIM = "processo do ambiente encerrado"
+PYTHON_DO_VENV = Path("Scripts", "python.exe")
+VAR_PRAZO_PROCESSOS = "MONITOR_VERSOES_PRAZO_PROCESSOS_S"
 LIMITE_TESTE_S = 180
 SUFIXO_CMD = ".cmd"
 FLAG_HELP = "--help"
+FLAG_BIN = "--bin"
 ARQUIVO_FALSO = "falso.py"
 ARQUIVO_INSTALADOR = "instalador.ps1"
 VAR_PATH = "PATH"
 VAR_SYSTEMROOT = "SystemRoot"
 VAR_USERPROFILE = "USERPROFILE"
 VAR_UV_TOOL_BIN_DIR = "UV_TOOL_BIN_DIR"
+VAR_UV_TOOL_DIR = "UV_TOOL_DIR"
+VAR_LOCALAPPDATA = config.VAR_LOCALAPPDATA
+VAR_APPDATA = config.VAR_APPDATA
 PASTA_SYSTEM32 = "System32"
+ARQUIVO_LOG = "log"
+
+
+class Pasta(StrEnum):
+    HOME = "home"
+    FALSOS = "falsos"
+    PACOTES = "pacotes"
+    TOOLBIN = "toolbin"
+    TOOLDIR = "tooldir"
+    LOCAL = "localappdata"
+    ROAMING = "appdata"
 
 
 class Var(StrEnum):
@@ -137,15 +167,16 @@ env = os.environ
 with open(env["{Var.LOG}"], "a", encoding="utf-8") as log:
     log.write(" ".join([nome, *args]) + "\\n")
 bin_uv = Path(env["{VAR_UV_TOOL_BIN_DIR}"])
+dir_uv = Path(env["{VAR_UV_TOOL_DIR}"])
 motor = bin_uv / "{Falso.MOTOR}{SUFIXO_CMD}"
 codigo = 0
 if nome == "{Falso.GIT}":
     for tag in env["{Var.TAGS}"].split():
-        print("0000\\trefs/tags/" + tag)
+        print("{PREFIXO_TAG_LS_REMOTE}" + tag)
 elif nome == "{Falso.UV}" and args[:1] == ["{ArgUv.TOOL}"]:
     acao = args[1]
     if acao == "{AcaoUv.DIR}":
-        print(bin_uv)
+        print(bin_uv if args[2:] == ["{FLAG_BIN}"] else dir_uv)
     elif acao == "{AcaoUv.INSTALL}":
         shutil.copy(env["{Var.MOTOR}"], bin_uv)
         codigo = int(env["{Var.SAIDA_UV}"])
@@ -164,11 +195,11 @@ elif nome == "{Falso.MOTOR}":
     elif args == ["{COMANDO_ATUALIZAR_MOTOR}"]:
         codigo = int(env["{Var.SAIDA_ATUALIZAR}"])
         if "{Var.RESULTADO}" in env:
-            # O ajudante falso: dorme e só então grava o resultado.
+            # O ajudante falso: dorme e depois grava o resultado.
             filho = subprocess.Popen(
                 [
                     sys.executable,
-                    "-c",
+                    "{ARG_PYTHON_CODIGO}",
                     "import pathlib, sys, time; time.sleep({ESPERA_DO_AJUDANTE_S}); "
                     "p = pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); "
                     "p.write_text(sys.argv[2])",
@@ -228,7 +259,8 @@ class Maquina:
     def chamadas(self) -> list[str]:
         if not self.log.exists():
             return []
-        return [linha.strip() for linha in self.log.read_text().splitlines()]
+        texto = self.log.read_text(encoding=CODIFICACAO)
+        return [linha.strip() for linha in texto.splitlines()]
 
     def comando(self, *args: str) -> list[str]:
         return [
@@ -245,7 +277,7 @@ class Maquina:
             env=self.env,
             stdin=subprocess.DEVNULL,
             capture_output=True,
-            encoding="utf-8",
+            encoding=CODIFICACAO,
             errors="replace",
             timeout=LIMITE_TESTE_S,
             check=False,
@@ -269,8 +301,9 @@ class Maquina:
 
 def _falso_cmd(arquivo: Path, nome: str, programa: Path) -> None:
     arquivo.write_text(
-        f'@echo off\r\n"{sys.executable}" "{programa}" {nome} %*\r\n'
-        "exit /b %errorlevel%\r\n"
+        encoding=CODIFICACAO,
+        data=f'@echo off\r\n"{sys.executable}" "{programa}" {nome} %*\r\n'
+        "exit /b %errorlevel%\r\n",
     )
 
 
@@ -280,12 +313,12 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
         pytest.skip("install.ps1 é PowerShell do Windows")
     casca = shutil.which(request.param)
     assert casca is not None, request.param
-    home, falsos, pacotes, toolbin = (
-        tmp_path / nome for nome in ("home", "falsos", "pacotes", "toolbin")
+    home, falsos, pacotes, toolbin, tooldir, local, roaming = (
+        tmp_path / pasta for pasta in Pasta
     )
-    for pasta in (home, falsos, pacotes, toolbin):
+    for pasta in (home, falsos, pacotes, toolbin, tooldir, local, roaming):
         pasta.mkdir()
-    (tmp_path / ARQUIVO_FALSO).write_text(_FALSO)
+    (tmp_path / ARQUIVO_FALSO).write_text(_FALSO, encoding=CODIFICACAO)
     motor = pacotes / f"{servico.EXECUTAVEL}{SUFIXO_CMD}"
     _falso_cmd(motor, Falso.MOTOR, tmp_path / ARQUIVO_FALSO)
     system32 = Path(os.environ[VAR_SYSTEMROOT], PASTA_SYSTEM32)
@@ -304,7 +337,10 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
         ),
         VAR_USERPROFILE: str(home),
         VAR_UV_TOOL_BIN_DIR: str(toolbin),
-        Var.LOG: str(tmp_path / "log"),
+        VAR_UV_TOOL_DIR: str(tooldir),
+        VAR_LOCALAPPDATA: str(local),
+        VAR_APPDATA: str(roaming),
+        Var.LOG: str(tmp_path / ARQUIVO_LOG),
         Var.TAGS: " ".join(TAGS_REMOTAS),
         Var.LINHA_UV: f"{PACOTE_MOTOR} {VERSAO_ANTIGA}",
         Var.MOTOR: str(motor),
@@ -314,7 +350,7 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
         Var.SAIDA_ATUALIZAR: str(CodigoSaida.OK),
         Var.SAIDA_DESINSTALAR: str(CodigoSaida.OK),
     }
-    m = Maquina(tmp_path, casca, falsos, pacotes, toolbin, tmp_path / "log", env)
+    m = Maquina(tmp_path, casca, falsos, pacotes, toolbin, tmp_path / ARQUIVO_LOG, env)
     for falso in (Falso.GIT, Falso.UV, Falso.SCHTASKS):
         m.com(falso)
     yield m
@@ -339,11 +375,12 @@ def test_sem_uv_instala_uv_e_a_ultima_release(maquina):
     instalador = maquina.raiz / ARQUIVO_INSTALADOR
     # O `exit` no fim só não derruba o script se o instalador rodar num processo filho.
     instalador.write_text(
-        f"$destino = Join-Path -Path $env:{VAR_USERPROFILE} -ChildPath '{PASTA_BIN_INSTALADOR_UV}'\n"
+        encoding=CODIFICACAO,
+        data=f"$destino = Join-Path -Path $env:{VAR_USERPROFILE} -ChildPath '{PASTA_BIN_INSTALADOR_UV}'\n"
         "New-Item -ItemType Directory -Force -Path $destino | Out-Null\n"
         f"Copy-Item -LiteralPath '{maquina.pacotes / uv.name}' -Destination $destino\n"
         f"Add-Content -LiteralPath '{maquina.log}' -Value '{MARCA_INSTALADOR}'\n"
-        "exit\n"
+        "exit\n",
     )
     maquina.env[VAR_URL_INSTALADOR_UV] = instalador.as_uri()
 
@@ -403,7 +440,11 @@ def test_parametros_juntos_ou_desconhecidos_recusados(maquina, args):
 def test_ja_instalado_roda_atualizar_motor_e_espera_o_ajudante(maquina, resultado):
     maquina.env |= {
         Var.RESULTADO: resultado,
-        Var.ARQUIVO_RESULTADO: str(ajudante.pasta_reinstalacao() / ARQUIVO_RESULTADO),
+        Var.ARQUIVO_RESULTADO: str(
+            Path(maquina.env[VAR_LOCALAPPDATA], config.DIRETORIO_APP)
+            / PASTA_REINSTALACAO
+            / ARQUIVO_RESULTADO
+        ),
     }
     maquina.instalar_motor()
 
@@ -452,11 +493,11 @@ def test_falha_do_motor_instalado_nao_reinstala(maquina, sonda, atualizar):
 )
 def test_sonda_2_ou_3_reinstala_e_lista_plugins(maquina, sonda, atualizar, sufixo_repo):
     jira = f"git+{URL_REPO}{sufixo_repo}@{VERSAO_ANTIGA}{SUBPASTA_JIRA}"
-    pasta = maquina.raiz / "plugum"
+    pasta = maquina.raiz / NOME_PLUGIN_LOCAL
     linha = (
-        f"{PACOTE_MOTOR} {VERSAO_ANTIGA} [extras: anthropic] "
-        f"[with: monitor-versoes-plugin {PLUGIN_GIT}, plugumfile://{pasta}, "
-        f"monitor-versoes-jira {jira}]"
+        f"{PACOTE_MOTOR} {VERSAO_ANTIGA} {EXTRAS_UV} "
+        f"[with: {NOME_PLUGIN_GIT} {PLUGIN_GIT}, {NOME_PLUGIN_LOCAL}file://{pasta}, "
+        f"{NOME_PLUGIN_JIRA} {jira}]"
     )
     maquina.env |= {
         Var.SAIDA_SONDA: str(sonda),
@@ -491,6 +532,46 @@ def test_servico_ligado_encerra_antes_e_sobe_depois_do_uv(maquina, caminho):
     uv = chamadas.index(_instalacao(ULTIMA_TAG, reinstalar=reinstalar))
     assert chamadas.index(_schtasks(AcaoSchtasks.END)) < uv
     assert chamadas.index(_schtasks(AcaoSchtasks.RUN)) > uv
+
+
+def _processo_do_ambiente(maquina: Maquina, codigo: str) -> subprocess.Popen[bytes]:
+    """Um processo vivo cujo executável mora no ambiente do motor no uv."""
+    ambiente = Path(maquina.env[VAR_UV_TOOL_DIR], PACOTE_MOTOR)
+    venv.create(ambiente)
+    return subprocess.Popen([str(ambiente / PYTHON_DO_VENV), ARG_PYTHON_CODIGO, codigo])
+
+
+def test_espera_o_ambiente_livre_antes_do_uv(maquina):
+    processo = _processo_do_ambiente(
+        maquina,
+        f"import time; time.sleep({ESPERA_DO_PROCESSO_S}); "
+        f"open({str(maquina.log)!r}, 'a').write({MARCA_PROCESSO_FIM!r} + '\\n')",
+    )
+    try:
+        r = maquina.rodar(ArgScript.SEM_CONFIGURAR)
+    finally:
+        processo.wait()
+
+    assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
+    chamadas = maquina.chamadas()
+    assert chamadas.index(MARCA_PROCESSO_FIM) < chamadas.index(_instalacao(ULTIMA_TAG))
+
+
+def test_ambiente_ocupado_no_prazo_nao_chama_o_uv(maquina):
+    maquina.env[VAR_PRAZO_PROCESSOS] = str(PRAZO_CURTO_S)
+    processo = _processo_do_ambiente(
+        maquina, f"import time; time.sleep({PROCESSO_LONGO_S})"
+    )
+    try:
+        r = maquina.rodar(ArgScript.SEM_CONFIGURAR)
+    finally:
+        processo.kill()
+        processo.wait()
+
+    assert r.returncode != CodigoSaida.OK
+    assert MARCA_FALHA in r.stdout
+    assert str(processo.pid) in r.stdout
+    assert _instalacao(ULTIMA_TAG) not in maquina.chamadas()
 
 
 @pytest.mark.parametrize("no_path", [True, False])
@@ -580,6 +661,8 @@ def test_desinstalar_sem_motor_encerra_e_apaga_as_tarefas(
         maquina.env[Var.SAIDA_DESINSTALAR] = str(CodigoSaida.ERRO)
         maquina.instalar_motor()
     monkeypatch.setenv(config.VAR_XDG_CONFIG_HOME, "")
+    for var in (VAR_LOCALAPPDATA, VAR_APPDATA):
+        monkeypatch.setenv(var, maquina.env[var])
 
     r = maquina.rodar(ArgScript.DESINSTALAR)
 
