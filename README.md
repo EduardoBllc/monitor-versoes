@@ -60,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/in
 À mão, ou no Windows (veja "Windows"), pelo `uv`:
 
 ```bash
-uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.4.0 # x-release-please-version
+uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.4.1 # x-release-please-version
 ```
 
 O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração a rodar (veja
@@ -69,7 +69,7 @@ O primeiro uso cria o estado e as tabelas: não há banco a subir nem migração
 Com a sugestão de resolução por IA (provedor `anthropic`, veja "Sugestão de resolução por IA"):
 
 ```bash
-uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes@v0.4.0' # x-release-please-version
+uv tool install 'monitor-versoes[anthropic] @ git+https://github.com/EduardoBllc/monitor-versoes@v0.4.1' # x-release-please-version
 ```
 
 Plugins e atualizações passam pelo próprio motor. Um plugin vem por nome publicado ou por URL
