@@ -55,9 +55,10 @@ faltando e tipo de parâmetro ou retorno trocado; não pega renome de parâmetro
 porque toda chamada de porta aqui é posicional. Por isso o `mypy` faz parte do
 portão tanto quanto o `pytest`.
 
-**Comportamento novo de `EstadoRepo` é asserido em
-`tests/test_estado_contrato.py`,** que roda as mesmas asserções contra
-`FakeEstado` e o `Estado` (SQLite). Teste que existe só num dos lados não é
+**Comportamento novo de `EstadoRepo` e de `GitRepo` é asserido em
+`tests/test_estado_contrato.py` e `tests/test_git_contrato.py`,** que rodam as
+mesmas asserções contra o fake e o adapter real (`Estado` com SQLite,
+`GitSubprocess`). Teste que existe só num dos lados não é
 contrato: fake mais permissivo que o banco deixa a suíte verde num caminho que
 quebra em produção, e o projeto já pagou por isso três vezes (FK, ordem, fake de
 git divergente).
