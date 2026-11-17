@@ -13,7 +13,6 @@ import {
   QueryClient,
   QueryClientProvider,
   useQuery,
-  useQueryClient,
 } from "@tanstack/react-query";
 import {
   Suspense,
@@ -23,24 +22,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { CHAVE_REPOS, Metodo, api, ErroApi } from "./api/cliente";
-import {
-  AtualizarStatus,
-  EstadoExecucao,
-  Operacao,
-  TipoErro,
-} from "./api/enums";
-import {
-  FaseAtualizacao,
-  INICIAL,
-  TipoEventoAtualizacao,
-  acompanhaOcupado,
-  proximo,
-  type EstadoAtualizacao,
-  type Evento,
-  type EventoSimples,
-} from "./atualizacao";
-import { acompanhar, type Execucao } from "./api/eventos";
+import { CHAVE_REPOS, Metodo, api } from "./api/cliente";
+import { AtualizarStatus } from "./api/enums";
+import { FaseAtualizacao, INICIAL } from "./atualizacao";
 import type { RepoOption, VersaoListada } from "./api/tipos";
 import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
@@ -55,22 +39,9 @@ import { ModalResultado } from "./componentes/ModalResultado";
 import { PainelBloqueio } from "./componentes/PainelBloqueio";
 import { ResultadoAtualizacao } from "./componentes/ResultadoAtualizacao";
 import { Status } from "./componentes/Status";
-import { notificarPendencia } from "./componentes/notificarPendencia";
-import { notificarErro, notificarOk } from "./componentes/notificar";
+import { notificarErro } from "./componentes/notificar";
 import { ProgressoExecucao } from "./componentes/ProgressoExecucao";
-import {
-  PROGRESSO_INICIAL,
-  SEM_EXECUCOES,
-  TipoEfeito,
-  avisoPendencia,
-  concluir,
-  estaRodando,
-  iniciar,
-  progredir,
-  terminar,
-  type EstadoExecucoes,
-  type Resultado,
-} from "./execucoes";
+import { PROGRESSO_INICIAL, estaRodando } from "./execucoes";
 import { AVISO_DESCARTE } from "./conflito";
 import {
   INTERVALO_CONSULTA_INSCRICOES_MS,
@@ -79,6 +50,8 @@ import {
 } from "./inscricoes";
 import type { InscricaoVista } from "./api/tipos";
 import { useInstalacao } from "./instalacao";
+import { chaveVersao } from "./operacoes/chave";
+import { OperacoesProvider, useOperacoes } from "./operacoes/OperacoesProvider";
 import { caminhoDe, lerCaminho } from "./rotas";
 
 // Sem refetch ao voltar do editor nem retry: cada leitura de versões faz git fetch.
@@ -89,7 +62,6 @@ const ALTURA_BARRA = 64;
 // Lazy: o Monaco fica fora do chunk principal.
 const EditorConflito = lazy(() => import("./componentes/EditorConflito"));
 const CONFLITO_ABRINDO: EstadoConflitoWeb = { pendente: true, sujo: false };
-const chave = (repo: string, versao: string): string => `${repo}@${versao}`;
 
 function useCaminho() {
   const [caminho, setCaminho] = useState(() =>
@@ -109,34 +81,22 @@ function useCaminho() {
   return [caminho, ir] as const;
 }
 
-function Tela() {
-  const cliente = useQueryClient();
-  const [{ repo, versao }, ir] = useCaminho();
-  const [execucoes, setExecucoes] = useState(SEM_EXECUCOES);
-  const execRef = useRef(SEM_EXECUCOES);
-  const [resultado, setResultado] = useState<Resultado | null>(null);
+function Tela({
+  caminho: { repo, versao },
+  ir,
+}: {
+  caminho: { repo?: string; versao?: string };
+  ir: (repo?: string, versao?: string, trocar?: boolean) => void;
+}) {
+  const operacoes = useOperacoes();
+  const { execucoes, resultado, retomar } = operacoes;
   const [criando, setCriando] = useState(false);
   const [inscricoes, setInscricoes] = useState(false);
   const [orfaos, setOrfaos] = useState(false);
   const [configurando, setConfigurando] = useState(false);
-  const [atualizacoes, setAtualizacoes] = useState<
-    Readonly<Record<string, EstadoAtualizacao>>
-  >({});
   const [abortando, setAbortando] = useState(false);
   const [resolvendo, setResolvendo] = useState<string | null>(null);
   const [conflitoWeb, setConflitoWeb] = useState(CONFLITO_ABRINDO);
-  const repoRef = useRef(repo);
-  repoRef.current = repo;
-  const versaoRef = useRef(versao);
-  versaoRef.current = versao;
-  const despachar = useCallback((k: string, ev: Evento) => {
-    setAtualizacoes((a) => ({ ...a, [k]: proximo(a[k] ?? INICIAL, ev) }));
-  }, []);
-  // O ref é a fonte síncrona (evita duplo acompanhamento); o state só repinta.
-  const mudar = useCallback((f: (e: EstadoExecucoes) => EstadoExecucoes) => {
-    execRef.current = f(execRef.current);
-    setExecucoes(execRef.current);
-  }, []);
 
   const instalacao = useInstalacao();
   const repos = useQuery({
@@ -181,158 +141,25 @@ function Tela() {
     }
   }, [repo, versao, repos.data, versoes.data, ir]);
 
-  const seguir = useCallback(
-    async (nome: string, versaoAlvo: string, auditar = false) => {
-      const { estado, seguir: abrir } = iniciar(execRef.current, nome, auditar);
-      if (!abrir) return;
-      mudar(() => estado);
-      try {
-        const fim = await acompanhar(nome, (p) =>
-          mudar((e) => progredir(e, nome, p)),
-        );
-        if (fim === null) {
-          // Nada rodando mais: quem ficou em "aplicando" (409) volta ao que era.
-          despachar(chave(nome, versaoAlvo), {
-            tipo: TipoEventoAtualizacao.RECONECTOU,
-            execucao: null,
-          });
-          return;
-        }
-        despachar(chave(fim.repo, fim.versao), {
-          tipo: TipoEventoAtualizacao.TERMINOU,
-          execucao: fim,
-        });
-        if (
-          fim.operacao === Operacao.ABORTAR &&
-          fim.estado !== EstadoExecucao.FALHOU
-        )
-          notificarOk("Atualização abortada");
-        if (
-          fim.operacao !== Operacao.VERIFICAR &&
-          fim.operacao !== Operacao.CRIAR
-        )
-          void cliente.invalidateQueries({
-            queryKey: ["chamados", fim.repo, fim.versao],
-          });
-        if (
-          fim.operacao === Operacao.CRIAR &&
-          fim.estado !== EstadoExecucao.FALHOU
-        )
-          void cliente.invalidateQueries({ queryKey: ["versoes", nome] });
-        const efeito = concluir(
-          execRef.current,
-          fim,
-          repoRef.current,
-          versaoRef.current,
-        );
-        if (efeito?.tipo === TipoEfeito.ERRO)
-          notificarErro(new ErroApi(efeito.tipoErro, efeito.mensagem, 0));
-        else if (efeito?.tipo === TipoEfeito.RESULTADO)
-          setResultado(efeito.resultado);
-        else if (efeito?.tipo === TipoEfeito.NAVEGAR) {
-          notificarOk(`Versão ${efeito.versao} criada`);
-          ir(efeito.repo, efeito.versao);
-        } else if (efeito?.tipo === TipoEfeito.AVISAR) {
-          const destino = efeito.destino;
-          if (destino)
-            notificarPendencia(
-              chave(destino.repo, destino.versao),
-              efeito.mensagem,
-              () => ir(destino.repo, destino.versao),
-            );
-          else notificarOk(efeito.mensagem);
-        }
-      } catch (erro) {
-        notificarErro(erro);
-        despachar(chave(nome, versaoAlvo), {
-          tipo: TipoEventoAtualizacao.RECONECTOU,
-          execucao: null,
-        });
-      } finally {
-        mudar((e) => terminar(e, nome));
-      }
-    },
-    [cliente, despachar, ir, mudar],
-  );
-
-  // Recarregar a página (ou abrir outra aba) retoma os picks abertos e a operação em curso.
   useEffect(() => {
-    if (repo === undefined) return;
-    const url = `/api/repos/${encodeURIComponent(repo)}`;
-    void Promise.all([
-      api<Execucao[]>(Metodo.GET, `${url}/pendencias`),
-      api<Execucao | null>(Metodo.GET, `${url}/execucao`),
-    ])
-      .then(([pendencias, e]) => {
-        // Pendências antes da atual: uma continuação rodando volta ao bloqueio se falhar.
-        for (const x of [...pendencias, ...(e ? [e] : [])])
-          despachar(chave(x.repo, x.versao), {
-            tipo: TipoEventoAtualizacao.RECONECTOU,
-            execucao: x,
-          });
-        for (const p of pendencias) {
-          const aviso = avisoPendencia(p, versaoRef.current);
-          if (aviso?.tipo === TipoEfeito.AVISAR && aviso.destino) {
-            const { repo: r, versao: v } = aviso.destino;
-            notificarPendencia(chave(r, v), aviso.mensagem, () => ir(r, v));
-          }
-        }
-        if (e?.estado === EstadoExecucao.RODANDO) return seguir(repo, e.versao);
-      })
-      .catch(notificarErro);
-  }, [repo, seguir, despachar, ir]);
+    if (repo !== undefined) retomar(repo);
+  }, [repo, retomar]);
 
-  const disparar = async (caminho: string, corpo: unknown, auditar = false) => {
-    if (repo === undefined || versao === undefined) return;
-    const k = chave(repo, versao);
-    try {
-      await api<Execucao>(Metodo.POST, caminho, corpo);
-    } catch (erro) {
-      // 409: o repo está travado. Se for uma execução do daemon (outra aba), passa a
-      // acompanhá-la; se for um processo de fora (CLI, TUI, inscrição), mostra a recusa.
-      const ocupadoAqui =
-        erro instanceof ErroApi &&
-        erro.tipo === TipoErro.OCUPADO &&
-        acompanhaOcupado(
-          await api<Execucao | null>(
-            Metodo.GET,
-            `/api/repos/${encodeURIComponent(repo)}/execucao`,
-          ).catch(() => null),
-        );
-      if (!ocupadoAqui) {
-        notificarErro(erro);
-        despachar(k, {
-          tipo: TipoEventoAtualizacao.RECONECTOU,
-          execucao: null,
-        });
-        return;
-      }
-      despachar(k, { tipo: TipoEventoAtualizacao.OCUPADO });
-    }
-    await seguir(repo, versao, auditar);
-  };
-
-  const base = `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`;
   const ocupado = repo !== undefined && estaRodando(execucoes, repo);
   const chaveAtual =
-    repo !== undefined && versao !== undefined ? chave(repo, versao) : "";
-  const atualizacao = atualizacoes[chaveAtual] ?? INICIAL;
+    repo !== undefined && versao !== undefined ? chaveVersao(repo, versao) : "";
+  const atualizacao =
+    repo !== undefined && versao !== undefined
+      ? operacoes.atualizacao(repo, versao)
+      : INICIAL;
   const pendente =
     atualizacao.fase === FaseAtualizacao.BLOQUEADA ||
     atualizacao.fase === FaseAtualizacao.VAZIA;
   const disponivel = repos.data?.find((r) => r.nome === repo)?.caminho != null;
-  const acaoAtualizacao = `${base}/${encodeURIComponent(versao ?? "")}/atualizacao`;
-  const evento = (tipo: EventoSimples) => {
-    if (chaveAtual !== "") despachar(chaveAtual, { tipo });
+  const naVersao = (acao: (r: string, v: string) => void) => () => {
+    if (repo !== undefined && versao !== undefined) acao(repo, versao);
   };
-  const bloqueadas = Object.entries(atualizacoes).flatMap(([k, a]) =>
-    (a.fase === FaseAtualizacao.BLOQUEADA ||
-      a.fase === FaseAtualizacao.VAZIA) &&
-    repo !== undefined &&
-    k.startsWith(`${repo}@`)
-      ? [k.slice(repo.length + 1)]
-      : [],
-  );
+  const bloqueadas = repo === undefined ? [] : operacoes.bloqueadas(repo);
   // Bloqueio encerrado (continuou, abortou): o próximo passa de novo pelo painel.
   useEffect(() => {
     if (!pendente) setResolvendo(null);
@@ -353,39 +180,11 @@ function Tela() {
   const aplicando =
     atualizacao.fase === FaseAtualizacao.PREVIA ||
     atualizacao.fase === FaseAtualizacao.APLICANDO;
-  const previa = () => {
-    evento(TipoEventoAtualizacao.INICIOU);
-    void disparar(`${base}/${encodeURIComponent(versao ?? "")}/previa`, undefined);
-  };
-  const aplicar = (continuar: boolean) => {
-    evento(
-      continuar
-        ? TipoEventoAtualizacao.CONTINUOU
-        : TipoEventoAtualizacao.CONFIRMOU,
-    );
-    void disparar(
-      continuar ? `${acaoAtualizacao}/continuar` : acaoAtualizacao,
-      continuar
-        ? { allow_empty: atualizacao.fase === FaseAtualizacao.VAZIA }
-        : undefined,
-    );
-  };
-  const cancelarLote = () => {
-    evento(TipoEventoAtualizacao.CANCELOU);
-    // Cancelar não desfaz a prévia (ela regravou o snapshot): a lista atrás está velha.
-    void cliente.invalidateQueries({ queryKey: ["chamados", repo, versao] });
-  };
+  const previa = naVersao(operacoes.previa);
+  const continuar = naVersao((r, v) => operacoes.aplicar(r, v, true));
   const abortar = () => {
     setAbortando(false);
-    evento(TipoEventoAtualizacao.ABORTOU);
-    void disparar(`${acaoAtualizacao}/abortar`, undefined);
-  };
-  const fecharResultado = () => {
-    if (resultado)
-      void cliente.invalidateQueries({
-        queryKey: ["chamados", resultado.repo, resultado.versao],
-      });
-    setResultado(null);
+    naVersao(operacoes.abortar)();
   };
 
   return (
@@ -405,13 +204,9 @@ function Tela() {
           aoEscolherVersao={(numero) =>
             navegar(() => repo && ir(repo, numero))
           }
-          aoVerificar={(auditar) => {
-            void disparar(
-              `${base}/${encodeURIComponent(versao ?? "")}/verificacao`,
-              { auditar },
-              auditar,
-            );
-          }}
+          aoVerificar={(auditar) =>
+            naVersao((r, v) => operacoes.verificar(r, v, auditar))()
+          }
           slotAtualizar={
             pendente ? (
               <>
@@ -422,7 +217,7 @@ function Tela() {
                       : "red"
                   }
                   disabled={ocupado || continuarBarrado}
-                  onClick={() => aplicar(true)}
+                  onClick={continuar}
                 >
                   {atualizacao.fase === FaseAtualizacao.VAZIA
                     ? "Registrar vazio"
@@ -484,7 +279,7 @@ function Tela() {
               resultado={atualizacao.resultado}
               aoSair={() => setResolvendo(null)}
               aoMudar={setConflitoWeb}
-              aoContinuar={() => aplicar(true)}
+              aoContinuar={continuar}
             />
           </Suspense>
         ) : pendente && atualizacao.resultado ? (
@@ -498,7 +293,7 @@ function Tela() {
         ) : (
           repo !== undefined &&
           versao !== undefined && (
-            <Consulta key={`${repo}@${versao}`} repo={repo} versao={versao} />
+            <Consulta key={chaveAtual} repo={repo} versao={versao} />
           )
         )}
       </AppShell.Main>
@@ -509,8 +304,8 @@ function Tela() {
             : null
         }
         versao={versao ?? ""}
-        aoConfirmar={() => aplicar(false)}
-        aoCancelar={cancelarLote}
+        aoConfirmar={naVersao((r, v) => operacoes.aplicar(r, v, false))}
+        aoCancelar={naVersao(operacoes.cancelarLote)}
       />
       <ModalAbortar
         aberto={abortando}
@@ -519,7 +314,7 @@ function Tela() {
       />
       <Modal
         opened={atualizacao.fase === FaseAtualizacao.CONCLUIDA}
-        onClose={() => evento(TipoEventoAtualizacao.FECHOU)}
+        onClose={naVersao(operacoes.fecharResultadoAtualizacao)}
         title="Atualização"
         size="xl"
       >
@@ -531,19 +326,19 @@ function Tela() {
           )
         )}
       </Modal>
-      <ModalResultado resultado={resultado} aoFechar={fecharResultado} />
+      <ModalResultado resultado={resultado} aoFechar={operacoes.fecharResultado} />
       {repo !== undefined && (
         <ModalCriar
           repo={repo}
           existentes={versoes.data?.map((v) => v.numero) ?? []}
           aberto={criando}
           aoFechar={() => setCriando(false)}
-          aoCriar={(numero) => void disparar(base, { numero })}
+          aoCriar={(numero) => operacoes.criar(repo, numero)}
         />
       )}
       {repo !== undefined && versao !== undefined && (
         <ModalOrfaos
-          key={`${repo}@${versao}`}
+          key={chaveAtual}
           repo={repo}
           versao={versao}
           aberto={orfaos}
@@ -565,11 +360,14 @@ function Tela() {
 }
 
 export function App() {
+  const [caminho, ir] = useCaminho();
   return (
     <MantineProvider defaultColorScheme="auto">
       <QueryClientProvider client={queryClient}>
         <Notifications />
-        <Tela />
+        <OperacoesProvider aoNavegar={ir}>
+          <Tela caminho={caminho} ir={ir} />
+        </OperacoesProvider>
       </QueryClientProvider>
     </MantineProvider>
   );
