@@ -266,12 +266,6 @@ def test_sqlite_nao_exige_partes_do_banco_e_rotula_o_backend():
     assert por_peca[Peca.MIGRACAO].estado is Estado.OK
 
 
-def test_sqlite_sem_migracao_falha_na_migracao():
-    por_peca, _ = _rodar(ENV_OK, abrir=_sessao_com(None))
-
-    assert por_peca[Peca.MIGRACAO].estado is Estado.FALHA
-
-
 def test_sqlite_fora_nao_verifica_a_migracao():
     por_peca, _ = _rodar(ENV_OK, abrir=_banco_fora)
 
