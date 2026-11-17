@@ -162,7 +162,10 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     versao (docs/decisoes/010-travas-publicada-e-liberada.md).
     """
     _recusar_se_liberada(deps, versao)
+    return _atualizar(deps, versao, retomou=False)
 
+
+def _atualizar(deps: Deps, versao: str, *, retomou: bool) -> AtualizarResult:
     status, reaproveitada_de = _status_do_lote(deps, versao)
 
     if status.suspeitos_conteudo:
@@ -234,6 +237,9 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     # esta na branch e no remoto. use_worktree recria sob demanda. Com
     # worktrees_mantidas > 0 este checkout fica, e o proximo run nao o paga.
     descartar_worktrees(deps, versao)
+    # Pick retomado conta mesmo sem aplicados: o commit entrou antes deste lote.
+    if retomou or aplicados or vazios:
+        deps.estado.marcar_atualizada(deps.repo, versao, deps.agora())
     return AtualizarResult(
         status=AtualizarStatus.DONE,
         aplicados=aplicados,
@@ -300,7 +306,7 @@ def atualizar_continue(
                 worktree=deps.git.worktree_atual(),
             )
         deps.git.commit_pick_vazio()
-        resultado = atualizar(deps, versao)
+        resultado = _atualizar(deps, versao, retomou=True)
         # O `atualizar` acima abre lote novo e nao sabe deste pick; sem
         # reinjetar, o commit vazio que acabou de entrar na branch nao apareceria
         # em relatorio nenhum.
@@ -308,7 +314,7 @@ def atualizar_continue(
             resultado,
             vazios=[CommitRef(hash_origem=pendente), *resultado.vazios],
         )
-    return atualizar(deps, versao)
+    return _atualizar(deps, versao, retomou=True)
 
 
 def atualizar_abort(deps: Deps, versao: str) -> None:
