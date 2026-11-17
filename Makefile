@@ -45,7 +45,7 @@ typecheck:
 
 # -rs lista o motivo de cada skip no log; -n auto divide a suíte entre os núcleos.
 test:
-	$(DEV) pytest -rs -n auto
+	$(DEV) pytest -rs -n auto --durations=60 --durations-min=0.5
 
 # --- Front (web/): o build vive versionado em motor/daemon/static ---
 
