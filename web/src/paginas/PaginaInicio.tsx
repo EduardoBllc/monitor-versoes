@@ -5,7 +5,7 @@ import { Metodo, api, consultaRepos } from "../api/cliente";
 import { EstadoExecucao } from "../api/enums";
 import type { Execucao } from "../api/eventos";
 import type { RepoOption } from "../api/tipos";
-import { ListaVersoes } from "../componentes/LinhaVersao";
+import { ListaVersoes, TEXTO_INDISPONIVEL } from "../componentes/LinhaVersao";
 import { ListaInscricoes } from "../componentes/ListaInscricoes";
 import { INTERVALO_EXECUCAO_MS, PrecisaDeVoce } from "../componentes/PrecisaDeVoce";
 import { useInstalacao } from "../instalacao";
@@ -40,7 +40,7 @@ function RepoNaInicio({ repo }: { repo: RepoOption }): JSX.Element {
         )}
         <Text size="xs" c="dimmed">
           {!disponivel
-            ? "indisponível — checkout local não encontrado"
+            ? TEXTO_INDISPONIVEL
             : versoes?.length === 0
               ? "nenhuma versão gravada"
               : abertas !== undefined && `${abertas.length} em aberto`}

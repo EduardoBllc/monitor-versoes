@@ -9,7 +9,7 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import { ErroApi, Metodo, api } from "../api/cliente";
+import { ErroApi, Metodo, api, consultaIndiceChamados } from "../api/cliente";
 import { EstadoExecucao, Operacao, TipoErro } from "../api/enums";
 import { acompanhar, type Execucao } from "../api/eventos";
 import {
@@ -122,8 +122,10 @@ export function OperacoesProvider({
           void cliente.invalidateQueries({
             queryKey: ["chamados", fim.repo, fim.versao],
           });
-        if (fim.estado !== EstadoExecucao.FALHOU)
+        if (fim.estado !== EstadoExecucao.FALHOU) {
           void cliente.invalidateQueries({ queryKey: ["versoes", fim.repo] });
+          void cliente.invalidateQueries({ queryKey: consultaIndiceChamados.queryKey });
+        }
         const tela = naTela();
         const efeito = concluir(execRef.current, fim, tela.repo, tela.versao);
         if (efeito?.tipo === TipoEfeito.ERRO)

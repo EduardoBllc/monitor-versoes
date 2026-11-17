@@ -1,29 +1,23 @@
-import { Alert, Group, Text } from "@mantine/core";
+import { Alert, Group, Skeleton, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { VerificacaoGravada } from "../../api/tipos";
+import { INTERVALO_RELOGIO_MS, ha, useAgora } from "../../tempo";
 
-const MS_POR_MINUTO = 60_000;
-const MINUTOS_POR_HORA = 60;
-const HORAS_POR_DIA = 24;
-const relativo = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
-
-function haQuanto(iso: string): string {
-  const minutos = Math.round((Date.parse(iso) - Date.now()) / MS_POR_MINUTO);
-  const horas = Math.round(minutos / MINUTOS_POR_HORA);
-  if (Math.abs(minutos) < MINUTOS_POR_HORA)
-    return relativo.format(minutos, "minute");
-  if (Math.abs(horas) < HORAS_POR_DIA) return relativo.format(horas, "hour");
-  return relativo.format(Math.round(horas / HORAS_POR_DIA), "day");
-}
+const ALTURA_CARREGANDO = 24;
 
 const n = (lista?: unknown[]): number => lista?.length ?? 0;
 
 export function Veredito({
   gravada,
+  erro,
 }: {
   gravada: VerificacaoGravada | null | undefined;
+  erro: Error | null;
 }): JSX.Element {
-  if (!gravada)
+  const agora = useAgora(INTERVALO_RELOGIO_MS);
+  if (erro) return <Alert color="red">{erro.message}</Alert>;
+  if (gravada === undefined) return <Skeleton height={ALTURA_CARREGANDO} />;
+  if (gravada === null)
     return (
       <Text c="dimmed" size="sm">
         não verificada
@@ -49,7 +43,7 @@ export function Veredito({
           {n(s.faltantes)} faltantes · {n(s.conflitantes)} conflitos ·{" "}
           {n(s.suspeitos_conteudo)} suspeitos · {n(s.tasks_sem_commits)} sem
           commits · escopo +{n(s.tasks_novas)} −{n(s.tasks_removidas)} ·
-          verificada {haQuanto(gravada.verificado_em)}
+          verificada {ha(gravada.verificado_em, agora)}
         </Text>
       </Group>
     </>

@@ -10,6 +10,8 @@ import {
   commitDoChamado,
   expandirChamado,
   fecharDialogo,
+  Veredito,
+  vereditoDaPagina,
   vereditoPendencias,
   vereditoVerde,
 } from "./tela";
@@ -38,6 +40,7 @@ test("os commits de um chamado faltante aparecem com o motivo", async ({
   await acao(page, Acao.VERIFICAR).click();
   await expect(vereditoPendencias(page)).toBeVisible();
   await fecharDialogo(page);
+  await expect(vereditoDaPagina(page, Veredito.PENDENCIAS)).toBeVisible();
   const chamados = (await (
     await request.get(rotaApi(manifesto.repo, RecursoApi.CHAMADOS, versao))
   ).json()) as { chamado: string; commits: { hash_origem: string }[] }[];

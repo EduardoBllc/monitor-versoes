@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const LOCALE = "pt-BR";
 const relativo = new Intl.RelativeTimeFormat(LOCALE);
 
@@ -16,4 +18,16 @@ export function ha(iso: string, agora = Date.now()): string {
   const passado = Math.max(0, agora - Date.parse(iso));
   const [unidade, ms] = UNIDADES.find(([, ms]) => passado >= ms) ?? MENOR;
   return relativo.format(-Math.floor(passado / ms), unidade);
+}
+
+export const INTERVALO_RELOGIO_MS = 30_000;
+
+// Sem refetch ao focar, o "há …" só anda se o relógio repintar.
+export function useAgora(intervaloMs: number): number {
+  const [agora, setAgora] = useState(Date.now);
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), intervaloMs);
+    return () => clearInterval(id);
+  }, [intervaloMs]);
+  return agora;
 }

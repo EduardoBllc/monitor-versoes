@@ -12,7 +12,7 @@ import {
   consultaInscricoes,
 } from "../inscricoes";
 import { useInstalacao } from "../instalacao";
-import { Link, ir, useRota } from "../navegacao";
+import { Link, irNoClique, useRota } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { Pagina, alvoDa, caminhoDa } from "../rotas";
 import { FONTE_MONO } from "../tema";
@@ -60,11 +60,19 @@ function useAvisosDasInscricoes() {
   }, [vistas.data]);
 }
 
+const ROTA_CONFIG = { pagina: Pagina.CONFIG } as const;
+
 export function Casca({ children }: { children: ReactNode }): JSX.Element {
   const operacoes = useOperacoes();
+  const { retomar } = operacoes;
   const { repo } = alvoDa(useRota());
   const instalacao = useInstalacao();
   useAvisosDasInscricoes();
+  // Só quando o repo muda: ir do repo à versão não reabre os avisos de pendência já fechados.
+  useEffect(() => {
+    if (repo !== undefined) retomar(repo);
+  }, [repo, retomar]);
+  const configBarrada = repo !== undefined && estaRodando(operacoes.execucoes, repo);
   return (
     <AppShell header={{ height: ALTURA_CABECALHO }} padding="md">
       <AppShell.Header>
@@ -80,12 +88,12 @@ export function Casca({ children }: { children: ReactNode }): JSX.Element {
             <Button
               variant="default"
               component="a"
-              href={caminhoDa({ pagina: Pagina.CONFIG })}
-              onClick={(e: MouseEvent) => {
-                e.preventDefault();
-                ir({ pagina: Pagina.CONFIG });
-              }}
-              disabled={repo !== undefined && estaRodando(operacoes.execucoes, repo)}
+              // Sem href, o link barrado sai da ordem do Tab e o Enter não o segue.
+              href={configBarrada ? undefined : caminhoDa(ROTA_CONFIG)}
+              onClick={(e: MouseEvent) =>
+                configBarrada ? e.preventDefault() : irNoClique(e, ROTA_CONFIG)
+              }
+              disabled={configBarrada}
             >
               Configuração
             </Button>

@@ -1,4 +1,4 @@
-import { Alert, Box, Group, Loader, Modal, Stack, Title } from "@mantine/core";
+import { Alert, Box, Flex, Group, Loader, Modal, Stack, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect, useState, type JSX } from "react";
 import { Metodo, api, consultaRepos } from "../api/cliente";
@@ -48,7 +48,7 @@ export function PaginaVersao({
   versao: string;
 }): JSX.Element {
   const operacoes = useOperacoes();
-  const { execucoes, retomar } = operacoes;
+  const { execucoes } = operacoes;
   const [orfaos, setOrfaos] = useState(false);
   const [abortando, setAbortando] = useState(false);
   const [resolvendo, setResolvendo] = useState(false);
@@ -59,10 +59,6 @@ export function PaginaVersao({
   const inscricao = useQuery(consultaInscricoes).data?.find(
     (i) => i.repo === repo && i.versao === versao,
   );
-
-  useEffect(() => {
-    retomar(repo);
-  }, [repo, retomar]);
 
   const ocupado = estaRodando(execucoes, repo);
   const atualizacao = operacoes.atualizacao(repo, versao);
@@ -115,9 +111,9 @@ export function PaginaVersao({
           aoOrfaos={() => setOrfaos(true)}
         />
       </Group>
-      <Veredito gravada={verificacao.data} />
-      <Group align="flex-start" wrap="nowrap">
-        <Box style={{ flex: 1, minWidth: 0 }}>
+      <Veredito gravada={verificacao.data} erro={verificacao.error} />
+      <Flex align="flex-start" gap="md" direction={{ base: "column", sm: "row" }}>
+        <Box w={{ base: "100%", sm: "auto" }} style={{ flex: 1, minWidth: 0 }}>
           {ocupado ? (
             <ProgressoExecucao
               progresso={execucoes.progresso[repo] ?? PROGRESSO_INICIAL}
@@ -150,12 +146,12 @@ export function PaginaVersao({
           )}
         </Box>
         {!naTelaConflito && (
-          <Stack gap="sm" w={LARGURA_LATERAL} style={{ flexShrink: 0 }}>
+          <Stack gap="sm" w={{ base: "100%", sm: LARGURA_LATERAL }} style={{ flexShrink: 0 }}>
             <InscricaoDaVersao repo={repo} versao={versao} />
             <Historico gravada={verificacao.data} inscricao={inscricao} />
           </Stack>
         )}
-      </Group>
+      </Flex>
       <ModalConfirmarLote
         status={
           atualizacao.fase === FaseAtualizacao.CONFIRMANDO

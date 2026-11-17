@@ -1,9 +1,8 @@
 import { Alert, Code, CopyButton, Button, Group, Stack, Text } from "@mantine/core";
 import { AtualizarStatus } from "../api/enums";
 import type { AtualizarResult } from "../api/tipos";
+import { TAMANHO_HASH } from "../tema";
 import { ResultadoAtualizacao } from "./ResultadoAtualizacao";
-
-export const TAMANHO_HASH = 8;
 
 export function PainelBloqueio({
   resultado,

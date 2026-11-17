@@ -16,7 +16,7 @@ import { useState, type JSX } from "react";
 import { Metodo, api } from "../../api/cliente";
 import { EstadoChamado } from "../../api/enums";
 import type { ChamadoConsultado, VersionStatus } from "../../api/tipos";
-import { FONTE_MONO } from "../../tema";
+import { FONTE_MONO, TAMANHO_HASH } from "../../tema";
 import {
   MotivoCommit,
   filtrarChamados,
@@ -24,8 +24,9 @@ import {
   type ChamadoVisto,
 } from "./chamados";
 
-const TAMANHO_HASH = 8;
-const TODOS = "todos";
+enum Filtro {
+  TODOS = "todos",
+}
 
 enum Rotulo {
   APLICADO = "aplicado",
@@ -121,7 +122,7 @@ export function ListaChamados({
   versao: string;
   status: VersionStatus | null;
 }): JSX.Element {
-  const [estado, setEstado] = useState<string>(TODOS);
+  const [estado, setEstado] = useState<Filtro | EstadoChamado>(Filtro.TODOS);
   const [busca, setBusca] = useState("");
   const { data, error, isLoading } = useQuery({
     queryKey: ["chamados", repo, versao],
@@ -141,7 +142,7 @@ export function ListaChamados({
     );
   const lista = filtrarChamados(
     verChamados(data, status),
-    estado === TODOS ? null : estado,
+    estado === Filtro.TODOS ? null : estado,
     busca,
   );
   return (
@@ -151,7 +152,7 @@ export function ListaChamados({
           size="xs"
           value={estado}
           onChange={setEstado}
-          data={[TODOS, EstadoChamado.APLICADO, EstadoChamado.PENDENTE]}
+          data={[Filtro.TODOS, EstadoChamado.APLICADO, EstadoChamado.PENDENTE]}
         />
         <TextInput
           size="xs"

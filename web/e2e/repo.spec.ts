@@ -22,7 +22,7 @@ test("a página do repo mostra a última verificação e atualização", async (
   await acao(page, Acao.VERIFICAR).click();
   await expect(vereditoVerde(page)).toBeVisible();
   await fecharDialogo(page);
-  await subirAoRepo(page);
+  await subirAoRepo(page, manifesto.repo);
   await expect(verificacaoNaLinha(page, verde)).toBeVisible();
 
   const faltantes = manifesto.versoes[PapelVersao.FALTANTES];
@@ -30,6 +30,6 @@ test("a página do repo mostra a última verificação e atualização", async (
   await atualizarLote(page, faltantes);
   await expect(resultadoAtualizacao(page)).toBeVisible();
   await fecharDialogo(page);
-  await subirAoRepo(page);
+  await subirAoRepo(page, manifesto.repo);
   await expect(atualizacaoNaLinha(page, faltantes)).toBeVisible();
 });

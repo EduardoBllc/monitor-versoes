@@ -19,6 +19,7 @@ const VERSAO = "1.2.0";
 const ARQUIVO = "x.py";
 const VERMELHO = "123";
 const HORA = "2026-01-01T10:00:00Z";
+const HORA_SEGUINTE = "2026-01-01T11:00:00Z";
 const NADA = new Set<string>();
 
 const bloqueio: Execucao = {
@@ -30,6 +31,11 @@ const bloqueio: Execucao = {
   progresso: null,
   resultado: { status: AtualizarStatus.BLOCKED, arquivos_conflito: [ARQUIVO] },
   erro: null,
+};
+
+const vazia: Execucao = {
+  ...bloqueio,
+  resultado: { status: AtualizarStatus.VAZIO, arquivos_conflito: [] },
 };
 
 const comVermelhos: InscricaoVista = {
@@ -60,6 +66,12 @@ it("bloqueio vira item com link da versão", () => {
   ]);
 });
 
+it("pick vazio vira item à espera do registro, não de conflito", () => {
+  expect(itensPendentes([vazia], [], NADA)).toEqual([
+    expect.objectContaining({ tipo: TipoPendencia.VAZIA, repo: REPO, versao: VERSAO }),
+  ]);
+});
+
 it("vermelhos da última rodada viram item", () => {
   expect(itensPendentes([], [comVermelhos], NADA)).toEqual([
     expect.objectContaining({
@@ -82,6 +94,18 @@ it("dispensados sem storage não lança", () => {
   };
   vi.stubGlobal("localStorage", { getItem: falha, setItem: falha });
   const [item] = itensPendentes([], [comVermelhos], NADA);
-  expect(dispensar(item!.chave).has(item!.chave)).toBe(true);
+  expect(dispensar(item!.chave, [item!.chave]).has(item!.chave)).toBe(true);
   expect(lerDispensados().has(item!.chave)).toBe(true);
+});
+
+it("dispensar esquece o que já não está pendente", () => {
+  const memoria = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => memoria.get(k) ?? null,
+    setItem: (k: string, v: string) => memoria.set(k, v),
+  });
+  const [antigo] = itensPendentes([], [comVermelhos], NADA);
+  const [novo] = itensPendentes([], [{ ...comVermelhos, ultima: { ...comVermelhos.ultima!, hora: HORA_SEGUINTE } }], NADA);
+  dispensar(antigo!.chave, [antigo!.chave]);
+  expect([...dispensar(novo!.chave, [novo!.chave])]).toEqual([novo!.chave]);
 });

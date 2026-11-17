@@ -5,7 +5,7 @@ import { consultaInscricoes } from "../inscricoes";
 import { Link } from "../navegacao";
 import { Pagina } from "../rotas";
 import { FONTE_MONO } from "../tema";
-import { ha } from "../tempo";
+import { INTERVALO_RELOGIO_MS, ha, useAgora } from "../tempo";
 
 const TITULO = "Inscrições";
 
@@ -13,6 +13,7 @@ const TITULO = "Inscrições";
 export function ListaInscricoes({ repo }: { repo?: string }): JSX.Element {
   // A casca consulta a mesma chave a cada 15 s: esta lista vem junto.
   const inscricoes = useQuery(consultaInscricoes);
+  const agora = useAgora(INTERVALO_RELOGIO_MS);
   const lista = (inscricoes.data ?? []).filter(
     (i) => repo === undefined || i.repo === repo,
   );
@@ -45,7 +46,7 @@ export function ListaInscricoes({ repo }: { repo?: string }): JSX.Element {
             <Text size="xs" c="dimmed" ff={FONTE_MONO}>
               {i.ultima === null
                 ? "nunca executou"
-                : `${i.ultima.desfecho} ${ha(i.ultima.hora)}`}
+                : `${i.ultima.desfecho} ${ha(i.ultima.hora, agora)}`}
             </Text>
           </Group>
         ))}

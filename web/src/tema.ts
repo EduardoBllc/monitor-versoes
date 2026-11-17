@@ -21,6 +21,7 @@ const escuro: MantineColorsTuple = [
 ];
 
 export const FONTE_MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+export const TAMANHO_HASH = 8;
 
 export const tema: MantineThemeOverride = createTheme({
   colors: { dark: escuro },

@@ -61,26 +61,28 @@ export function useIr(): (rota: Rota, trocar?: boolean) => void {
   return ir;
 }
 
+/** Clique num link da SPA: navega aqui, salvo quando o navegador deve abrir em outra aba. */
+export function irNoClique(e: MouseEvent, para: Rota): void {
+  // Ctrl/⌘/shift/botão do meio: deixa o navegador abrir em outra aba.
+  if (
+    e.button !== BOTAO_PRINCIPAL ||
+    e.metaKey ||
+    e.ctrlKey ||
+    e.shiftKey ||
+    e.altKey
+  )
+    return;
+  e.preventDefault();
+  ir(para);
+}
+
 export function Link({
   para,
   children,
   ...props
 }: { para: Rota; children: ReactNode } & AnchorProps): JSX.Element {
-  const clicar = (e: MouseEvent<HTMLAnchorElement>) => {
-    // Ctrl/⌘/shift/botão do meio: deixa o navegador abrir em outra aba.
-    if (
-      e.button !== BOTAO_PRINCIPAL ||
-      e.metaKey ||
-      e.ctrlKey ||
-      e.shiftKey ||
-      e.altKey
-    )
-      return;
-    e.preventDefault();
-    ir(para);
-  };
   return (
-    <Anchor href={caminhoDa(para)} onClick={clicar} {...props}>
+    <Anchor href={caminhoDa(para)} onClick={(e) => irNoClique(e, para)} {...props}>
       {children}
     </Anchor>
   );

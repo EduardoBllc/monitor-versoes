@@ -39,7 +39,6 @@ enum Dialogo {
   PREFIXO_LOTE = "Atualizar",
   NOVA_VERSAO = "Nova versão",
   PREFIXO_ORFAOS = "Órfãos de",
-  CONFIGURACAO = "Configuração",
   RESULTADO = "Resultado",
 }
 
@@ -60,7 +59,7 @@ enum Trilha {
   INICIO = "Início",
 }
 
-enum Veredito {
+export enum Veredito {
   VERDE = "VERDE",
   PENDENCIAS = "Pendências encontradas",
 }
@@ -111,9 +110,9 @@ const dialogo = (page: Page, titulo: string): Locator =>
 const trilha = (page: Page): Locator =>
   page.getByRole("navigation", { name: Trilha.NOME, exact: true });
 
-/** Na página da versão, o passo anterior da trilha é o repo. */
-async function irAoRepoPelaTrilha(page: Page): Promise<void> {
-  await trilha(page).getByRole("link").last().click();
+/** Da página da versão, sobe ao repo pelo passo dele na trilha. */
+async function irAoRepoPelaTrilha(page: Page, repo: string): Promise<void> {
+  await trilha(page).getByRole("link", { name: repo, exact: true }).click();
 }
 
 const botao = (raiz: Page | Locator, nome: Botao): Locator =>
@@ -151,8 +150,8 @@ export async function repoNaInicio(page: Page, nome: string): Promise<Locator> {
 }
 
 /** Da página da versão, sobe ao repo e devolve a versão na lista dele. */
-export async function versaoNoRepo(page: Page, numero: string): Promise<Locator> {
-  await irAoRepoPelaTrilha(page);
+export async function versaoNoRepo(page: Page, repo: string, numero: string): Promise<Locator> {
+  await irAoRepoPelaTrilha(page, repo);
   return page.getByRole("link", { name: comecaCom(numero) });
 }
 
@@ -179,6 +178,11 @@ export function vereditoVerde(page: Page): Locator {
 
 export function vereditoPendencias(page: Page): Locator {
   return resultado(page).getByText(Veredito.PENDENCIAS);
+}
+
+/** O veredito gravado que a página da versão mostra, fora do diálogo do resultado. */
+export function vereditoDaPagina(page: Page, veredito: Veredito): Locator {
+  return pagina(page).getByText(veredito, { exact: true });
 }
 
 export function avisoAuditoria(page: Page): Locator {
@@ -274,8 +278,8 @@ export function editorDeConflito(page: Page): Locator {
 const dialogoNovaVersao = (page: Page): Locator => dialogo(page, Dialogo.NOVA_VERSAO);
 
 /** Da página da versão, sobe ao repo e abre a nova versão. */
-export async function abrirNovaVersao(page: Page): Promise<void> {
-  await irAoRepoPelaTrilha(page);
+export async function abrirNovaVersao(page: Page, repo: string): Promise<void> {
+  await irAoRepoPelaTrilha(page, repo);
   await acao(page, Acao.NOVA_VERSAO).click();
 }
 
@@ -284,8 +288,12 @@ export function sugestaoDeVersao(page: Page, numero: string): Locator {
 }
 
 /** Abre a nova versão e digita o número, sem criar. */
-export async function proporNumeroDaVersao(page: Page, numero: string): Promise<void> {
-  await abrirNovaVersao(page);
+export async function proporNumeroDaVersao(
+  page: Page,
+  repo: string,
+  numero: string,
+): Promise<void> {
+  await abrirNovaVersao(page, repo);
   await dialogoNovaVersao(page).getByLabel(Campo.NUMERO).fill(numero);
 }
 
@@ -300,8 +308,12 @@ export function criarEPublicar(page: Page): Locator {
 }
 
 /** Cria a versão escolhendo-a entre as sugestões e espera a web abri-la. */
-export async function criarVersaoSugerida(page: Page, numero: string): Promise<void> {
-  await abrirNovaVersao(page);
+export async function criarVersaoSugerida(
+  page: Page,
+  repo: string,
+  numero: string,
+): Promise<void> {
+  await abrirNovaVersao(page, repo);
   await sugestaoDeVersao(page, numero).click();
   await criarEPublicar(page).click();
   await tituloDaVersao(page).filter({ hasText: comecaCom(numero) }).waitFor();
@@ -457,8 +469,8 @@ export async function voltarAoInicio(page: Page): Promise<void> {
   await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
 }
 
-export async function subirAoRepo(page: Page): Promise<void> {
-  await irAoRepoPelaTrilha(page);
+export async function subirAoRepo(page: Page, repo: string): Promise<void> {
+  await irAoRepoPelaTrilha(page, repo);
 }
 
 export function versaoNaInicio(page: Page, repo: string, numero: string): Locator {
@@ -511,11 +523,11 @@ export function commitDoChamado(page: Page, hash: string, motivo: MotivoCommit):
 
 // Paleta ⌘K
 
-/** Abre a paleta pelo atalho, digita a busca e escolhe o primeiro resultado. */
+/** Abre a paleta pelo atalho, digita a busca e escolhe o primeiro resultado que a contém. */
 export async function saltarPelaPaleta(page: Page, busca: string): Promise<void> {
   await page.keyboard.press("Control+K");
-  await page.getByRole("textbox").fill(busca);
-  // O índice chega por rede: espera o resultado antes de escolher.
-  await page.getByRole("option").first().waitFor();
-  await page.keyboard.press("Enter");
+  const paleta = page.getByRole("dialog");
+  await paleta.getByRole("textbox").fill(busca);
+  // Cada resultado da paleta é um botão; o índice chega por rede e o clique espera por ele.
+  await paleta.getByRole("button", { name: trecho(busca) }).first().click();
 }

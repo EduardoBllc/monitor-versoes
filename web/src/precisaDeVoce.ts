@@ -1,9 +1,11 @@
+import { AtualizarStatus } from "./api/enums";
 import type { Execucao } from "./api/eventos";
 import type { AtualizarResult, InscricaoVista } from "./api/tipos";
 import { chaveVersao } from "./operacoes/chave";
 
 export enum TipoPendencia {
   BLOQUEIO = "bloqueio",
+  VAZIA = "vazia",
   VERMELHOS = "vermelhos",
 }
 
@@ -23,13 +25,19 @@ export function itensPendentes(
   inscricoes: InscricaoVista[],
   dispensados: ReadonlySet<string>,
 ): ItemPendente[] {
-  const bloqueios = pendencias.map((p) => ({
-    tipo: TipoPendencia.BLOQUEIO,
-    repo: p.repo,
-    versao: p.versao,
-    detalhe: (p.resultado as AtualizarResult).arquivos_conflito ?? [],
-    chave: `${TipoPendencia.BLOQUEIO}:${chaveVersao(p.repo, p.versao)}`,
-  }));
+  const bloqueios = pendencias.map((p) => {
+    // O esquema tipa o resultado de qualquer operação como unknown; pendência é de atualizar.
+    const r = p.resultado as AtualizarResult | null;
+    const tipo =
+      r?.status === AtualizarStatus.VAZIO ? TipoPendencia.VAZIA : TipoPendencia.BLOQUEIO;
+    return {
+      tipo,
+      repo: p.repo,
+      versao: p.versao,
+      detalhe: r?.arquivos_conflito ?? [],
+      chave: `${tipo}:${chaveVersao(p.repo, p.versao)}`,
+    };
+  });
   const vermelhos = inscricoes.flatMap((i) =>
     i.ultima === null || i.ultima.vermelhos.length === 0
       ? []
@@ -59,9 +67,11 @@ export function lerDispensados(): Set<string> {
   }
 }
 
-export function dispensar(chave: string): Set<string> {
-  daSessao.add(chave);
-  const todos = lerDispensados();
+/** Dispensa a chave e esquece as que já não estão em `vigentes` (as pendências de agora). */
+export function dispensar(chave: string, vigentes: readonly string[]): Set<string> {
+  const todos = new Set([...lerDispensados(), chave].filter((c) => vigentes.includes(c)));
+  daSessao.clear();
+  for (const c of todos) daSessao.add(c);
   try {
     localStorage.setItem(CHAVE_STORAGE, JSON.stringify([...todos]));
   } catch {

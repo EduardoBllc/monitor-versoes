@@ -4,11 +4,12 @@ import type { VersaoListada } from "../api/tipos";
 import { Link } from "../navegacao";
 import { Pagina } from "../rotas";
 import { FONTE_MONO } from "../tema";
-import { ha } from "../tempo";
+import { INTERVALO_RELOGIO_MS, ha, useAgora } from "../tempo";
 import { BarraSegmentada } from "./BarraSegmentada";
 
 const TAMANHO_PONTO = 8;
 const LARGURA_NUMERO = 90;
+export const TEXTO_INDISPONIVEL = "indisponível — checkout local não encontrado";
 
 enum EstadoVersao {
   VERDE = "verde",
@@ -42,6 +43,7 @@ export function LinhaVersao({
 }): JSX.Element {
   const estado = estadoDa(v);
   const r = v.verificacao;
+  const agora = useAgora(INTERVALO_RELOGIO_MS);
   return (
     <Paper component="li" px="md" py="xs" radius={0}>
       <Group gap="sm" wrap="nowrap">
@@ -79,12 +81,12 @@ export function LinhaVersao({
         )}
         <Stack gap={0} align="flex-end">
           <Text size="xs" c="dimmed" ff={FONTE_MONO}>
-            {r === null ? "nunca verificada" : `verificada ${ha(r.verificado_em)}`}
+            {r === null ? "nunca verificada" : `verificada ${ha(r.verificado_em, agora)}`}
           </Text>
           <Text size="xs" c="dimmed" ff={FONTE_MONO}>
             {v.atualizada_em === null
               ? "nunca atualizada"
-              : `atualizada ${ha(v.atualizada_em)}`}
+              : `atualizada ${ha(v.atualizada_em, agora)}`}
           </Text>
         </Stack>
       </Group>

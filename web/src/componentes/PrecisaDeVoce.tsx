@@ -18,9 +18,11 @@ export const INTERVALO_EXECUCAO_MS = 5_000;
 const CHAVE_PENDENCIAS = "pendencias";
 const TITULO = "Precisa de você";
 const SEPARADOR_DETALHE = ", ";
+const NENHUM: ReadonlySet<string> = new Set();
 
 const TEXTO: Record<TipoPendencia, string> = {
-  [TipoPendencia.BLOQUEIO]: "atualização bloqueada",
+  [TipoPendencia.BLOQUEIO]: "bloqueada em conflito",
+  [TipoPendencia.VAZIA]: "aguardando registrar vazio",
   [TipoPendencia.VERMELHOS]: "vermelhos na última rodada",
 };
 
@@ -38,6 +40,8 @@ export function PrecisaDeVoce({ repos }: { repos: string[] }): JSX.Element | nul
   const inscricoes = useQuery(consultaInscricoes);
   const [dispensados, setDispensados] = useState(lerDispensados);
   const itens = itensPendentes(pendencias, inscricoes.data ?? [], dispensados);
+  const vigentes = () =>
+    itensPendentes(pendencias, inscricoes.data ?? [], NENHUM).map((i) => i.chave);
   if (itens.length === 0) return null;
   return (
     <Paper component="section" aria-label={TITULO} px="md" py="sm" bd="1px solid red.9">
@@ -58,12 +62,12 @@ export function PrecisaDeVoce({ repos }: { repos: string[] }): JSX.Element | nul
                   {i.detalhe.join(SEPARADOR_DETALHE)}
                 </Text>
               </Text>
-              {i.tipo === TipoPendencia.BLOQUEIO ? (
+              {i.tipo !== TipoPendencia.VERMELHOS ? (
                 <Link para={{ pagina: Pagina.VERSAO, repo: i.repo, versao: i.versao }} size="sm">
                   Resolver
                 </Link>
               ) : (
-                <Button variant="default" onClick={() => setDispensados(dispensar(i.chave))}>
+                <Button variant="default" onClick={() => setDispensados(dispensar(i.chave, vigentes()))}>
                   Dispensar
                 </Button>
               )}
