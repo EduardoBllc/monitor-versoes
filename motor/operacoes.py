@@ -111,6 +111,19 @@ class VersaoListada:
     verificacao: ResumoVerificacao | None
 
 
+@dataclass(frozen=True)
+class VerificacaoGravada:
+    verificado_em: datetime.datetime
+    status: VersionStatus
+
+
+@dataclass(frozen=True)
+class ChamadoIndexado:
+    repo: str
+    versao: str
+    chamado: str
+
+
 RepoLoader = Callable[[], list[RepoOption]]
 VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
@@ -126,6 +139,9 @@ ReabrirArquivoRunner = Callable[[RepoOption, str, str], None]
 ProporRunner = Callable[[RepoOption, str, PedidoProposta], list[PropostaDeBloco]]
 # (repo, gravadas): gravadas lista só o que o estado conhece, sem fetch.
 ListagemRunner = Callable[[RepoOption, bool], list[VersaoListada]]
+
+VerificacaoGravadaRunner = Callable[[RepoOption, str], VerificacaoGravada | None]
+IndiceChamadosRunner = Callable[[list[RepoOption]], list[ChamadoIndexado]]
 
 
 class ContinueRunner(Protocol):
@@ -168,6 +184,8 @@ class Runners:
     listar_orfaos: OrfaosRunner | None = None
     julgar_orfao: JulgarRunner | None = None
     listar_versoes: ListagemRunner | None = None
+    verificacao_gravada: VerificacaoGravadaRunner | None = None
+    indice_chamados: IndiceChamadosRunner | None = None
 
 
 def descobrir_repos(
@@ -306,6 +324,47 @@ def listar_versoes_repo(
         if opcoes is None:
             opcoes = versoes_gravadas(estado, repo.nome, versionamento_do_repo(repo))
         return listar(estado, repo.nome, opcoes)
+
+
+def verificacao_gravada(
+    estado: EstadoRepo, repo: str, versao: str
+) -> VerificacaoGravada | None:
+    try:
+        gravada = estado.verificacao(repo, versao)
+    except NaoEncontrado:
+        return None
+    return (
+        None
+        if gravada is None
+        else VerificacaoGravada(gravada.verificado_em, gravada.status)
+    )
+
+
+def indice_de_chamados(estado: EstadoRepo, repos: list[str]) -> list[ChamadoIndexado]:
+    indice = []
+    for repo in repos:
+        try:
+            versoes = estado.versoes(repo)
+        except NaoEncontrado:
+            continue
+        for versao in versoes:
+            chamados = {a.chamado for a in estado.atribuicoes(repo, versao.numero)}
+            indice += [
+                ChamadoIndexado(repo, versao.numero, c) for c in sorted(chamados)
+            ]
+    return indice
+
+
+def verificacao_gravada_repo(
+    repo: RepoOption, versao: str
+) -> VerificacaoGravada | None:
+    with abrir_estado() as estado:
+        return verificacao_gravada(estado, repo.nome, versao)
+
+
+def indice_chamados_repo(repos: list[RepoOption]) -> list[ChamadoIndexado]:
+    with abrir_estado() as estado:
+        return indice_de_chamados(estado, [r.nome for r in repos])
 
 
 def _deps_do_repo(
@@ -515,4 +574,6 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         listar_orfaos=partial(orfaos_repo, progresso=relatar),
         julgar_orfao=partial(julgar_orfao_repo, progresso=relatar),
         listar_versoes=partial(listar_versoes_repo, progresso=relatar),
+        verificacao_gravada=verificacao_gravada_repo,
+        indice_chamados=indice_chamados_repo,
     )

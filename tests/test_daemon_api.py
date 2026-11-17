@@ -63,10 +63,12 @@ from motor.instalacao import (
 )
 from motor.novidades import VALIDADE, Cache, Novidade
 from motor.operacoes import (
+    ChamadoIndexado,
     PedidoProposta,
     RepoOption,
     Resolucao,
     Runners,
+    VerificacaoGravada,
     VersaoListada,
     VersionOption,
 )
@@ -104,6 +106,8 @@ class Ambiente:
         self.iniciou = threading.Event()
         self.versoes = [VersionOption("14.0.0", True), VersionOption("13.0.0", True)]
         self.gravadas: list[bool] = []
+        self.gravada: VerificacaoGravada | None = None
+        self.repos_indexados: list[str] = []
         self.resultado: VersionStatus | AtualizarResult = VersionStatus(verde=True)
         self.inscricoes = tmp_path / "inscricoes.json"
         self.erro_conflito: MotorError | None = None
@@ -181,11 +185,17 @@ class Ambiente:
             listar_orfaos=self.listar_orfaos,
             julgar_orfao=self.julgar_orfao,
             listar_versoes=self.listar_versoes,
+            verificacao_gravada=lambda repo, versao: self.gravada,
+            indice_chamados=self.indice,
         )
 
     def listar_versoes(self, repo: RepoOption, gravadas: bool) -> list[VersaoListada]:
         self.gravadas.append(gravadas)
         return [VersaoListada(v.numero, v.liberada, None, None) for v in self.versoes]
+
+    def indice(self, repos: list[RepoOption]) -> list[ChamadoIndexado]:
+        self.repos_indexados = [r.nome for r in repos]
+        return [ChamadoIndexado(REPO, "14.0.0", "A-1")]
 
     def listar_orfaos(self, repo: RepoOption, versao: str) -> list[OrfaoDaVersao]:
         return [
@@ -253,6 +263,30 @@ def test_listar_versoes_repassa_gravadas(cliente: TestClient, amb: Ambiente) -> 
 
     assert amb.gravadas == [True, False]
     assert {"atualizada_em", "verificacao"} <= set(gravadas.json()[0])
+
+
+def test_verificacao_gravada_responde_null_quando_nunca_verificada(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    r = cliente.get(f"/api/repos/{REPO}/versoes/14.0.0/verificacao")
+
+    assert r.status_code == HTTPStatus.OK
+    assert r.json() is None
+
+    amb.gravada = VerificacaoGravada(
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC), VersionStatus(verde=True)
+    )
+    corpo = cliente.get(f"/api/repos/{REPO}/versoes/14.0.0/verificacao").json()
+    assert corpo["status"]["verde"] is True
+
+
+def test_indice_de_chamados_repassa_os_repos(
+    cliente: TestClient, amb: Ambiente
+) -> None:
+    r = cliente.get("/api/chamados")
+
+    assert r.json() == [{"repo": REPO, "versao": "14.0.0", "chamado": "A-1"}]
+    assert amb.repos_indexados == [REPO, "sem-clone"]
 
 
 def test_operacao_em_repo_sem_checkout_da_404_com_mensagem_do_motor(
