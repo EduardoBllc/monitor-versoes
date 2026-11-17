@@ -99,8 +99,8 @@ def test_processo_morto_com_sigkill_nao_deixa_o_repo_travado(clone, tmp_path):
         filho.wait()
         if filho.stdout is not None:
             filho.stdout.close()
-    # No Windows o `wait()` é do lançador do venv: o neto que segura a trava
-    # morre depois, então a trava solta com algum atraso.
+    # No Windows a trava solta com atraso: o `wait()` é do lançador do venv, o neto
+    # que segura a trava morre depois, e o SO libera lock de processo morto só quando puder.
     prazo = time.monotonic() + PRAZO_PARA_SOLTAR_S
     while True:
         try:
