@@ -29,13 +29,22 @@ MAXIMO_EM_CACHE = 32
 
 # Editar só o `entry_points.txt` de um dist-info existente não muda a pasta e não
 # invalida; aceito porque instalar, atualizar ou remover pacote cria ou apaga dist-info.
-def _assinatura_dos_pacotes() -> tuple[tuple[str, int], ...]:
-    return tuple((p, os.stat(p).st_mtime_ns) for p in sys.path if os.path.isdir(p))
+def _assinatura_dos_pacotes() -> tuple[tuple[str, int | None], ...]:
+    return tuple((p, _mtime(p)) for p in sys.path)
+
+
+# Sem `isdir` antes: a pasta pode sumir entre a checagem e o `stat` (reinstalação
+# com o daemon no ar), e o `entry_points()` também tolera entrada ausente.
+def _mtime(caminho: str) -> int | None:
+    try:
+        return os.stat(caminho).st_mtime_ns
+    except OSError:
+        return None
 
 
 @functools.lru_cache(maxsize=MAXIMO_EM_CACHE)
 def _pontos_em_cache(
-    grupo: str, _assinatura: tuple[tuple[str, int], ...]
+    grupo: str, _assinatura: tuple[tuple[str, int | None], ...]
 ) -> tuple[EntryPoint, ...]:
     return tuple(entry_points(group=grupo))
 
