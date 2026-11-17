@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { Desfecho } from "./api/enums";
 import type { InscricaoVista } from "./api/tipos";
-import { CorAviso, avisos } from "./inscricoes";
+import { CorAviso, avisos, rodadasNovas } from "./inscricoes";
 
 const HORA_ANTES = "2026-01-01T10:00:00Z";
 const HORA_DEPOIS = "2026-01-01T10:15:00Z";
@@ -79,4 +79,15 @@ it("inscrição ausente em depois ou hora igual não avisa", () => {
   const antes = inscricao({ desfecho: Desfecho.APLICOU });
   expect(avisos([antes], [])).toEqual([]);
   expect(avisos([antes], [antes])).toEqual([]);
+});
+
+it("rodada nova é a inscrição cuja última hora mudou", () => {
+  const nova = inscricao({ hora: HORA_DEPOIS });
+  const parada = { ...inscricao({ hora: HORA_ANTES }), versao: "1.3.0" };
+  expect(rodadasNovas([inscricao({ hora: HORA_ANTES }), parada], [nova, parada])).toEqual([nova]);
+});
+
+it("sem lista anterior ou sem rodada não há rodada nova", () => {
+  expect(rodadasNovas(undefined, [inscricao({})])).toEqual([]);
+  expect(rodadasNovas([inscricao(null)], [inscricao(null)])).toEqual([]);
 });

@@ -1,7 +1,7 @@
 import { Alert, Code, Stack, Text } from "@mantine/core";
 import type { AtualizarResult, CommitRef } from "../api/tipos";
+import { TAMANHO_HASH } from "../tema";
 
-const TAMANHO_HASH = 8;
 const hash = (h: string): string => h.slice(0, TAMANHO_HASH);
 
 export function ResultadoAtualizacao({

@@ -72,3 +72,6 @@ web/playwright-report/
 
 # Restos de resolução de conflito
 *.orig
+
+# Cache do tsc
+*.tsbuildinfo

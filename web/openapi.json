@@ -127,6 +127,140 @@
         }
       }
     },
+    "/api/repos/{repo}/versoes/{versao}/verificacao": {
+      "get": {
+        "summary": "Verificacao Gravada",
+        "operationId": "verificacao_gravada_api_repos__repo__versoes__versao__verificacao_get",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/VerificacaoGravada"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Verificacao Gravada Api Repos  Repo  Versoes  Versao  Verificacao Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Verificar",
+        "operationId": "verificar_api_repos__repo__versoes__versao__verificacao_post",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Repo"
+            }
+          },
+          {
+            "name": "versao",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Versao"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoVerificacao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Execucao"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chamados": {
+      "get": {
+        "summary": "Indice De Chamados",
+        "operationId": "indice_de_chamados_api_chamados_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChamadoIndexado"
+                  },
+                  "type": "array",
+                  "title": "Response Indice De Chamados Api Chamados Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/repos/{repo}/versoes/sugestoes": {
       "post": {
         "summary": "Sugerir",
@@ -383,64 +517,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JulgamentoOrfao"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/repos/{repo}/versoes/{versao}/verificacao": {
-      "post": {
-        "summary": "Verificar",
-        "operationId": "verificar_api_repos__repo__versoes__versao__verificacao_post",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo"
-            }
-          },
-          {
-            "name": "versao",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Versao"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PedidoVerificacao"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Execucao"
                 }
               }
             }
@@ -1565,6 +1641,29 @@
           "commits"
         ],
         "title": "ChamadoConsultado"
+      },
+      "ChamadoIndexado": {
+        "properties": {
+          "repo": {
+            "type": "string",
+            "title": "Repo"
+          },
+          "versao": {
+            "type": "string",
+            "title": "Versao"
+          },
+          "chamado": {
+            "type": "string",
+            "title": "Chamado"
+          }
+        },
+        "type": "object",
+        "required": [
+          "repo",
+          "versao",
+          "chamado"
+        ],
+        "title": "ChamadoIndexado"
       },
       "CommitRef": {
         "properties": {
@@ -2778,6 +2877,24 @@
           "editavel"
         ],
         "title": "ValorLido"
+      },
+      "VerificacaoGravada": {
+        "properties": {
+          "verificado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verificado Em"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VersionStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verificado_em",
+          "status"
+        ],
+        "title": "VerificacaoGravada"
       },
       "VersaoListada": {
         "properties": {

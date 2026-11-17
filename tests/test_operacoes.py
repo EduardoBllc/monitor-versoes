@@ -13,6 +13,7 @@ import motor.operacoes as operacoes
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.estado.sqlite import Estado
 from motor.domain.types import (
+    Atribuicao,
     CommitRef,
     RepoInfo,
     Verificacao,
@@ -21,14 +22,18 @@ from motor.domain.types import (
 )
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.operacoes import (
+    ChamadoIndexado,
     RepoOption,
     ResumoVerificacao,
+    VerificacaoGravada,
     VersaoListada,
     VersionOption,
     descobrir_repos,
     descobrir_versoes,
+    indice_de_chamados,
     listar,
     resumir,
+    verificacao_gravada,
     versoes_gravadas,
 )
 from motor.ports import GitRepo
@@ -461,3 +466,30 @@ def test_listar_versoes_repo_gravadas_nao_faz_fetch(monkeypatch, tmp_path, xdg_i
     )
 
     assert listadas == [VersaoListada(ABERTA, False, None, None)]
+
+
+def test_verificacao_gravada_devolve_o_status():
+    estado = _estado_com_versoes()
+    status = VersionStatus(verde=True, ancestrais=_commits(1))
+    estado.gravar_verificacao(REPO_ESTADO, LIBERADA, _verificacao(status))
+
+    assert verificacao_gravada(estado, REPO_ESTADO, LIBERADA) == VerificacaoGravada(
+        QUANDO, status
+    )
+    assert verificacao_gravada(estado, REPO_ESTADO, ABERTA) is None
+
+
+def test_verificacao_gravada_de_repo_desconhecido_e_none():
+    assert verificacao_gravada(FakeEstado(), REPO_ESTADO, LIBERADA) is None
+
+
+def test_indice_de_chamados_cobre_os_repos_do_estado():
+    estado = _estado_com_versoes()
+    estado.substituir_atribuicoes(
+        REPO_ESTADO, ABERTA, [Atribuicao(chamado="B-2"), Atribuicao(chamado="A-1")]
+    )
+
+    assert indice_de_chamados(estado, [REPO_ESTADO, "fora-do-estado"]) == [
+        ChamadoIndexado(REPO_ESTADO, ABERTA, "A-1"),
+        ChamadoIndexado(REPO_ESTADO, ABERTA, "B-2"),
+    ]

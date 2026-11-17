@@ -39,6 +39,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/{repo}/versoes/{versao}/verificacao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Verificacao Gravada */
+        get: operations["verificacao_gravada_api_repos__repo__versoes__versao__verificacao_get"];
+        put?: never;
+        /** Verificar */
+        post: operations["verificar_api_repos__repo__versoes__versao__verificacao_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chamados": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Indice De Chamados */
+        get: operations["indice_de_chamados_api_chamados_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo}/versoes/sugestoes": {
         parameters: {
             query?: never;
@@ -118,23 +153,6 @@ export interface paths {
         put?: never;
         /** Julgar Orfao */
         post: operations["julgar_orfao_api_repos__repo__versoes__versao__orfaos__hash__julgamento_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/repos/{repo}/versoes/{versao}/verificacao": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Verificar */
-        post: operations["verificar_api_repos__repo__versoes__versao__verificacao_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -542,6 +560,15 @@ export interface components {
             estado: string;
             /** Commits */
             commits: components["schemas"]["CommitRef"][];
+        };
+        /** ChamadoIndexado */
+        ChamadoIndexado: {
+            /** Repo */
+            repo: string;
+            /** Versao */
+            versao: string;
+            /** Chamado */
+            chamado: string;
         };
         /** CommitRef */
         CommitRef: {
@@ -995,6 +1022,15 @@ export interface components {
             /** Editavel */
             editavel: boolean;
         };
+        /** VerificacaoGravada */
+        VerificacaoGravada: {
+            /**
+             * Verificado Em
+             * Format: date-time
+             */
+            verificado_em: string;
+            status: components["schemas"]["VersionStatus"];
+        };
         /** VersaoListada */
         VersaoListada: {
             /** Numero */
@@ -1137,6 +1173,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verificacao_gravada_api_repos__repo__versoes__versao__verificacao_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificacaoGravada"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verificar_api_repos__repo__versoes__versao__verificacao_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo: string;
+                versao: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PedidoVerificacao"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Execucao"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    indice_de_chamados_api_chamados_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChamadoIndexado"][];
                 };
             };
         };
@@ -1299,42 +1423,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JulgamentoOrfao"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    verificar_api_repos__repo__versoes__versao__verificacao_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                repo: string;
-                versao: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PedidoVerificacao"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Execucao"];
                 };
             };
             /** @description Validation Error */

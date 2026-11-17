@@ -1,4 +1,5 @@
 import { TipoErro } from "./enums";
+import type { ChamadoIndexado, RepoOption } from "./tipos";
 
 export class ErroApi extends Error {
   constructor(
@@ -18,6 +19,17 @@ export enum Metodo {
 }
 
 export const CHAVE_REPOS = ["repos"];
+
+export const consultaRepos = {
+  queryKey: CHAVE_REPOS,
+  queryFn: () => api<RepoOption[]>(Metodo.GET, "/api/repos"),
+};
+
+// Fora do prefixo ["chamados"] das listas por versão: invalidar o índice não as recarrega.
+export const consultaIndiceChamados = {
+  queryKey: ["indice-chamados"],
+  queryFn: () => api<ChamadoIndexado[]>(Metodo.GET, "/api/chamados"),
+};
 
 const STATUS_ERRO_MIN = 400;
 const STATUS_SEM_CORPO = 204;

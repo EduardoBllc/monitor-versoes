@@ -1,7 +1,6 @@
 import { Alert, Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
 import type { CommitRef, VersionStatus } from "../api/tipos";
-
-const TAMANHO_HASH = 8;
+import { TAMANHO_HASH } from "../tema";
 
 const n = (lista?: unknown[]): number => lista?.length ?? 0;
 const hash = (c: CommitRef): string => c.hash_origem.slice(0, TAMANHO_HASH);

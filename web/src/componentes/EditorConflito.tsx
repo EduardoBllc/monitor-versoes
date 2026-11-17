@@ -53,7 +53,7 @@ import { MergeConteudo } from "./MergeConteudo";
 import { ClasseProposta, SO_LEITURA } from "./monacoConflito";
 import { ModalReabrir } from "./ModalReabrir";
 import { notificarErro, notificarOk } from "./notificar";
-import { TAMANHO_HASH } from "./PainelBloqueio";
+import { TAMANHO_HASH } from "../tema";
 
 // Monaco do bundle e workers locais, sem CDN: o daemon só serve 127.0.0.1.
 self.MonacoEnvironment = {

@@ -7,9 +7,13 @@ import {
   acao,
   atualizarLote,
   avisoBloqueio,
+  editorDeConflito,
   fecharDialogo,
+  navegarComEdicaoPendente,
+  resolverBlocoNaWeb,
   resolverConflitoNaWeb,
   resultadoAtualizacao,
+  tituloDaVersao,
   vereditoVerde,
 } from "./tela";
 
@@ -34,4 +38,18 @@ test("conflito resolvido no editor web continua sozinho e a versão fica verde",
   expect(arquivoNaBranch(manifesto, versao)).toBe(
     manifesto.conteudo_theirs_conflito.trimEnd(),
   );
+});
+
+test("sair do editor com edição pendente pede confirmação", async ({ page, manifesto }) => {
+  const versao = manifesto.versoes[PapelVersao.CONFLITO];
+  await abrir(page, manifesto.repo, versao);
+  await atualizarLote(page, versao);
+  await expect(avisoBloqueio(page)).toBeVisible();
+  await resolverBlocoNaWeb(page, manifesto.arquivo_conflito, LadoConflito.THEIRS);
+
+  await navegarComEdicaoPendente(page, false);
+  await expect(editorDeConflito(page)).toBeVisible();
+
+  await navegarComEdicaoPendente(page, true);
+  await expect(tituloDaVersao(page)).toBeHidden();
 });

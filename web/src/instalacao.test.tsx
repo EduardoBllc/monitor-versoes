@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GrupoPlugin, TipoOrigem } from "./api/enums";
 import type { Instalacao, NovidadeVista, PluginInstalado } from "./api/tipos";
-import { Barra, type PropsBarra } from "./componentes/Barra";
+import { AvisoVersao } from "./componentes/AvisoVersao";
 import { Secao } from "./configSecoes";
 import { pluginsDaSecao } from "./instalacao";
 
@@ -38,37 +38,22 @@ const plugin = (grupo: GrupoPlugin, pacote: string): PluginInstalado => ({
   origem: { tipo: TipoOrigem.GIT, url: null, ref: null, commit: null },
 });
 
-const nada = () => undefined;
-const PROPS: PropsBarra = {
-  repos: [],
-  versoes: [],
-  ocupado: false,
-  novidades: [],
-  aoEscolherRepo: nada,
-  aoEscolherVersao: nada,
-  aoVerificar: nada,
-  aoCriar: nada,
-  aoInscricoes: nada,
-  aoOrfaos: nada,
-  aoConfigurar: nada,
-};
-
-const barra = (novidades: NovidadeVista[]) =>
+const aviso = (novidades: NovidadeVista[]) =>
   renderToStaticMarkup(
     <MantineProvider>
-      <Barra {...PROPS} novidades={novidades} />
+      <AvisoVersao novidades={novidades} />
     </MantineProvider>,
   );
 
-describe("Barra", () => {
+describe("AvisoVersao", () => {
   it("mostra a versão nova com o comando a rodar", () => {
-    const html = barra([NOVIDADE_MOTOR]);
+    const html = aviso([NOVIDADE_MOTOR]);
     expect(html).toContain(NOVIDADE_MOTOR.texto);
     expect(html).toMatch(new RegExp(`<code[^>]*>${NOVIDADE_MOTOR.comando}</code>`));
   });
 
   it("com várias, mostra a primeira e o resto num +N com title", () => {
-    const html = barra([NOVIDADE_MOTOR, NOVIDADE_A, NOVIDADE_B]);
+    const html = aviso([NOVIDADE_MOTOR, NOVIDADE_A, NOVIDADE_B]);
     expect(html).toContain(NOVIDADE_MOTOR.texto);
     const titulo = html.match(/title="([^"]*)"[^>]*> \+2</)?.[1];
     expect(titulo).toContain(`${NOVIDADE_A.texto} ${NOVIDADE_A.comando}`);
@@ -77,7 +62,7 @@ describe("Barra", () => {
   });
 
   it("não mostra aviso sem versão nova", () => {
-    expect(barra([])).not.toContain(NOVIDADE_MOTOR.texto);
+    expect(aviso([])).not.toContain(NOVIDADE_MOTOR.texto);
   });
 });
 

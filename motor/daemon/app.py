@@ -45,10 +45,12 @@ from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado, RecusaDeInvar
 from motor.instalacao import PluginInstalado, normalizar, plugins_instalados
 from motor.novidades import novidades_para_exibir, texto_aviso
 from motor.operacoes import (
+    ChamadoIndexado,
     PedidoProposta,
     RepoOption,
     Resolucao,
     Runners,
+    VerificacaoGravada,
     VersaoListada,
     VersionamentoLoader,
     avaliar_numero,
@@ -241,6 +243,15 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
     @app.get("/api/repos/{repo}/versoes")
     def listar_versoes(repo: str, gravadas: bool = False) -> list[VersaoListada]:
         return _exigir(ctx.leitura().listar_versoes)(ctx.achar(repo), gravadas)
+
+    @app.get("/api/repos/{repo}/versoes/{versao}/verificacao")
+    def verificacao_gravada(repo: str, versao: str) -> VerificacaoGravada | None:
+        return _exigir(ctx.leitura().verificacao_gravada)(ctx.achar(repo), versao)
+
+    @app.get("/api/chamados")
+    def indice_de_chamados() -> list[ChamadoIndexado]:
+        leitura = ctx.leitura()
+        return _exigir(leitura.indice_chamados)(leitura.carregar_repos())
 
     # As versões existentes vêm da lista que o cliente já tem, como na TUI:
     # carregar de novo faria um git fetch por tecla digitada.

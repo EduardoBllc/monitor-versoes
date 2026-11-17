@@ -22,7 +22,28 @@ export interface Aviso {
   cor: CorAviso;
 }
 
+const NUNCA_EXECUTOU = "nunca executou";
+
+export function descreverRodada(ultima: InscricaoVista["ultima"]): string {
+  if (ultima === null) return NUNCA_EXECUTOU;
+  const quando = new Date(ultima.hora).toLocaleString();
+  const vermelhos = ultima.vermelhos.length
+    ? ` · vermelhos: ${ultima.vermelhos.join(", ")}`
+    : "";
+  return `${quando} ${ultima.desfecho}${ultima.mensagem ? `: ${ultima.mensagem}` : ""}${vermelhos}`;
+}
+
 const chaveDe = (i: InscricaoVista): string => `${i.repo}@${i.versao}`;
+
+/** As inscrições que rodaram desde a consulta anterior. */
+export function rodadasNovas(
+  antes: InscricaoVista[] | undefined,
+  depois: InscricaoVista[],
+): InscricaoVista[] {
+  if (antes === undefined) return [];
+  const horas = new Map(antes.map((i) => [chaveDe(i), i.ultima?.hora]));
+  return depois.filter((i) => i.ultima !== null && horas.get(chaveDe(i)) !== i.ultima.hora);
+}
 
 // Espelha eventos() do motor: o que o daemon decide avisar no desktop, a web avisa aqui.
 export function avisos(

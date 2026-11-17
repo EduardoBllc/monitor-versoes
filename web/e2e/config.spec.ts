@@ -4,10 +4,10 @@ import {
   abrir,
   avisoConfiguracaoSalva,
   editarPisoETestar,
-  fecharDialogo,
   pisoNaConfiguracao,
   resultadoDoTeste,
   salvarConfiguracao,
+  voltarAoInicio,
 } from "./tela";
 
 const PISO = "1.0.0";
@@ -25,14 +25,14 @@ test("editar, testar e salvar a configuração", async ({ page, manifesto }) => 
 
   expect(await readFile(manifesto.config, "utf-8")).toContain(PISO);
 
-  await fecharDialogo(page);
+  await voltarAoInicio(page);
   await expect(await pisoNaConfiguracao(page, manifesto.repo)).toHaveValue(PISO);
 });
 
 test("reabrir com a config lenta não descarta a seção nem a edição", async ({ page, manifesto }) => {
   await abrir(page, manifesto.repo);
   await pisoNaConfiguracao(page, manifesto.repo);
-  await fecharDialogo(page);
+  await voltarAoInicio(page);
   await atrasarRota(page, ROTA_CONFIG, ATRASO_CONFIG_MS);
   const recarga = page.waitForResponse((r) => new URL(r.url()).pathname === ROTA_CONFIG);
 
