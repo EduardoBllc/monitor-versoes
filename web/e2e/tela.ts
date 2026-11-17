@@ -27,8 +27,6 @@ export enum LadoConflito {
 }
 
 enum Campo {
-  REPO = "Repositório",
-  VERSAO = "Versão",
   NUMERO = "número",
   CHAMADO = "Chamado",
   MOTIVO = "Motivo",
@@ -55,6 +53,12 @@ enum Botao {
   REMOVER = "Remover",
   TESTAR = "Testar",
   SALVAR = "Salvar",
+}
+
+/** A trilha no topo: Início › repo › versão. */
+enum Trilha {
+  NOME = "Trilha",
+  INICIO = "Início",
 }
 
 enum Veredito {
@@ -101,6 +105,14 @@ function caminho(repo: string, versao?: string): string {
 const dialogo = (page: Page, titulo: string): Locator =>
   page.getByRole("dialog", { name: titulo, exact: true });
 
+const trilha = (page: Page): Locator =>
+  page.getByRole("navigation", { name: Trilha.NOME, exact: true });
+
+/** Na página da versão, o passo anterior da trilha é o repo. */
+async function irAoRepoPelaTrilha(page: Page): Promise<void> {
+  await trilha(page).getByRole("link").last().click();
+}
+
 const botao = (raiz: Page | Locator, nome: Botao): Locator =>
   raiz.getByRole("button", { name: nome, exact: true });
 
@@ -118,24 +130,33 @@ export async function fecharDialogo(page: Page): Promise<void> {
 
 // Navegação
 
-export function versaoEscolhida(page: Page): Locator {
-  return page.getByRole("combobox", { name: Campo.VERSAO, exact: true });
+export function tituloDaVersao(page: Page): Locator {
+  return page.getByRole("heading", { level: 1 });
 }
 
 export function chamadoListado(page: Page, chamado: string): Locator {
   return page.getByText(`${Formato.PREFIXO_CHAMADO}${chamado}`, { exact: true }).first();
 }
 
-/** Abre a lista de repositórios e devolve a opção do nome. */
-export async function opcaoRepo(page: Page, nome: string): Promise<Locator> {
-  await page.getByRole("combobox", { name: Campo.REPO, exact: true }).click();
-  return page.getByRole("option", { name: nome, exact: true });
+/** Volta ao início pela trilha e devolve o repo listado (link, ou item indisponível). */
+export async function repoNaInicio(page: Page, nome: string): Promise<Locator> {
+  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
+  return page.getByRole("link", { name: nome, exact: true });
 }
 
-/** Abre a lista de versões e devolve a opção do número. */
-export async function opcaoVersao(page: Page, numero: string): Promise<Locator> {
-  await versaoEscolhida(page).click();
-  return page.getByRole("option", { name: comecaCom(numero) });
+/** Da página da versão, sobe ao repo e devolve a versão na lista dele. */
+export async function versaoNoRepo(page: Page, numero: string): Promise<Locator> {
+  await irAoRepoPelaTrilha(page);
+  return page.getByRole("link", { name: comecaCom(numero) });
+}
+
+/**
+ * Com edição pendente no editor, sai pela trilha para o início, aceitando ou recusando
+ * a confirmação do navegador.
+ */
+export async function navegarComEdicaoPendente(page: Page, aceitar: boolean): Promise<void> {
+  page.once("dialog", (d) => void (aceitar ? d.accept() : d.dismiss()));
+  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
 }
 
 export function erro(page: Page): Locator {
@@ -213,8 +234,8 @@ export async function abortarBloqueio(page: Page): Promise<void> {
   await botao(dialogo(page, Dialogo.ABORTAR), Botao.ABORTAR).click();
 }
 
-/** Resolve o arquivo no editor web e o marca resolvido. */
-export async function resolverConflitoNaWeb(
+/** Resolve um bloco do arquivo no editor web, sem marcá-lo resolvido. */
+export async function resolverBlocoNaWeb(
   page: Page,
   arquivo: string,
   lado: LadoConflito,
@@ -223,14 +244,30 @@ export async function resolverConflitoNaWeb(
   await page.getByText(arquivo, { exact: true }).click();
   // O "Aceitar" é ação inline do Monaco, sem papel acessível: o texto visível é o contrato.
   await page.getByText(lado, { exact: true }).first().click();
+}
+
+/** Resolve o arquivo no editor web e o marca resolvido. */
+export async function resolverConflitoNaWeb(
+  page: Page,
+  arquivo: string,
+  lado: LadoConflito,
+): Promise<void> {
+  await resolverBlocoNaWeb(page, arquivo, lado);
   await acao(page, Acao.MARCAR_RESOLVIDO).click();
+}
+
+/** O editor de conflito está aberto. */
+export function editorDeConflito(page: Page): Locator {
+  return acao(page, Acao.MARCAR_RESOLVIDO);
 }
 
 // Nova versão
 
 const dialogoNovaVersao = (page: Page): Locator => dialogo(page, Dialogo.NOVA_VERSAO);
 
+/** Da página da versão, sobe ao repo e abre a nova versão. */
 export async function abrirNovaVersao(page: Page): Promise<void> {
+  await irAoRepoPelaTrilha(page);
   await acao(page, Acao.NOVA_VERSAO).click();
 }
 
@@ -254,11 +291,12 @@ export function criarEPublicar(page: Page): Locator {
   return botao(dialogoNovaVersao(page), Botao.CRIAR);
 }
 
-/** Cria a versão escolhendo-a entre as sugestões. */
+/** Cria a versão escolhendo-a entre as sugestões e espera a web abri-la. */
 export async function criarVersaoSugerida(page: Page, numero: string): Promise<void> {
   await abrirNovaVersao(page);
   await sugestaoDeVersao(page, numero).click();
   await criarEPublicar(page).click();
+  await tituloDaVersao(page).filter({ hasText: comecaCom(numero) }).waitFor();
 }
 
 // Órfãos

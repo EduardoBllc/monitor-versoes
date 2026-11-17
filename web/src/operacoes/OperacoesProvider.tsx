@@ -3,6 +3,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
   type JSX,
@@ -34,8 +35,9 @@ import {
   type EstadoExecucoes,
   type Resultado,
 } from "../execucoes";
-import { lerCaminho } from "../rotas";
-import { chaveVersao } from "./chave";
+import { ir } from "../navegacao";
+import { Pagina, alvoDa, lerRota } from "../rotas";
+import { chaveVersao, prefixoRepo } from "./chave";
 
 export interface Operacoes {
   execucoes: EstadoExecucoes;
@@ -61,13 +63,15 @@ const urlVersao = (repo: string, versao: string): string =>
   `${urlRepo(repo)}/versoes/${encodeURIComponent(versao)}`;
 const pendente = (a: EstadoAtualizacao): boolean =>
   a.fase === FaseAtualizacao.BLOQUEADA || a.fase === FaseAtualizacao.VAZIA;
+const irParaVersao = (repo: string, versao: string) =>
+  ir({ pagina: Pagina.VERSAO, repo, versao });
+// O provider vive acima de quem lê a rota: a URL é a tela atual.
+const naTela = () => alvoDa(lerRota(window.location.pathname));
 
 export function OperacoesProvider({
   children,
-  aoNavegar,
 }: {
   children: ReactNode;
-  aoNavegar: (repo: string, versao?: string) => void;
 }): JSX.Element {
   const cliente = useQueryClient();
   const [execucoes, setExecucoes] = useState(SEM_EXECUCOES);
@@ -76,8 +80,6 @@ export function OperacoesProvider({
   const [atualizacoes, setAtualizacoes] = useState<
     Readonly<Record<string, EstadoAtualizacao>>
   >({});
-  const navegarRef = useRef(aoNavegar);
-  navegarRef.current = aoNavegar;
   const despachar = useCallback((k: string, ev: Evento) => {
     setAtualizacoes((a) => ({ ...a, [k]: proximo(a[k] ?? INICIAL, ev) }));
   }, []);
@@ -122,8 +124,7 @@ export function OperacoesProvider({
           });
         if (fim.estado !== EstadoExecucao.FALHOU)
           void cliente.invalidateQueries({ queryKey: ["versoes", fim.repo] });
-        // A URL é a tela atual: o provider vive acima de quem lê a rota.
-        const tela = lerCaminho(window.location.pathname);
+        const tela = naTela();
         const efeito = concluir(execRef.current, fim, tela.repo, tela.versao);
         if (efeito?.tipo === TipoEfeito.ERRO)
           notificarErro(new ErroApi(efeito.tipoErro, efeito.mensagem, 0));
@@ -131,14 +132,14 @@ export function OperacoesProvider({
           setResultado(efeito.resultado);
         else if (efeito?.tipo === TipoEfeito.NAVEGAR) {
           notificarOk(`Versão ${efeito.versao} criada`);
-          navegarRef.current(efeito.repo, efeito.versao);
+          irParaVersao(efeito.repo, efeito.versao);
         } else if (efeito?.tipo === TipoEfeito.AVISAR) {
           const destino = efeito.destino;
           if (destino)
             notificarPendencia(
               chaveVersao(destino.repo, destino.versao),
               efeito.mensagem,
-              () => navegarRef.current(destino.repo, destino.versao),
+              () => irParaVersao(destino.repo, destino.versao),
             );
           else notificarOk(efeito.mensagem);
         }
@@ -170,13 +171,13 @@ export function OperacoesProvider({
               tipo: TipoEventoAtualizacao.RECONECTOU,
               execucao: x,
             });
-          const versaoNaTela = lerCaminho(window.location.pathname).versao;
+          const versaoNaTela = naTela().versao;
           for (const p of pendencias) {
             const aviso = avisoPendencia(p, versaoNaTela);
             if (aviso?.tipo === TipoEfeito.AVISAR && aviso.destino) {
               const { repo: r, versao: v } = aviso.destino;
               notificarPendencia(chaveVersao(r, v), aviso.mensagem, () =>
-                navegarRef.current(r, v),
+                irParaVersao(r, v),
               );
             }
           }
@@ -187,118 +188,120 @@ export function OperacoesProvider({
     [seguir, despachar],
   );
 
-  const disparar = async (
-    repo: string,
-    versao: string,
-    caminho: string,
-    corpo: unknown,
-    auditar = false,
-  ) => {
-    const k = chaveVersao(repo, versao);
-    try {
-      await api<Execucao>(Metodo.POST, caminho, corpo);
-    } catch (erro) {
-      // 409: o repo está travado. Se for uma execução do daemon (outra aba), passa a
-      // acompanhá-la; se for um processo de fora (CLI, TUI, inscrição), mostra a recusa.
-      const ocupadoAqui =
-        erro instanceof ErroApi &&
-        erro.tipo === TipoErro.OCUPADO &&
-        acompanhaOcupado(
-          await api<Execucao | null>(
-            Metodo.GET,
-            `${urlRepo(repo)}/execucao`,
-          ).catch(() => null),
-        );
-      if (!ocupadoAqui) {
-        notificarErro(erro);
-        despachar(k, {
-          tipo: TipoEventoAtualizacao.RECONECTOU,
-          execucao: null,
-        });
-        return;
+  const valor = useMemo((): Operacoes => {
+    const disparar = async (
+      repo: string,
+      versao: string,
+      caminho: string,
+      corpo: unknown,
+      auditar = false,
+    ) => {
+      const k = chaveVersao(repo, versao);
+      try {
+        await api<Execucao>(Metodo.POST, caminho, corpo);
+      } catch (erro) {
+        // 409: o repo está travado. Se for uma execução do daemon (outra aba), passa a
+        // acompanhá-la; se for um processo de fora (CLI, TUI, inscrição), mostra a recusa.
+        const ocupadoAqui =
+          erro instanceof ErroApi &&
+          erro.tipo === TipoErro.OCUPADO &&
+          acompanhaOcupado(
+            await api<Execucao | null>(
+              Metodo.GET,
+              `${urlRepo(repo)}/execucao`,
+            ).catch(() => null),
+          );
+        if (!ocupadoAqui) {
+          notificarErro(erro);
+          despachar(k, {
+            tipo: TipoEventoAtualizacao.RECONECTOU,
+            execucao: null,
+          });
+          return;
+        }
+        despachar(k, { tipo: TipoEventoAtualizacao.OCUPADO });
       }
-      despachar(k, { tipo: TipoEventoAtualizacao.OCUPADO });
-    }
-    await seguir(repo, versao, auditar);
-  };
+      await seguir(repo, versao, auditar);
+    };
 
-  const atualizacao = (repo: string, versao: string): EstadoAtualizacao =>
-    atualizacoes[chaveVersao(repo, versao)] ?? INICIAL;
-  const evento = (repo: string, versao: string, tipo: EventoSimples) =>
-    despachar(chaveVersao(repo, versao), { tipo });
-  const urlAtualizacao = (repo: string, versao: string): string =>
-    `${urlVersao(repo, versao)}/atualizacao`;
+    const atualizacao = (repo: string, versao: string): EstadoAtualizacao =>
+      atualizacoes[chaveVersao(repo, versao)] ?? INICIAL;
+    const evento = (repo: string, versao: string, tipo: EventoSimples) =>
+      despachar(chaveVersao(repo, versao), { tipo });
+    const urlAtualizacao = (repo: string, versao: string): string =>
+      `${urlVersao(repo, versao)}/atualizacao`;
 
-  const valor: Operacoes = {
-    execucoes,
-    atualizacao,
-    bloqueadas: (repo) => {
-      const prefixo = chaveVersao(repo, "");
-      return Object.entries(atualizacoes).flatMap(([k, a]) =>
-        pendente(a) && k.startsWith(prefixo) ? [k.slice(prefixo.length)] : [],
-      );
-    },
-    verificar: (repo, versao, auditar) =>
-      void disparar(
-        repo,
-        versao,
-        `${urlVersao(repo, versao)}/verificacao`,
-        { auditar },
-        auditar,
-      ),
-    previa: (repo, versao) => {
-      evento(repo, versao, TipoEventoAtualizacao.INICIOU);
-      void disparar(repo, versao, `${urlVersao(repo, versao)}/previa`, undefined);
-    },
-    aplicar: (repo, versao, continuar) => {
-      evento(
-        repo,
-        versao,
-        continuar
-          ? TipoEventoAtualizacao.CONTINUOU
-          : TipoEventoAtualizacao.CONFIRMOU,
-      );
-      const acao = urlAtualizacao(repo, versao);
-      void disparar(
-        repo,
-        versao,
-        continuar ? `${acao}/continuar` : acao,
-        continuar
-          ? {
-              allow_empty:
-                atualizacao(repo, versao).fase === FaseAtualizacao.VAZIA,
-            }
-          : undefined,
-      );
-    },
-    cancelarLote: (repo, versao) => {
-      evento(repo, versao, TipoEventoAtualizacao.CANCELOU);
-      // Cancelar não desfaz a prévia (ela regravou o snapshot): a lista atrás está velha.
-      void cliente.invalidateQueries({ queryKey: ["chamados", repo, versao] });
-    },
-    abortar: (repo, versao) => {
-      evento(repo, versao, TipoEventoAtualizacao.ABORTOU);
-      void disparar(
-        repo,
-        versao,
-        `${urlAtualizacao(repo, versao)}/abortar`,
-        undefined,
-      );
-    },
-    criar: (repo, numero) =>
-      void disparar(repo, numero, `${urlRepo(repo)}/versoes`, { numero }),
-    fecharResultadoAtualizacao: (repo, versao) =>
-      evento(repo, versao, TipoEventoAtualizacao.FECHOU),
-    resultado,
-    fecharResultado: () => {
-      if (resultado)
-        void cliente.invalidateQueries({
-          queryKey: ["chamados", resultado.repo, resultado.versao],
-        });
-      setResultado(null);
-    },
-    retomar,
-  };
+    return {
+      execucoes,
+      atualizacao,
+      bloqueadas: (repo) => {
+        const prefixo = prefixoRepo(repo);
+        return Object.entries(atualizacoes).flatMap(([k, a]) =>
+          pendente(a) && k.startsWith(prefixo) ? [k.slice(prefixo.length)] : [],
+        );
+      },
+      verificar: (repo, versao, auditar) =>
+        void disparar(
+          repo,
+          versao,
+          `${urlVersao(repo, versao)}/verificacao`,
+          { auditar },
+          auditar,
+        ),
+      previa: (repo, versao) => {
+        evento(repo, versao, TipoEventoAtualizacao.INICIOU);
+        void disparar(repo, versao, `${urlVersao(repo, versao)}/previa`, undefined);
+      },
+      aplicar: (repo, versao, continuar) => {
+        evento(
+          repo,
+          versao,
+          continuar
+            ? TipoEventoAtualizacao.CONTINUOU
+            : TipoEventoAtualizacao.CONFIRMOU,
+        );
+        const acao = urlAtualizacao(repo, versao);
+        void disparar(
+          repo,
+          versao,
+          continuar ? `${acao}/continuar` : acao,
+          continuar
+            ? {
+                allow_empty:
+                  atualizacao(repo, versao).fase === FaseAtualizacao.VAZIA,
+              }
+            : undefined,
+        );
+      },
+      cancelarLote: (repo, versao) => {
+        evento(repo, versao, TipoEventoAtualizacao.CANCELOU);
+        // Cancelar não desfaz a prévia (ela regravou o snapshot): a lista atrás está velha.
+        void cliente.invalidateQueries({ queryKey: ["chamados", repo, versao] });
+      },
+      abortar: (repo, versao) => {
+        evento(repo, versao, TipoEventoAtualizacao.ABORTOU);
+        void disparar(
+          repo,
+          versao,
+          `${urlAtualizacao(repo, versao)}/abortar`,
+          undefined,
+        );
+      },
+      criar: (repo, numero) =>
+        void disparar(repo, numero, `${urlRepo(repo)}/versoes`, { numero }),
+      fecharResultadoAtualizacao: (repo, versao) =>
+        evento(repo, versao, TipoEventoAtualizacao.FECHOU),
+      resultado,
+      fecharResultado: () => {
+        if (resultado)
+          void cliente.invalidateQueries({
+            queryKey: ["chamados", resultado.repo, resultado.versao],
+          });
+        setResultado(null);
+      },
+      retomar,
+    };
+  }, [cliente, despachar, seguir, retomar, execucoes, atualizacoes, resultado]);
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>;
 }
 

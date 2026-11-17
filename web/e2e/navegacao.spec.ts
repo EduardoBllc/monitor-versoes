@@ -6,14 +6,14 @@ import {
   acao,
   chamadoListado,
   erro,
-  opcaoRepo,
-  versaoEscolhida,
+  repoNaInicio,
+  tituloDaVersao,
 } from "./tela";
 
 test("abre repo e versão por URL direta", async ({ page, manifesto }) => {
   const versao = manifesto.versoes[PapelVersao.VERDE];
   await abrir(page, manifesto.repo, versao);
-  await expect(versaoEscolhida(page)).toHaveValue(versao);
+  await expect(tituloDaVersao(page)).toHaveText(versao);
   await expect(
     chamadoListado(page, manifesto.chamados[PapelVersao.VERDE]),
   ).toBeVisible();
@@ -21,8 +21,8 @@ test("abre repo e versão por URL direta", async ({ page, manifesto }) => {
 
 test("repo sem checkout fica indisponível", async ({ page, manifesto }) => {
   await abrir(page, manifesto.repo_sem_checkout);
-  await expect(acao(page, Acao.VERIFICAR)).toBeDisabled();
-  await expect(await opcaoRepo(page, manifesto.repo_sem_checkout)).toBeDisabled();
+  await expect(acao(page, Acao.NOVA_VERSAO)).toBeDisabled();
+  await expect(await repoNaInicio(page, manifesto.repo_sem_checkout)).toBeDisabled();
 });
 
 test("versão inexistente mostra erro", async ({ page, manifesto }) => {

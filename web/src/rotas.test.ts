@@ -1,23 +1,26 @@
 import { expect, it } from "vitest";
-import { caminhoDe, lerCaminho } from "./rotas";
+import { Pagina, caminhoDa, lerRota, type Rota } from "./rotas";
 
-it("ida e volta com repo e versão", () => {
-  expect(caminhoDe("meu-repo", "14.0.0")).toBe("/r/meu-repo/v/14.0.0");
-  expect(lerCaminho("/r/meu-repo/v/14.0.0")).toEqual({
-    repo: "meu-repo",
-    versao: "14.0.0",
-  });
+const REPO = "meu-repo";
+const VERSAO = "14.0.0";
+
+it.each<Rota>([
+  { pagina: Pagina.INICIO },
+  { pagina: Pagina.CONFIG },
+  { pagina: Pagina.REPO, repo: REPO },
+  { pagina: Pagina.VERSAO, repo: REPO, versao: VERSAO },
+])("ida e volta de $pagina", (rota) => {
+  const caminho = caminhoDa(rota);
+  expect(lerRota(caminho)).toEqual(rota);
+  expect(caminhoDa(lerRota(caminho))).toBe(caminho);
 });
 
-it("só repo, e raiz", () => {
-  expect(lerCaminho(caminhoDe("meu-repo"))).toEqual({ repo: "meu-repo" });
-  expect(caminhoDe()).toBe("/");
-  expect(lerCaminho("/")).toEqual({});
+it("codifica barra e espaço no nome", () => {
+  const rota: Rota = { pagina: Pagina.VERSAO, repo: "a b", versao: "1/2" };
+  expect(caminhoDa(rota)).toBe("/r/a%20b/v/1%2F2");
+  expect(lerRota(caminhoDa(rota))).toEqual(rota);
 });
 
-it("codifica caracteres especiais", () => {
-  expect(lerCaminho(caminhoDe("a b", "1/2"))).toEqual({
-    repo: "a b",
-    versao: "1/2",
-  });
+it("caminho desconhecido abre o início", () => {
+  expect(lerRota("/qualquer/coisa")).toEqual({ pagina: Pagina.INICIO });
 });

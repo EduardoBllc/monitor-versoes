@@ -5,10 +5,10 @@ import {
   abrirNovaVersao,
   criarEPublicar,
   criarVersaoSugerida,
-  opcaoVersao,
   proporNumeroDaVersao,
   recusaDeVersaoExistente,
   sugestaoDeVersao,
+  versaoNoRepo,
 } from "./tela";
 
 test("a sugestão oferecida inclui a versão nova", async ({ page, manifesto }) => {
@@ -31,7 +31,7 @@ test("criar a versão nova conclui e ela aparece na lista de versões", async ({
 }) => {
   await abrir(page, manifesto.repo, manifesto.versoes[PapelVersao.VERDE]);
   await criarVersaoSugerida(page, manifesto.versao_nova);
-  await expect(await opcaoVersao(page, manifesto.versao_nova)).toBeVisible();
+  await expect(await versaoNoRepo(page, manifesto.versao_nova)).toBeVisible();
   expect(git(manifesto, manifesto.clone, "branch", "--list", manifesto.versao_nova)).toContain(
     manifesto.versao_nova,
   );
