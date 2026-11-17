@@ -45,6 +45,8 @@ typecheck:
 
 # -rs lista o motivo de cada skip no log; -n auto divide a suíte entre os núcleos.
 test:
+	$(DEV) cProfile -s tottime -m pytest -q -p no:xdist -p no:cacheprovider tests/test_assistente.py::test_configurar_grava_so_as_duas_chaves "tests/test_assistente.py::test_reconfigurar_parte_do_valor_atual" 2>&1 | head -60
+	$(RUN) python -c "import cProfile,tempfile,pathlib; from motor.adapters.estado.engine import garantir_esquema; cProfile.run('garantir_esquema(\\'sqlite:///\\'+str(pathlib.Path(tempfile.mkdtemp())/\\'e.db\\'))', sort='tottime')" 2>&1 | head -40
 	$(DEV) pytest -rs -n auto --durations=60 --durations-min=0.5
 
 # --- Front (web/): o build vive versionado em motor/daemon/static ---
