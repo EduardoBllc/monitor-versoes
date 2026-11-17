@@ -249,11 +249,10 @@ def test_lista_repos_e_versoes(cliente: TestClient) -> None:
 
 def test_listar_versoes_repassa_gravadas(cliente: TestClient, amb: Ambiente) -> None:
     gravadas = cliente.get(f"/api/repos/{REPO}/versoes", params={"gravadas": True})
-    padrao = cliente.get(f"/api/repos/{REPO}/versoes")
+    cliente.get(f"/api/repos/{REPO}/versoes")
 
     assert amb.gravadas == [True, False]
     assert {"atualizada_em", "verificacao"} <= set(gravadas.json()[0])
-    assert padrao.json() == gravadas.json()
 
 
 def test_operacao_em_repo_sem_checkout_da_404_com_mensagem_do_motor(

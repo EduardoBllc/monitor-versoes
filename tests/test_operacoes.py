@@ -421,7 +421,7 @@ def test_listar_junta_atualizada_em_e_resumo():
     ]
 
 
-def test_listar_versoes_repo_fora_do_estado():
+def test_repo_fora_do_estado_lista_sem_resumo():
     estado = FakeEstado()
     opcoes = [VersionOption(ABERTA, False)]
 
