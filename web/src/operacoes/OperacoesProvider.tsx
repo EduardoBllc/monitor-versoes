@@ -37,6 +37,7 @@ import {
 } from "../execucoes";
 import { ir } from "../navegacao";
 import { Pagina, alvoDa, lerRota } from "../rotas";
+import { chaveChamados, invalidarFetch, invalidarGravadas } from "../versoes";
 import { chaveVersao, prefixoRepo } from "./chave";
 
 export interface Operacoes {
@@ -120,10 +121,12 @@ export function OperacoesProvider({
           fim.operacao !== Operacao.CRIAR
         )
           void cliente.invalidateQueries({
-            queryKey: ["chamados", fim.repo, fim.versao],
+            queryKey: chaveChamados(fim.repo, fim.versao),
           });
         if (fim.estado !== EstadoExecucao.FALHOU) {
-          void cliente.invalidateQueries({ queryKey: ["versoes", fim.repo] });
+          invalidarGravadas(cliente, fim.repo, fim.versao);
+          // Só a criação muda quais versões existem.
+          if (fim.operacao === Operacao.CRIAR) invalidarFetch(cliente, fim.repo);
           void cliente.invalidateQueries({ queryKey: consultaIndiceChamados.queryKey });
         }
         const tela = naTela();
@@ -278,7 +281,7 @@ export function OperacoesProvider({
       cancelarLote: (repo, versao) => {
         evento(repo, versao, TipoEventoAtualizacao.CANCELOU);
         // Cancelar não desfaz a prévia (ela regravou o snapshot): a lista atrás está velha.
-        void cliente.invalidateQueries({ queryKey: ["chamados", repo, versao] });
+        void cliente.invalidateQueries({ queryKey: chaveChamados(repo, versao) });
       },
       abortar: (repo, versao) => {
         evento(repo, versao, TipoEventoAtualizacao.ABORTOU);
@@ -297,7 +300,7 @@ export function OperacoesProvider({
       fecharResultado: () => {
         if (resultado)
           void cliente.invalidateQueries({
-            queryKey: ["chamados", resultado.repo, resultado.versao],
+            queryKey: chaveChamados(resultado.repo, resultado.versao),
           });
         setResultado(null);
       },

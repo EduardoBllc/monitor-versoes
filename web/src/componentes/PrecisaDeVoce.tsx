@@ -26,15 +26,17 @@ const TEXTO: Record<TipoPendencia, string> = {
   [TipoPendencia.VERMELHOS]: "vermelhos na última rodada",
 };
 
+// Pendências vivem na memória do daemon e mudam sem a web operar (outra aba, fim de execução).
+export const consultaPendencias = (repo: string) => ({
+  queryKey: [CHAVE_PENDENCIAS, repo],
+  queryFn: () =>
+    api<Execucao[]>(Metodo.GET, `/api/repos/${encodeURIComponent(repo)}/pendencias`),
+  refetchInterval: INTERVALO_EXECUCAO_MS,
+});
+
 export function PrecisaDeVoce({ repos }: { repos: string[] }): JSX.Element | null {
-  // Pendências vivem na memória do daemon e mudam sem a web operar (outra aba, fim de execução).
   const pendencias = useQueries({
-    queries: repos.map((repo) => ({
-      queryKey: [CHAVE_PENDENCIAS, repo],
-      queryFn: () =>
-        api<Execucao[]>(Metodo.GET, `/api/repos/${encodeURIComponent(repo)}/pendencias`),
-      refetchInterval: INTERVALO_EXECUCAO_MS,
-    })),
+    queries: repos.map(consultaPendencias),
     combine: (rs) => rs.flatMap((r) => r.data ?? []),
   });
   const inscricoes = useQuery(consultaInscricoes);

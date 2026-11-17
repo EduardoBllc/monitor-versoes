@@ -1,10 +1,11 @@
-import { Alert, Box, Flex, Group, Loader, Modal, Stack, Title } from "@mantine/core";
+import { Alert, Box, Flex, Group, Loader, Modal, Stack, Text, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect, useState, type JSX } from "react";
 import { Metodo, api, consultaRepos } from "../api/cliente";
 import { AtualizarStatus } from "../api/enums";
 import { FaseAtualizacao } from "../atualizacao";
 import { AcoesVersao } from "../componentes/AcoesVersao";
+import { TEXTO_INDISPONIVEL } from "../componentes/LinhaVersao";
 import type { EstadoConflitoWeb } from "../componentes/EditorConflito";
 import { ModalAbortar } from "../componentes/ModalAbortar";
 import { ModalConfirmarLote } from "../componentes/ModalConfirmarLote";
@@ -18,7 +19,7 @@ import { consultaInscricoes } from "../inscricoes";
 import { useGuardaDeSaida } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { FONTE_MONO } from "../tema";
-import { useVersoes } from "../versoes";
+import { chaveVerificacao, useVersoes } from "../versoes";
 import type { VerificacaoGravada } from "../api/tipos";
 import { Historico } from "./versao/Historico";
 import { InscricaoDaVersao } from "./versao/InscricaoDaVersao";
@@ -30,9 +31,8 @@ const EditorConflito = lazy(() => import("../componentes/EditorConflito"));
 const CONFLITO_ABRINDO: EstadoConflitoWeb = { pendente: true, sujo: false };
 const LARGURA_LATERAL = 280;
 
-// Sob ["versoes", repo]: o fim de qualquer execução do repo já invalida esse prefixo.
 const consultaVerificacao = (repo: string, versao: string) => ({
-  queryKey: ["versoes", repo, versao, "verificacao"],
+  queryKey: chaveVerificacao(repo, versao),
   queryFn: () =>
     api<VerificacaoGravada | null>(
       Metodo.GET,
@@ -54,7 +54,12 @@ export function PaginaVersao({
   const [resolvendo, setResolvendo] = useState(false);
   const [conflitoWeb, setConflitoWeb] = useState(CONFLITO_ABRINDO);
   const repos = useQuery(consultaRepos);
-  const { versoes, buscando, erro } = useVersoes(repo, true);
+  const caminho = repos.data?.find((r) => r.nome === repo)?.caminho;
+  // Repo fora da configuração (caminho undefined) consulta mesmo assim: a API responde o erro.
+  const { versoes, buscando, erro } = useVersoes(
+    repo,
+    repos.data !== undefined && caminho !== null,
+  );
   const verificacao = useQuery(consultaVerificacao(repo, versao));
   const inscricao = useQuery(consultaInscricoes).data?.find(
     (i) => i.repo === repo && i.versao === versao,
@@ -80,6 +85,15 @@ export function PaginaVersao({
   const inexistente =
     versoes !== undefined && !buscando && erro === null && listada === undefined;
 
+  if (caminho === null)
+    return (
+      <Stack gap="md">
+        <Title order={1} size="h3" ff={FONTE_MONO}>
+          {versao}
+        </Title>
+        <Text c="dimmed">{TEXTO_INDISPONIVEL}</Text>
+      </Stack>
+    );
   if (inexistente)
     return (
       <Stack gap="md">
@@ -101,7 +115,7 @@ export function PaginaVersao({
         <AcoesVersao
           fase={atualizacao.fase}
           liberada={listada?.liberada === true}
-          disponivel={repos.data?.find((r) => r.nome === repo)?.caminho != null}
+          disponivel={caminho != null}
           ocupado={ocupado}
           continuarBarrado={naTelaConflito && conflitoWeb.pendente}
           aoVerificar={(auditar) => operacoes.verificar(repo, versao, auditar)}

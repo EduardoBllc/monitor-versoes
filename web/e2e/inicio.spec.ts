@@ -6,6 +6,7 @@ import {
   atualizarLote,
   avisoBloqueio,
   bloqueioNaInicio,
+  bloqueioNaLinha,
   repoIndisponivelNaInicio,
   resolverPelaInicio,
   tituloDaVersao,
@@ -38,6 +39,9 @@ test("atualização bloqueada aparece em precisa de você e leva à versão", as
   await expect(avisoBloqueio(page)).toBeVisible();
   await voltarAoInicio(page);
   await expect(bloqueioNaInicio(page, versao)).toBeVisible();
+  // Recarregada direto na home, a linha sabe do bloqueio sem a aba tê-lo visto.
+  await abrirInicio(page);
+  await expect(bloqueioNaLinha(page, versao)).toBeVisible();
   await resolverPelaInicio(page, versao);
   await expect(tituloDaVersao(page)).toHaveText(versao);
 });

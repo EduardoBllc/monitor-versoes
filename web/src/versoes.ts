@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { Metodo, api } from "./api/cliente";
 import type { VersaoListada } from "./api/tipos";
 
@@ -10,9 +10,30 @@ export enum OrigemVersoes {
 // Sem git, é barata: acompanha as verificações das rodadas agendadas.
 const INTERVALO_GRAVADAS_MS = 15_000;
 
-// O prefixo ["versoes", repo] é o que o fim de uma operação invalida: cobre as duas origens.
-export const chaveVersoes = (repo: string, origem: OrigemVersoes) =>
+const chaveVersoes = (repo: string, origem: OrigemVersoes) =>
   ["versoes", repo, origem] as const;
+
+export const chaveVerificacao = (repo: string, versao: string) =>
+  ["verificacao", repo, versao] as const;
+
+export const chaveChamados = (repo: string, versao: string) =>
+  ["chamados", repo, versao] as const;
+
+/** Releitura do que uma execução gravou na versão; a lista com fetch fica de fora (git fetch). */
+export function invalidarGravadas(cliente: QueryClient, repo: string, versao: string): void {
+  void cliente.invalidateQueries({
+    queryKey: chaveVersoes(repo, OrigemVersoes.GRAVADAS),
+    exact: true,
+  });
+  void cliente.invalidateQueries({ queryKey: chaveVerificacao(repo, versao), exact: true });
+}
+
+export function invalidarFetch(cliente: QueryClient, repo: string): void {
+  void cliente.invalidateQueries({
+    queryKey: chaveVersoes(repo, OrigemVersoes.FETCH),
+    exact: true,
+  });
+}
 
 const SO_GRAVADAS = "?gravadas=true";
 

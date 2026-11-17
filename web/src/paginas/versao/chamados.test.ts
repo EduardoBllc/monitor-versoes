@@ -74,7 +74,7 @@ it("sem status todos os motivos são null", () => {
 
 it("filtro por estado e busca por hash, título e número", () => {
   const lista = verChamados(chamados, status);
-  const nomes = (estado: string | null, busca: string): string[] =>
+  const nomes = (estado: EstadoChamado | null, busca: string): string[] =>
     filtrarChamados(lista, estado, busca).map((c) => c.chamado);
   expect(nomes(EstadoChamado.PENDENTE, "")).toEqual(["41", "42"]);
   expect(nomes(null, "AAAA")).toEqual(["40"]);

@@ -1,3 +1,4 @@
+import type { EstadoChamado } from "../../api/enums";
 import type {
   ChamadoConsultado,
   CommitRef,
@@ -20,7 +21,7 @@ export interface CommitVisto {
 
 export interface ChamadoVisto {
   chamado: string;
-  estado: string;
+  estado: EstadoChamado;
   commits: CommitVisto[];
   semCommits: boolean;
 }
@@ -46,7 +47,8 @@ export function verChamados(
   const motivo = status ? motivos(status) : () => null;
   return chamados.map((c) => ({
     chamado: c.chamado,
-    estado: c.estado,
+    // O esquema tipa como texto; o motor só grava os valores do enum.
+    estado: c.estado as EstadoChamado,
     semCommits: c.commits.length === 0,
     commits: c.commits.map((x) => ({
       hash: x.hash_origem,
@@ -59,7 +61,7 @@ export function verChamados(
 
 export function filtrarChamados(
   lista: ChamadoVisto[],
-  estado: string | null,
+  estado: EstadoChamado | null,
   busca: string,
 ): ChamadoVisto[] {
   const termo = busca.trim().toLowerCase();

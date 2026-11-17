@@ -4,6 +4,7 @@ import {
   Acao,
   abrir,
   acao,
+  avisoIndisponivel,
   chamadoListado,
   erro,
   repoNaInicio,
@@ -23,6 +24,8 @@ test("repo sem checkout fica indisponível", async ({ page, manifesto }) => {
   await abrir(page, manifesto.repo_sem_checkout);
   await expect(acao(page, Acao.NOVA_VERSAO)).toBeDisabled();
   await expect(await repoNaInicio(page, manifesto.repo_sem_checkout)).toBeDisabled();
+  await abrir(page, manifesto.repo_sem_checkout, manifesto.versoes[PapelVersao.VERDE]);
+  await expect(avisoIndisponivel(page)).toBeVisible();
 });
 
 test("versão inexistente mostra erro", async ({ page, manifesto }) => {

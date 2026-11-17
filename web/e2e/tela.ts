@@ -46,7 +46,7 @@ enum Botao {
   ABORTAR = "Abortar",
   CRIAR = "Criar e publicar",
   GRAVAR = "Gravar",
-  INSCREVER = "Inscrever selecionada",
+  INSCREVER = "Inscrever",
   REMOVER = "Remover",
   TESTAR = "Testar",
   SALVAR = "Salvar",
@@ -79,6 +79,7 @@ enum Aviso {
 
 enum Regiao {
   INSCRICAO = "Inscrição",
+  PRECISA_DE_VOCE = "Precisa de você",
 }
 
 /** Peças do texto das linhas: "#chamado · assunto", "versão · repo". */
@@ -108,6 +109,11 @@ const dialogo = (page: Page, titulo: string): Locator =>
 
 const trilha = (page: Page): Locator =>
   page.getByRole("navigation", { name: Trilha.NOME, exact: true });
+
+/** Volta ao Início pela trilha, de qualquer página. */
+export async function voltarAoInicio(page: Page): Promise<void> {
+  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
+}
 
 /** Da página da versão, sobe ao repo pelo passo dele na trilha. */
 async function irAoRepoPelaTrilha(page: Page, repo: string): Promise<void> {
@@ -144,7 +150,7 @@ export function chamadoListado(page: Page, chamado: string): Locator {
 
 /** Volta ao início pela trilha e devolve o repo listado (link, ou item indisponível). */
 export async function repoNaInicio(page: Page, nome: string): Promise<Locator> {
-  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
+  await voltarAoInicio(page);
   return page.getByRole("link", { name: nome, exact: true });
 }
 
@@ -160,7 +166,7 @@ export async function versaoNoRepo(page: Page, repo: string, numero: string): Pr
  */
 export async function navegarComEdicaoPendente(page: Page, aceitar: boolean): Promise<void> {
   page.once("dialog", (d) => void (aceitar ? d.accept() : d.dismiss()));
-  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
+  await voltarAoInicio(page);
 }
 
 export function erro(page: Page): Locator {
@@ -399,32 +405,25 @@ export async function esperarAvisoDaRodada(
 
 // Configuração
 
-const paginaConfig = (page: Page): Locator => page.getByRole("main");
-
-/** Sai da configuração pela trilha, de volta ao Início. */
-export async function sairDaConfiguracao(page: Page): Promise<void> {
-  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
-}
-
 /** Abre a configuração na seção do repo e devolve o campo do piso. */
 export async function pisoNaConfiguracao(page: Page, repo: string): Promise<Locator> {
   await page.getByRole("link", { name: Acao.CONFIGURACAO, exact: true }).click();
-  await paginaConfig(page).getByRole("navigation").getByRole("button", { name: repo }).click();
-  return paginaConfig(page).getByLabel(Campo.PISO);
+  await pagina(page).getByRole("navigation").getByRole("button", { name: repo }).click();
+  return pagina(page).getByLabel(Campo.PISO);
 }
 
 /** Muda o piso do repo e pede o teste da seção, sem salvar. */
 export async function editarPisoETestar(page: Page, repo: string, piso: string): Promise<void> {
   await (await pisoNaConfiguracao(page, repo)).fill(piso);
-  await botao(paginaConfig(page), Botao.TESTAR).click();
+  await botao(pagina(page), Botao.TESTAR).click();
 }
 
 export function resultadoDoTeste(page: Page, nome: string): Locator {
-  return paginaConfig(page).getByText(`${Aviso.PREFIXO_TESTE_OK} ${nome}`, { exact: true });
+  return pagina(page).getByText(`${Aviso.PREFIXO_TESTE_OK} ${nome}`, { exact: true });
 }
 
 export async function salvarConfiguracao(page: Page): Promise<void> {
-  await botao(paginaConfig(page), Botao.SALVAR).click();
+  await botao(pagina(page), Botao.SALVAR).click();
 }
 
 export function avisoConfiguracaoSalva(page: Page): Locator {
@@ -433,15 +432,12 @@ export function avisoConfiguracaoSalva(page: Page): Locator {
 
 // Início e página do repo
 
-enum Regiao {
-  PRECISA_DE_VOCE = "Precisa de você",
-}
-
 enum TextoLinha {
   INDISPONIVEL = "indisponível",
   VERIFICADA = "verificada há",
   ATUALIZADA = "atualizada há",
   RESOLVER = "Resolver",
+  BLOQUEADA = "bloqueada",
 }
 
 /** Na home, cada repo é uma região com o nome dele. */
@@ -462,10 +458,6 @@ const pendenciaNaInicio = (page: Page, versao: string): Locator =>
 
 export async function abrirInicio(page: Page): Promise<void> {
   await page.goto("/");
-}
-
-export async function voltarAoInicio(page: Page): Promise<void> {
-  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
 }
 
 export async function subirAoRepo(page: Page, repo: string): Promise<void> {
@@ -493,6 +485,15 @@ export async function resolverPelaInicio(page: Page, versao: string): Promise<vo
 
 export function verificacaoNaLinha(page: Page, numero: string): Locator {
   return linhaDaVersao(page, numero).getByText(trecho(TextoLinha.VERIFICADA));
+}
+
+export function bloqueioNaLinha(page: Page, numero: string): Locator {
+  return linhaDaVersao(page, numero).getByText(TextoLinha.BLOQUEADA, { exact: true });
+}
+
+/** O aviso de repo sem checkout no conteúdo da página aberta. */
+export function avisoIndisponivel(page: Page): Locator {
+  return pagina(page).getByText(trecho(TextoLinha.INDISPONIVEL));
 }
 
 export function atualizacaoNaLinha(page: Page, numero: string): Locator {

@@ -49,7 +49,7 @@ export function InscricaoDaVersao({
             disabled={lista.isLoading || gravar.isPending}
             onClick={() => gravar.mutate(Metodo.POST)}
           >
-            Inscrever selecionada
+            Inscrever
           </Button>
         )}
       </Stack>
