@@ -272,14 +272,14 @@ def atualizar_continue(
     docs/decisoes/013-conflito-e-checkpoint.md).
 
     Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
-    foram aplicados. Nao precisa reconstruir nada a mao: o `atualizar` abaixo
+    foram aplicados. Nao precisa reconstruir nada a mao: o `_atualizar` abaixo
     verifica de novo, porque o pick resolvido mudou o tip da branch e o carimbo
     deixou de valer, e a verificacao reprojeta o estado a partir do git de verdade.
 
     A recusa por tag e reavaliada aqui, antes do `continue_cherry_pick`: se a
     versao foi liberada enquanto o conflito estava aberto, deixar o pick entrar
-    poria um commit na branch de uma versao congelada — a recusa do `atualizar`
-    la embaixo chegaria tarde.
+    poria um commit na branch de uma versao congelada — o `_atualizar` abaixo
+    nao repete a recusa, entao ela so acontece aqui.
 
     Resolucao que nao deixou alteracao para com `AtualizarStatus.VAZIO` em vez de
     decidir sozinha, e `allow_empty=True` (o operador confirmando) fecha o pick
