@@ -45,4 +45,6 @@ export default defineConfig({
   },
   server: { proxy: { "/api": DAEMON } },
   build: { outDir: "../motor/daemon/static", emptyOutDir: true },
+  // As specs do Playwright (e2e/) não são do vitest.
+  test: { include: ["src/**/*.test.{ts,tsx}"] },
 });

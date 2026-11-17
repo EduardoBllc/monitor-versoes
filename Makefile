@@ -7,7 +7,7 @@ unexport VIRTUAL_ENV
 RUN := uv run --extra dev --extra anthropic
 DEV := $(RUN) python -m
 
-.PHONY: install setup migracao check fmt fmt-check lint typecheck test web-check web-dist
+.PHONY: install setup migracao check fmt fmt-check lint typecheck test web-check web-dist web-e2e
 
 # --- Usuário ---
 
@@ -27,7 +27,7 @@ migracao:
 	uv run python -c "from motor.migracoes import criar_revisao; import sys; criar_revisao(sys.argv[1])" "$(m)"
 
 # Mesma sequência das etapas do CI (.github/workflows/ci.yml chama estes alvos).
-check: fmt-check lint typecheck test web-check web-dist
+check: fmt-check lint typecheck test web-check web-dist web-e2e
 
 fmt:
 	$(DEV) ruff format .
@@ -66,3 +66,7 @@ web-dist:
 	diff -u web/openapi.json $(WEB_TMP)/openapi.json
 	diff -u web/src/api/esquema.ts $(WEB_TMP)/esquema.ts
 	diff -r motor/daemon/static $(WEB_TMP)/static
+
+# Jornadas no navegador contra o daemon real, servindo o build versionado.
+web-e2e:
+	cd web && npm ci && npm run e2e

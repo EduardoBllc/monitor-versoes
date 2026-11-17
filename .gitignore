@@ -67,6 +67,8 @@ build/
 
 # Front
 web/node_modules/
+web/test-results/
+web/playwright-report/
 
 # Restos de resolução de conflito
 *.orig

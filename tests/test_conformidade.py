@@ -56,6 +56,7 @@ from motor.ports import (
     TaskSource,
 )
 from motor.services.tarefas_adiantadas import TarefasAdiantadas
+from tests.e2e.fonte import TarefasDoArquivo
 from tests.fontes_falsas import FonteComCredencial, FonteFixa, FonteSemToken
 from tests.versionamento import Escalonado
 
@@ -72,6 +73,7 @@ _TASKS: list[type[TaskSource]] = [
     FonteComCredencial,
     FonteSemToken,
     TarefasAdiantadas,
+    TarefasDoArquivo,
 ]
 _COMMITS: list[type[CommitSource]] = [
     PrCommitSource,
@@ -101,7 +103,7 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
         len(_ATRIBUICOES),
         len(_NOTIFICADORES),
         len(_SUGESTAO),
-    ] == [2, 2, 7, 4, 3, 2, 2, 2, 2]
+    ] == [2, 2, 8, 4, 3, 2, 2, 2, 2]
 
 
 def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:
