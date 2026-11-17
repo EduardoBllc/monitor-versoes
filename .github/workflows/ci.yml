@@ -56,6 +56,11 @@ jobs:
       # O runner Windows não tem `make`; o comando continua só no Makefile.
       - run: choco install make --no-progress
         if: runner.os == 'Windows'
+      # O %TEMP% padrão fica no C:, onde o SQLite migra ~10x mais devagar que no D:
+      # do `runner.temp`; todo `tmp_path` da suíte mora ali.
+      - run: echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV" && echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+        if: runner.os == 'Windows'
+        shell: bash
       - run: uv sync --all-extras --locked --python 3.14
       # O Chromium baixado depende só da versão do Playwright travada no lock.
       - id: playwright
