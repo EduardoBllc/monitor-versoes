@@ -16,6 +16,7 @@ import { Link, ir, useRota } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { Pagina, alvoDa, caminhoDa } from "../rotas";
 import { FONTE_MONO } from "../tema";
+import { BotaoPaleta, Paleta } from "./Paleta";
 import { Trilha } from "./Trilha";
 
 const ALTURA_CABECALHO = 44;
@@ -74,6 +75,7 @@ export function Casca({ children }: { children: ReactNode }): JSX.Element {
           <Trilha />
           {repo !== undefined && <ProgressoDoRepo repo={repo} />}
           <Group gap="xs" ml="auto" wrap="nowrap">
+            <BotaoPaleta />
             <AvisoVersao novidades={instalacao.data?.novidades ?? []} />
             <Button
               variant="default"
@@ -90,6 +92,7 @@ export function Casca({ children }: { children: ReactNode }): JSX.Element {
           </Group>
         </Group>
       </AppShell.Header>
+      <Paleta />
       <AppShell.Main>{children}</AppShell.Main>
       <ModalResultado
         resultado={operacoes.resultado}

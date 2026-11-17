@@ -508,3 +508,14 @@ export function commitDoChamado(page: Page, hash: string, motivo: MotivoCommit):
     .filter({ hasText: hash.slice(0, TAMANHO_HASH) })
     .filter({ hasText: trecho(motivo) });
 }
+
+// Paleta ⌘K
+
+/** Abre a paleta pelo atalho, digita a busca e escolhe o primeiro resultado. */
+export async function saltarPelaPaleta(page: Page, busca: string): Promise<void> {
+  await page.keyboard.press("Control+K");
+  await page.getByRole("textbox").fill(busca);
+  // O índice chega por rede: espera o resultado antes de escolher.
+  await page.getByRole("option").first().waitFor();
+  await page.keyboard.press("Enter");
+}
