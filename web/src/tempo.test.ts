@@ -10,3 +10,7 @@ it("há conta na maior unidade que cabe", () => {
     `há ${MINUTOS} minutos`,
   );
 });
+
+it("menos de um segundo é há instantes", () => {
+  expect(ha(new Date(AGORA).toISOString(), AGORA)).toBe("há instantes");
+});

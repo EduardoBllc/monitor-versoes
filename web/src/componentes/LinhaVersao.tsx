@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import type { VersaoListada } from "../api/tipos";
 import { Link } from "../navegacao";
 import { Pagina } from "../rotas";
+import { plural } from "../plural";
 import { FONTE_MONO } from "../tema";
 import { INTERVALO_RELOGIO_MS, ha, useAgora } from "../tempo";
 import { BarraSegmentada } from "./BarraSegmentada";
@@ -10,6 +11,8 @@ import { BarraSegmentada } from "./BarraSegmentada";
 const TAMANHO_PONTO = 8;
 const LARGURA_NUMERO = 90;
 export const TEXTO_INDISPONIVEL = "indisponível — checkout local não encontrado";
+const SEPARADOR = " · ";
+export const TEXTO_NENHUMA_GRAVADA = "nenhuma versão gravada";
 
 enum EstadoVersao {
   VERDE = "verde",
@@ -62,10 +65,15 @@ export function LinhaVersao({
         >
           {v.numero}
         </Link>
-        <Text size="sm" c="dimmed" flex={1}>
+        <Text size="sm" c="dimmed" flex={1} truncate>
           {r === null
             ? estado
-            : `${estado} · ${r.presentes} presentes · ${r.faltantes} faltantes · ${r.conflitantes} conflitantes`}
+            : [
+                estado,
+                plural(r.presentes, "presente", "presentes"),
+                plural(r.faltantes, "faltante", "faltantes"),
+                plural(r.conflitantes, "conflitante", "conflitantes"),
+              ].join(SEPARADOR)}
         </Text>
         {bloqueada && (
           <Badge variant="light" color="red">

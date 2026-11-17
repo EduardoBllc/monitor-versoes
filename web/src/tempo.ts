@@ -11,12 +11,15 @@ const UNIDADES: readonly [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 1_000],
 ];
 const MENOR = UNIDADES[UNIDADES.length - 1]!;
+// O Intl diria "há 0 segundo".
+const HA_INSTANTES = "há instantes";
 
 /** "há 3 minutos": quanto tempo passou desde o instante ISO. */
 export function ha(iso: string, agora = Date.now()): string {
   // Relógio do servidor adiantado não vira "daqui a".
   const passado = Math.max(0, agora - Date.parse(iso));
   const [unidade, ms] = UNIDADES.find(([, ms]) => passado >= ms) ?? MENOR;
+  if (passado < ms) return HA_INSTANTES;
   return relativo.format(-Math.floor(passado / ms), unidade);
 }
 

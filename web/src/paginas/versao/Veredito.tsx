@@ -1,6 +1,7 @@
 import { Alert, Group, Skeleton, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { VerificacaoGravada } from "../../api/tipos";
+import { plural } from "../../plural";
 import { INTERVALO_RELOGIO_MS, ha, useAgora } from "../../tempo";
 
 const ALTURA_CARREGANDO = 24;
@@ -40,10 +41,11 @@ export function Veredito({
           {s.verde ? "VERDE" : "Pendências encontradas"}
         </Text>
         <Text c="dimmed" size="sm">
-          {n(s.faltantes)} faltantes · {n(s.conflitantes)} conflitos ·{" "}
-          {n(s.suspeitos_conteudo)} suspeitos · {n(s.tasks_sem_commits)} sem
-          commits · escopo +{n(s.tasks_novas)} −{n(s.tasks_removidas)} ·
-          verificada {ha(gravada.verificado_em, agora)}
+          {plural(n(s.faltantes), "faltante", "faltantes")} ·{" "}
+          {plural(n(s.conflitantes), "conflito", "conflitos")} ·{" "}
+          {plural(n(s.suspeitos_conteudo), "suspeito", "suspeitos")} ·{" "}
+          {n(s.tasks_sem_commits)} sem commits · escopo +{n(s.tasks_novas)} −
+          {n(s.tasks_removidas)} · verificada {ha(gravada.verificado_em, agora)}
         </Text>
       </Group>
     </>

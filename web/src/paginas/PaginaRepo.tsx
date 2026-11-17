@@ -2,11 +2,16 @@ import { Accordion, Alert, Button, Group, Loader, Stack, Text, Title } from "@ma
 import { useQuery } from "@tanstack/react-query";
 import { useState, type JSX } from "react";
 import { consultaRepos } from "../api/cliente";
-import { ListaVersoes, TEXTO_INDISPONIVEL } from "../componentes/LinhaVersao";
+import {
+  ListaVersoes,
+  TEXTO_INDISPONIVEL,
+  TEXTO_NENHUMA_GRAVADA,
+} from "../componentes/LinhaVersao";
 import { ListaInscricoes } from "../componentes/ListaInscricoes";
 import { ModalCriar } from "../componentes/ModalCriar";
 import { estaRodando } from "../execucoes";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
+import { plural } from "../plural";
 import { emAberto, useVersoes } from "../versoes";
 
 const LARGURA_MAXIMA = 900;
@@ -35,8 +40,6 @@ export function PaginaRepo({ repo }: { repo: string }): JSX.Element {
           {buscando && <Loader size="xs" />}
         </Group>
         <Button
-          variant="light"
-          color="orange"
           disabled={ocupado || caminho == null}
           onClick={() => setCriando(true)}
         >
@@ -48,13 +51,13 @@ export function PaginaRepo({ repo }: { repo: string }): JSX.Element {
       )}
       {erro && <Alert color="red">{erro.message}</Alert>}
       {versoes?.length === 0 && caminho !== null && (
-        <Text c="dimmed">nenhuma versão gravada</Text>
+        <Text c="dimmed">{TEXTO_NENHUMA_GRAVADA}</Text>
       )}
       <ListaVersoes repo={repo} versoes={abertas} bloqueadas={bloqueadas} />
       {liberadas.length > 0 && (
         <Accordion variant="contained">
           <Accordion.Item value={ITEM_LIBERADAS}>
-            <Accordion.Control>{liberadas.length} versões liberadas</Accordion.Control>
+            <Accordion.Control>{plural(liberadas.length, "versão liberada", "versões liberadas")}</Accordion.Control>
             <Accordion.Panel>
               <ListaVersoes repo={repo} versoes={liberadas} bloqueadas={bloqueadas} />
             </Accordion.Panel>

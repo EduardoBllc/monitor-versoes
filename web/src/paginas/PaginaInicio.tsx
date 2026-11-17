@@ -1,30 +1,39 @@
-import { Alert, Code, Grid, Group, Loader, Paper, Stack, Text } from "@mantine/core";
+import { Alert, Code, Flex, Group, Loader, Paper, Stack, Text } from "@mantine/core";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { JSX } from "react";
 import { Metodo, api, consultaRepos } from "../api/cliente";
 import { EstadoExecucao } from "../api/enums";
 import type { Execucao } from "../api/eventos";
 import type { RepoOption } from "../api/tipos";
-import { ListaVersoes, TEXTO_INDISPONIVEL } from "../componentes/LinhaVersao";
+import {
+  ListaVersoes,
+  TEXTO_INDISPONIVEL,
+  TEXTO_NENHUMA_GRAVADA,
+} from "../componentes/LinhaVersao";
 import { ListaInscricoes } from "../componentes/ListaInscricoes";
-import { INTERVALO_EXECUCAO_MS, PrecisaDeVoce } from "../componentes/PrecisaDeVoce";
-import { useInstalacao } from "../instalacao";
+import {
+  INTERVALO_EXECUCAO_MS,
+  PrecisaDeVoce,
+  consultaPendencias,
+} from "../componentes/PrecisaDeVoce";
 import { Link } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { Pagina } from "../rotas";
 import { FONTE_MONO } from "../tema";
 import { emAberto, useVersoes } from "../versoes";
 
-const LARGURA_MAXIMA = 1100;
+const LARGURA_LATERAL = 290;
 const CHAVE_EXECUCAO = "execucao";
-const COLUNAS = 12;
-const COLUNAS_PRINCIPAL = 8;
-const COLUNAS_LATERAL = 4;
 
 function RepoNaInicio({ repo }: { repo: RepoOption }): JSX.Element {
   const disponivel = repo.caminho !== null;
   const { versoes, buscando, erro } = useVersoes(repo.nome, disponivel);
-  const bloqueadas = useOperacoes().bloqueadas(repo.nome);
+  // As do daemon cobrem a home recarregada; as do provider, o que esta aba acabou de fazer.
+  const doDaemon = useQuery({ ...consultaPendencias(repo.nome), enabled: disponivel }).data;
+  const bloqueadas = [
+    ...useOperacoes().bloqueadas(repo.nome),
+    ...(doDaemon ?? []).map((p) => p.versao),
+  ];
   const abertas = versoes === undefined ? undefined : emAberto(versoes);
   return (
     <Paper component="section" aria-label={repo.nome}>
@@ -42,7 +51,7 @@ function RepoNaInicio({ repo }: { repo: RepoOption }): JSX.Element {
           {!disponivel
             ? TEXTO_INDISPONIVEL
             : versoes?.length === 0
-              ? "nenhuma versão gravada"
+              ? TEXTO_NENHUMA_GRAVADA
               : abertas !== undefined && `${abertas.length} em aberto`}
         </Text>
         {buscando && <Loader size="xs" />}
@@ -91,20 +100,6 @@ function EmCurso({ repos }: { repos: string[] }): JSX.Element | null {
   );
 }
 
-function Novidades(): JSX.Element | null {
-  const novidades = useInstalacao().data?.novidades ?? [];
-  if (novidades.length === 0) return null;
-  return (
-    <Paper px="md" py="sm">
-      {novidades.map((n) => (
-        <Text key={n.pacote} size="sm" c="orange">
-          {n.texto} <Code>{n.comando}</Code>
-        </Text>
-      ))}
-    </Paper>
-  );
-}
-
 export function PaginaInicio(): JSX.Element {
   const repos = useQuery(consultaRepos);
   if (repos.isLoading) return <Loader />;
@@ -120,24 +115,19 @@ export function PaginaInicio(): JSX.Element {
   const todos = repos.data ?? [];
   const disponiveis = todos.filter((r) => r.caminho !== null).map((r) => r.nome);
   return (
-    <Stack gap="md" maw={LARGURA_MAXIMA}>
+    <Stack gap="md">
       <PrecisaDeVoce repos={disponiveis} />
-      <Grid columns={COLUNAS}>
-        <Grid.Col span={{ base: COLUNAS, md: COLUNAS_PRINCIPAL }}>
-          <Stack gap="md">
-            {todos.map((r) => (
-              <RepoNaInicio key={r.nome} repo={r} />
-            ))}
-          </Stack>
-        </Grid.Col>
-        <Grid.Col span={{ base: COLUNAS, md: COLUNAS_LATERAL }}>
-          <Stack gap="md">
-            <EmCurso repos={disponiveis} />
-            <ListaInscricoes />
-            <Novidades />
-          </Stack>
-        </Grid.Col>
-      </Grid>
+      <Flex align="flex-start" gap="md" direction={{ base: "column", md: "row" }}>
+        <Stack gap="md" w={{ base: "100%", md: "auto" }} style={{ flex: 1, minWidth: 0 }}>
+          {todos.map((r) => (
+            <RepoNaInicio key={r.nome} repo={r} />
+          ))}
+        </Stack>
+        <Stack gap="md" w={{ base: "100%", md: LARGURA_LATERAL }} style={{ flexShrink: 0 }}>
+          <EmCurso repos={disponiveis} />
+          <ListaInscricoes />
+        </Stack>
+      </Flex>
     </Stack>
   );
 }

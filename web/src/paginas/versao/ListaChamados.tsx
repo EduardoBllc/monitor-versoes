@@ -16,7 +16,9 @@ import { useState, type JSX } from "react";
 import { Metodo, api } from "../../api/cliente";
 import { EstadoChamado } from "../../api/enums";
 import type { ChamadoConsultado, VersionStatus } from "../../api/tipos";
+import { plural } from "../../plural";
 import { FONTE_MONO, TAMANHO_HASH } from "../../tema";
+import { chaveChamados } from "../../versoes";
 import {
   MotivoCommit,
   filtrarChamados,
@@ -28,11 +30,8 @@ enum Filtro {
   TODOS = "todos",
 }
 
-enum Rotulo {
-  APLICADO = "aplicado",
-  SEM_COMMITS = "sem commits",
-  PENDENTE = "pendente",
-}
+const SEM_COMMITS = "sem commits";
+const LARGURA_HASH = 90;
 
 const COR_MOTIVO: Record<MotivoCommit, string> = {
   [MotivoCommit.PRESENTE]: "green",
@@ -42,11 +41,10 @@ const COR_MOTIVO: Record<MotivoCommit, string> = {
 };
 
 // O estado gravado só distingue aplicado de pendente; lista vazia é "sem commits", como na TUI.
-function rotulo(c: ChamadoVisto): { texto: Rotulo; cor: string } {
-  if (c.estado === EstadoChamado.APLICADO)
-    return { texto: Rotulo.APLICADO, cor: "green" };
-  if (c.semCommits) return { texto: Rotulo.SEM_COMMITS, cor: "red" };
-  return { texto: Rotulo.PENDENTE, cor: "yellow" };
+function rotulo(c: ChamadoVisto): { texto: string; cor: string } {
+  if (c.estado === EstadoChamado.APLICADO) return { texto: c.estado, cor: "green" };
+  if (c.semCommits) return { texto: SEM_COMMITS, cor: "red" };
+  return { texto: c.estado, cor: "yellow" };
 }
 
 function Linha({ chamado }: { chamado: ChamadoVisto }): JSX.Element {
@@ -66,9 +64,7 @@ function Linha({ chamado }: { chamado: ChamadoVisto }): JSX.Element {
             {aberto ? "▾" : "▸"}
           </Text>
           <Text fw={700}>#{chamado.chamado}</Text>
-          <Text c="dimmed">
-            · {q} commit{q === 1 ? "" : "s"}
-          </Text>
+          <Text c="dimmed">· {plural(q, "commit", "commits")}</Text>
           <Badge color={cor} variant="light">
             {texto}
           </Badge>
@@ -80,29 +76,28 @@ function Linha({ chamado }: { chamado: ChamadoVisto }): JSX.Element {
             Nenhum commit registrado.
           </Text>
         ) : (
-          <Table withRowBorders={false} ml="lg">
+          <Table withRowBorders={false} pl="lg">
             <Table.Tbody>
               {/* Mais novo no topo: o consultar entrega o ancestral primeiro. */}
               {[...chamado.commits].reverse().map((c) => (
                 <Table.Tr key={c.hash}>
-                  <Table.Td w={90}>
+                  <Table.Td w={LARGURA_HASH}>
                     <Code ff={FONTE_MONO}>{c.hash.slice(0, TAMANHO_HASH)}</Code>
                   </Table.Td>
-                  <Table.Td>{c.titulo || "mensagem indisponível"}</Table.Td>
-                  <Table.Td>
-                    <Group gap="xs" wrap="nowrap">
-                      {c.motivo && (
-                        <Badge color={COR_MOTIVO[c.motivo]} variant="light">
-                          {c.motivo}
-                        </Badge>
-                      )}
-                      {c.dependeDe.length > 0 && (
-                        <Text c="dimmed" size="sm">
-                          depende de{" "}
-                          {c.dependeDe.map((x) => `#${x}`).join(", ")}
-                        </Text>
-                      )}
-                    </Group>
+                  {/* O título leva a sobra: o motivo fecha a linha à direita. */}
+                  <Table.Td w="100%">{c.titulo || "mensagem indisponível"}</Table.Td>
+                  <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
+                    {c.motivo && (
+                      // O rótulo do Badge encolhe a zero numa célula de largura mínima.
+                      <Badge color={COR_MOTIVO[c.motivo]} variant="light" miw="max-content">
+                        {c.motivo}
+                      </Badge>
+                    )}
+                    {c.dependeDe.length > 0 && (
+                      <Text span c="dimmed" size="sm" ml="xs">
+                        depende de {c.dependeDe.map((x) => `#${x}`).join(", ")}
+                      </Text>
+                    )}
                   </Table.Td>
                 </Table.Tr>
               ))}
@@ -125,7 +120,7 @@ export function ListaChamados({
   const [estado, setEstado] = useState<Filtro | EstadoChamado>(Filtro.TODOS);
   const [busca, setBusca] = useState("");
   const { data, error, isLoading } = useQuery({
-    queryKey: ["chamados", repo, versao],
+    queryKey: chaveChamados(repo, versao),
     queryFn: () =>
       api<ChamadoConsultado[]>(
         Metodo.GET,

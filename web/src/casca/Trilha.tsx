@@ -34,8 +34,9 @@ function passos(rota: Rota): Passo[] {
 export function Trilha(): JSX.Element {
   const lista = passos(useRota());
   return (
-    <nav aria-label={NOME_DA_TRILHA}>
-      <Breadcrumbs separatorMargin="xs">
+    // No celular a trilha rola por dentro em vez de quebrar linha ou empurrar a página.
+    <nav aria-label={NOME_DA_TRILHA} style={{ minWidth: 0, overflowX: "auto" }}>
+      <Breadcrumbs separatorMargin="xs" style={{ flexWrap: "nowrap", whiteSpace: "nowrap" }}>
         {lista.map((p, i) => {
           const ff = p.mono ? FONTE_MONO : undefined;
           return i === lista.length - 1 ? (
