@@ -29,7 +29,15 @@ from motor.agendador import (
     AcaoSchtasks,
     Sistema,
 )
-from motor.assistente import EMBUTIDOS, SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
+from motor.assistente import (
+    EMBUTIDOS,
+    SUFIXOS_SQLITE,
+    Embutido,
+    Marca,
+    OrigemOutro,
+    Pergunta,
+    Situacao,
+)
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
     VAR_XDG_CACHE_HOME,
@@ -69,6 +77,12 @@ FONTE_NOVA = "minha"
 OUTRA_FONTE = "outra"
 HOST_NOVO = "host"
 BITBUCKET = "bitbucket"
+ROTULO_BITBUCKET = next(
+    e.rotulo for e in EMBUTIDOS[GrupoPlugin.PRS] if e.nome == BITBUCKET
+)
+ROTULO_HOST_TAREFAS = "Host Tarefas"
+ROTULO_HOST_PR = "Host PR"
+PASTA_HOST = f"{PASTA_PLUGINS}{HOST_NOVO}"
 NOMES_TAREFAS = [e.nome for e in EMBUTIDOS[GrupoPlugin.TAREFAS]]
 
 LIGAR = [
@@ -245,6 +259,68 @@ def test_embutido_instalado_sem_a_fonte_avisa_e_volta(cen, capsys):
     assert _rodar(_subir_ate(JIRA), ENTER, ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert f"não registrou a fonte {JIRA}" in capsys.readouterr().out
     assert cen.config.read_text() == cen.original
+
+
+def test_embutido_de_pr_nao_instalado_instala_pelo_repo_do_motor(cen):
+    cen.pontos[GrupoPlugin.PRS] = {}
+    cen.pacote = {GrupoPlugin.PRS: {BITBUCKET: HOST}}
+    assert _rodar(ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
+    assert cen.instalados == [
+        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_PLUGINS}{BITBUCKET}"
+    ]
+    assert cen.fontes() == {Tabela.PRS: BITBUCKET}
+
+
+def _pergunta(grupo: GrupoPlugin) -> Pergunta:
+    return next(p for p in assistente.PERGUNTAS if p.grupo == grupo)
+
+
+def _rotulos(p: Pergunta, fontes: set[str], url_motor: str | None) -> list[str]:
+    return [str(c.title) for c in assistente._opcoes(p, fontes, None, url_motor)]
+
+
+@pytest.fixture
+def host_nos_dois_grupos(monkeypatch) -> None:
+    monkeypatch.setattr(
+        assistente,
+        "EMBUTIDOS",
+        {
+            GrupoPlugin.TAREFAS: (
+                Embutido(ROTULO_HOST_TAREFAS, HOST_NOVO, PASTA_HOST),
+            ),
+            GrupoPlugin.PRS: (Embutido(ROTULO_HOST_PR, HOST_NOVO, PASTA_HOST),),
+        },
+    )
+
+
+def test_embutido_sem_origem_do_motor_nem_instalado_nao_e_oferecido():
+    prs = _pergunta(GrupoPlugin.PRS)
+    assert ROTULO_BITBUCKET not in _rotulos(prs, set(), None)
+    assert ROTULO_BITBUCKET in _rotulos(prs, set(), URL_MOTOR)
+
+
+@pytest.mark.usefixtures("host_nos_dois_grupos")
+def test_pacote_nos_dois_grupos_aparece_com_o_rotulo_de_cada_grupo():
+    tarefas = _rotulos(_pergunta(GrupoPlugin.TAREFAS), set(), URL_MOTOR)
+    prs = _rotulos(_pergunta(GrupoPlugin.PRS), set(), URL_MOTOR)
+    assert ROTULO_HOST_TAREFAS in tarefas
+    assert ROTULO_HOST_PR not in tarefas
+    assert ROTULO_HOST_PR in prs
+    assert ROTULO_HOST_TAREFAS not in prs
+
+
+@pytest.mark.usefixtures("host_nos_dois_grupos")
+def test_pacote_instalado_pela_pergunta_de_tarefas_nao_reinstala_na_de_prs(cen):
+    cen.pontos = {GrupoPlugin.TAREFAS: {}, GrupoPlugin.PRS: {}}
+    cen.pacote = {
+        GrupoPlugin.TAREFAS: {HOST_NOVO: FONTE},
+        GrupoPlugin.PRS: {HOST_NOVO: HOST},
+    }
+    assert _rodar(CIMA, ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
+    assert cen.instalados == [
+        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_HOST}"
+    ]
+    assert cen.fontes() == {Tabela.TAREFAS: HOST_NOVO, Tabela.PRS: HOST_NOVO}
 
 
 @pytest.mark.parametrize("saida", [CodigoSaida.OK, CodigoSaida.ERRO])

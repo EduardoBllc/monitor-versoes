@@ -15,11 +15,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
+from monitor_versoes_bitbucket import Var as VarBitbucket
 
 import motor.daemon.app as app_daemon
 import motor.novidades as modulo_novidades
 import motor.operacoes as operacoes
-from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.adapters.sugestao.fake import FakeProvedorSugestao
 from motor.config import (
     CHAVE_CAMINHO,

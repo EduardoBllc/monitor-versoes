@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "monitor-versoes",
+    "monitor-versoes-bitbucket",
     "monitor-versoes-github",
     "monitor-versoes-gitlab",
     "monitor-versoes-jira",
@@ -682,6 +683,7 @@ anthropic = [
 ]
 dev = [
     { name = "httpx2" },
+    { name = "monitor-versoes-bitbucket" },
     { name = "monitor-versoes-github" },
     { name = "monitor-versoes-gitlab" },
     { name = "monitor-versoes-jira" },
@@ -701,6 +703,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.162.0" },
     { name = "httpx" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.16.0" },
+    { name = "monitor-versoes-bitbucket", marker = "extra == 'dev'", editable = "plugins/bitbucket" },
     { name = "monitor-versoes-github", marker = "extra == 'dev'", editable = "plugins/github" },
     { name = "monitor-versoes-gitlab", marker = "extra == 'dev'", editable = "plugins/gitlab" },
     { name = "monitor-versoes-jira", marker = "extra == 'dev'", editable = "plugins/jira" },
@@ -718,6 +721,21 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 provides-extras = ["dev", "anthropic"]
+
+[[package]]
+name = "monitor-versoes-bitbucket"
+version = "0.1.0"
+source = { editable = "plugins/bitbucket" }
+dependencies = [
+    { name = "httpx" },
+    { name = "monitor-versoes" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx" },
+    { name = "monitor-versoes", editable = "." },
+]
 
 [[package]]
 name = "monitor-versoes-github"

@@ -7,9 +7,9 @@ import sys
 from importlib.metadata import EntryPoint, entry_points
 
 import pytest
+from monitor_versoes_bitbucket import Var as VarBitbucket
 
 from motor import plugins
-from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.adapters.sugestao.anthropic import Var as VarAnthropic
 from motor.config import (
     CHAVE_CAMINHO,

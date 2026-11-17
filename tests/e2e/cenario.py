@@ -22,7 +22,8 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
+from monitor_versoes_bitbucket import Var as VarBitbucket
+
 from motor.config import (
     VAR_APPDATA,
     VAR_LOCALAPPDATA,

@@ -59,7 +59,7 @@ SUFIXOS_SQLITE = ("", "-wal", "-shm")
 class Embutido:
     rotulo: str
     nome: str
-    pasta: str | None  # None = vem no núcleo
+    pasta: str
 
 
 EMBUTIDOS: dict[GrupoPlugin, tuple[Embutido, ...]] = {
@@ -68,7 +68,7 @@ EMBUTIDOS: dict[GrupoPlugin, tuple[Embutido, ...]] = {
         Embutido("GitHub Issues", "github", "plugins/github"),
         Embutido("GitLab Issues", "gitlab", "plugins/gitlab"),
     ),
-    GrupoPlugin.PRS: (Embutido("Bitbucket", "bitbucket", None),),
+    GrupoPlugin.PRS: (Embutido("Bitbucket", "bitbucket", "plugins/bitbucket"),),
 }
 
 
@@ -200,7 +200,7 @@ def _fontes(grupo: GrupoPlugin) -> set[str]:
 
 
 def _origem_embutido(embutido: Embutido, url_motor: str | None) -> str | None:
-    if embutido.pasta is None or url_motor is None:
+    if url_motor is None:
         return None
     # Sem @ref: o `plugin instalar` fixa o plugin do repo do motor na tag dele.
     return f"{PREFIXO_GIT}{url_motor}#{PARAMETRO_SUBDIRETORIO}={embutido.pasta}"

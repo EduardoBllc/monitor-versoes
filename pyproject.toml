@@ -26,6 +26,7 @@ dev = [
     "monitor-versoes-jira",
     "monitor-versoes-github",
     "monitor-versoes-gitlab",
+    "monitor-versoes-bitbucket",
     "shellcheck-py",
 ]
 anthropic = [
@@ -43,9 +44,6 @@ monitor-versoes-serve = "motor.__main__:main_serve"
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"
 
-[project.entry-points."monitor_versoes.prs"]
-bitbucket = "motor.adapters.commitsource.bitbucket:BitbucketPrs"
-
 [project.entry-points."monitor_versoes.sugestao"]
 anthropic = "motor.adapters.sugestao.anthropic:ProvedorAnthropic"
 
@@ -54,12 +52,13 @@ exata = "motor.atribuicoes:Exata"
 composta = "motor.atribuicoes:Composta"
 
 [tool.uv.workspace]
-members = ["plugins/jira", "plugins/github", "plugins/gitlab"]
+members = ["plugins/jira", "plugins/github", "plugins/gitlab", "plugins/bitbucket"]
 
 [tool.uv.sources]
 monitor-versoes-jira = { workspace = true }
 monitor-versoes-github = { workspace = true }
 monitor-versoes-gitlab = { workspace = true }
+monitor-versoes-bitbucket = { workspace = true }
 
 [build-system]
 requires = ["setuptools"]
@@ -77,14 +76,14 @@ motor = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "plugins/jira/tests", "plugins/github/tests", "plugins/gitlab/tests"]
+testpaths = ["tests", "plugins/jira/tests", "plugins/github/tests", "plugins/gitlab/tests", "plugins/bitbucket/tests"]
 
 # O type checker e o que faz "adapter nao cumpre a porta" virar erro em vez de
 # surpresa em runtime: Protocol e estrutural, e a conformidade e verificada nos
 # pontos de atribuicao (motor/montagem.py e tests/test_conformidade.py).
 [tool.mypy]
 python_version = "3.14"
-files = ["motor", "tests", "plugins/jira", "plugins/github", "plugins/gitlab"]
+files = ["motor", "tests", "plugins/jira", "plugins/github", "plugins/gitlab", "plugins/bitbucket"]
 strict = true
 
 # Corpo de funcao de teste sem anotacao e ruido, nao defeito: exigir assinatura

@@ -25,8 +25,8 @@ nossos e rode o checker.
 from __future__ import annotations
 
 import pytest
+from monitor_versoes_bitbucket import BitbucketPrs
 
-from motor.adapters.commitsource.bitbucket import BitbucketPrs
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource, FakeHostPr
 from motor.adapters.commitsource.grep import GrepCommitSource

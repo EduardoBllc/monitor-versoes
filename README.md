@@ -325,7 +325,9 @@ O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
 Há plugins para o Jira Cloud ([`monitor-versoes-jira`](plugins/jira/README.md)), o GitHub Issues ([`monitor-versoes-github`](plugins/github/README.md)) e o GitLab Issues ([`monitor-versoes-gitlab`](plugins/gitlab/README.md)).
 
 O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
-ou um `modulo:Classe`, e o pacote traz o `bitbucket`. Não há padrão: sem `fonte`, os commits
+ou um `modulo:Classe`. Há plugin para o Bitbucket Cloud
+([`monitor-versoes-bitbucket`](plugins/bitbucket/README.md)), instalado à parte como os de
+tarefas. Não há padrão: sem `fonte`, os commits
 saem só do grep na branch principal. Fora `fonte`, as chaves de `[prs]` são do plugin. Como
 na fonte de tarefas, o plugin e as credenciais só são cobrados na primeira busca de commits.
 Trocar de host zera o que o estado guardou das PRs do repo e a próxima varredura percorre o
@@ -338,7 +340,8 @@ Para cada repo que já está no banco, crie `[repos.<nome>]` com o mesmo nome qu
 mova para a seção as chaves do antigo `.monitor-versoes.toml` (o `piso` vai para
 `[repos.<nome>.versao]`). Um `[versao] piso` no topo do `config.toml` também precisa ir para
 as seções: no topo ele é erro de leitura e impede qualquer comando. Quem buscava commits por
-PR com `BITBUCKET_TOKEN` adiciona `[prs] fonte = "bitbucket"`: o token sozinho não liga mais
+PR com `BITBUCKET_TOKEN` instala o [plugin do Bitbucket](plugins/bitbucket/README.md) e adiciona
+`[prs] fonte = "bitbucket"`: o token sozinho não liga mais
 nada, e as flags `--bitbucket-token`/`--bitbucket-email` saíram (use o `[ambiente]`). Confira com
 `monitor-versoes diagnostico`. Inscrições antigas são descartadas com um aviso: inscreva de novo com o
 nome da seção.

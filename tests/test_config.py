@@ -4,9 +4,9 @@ import os
 import sys
 
 import pytest
+from monitor_versoes_bitbucket import Var as VarBitbucket
 
 from motor import config
-from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
     DIRETORIO_APP,
