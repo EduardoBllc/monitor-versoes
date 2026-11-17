@@ -15,12 +15,28 @@ from motor.operacoes import (
 from tests.e2e.cenario import Manifesto, PapelVersao, montar
 
 
-@pytest.fixture
-def cenario(tmp_path, monkeypatch) -> Manifesto:
-    manifesto = montar(tmp_path / "cenario")
+def _aplicar(manifesto: Manifesto, monkeypatch) -> Manifesto:
     for nome, valor in manifesto.ambiente.items():
         monkeypatch.setenv(nome, valor)
     return manifesto
+
+
+@pytest.fixture(scope="module")
+def _cenario_compartilhado(tmp_path_factory) -> Manifesto:
+    """Um cenário para os testes que só consultam: no Windows, montar custa ~12 s."""
+    return montar(tmp_path_factory.mktemp("cenario") / "cenario")
+
+
+@pytest.fixture
+def cenario(_cenario_compartilhado, monkeypatch) -> Manifesto:
+    return _aplicar(_cenario_compartilhado, monkeypatch)
+
+
+@pytest.fixture
+def cenario_proprio(tmp_path, monkeypatch) -> Manifesto:
+    """Para quem muda o que o teste seguinte veria: o clone, ou o estado de outro
+    jeito que não a gravação idempotente do `verificar`."""
+    return _aplicar(montar(tmp_path / "cenario"), monkeypatch)
 
 
 def _repo(manifesto: Manifesto) -> RepoOption:
@@ -58,16 +74,18 @@ def test_verificar_devolve_o_estado_do_papel(cenario, papel):
     }
 
 
-def test_atualizar_trava_no_conflito_e_fecha_o_pick_vazio(cenario):
-    repo = _repo(cenario)
+def test_atualizar_trava_no_conflito_e_fecha_o_pick_vazio(cenario_proprio):
+    repo = _repo(cenario_proprio)
 
-    bloqueado = atualizar_repo(repo, cenario.versoes[PapelVersao.CONFLITO])
-    vazio = atualizar_repo(repo, cenario.versoes[PapelVersao.VAZIO])
+    bloqueado = atualizar_repo(repo, cenario_proprio.versoes[PapelVersao.CONFLITO])
+    vazio = atualizar_repo(repo, cenario_proprio.versoes[PapelVersao.VAZIO])
 
     assert bloqueado.status == AtualizarStatus.BLOCKED
-    assert cenario.arquivo_conflito in bloqueado.arquivos_conflito
+    assert cenario_proprio.arquivo_conflito in bloqueado.arquivos_conflito
     assert vazio.status == AtualizarStatus.DONE
-    assert [c.chamado for c in vazio.vazios] == [cenario.chamados[PapelVersao.VAZIO]]
+    assert [c.chamado for c in vazio.vazios] == [
+        cenario_proprio.chamados[PapelVersao.VAZIO]
+    ]
     assert vazio.aplicados == []
 
 

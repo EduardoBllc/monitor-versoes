@@ -43,13 +43,13 @@ O estado de desenvolvimento serve para usar o CLI à mão sem tocar produção.
 ## Verificações
 
 ```bash
-make check   # ruff format --check, ruff check (e shellcheck do install.sh), mypy, pytest -rs, web-check (npm ci, tsc, lint, vitest), web-dist, web-e2e (Playwright)
+make check   # ruff format --check, ruff check (e shellcheck do install.sh), mypy, pytest, web-check (npm ci, tsc, lint, vitest), web-dist, web-e2e (Playwright)
 make fmt     # formata e aplica os fixes automáticos do ruff
 ```
 
 `make check` roda os mesmos alvos, na mesma ordem, que o CI
-([.github/workflows/ci.yml](.github/workflows/ci.yml)): verde aqui é verde lá. O `-rs`
-do pytest lista o motivo de cada skip.
+([.github/workflows/ci.yml](.github/workflows/ci.yml)): verde aqui é verde lá. As
+opções de cada alvo estão no [Makefile](Makefile).
 
 O `make setup` instala o [pre-commit](.pre-commit-config.yaml): ruff (format e check) e
 mypy a cada commit. O pytest fica de fora do hook; rode `make check` antes de abrir o PR.
