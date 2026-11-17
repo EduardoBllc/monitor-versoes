@@ -118,6 +118,7 @@ class VersaoInfo:
     base_ref: str = ""
     base_commit: str = ""
     liberada_em: datetime.datetime | None = None
+    atualizada_em: datetime.datetime | None = None
 
 
 @dataclass(frozen=True)

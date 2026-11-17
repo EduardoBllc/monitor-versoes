@@ -88,6 +88,9 @@ class Versao(Base):
     liberada_em: Mapped[datetime.datetime | None] = mapped_column(
         DataComFuso(), default=None
     )
+    atualizada_em: Mapped[datetime.datetime | None] = mapped_column(
+        DataComFuso(), default=None
+    )
 
 
 class Atribuicao(Base):

@@ -75,11 +75,11 @@ def test_listar_orfaos_traz_hash_assunto_data_e_julgamento():
 def test_listar_orfaos_nao_escreve_no_estado():
     estado = _estado()
     estado.substituir_atribuicoes("r", VERSAO, [Atribuicao(chamado="999")])
-    antes = (estado.atribuicoes("r", VERSAO), dict(estado.versoes))
+    antes = (estado.atribuicoes("r", VERSAO), dict(estado._versoes))
 
     listar_orfaos(_deps(_git(), estado), VERSAO)
 
-    assert (estado.atribuicoes("r", VERSAO), dict(estado.versoes)) == antes
+    assert (estado.atribuicoes("r", VERSAO), dict(estado._versoes)) == antes
 
 
 def test_listar_orfaos_omite_julgamento_de_hash_que_nao_e_mais_orfao():

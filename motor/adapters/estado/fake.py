@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from motor.domain.types import (
     Atribuicao,
@@ -21,7 +21,7 @@ from motor.errors import NaoEncontrado, RecusaDeInvariante
 @dataclass
 class FakeEstado:
     repos: dict[str, RepoInfo] = field(default_factory=dict)
-    versoes: dict[tuple[str, str], VersaoInfo] = field(default_factory=dict)
+    _versoes: dict[tuple[str, str], VersaoInfo] = field(default_factory=dict)
     _atribuicoes: dict[tuple[str, str], list[Atribuicao]] = field(default_factory=dict)
     _exclusoes: dict[str, list[Exclusion]] = field(default_factory=dict)
     _sem_entrega: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -52,16 +52,16 @@ class FakeEstado:
         # primeira gravacao. A base e o ponto onde a branch foi cortada, nao
         # algo a recomputar.
         self._exigir_repo(repo)
-        if (repo, info.numero) in self.versoes:
+        if (repo, info.numero) in self._versoes:
             return
-        self.versoes[(repo, info.numero)] = info
+        self._versoes[(repo, info.numero)] = info
 
     def marcar_liberadas(
         self, repo: str, liberadas: dict[str, datetime.datetime], /
     ) -> None:
         self._exigir_repo(repo)
         for numero, recebida in liberadas.items():
-            atual = self.versoes.get((repo, numero))
+            atual = self._versoes.get((repo, numero))
             if atual is None or atual.liberada_em is not None:
                 continue
             # Data naive vira UTC, como em `FakeGit.add_commit`: a coluna e
@@ -73,17 +73,34 @@ class FakeEstado:
             quando = recebida
             if quando.tzinfo is None:
                 quando = quando.replace(tzinfo=datetime.UTC)
-            self.versoes[(repo, numero)] = VersaoInfo(
+            self._versoes[(repo, numero)] = VersaoInfo(
                 numero=atual.numero,
                 tipo=atual.tipo,
                 base_ref=atual.base_ref,
                 base_commit=atual.base_commit,
                 liberada_em=quando,
+                atualizada_em=atual.atualizada_em,
             )
+
+    def marcar_atualizada(
+        self, repo: str, versao: str, quando: datetime.datetime, /
+    ) -> None:
+        self._exigir_repo(repo)
+        atual = self._versoes.get((repo, versao))
+        if atual is None:
+            raise NaoEncontrado(f"versão {versao} não registrada em {repo}")
+        self._versoes[(repo, versao)] = replace(atual, atualizada_em=quando)
+
+    def versoes(self, repo: str, /) -> list[VersaoInfo]:
+        self._exigir_repo(repo)
+        return sorted(
+            (v for (r, _), v in self._versoes.items() if r == repo),
+            key=lambda v: v.numero,
+        )
 
     def versao(self, repo: str, numero: str, /) -> VersaoInfo | None:
         self._exigir_repo(repo)
-        return self.versoes.get((repo, numero))
+        return self._versoes.get((repo, numero))
 
     def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]:
         self._exigir_repo(repo)
