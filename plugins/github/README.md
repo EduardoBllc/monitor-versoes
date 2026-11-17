@@ -105,12 +105,13 @@ O GitHub não informa como o PR foi mergeado; o plugin o infere pelo commit de
 | Modo | Como se reconhece | Commits devolvidos |
 | --- | --- | --- |
 | Merge comum | o commit tem dois pais ou mais | os commits do PR, sem merge commits |
-| Rebase | um pai, e mesma mensagem e mesma data de autoria do último commit do PR | os N commits da principal que terminam nele, pelo primeiro pai; N = commits do PR |
+| Rebase | um pai, e mesma mensagem e mesma data de autoria do último commit do PR que não é merge commit | os commits da principal que terminam nele, pelo primeiro pai, um para cada commit do PR que não é merge commit |
 | Squash | um pai, e não é rebase | só ele |
 
 Na dúvida entre rebase e squash, vale squash: o plugin nunca devolve commit de outro PR. No
-rebase, um merge commit ou um commit não encontrado no caminho encerra a lista. PR sem
-`merge_commit_sha`, ou com ele não encontrado, não entrega commit: a tarefa cai no grep da
+rebase, cada commit do caminho é conferido contra o commit do PR na mesma posição, pela
+mensagem e pela data de autoria. Um merge commit, um commit não encontrado ou uma divergência
+encerra a lista. PR sem `merge_commit_sha`, ou com ele não encontrado, não entrega commit: a tarefa cai no grep da
 principal.
 
 A API lista no máximo 250 commits por PR. Num PR maior, o merge comum entrega os que a API
