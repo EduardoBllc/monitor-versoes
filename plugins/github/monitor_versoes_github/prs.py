@@ -304,10 +304,11 @@ class GithubPrs:
             caminho.append(anterior)
         return [_ref_git(c) for c in reversed(caminho)]
 
-    def verificar_credenciais(self) -> None:
+    def verificar_credenciais(self) -> str | None:
         """Chamada autenticada que não depende de repo (`GET /user`)."""
         self._token()
         self._api.obter(self._api.base() + CAMINHO_EU, None, None)
+        return None
 
     def fechar(self) -> None:
         """Fecha o cliente próprio; o injetado é de quem injetou."""

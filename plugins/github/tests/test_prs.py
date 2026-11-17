@@ -10,9 +10,12 @@ from monitor_versoes_github import GithubPrs
 from monitor_versoes_github.api import VarGithub
 from monitor_versoes_github.prs import ChavePrs, parse_dono_repo
 
-from motor.config import Tabela
+from motor.config import Chave, Tabela
+from motor.config_edicao import GrupoPlugin, catalogo_campos
 from motor.domain.types import SEM_DATA
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
+from motor.montagem import GRUPO_PRS
+from motor.plugins import carregar_plugin
 
 HOST_PADRAO = "api.github.com"
 API = f"https://{HOST_PADRAO}"
@@ -407,3 +410,70 @@ def test_commits_da_pr_concorrente_usa_um_cliente(
         resultados = list(pool.map(host.commits_da_pr, [PR_ID] * 4))
     assert all([c.hash_origem for c in r] == ["s"] for r in resultados)
     assert len(criados) == 1
+
+
+def test_carregar_plugin_prs_github_devolve_a_classe() -> None:
+    assert carregar_plugin(GRUPO_PRS, "github") is GithubPrs
+
+
+def test_verificar_credenciais_manda_bearer_para_user() -> None:
+    host, pedidos = _host(
+        lambda r: httpx.Response(httpx.codes.OK, json={}),
+        prs={ChavePrs.API_URL: API_GHE},
+        remote=lambda: pytest.fail("o diagnóstico não pode ler o remote"),
+    )
+    assert host.verificar_credenciais() is None
+    [pedido] = pedidos
+    assert str(pedido.url) == f"{API_GHE}/user"
+    assert pedido.headers["Authorization"] == BEARER
+
+
+def test_verificar_credenciais_sem_token_levanta() -> None:
+    host, pedidos = _host(lambda r: httpx.Response(httpx.codes.OK), env={})
+    with pytest.raises(ErroDeEntrada):
+        host.verificar_credenciais()
+    assert pedidos == []
+
+
+def test_fechar_fecha_o_proprio_e_nao_o_injetado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rota = _github(merge=None, principal=[], do_pr=None)
+    criados: list[httpx.Client] = []
+    original = httpx.Client
+
+    def fabrica() -> httpx.Client:
+        client = original(transport=httpx.MockTransport(rota))
+        criados.append(client)
+        return client
+
+    monkeypatch.setattr("monitor_versoes_github.api.httpx.Client", fabrica)
+    proprio = GithubPrs(prs={}, arquivos=(), remote_url=lambda: REMOTE, env=ENV)
+    proprio.commits_da_pr(PR_ID)
+    proprio.fechar()
+    assert [c.is_closed for c in criados] == [True]
+
+    injetado = original(transport=httpx.MockTransport(rota))
+    host = GithubPrs(
+        prs={}, arquivos=(), remote_url=lambda: REMOTE, env=ENV, client=injetado
+    )
+    host.commits_da_pr(PR_ID)
+    host.fechar()
+    assert not injetado.is_closed
+
+
+def test_campos_aparecem_no_catalogo() -> None:
+    config: dict[str, object] = {
+        Tabela.TAREFAS: {Chave.FONTE: "github"},
+        Tabela.PRS: {Chave.FONTE: "github"},
+    }
+    campos = [c for c in catalogo_campos(config) if c.origem == "github"]
+    assert any(c.tabela == Tabela.PRS and c.chave == ChavePrs.API_URL for c in campos)
+    tokens = [c for c in campos if c.chave == VarGithub.TOKEN]
+    assert {c.grupo for c in tokens} == {GrupoPlugin.TAREFAS, GrupoPlugin.PRS}
+    assert len(tokens) == len({c.grupo for c in tokens})
+    for token in tokens:
+        assert token.segredo
+        assert "issues" in token.descricao
+        assert "pull requests" in token.descricao
+        assert "Obrigatório para a fonte de PR" in token.aviso_vazio

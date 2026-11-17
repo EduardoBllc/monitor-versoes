@@ -84,6 +84,7 @@ ROTULO_HOST_TAREFAS = "Host Tarefas"
 ROTULO_HOST_PR = "Host PR"
 PASTA_HOST = f"{PASTA_PLUGINS}{HOST_NOVO}"
 NOMES_TAREFAS = [e.nome for e in EMBUTIDOS[GrupoPlugin.TAREFAS]]
+NOMES_PRS = [e.nome for e in EMBUTIDOS[GrupoPlugin.PRS]]
 
 LIGAR = [
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
@@ -192,6 +193,15 @@ def _descer_ate_lista_manual(atual: str) -> str:
     return BAIXO * (len(NOMES_TAREFAS) - NOMES_TAREFAS.index(atual))
 
 
+def _subir_ate_pr(nome: str) -> str:
+    """Teclas de "Nenhuma" (o padrão) até o embutido de PR `nome`."""
+    return CIMA * (len(NOMES_PRS) - NOMES_PRS.index(nome))
+
+
+def _descer_ate_nenhuma(atual: str) -> str:
+    return BAIXO * (len(NOMES_PRS) - NOMES_PRS.index(atual))
+
+
 def _sistema_falso(sistema: Sistema | None) -> Callable[[], Sistema]:
     def falso() -> Sistema:
         if sistema is None:
@@ -225,7 +235,10 @@ def _rodar(
 
 
 def test_configurar_grava_so_as_duas_chaves(cen):
-    assert _rodar(_subir_ate(JIRA), ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
+    assert (
+        _rodar(_subir_ate(JIRA), ENTER, _subir_ate_pr(BITBUCKET), ENTER, ENTER)
+        == CodigoSaida.OK
+    )
     assert cen.config.read_text() == f"{cen.original}\n{COM_FONTES}"
 
 
@@ -233,7 +246,16 @@ def test_configurar_grava_so_as_duas_chaves(cen):
     ("teclas", "fontes"),
     [
         ((ENTER, ENTER, ENTER), {Tabela.TAREFAS: JIRA, Tabela.PRS: BITBUCKET}),
-        ((_descer_ate_lista_manual(JIRA), ENTER, BAIXO, ENTER, ENTER), {}),
+        (
+            (
+                _descer_ate_lista_manual(JIRA),
+                ENTER,
+                _descer_ate_nenhuma(BITBUCKET),
+                ENTER,
+                ENTER,
+            ),
+            {},
+        ),
     ],
     ids=["mantem", "lista-manual-e-nenhuma"],
 )
@@ -263,14 +285,15 @@ def test_embutido_instalado_sem_a_fonte_avisa_e_volta(cen, capsys):
     assert cen.config.read_text() == cen.original
 
 
-def test_embutido_de_pr_nao_instalado_instala_pelo_repo_do_motor(cen):
+@pytest.mark.parametrize("nome", NOMES_PRS)
+def test_embutido_de_pr_nao_instalado_instala_pelo_repo_do_motor(cen, nome):
     cen.pontos[GrupoPlugin.PRS] = {}
-    cen.pacote = {GrupoPlugin.PRS: {BITBUCKET: HOST}}
-    assert _rodar(ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
+    cen.pacote = {GrupoPlugin.PRS: {nome: HOST}}
+    assert _rodar(ENTER, _subir_ate_pr(nome), ENTER, ENTER) == CodigoSaida.OK
     assert cen.instalados == [
-        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_PLUGINS}{BITBUCKET}"
+        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_PLUGINS}{nome}"
     ]
-    assert cen.fontes() == {Tabela.PRS: BITBUCKET}
+    assert cen.fontes() == {Tabela.PRS: nome}
 
 
 def _pergunta(grupo: GrupoPlugin) -> Pergunta:
