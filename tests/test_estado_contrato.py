@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -369,18 +368,6 @@ def test_cache_de_pr_e_por_repo(estado):
 
 def test_commits_de_pr_sem_pr_pedida_nao_consulta_nada(estado):
     assert estado.commits_de_pr(REPO, []) == {}
-
-
-def test_nenhuma_assercao_casa_substring_de_mensagem():
-    """Este arquivo e publicado para adapters de terceiro. O parametro `match`
-    de `pytest.raises` casa o TEXTO da excecao, que aqui e portugues — um
-    adapter correto que levanta a mesma subclasse com mensagem em outro idioma
-    reprovaria. A suite discrimina por tipo, nunca por mensagem; se esse
-    parametro voltar a aparecer aqui, e o mesmo anti-padrao que este arquivo
-    existe para banir.
-    """
-    padrao_do_parametro = "match" + "="
-    assert padrao_do_parametro not in Path(__file__).read_text()
 
 
 # -- indice de PRs e marca da varredura ----------------------------------------

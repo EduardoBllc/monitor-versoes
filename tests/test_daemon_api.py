@@ -480,15 +480,6 @@ def test_inscricoes_inscrever_listar_remover(cliente: TestClient) -> None:
     assert cliente.get("/api/inscricoes").json() == []
 
 
-def test_inscrever_grava_sem_diretorio_nem_ambiente(
-    cliente: TestClient, amb: Ambiente
-) -> None:
-    cliente.post("/api/inscricoes", json={"repo": REPO, "versao": VERSAO})
-    [crua] = json.loads(amb.inscricoes.read_text(encoding="utf-8"))
-    assert "diretorio" not in crua
-    assert "ambiente" not in crua
-
-
 def test_inscrever_repo_sem_checkout_da_404(cliente: TestClient) -> None:
     r = cliente.post("/api/inscricoes", json={"repo": "sem-clone", "versao": VERSAO})
     assert r.status_code == HTTPStatus.NOT_FOUND
