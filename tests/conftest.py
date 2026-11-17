@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -117,19 +118,29 @@ def _sistema_isolado(monkeypatch, tmp_path):
     monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: None)
 
 
+@pytest.fixture(scope="session")
+def _sqlite_migrado(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Um SQLite migrado por sessão: no Windows, migrar a cada teste custava segundos."""
+    from motor.adapters.estado.engine import garantir_esquema
+
+    arquivo = tmp_path_factory.mktemp("sqlite-migrado") / "estado.db"
+    garantir_esquema(f"sqlite:///{arquivo}")
+    return arquivo
+
+
 @pytest.fixture
-def sessao_sqlite(tmp_path: Any) -> Iterator[Any]:
+def sessao_sqlite(tmp_path: Any, _sqlite_migrado: Path) -> Iterator[Any]:
     """Sessao contra um SQLite novo em `tmp_path`, migrado como no primeiro uso.
 
     O arquivo é o mesmo que `_estado_isolado` aponta em `DATABASE_SQLITE_PATH`.
     """
     from sqlalchemy.orm import Session
 
-    from motor.adapters.estado.engine import criar_engine, garantir_esquema
+    from motor.adapters.estado.engine import criar_engine
 
-    url = f"sqlite:///{tmp_path / 'estado.db'}"
-    garantir_esquema(url)
-    engine = criar_engine(url)
+    arquivo = tmp_path / "estado.db"
+    shutil.copyfile(_sqlite_migrado, arquivo)
+    engine = criar_engine(f"sqlite:///{arquivo}")
     try:
         with Session(engine) as sessao:
             yield sessao

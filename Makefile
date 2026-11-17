@@ -43,9 +43,9 @@ lint:
 typecheck:
 	$(DEV) mypy
 
-# -rs lista o motivo de cada skip no log.
+# -rs lista o motivo de cada skip no log; -n auto divide a suíte entre os núcleos.
 test:
-	$(DEV) pytest -rs
+	$(DEV) pytest -rs -n auto
 
 # --- Front (web/): o build vive versionado em motor/daemon/static ---
 

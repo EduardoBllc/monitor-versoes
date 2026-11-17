@@ -18,6 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-xdist",
     "mypy",
     "ruff>=0.17.1",
     "pre-commit>=4.7.0",
