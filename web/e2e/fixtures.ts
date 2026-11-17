@@ -1,4 +1,4 @@
-import { test as base } from "@playwright/test";
+import { test as base, type Page } from "@playwright/test";
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -56,6 +56,26 @@ export function rotaApi(repo: string, recurso: RecursoApi, versao?: string): str
 }
 
 const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export const ROTA_CONFIG = "/api/config";
+
+/** Espera o React processar o que já chegou: dois quadros cobrem o commit e a pintura. */
+export async function esperarRender(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((pronto) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => pronto())),
+      ),
+  );
+}
+
+/** Atrasa as respostas da rota, como numa máquina lenta; vale até o fim do teste. */
+export async function atrasarRota(page: Page, rota: string, ms: number): Promise<void> {
+  await page.route(`**${rota}`, async (pedido) => {
+    await pausa(ms);
+    await pedido.continue();
+  });
+}
 
 // O mesmo motivo do `unexport VIRTUAL_ENV` do Makefile: o uv usaria o interpretador vazado.
 function ambienteBase(): NodeJS.ProcessEnv {
