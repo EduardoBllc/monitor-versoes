@@ -1,0 +1,19 @@
+[project]
+name = "monitor-versoes-bitbucket"
+version = "0.1.0"
+description = "Host de PR do monitor-versoes para o Bitbucket Cloud"
+requires-python = ">=3.14"
+dependencies = ["monitor-versoes", "httpx"]
+
+[project.entry-points."monitor_versoes.prs"]
+bitbucket = "monitor_versoes_bitbucket:BitbucketPrs"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["monitor_versoes_bitbucket*"]
+
+[tool.uv.sources]
+monitor-versoes = { workspace = true }

@@ -86,7 +86,7 @@ _DA_CONFIG = FonteTasks()
 GRUPO_TAREFAS = "monitor_versoes.tarefas"
 GRUPO_ESQUEMAS = "monitor_versoes.esquemas"
 GRUPO_ATRIBUICOES = "monitor_versoes.atribuicoes"
-#: Grupo de entry points dos hosts de PR. O pacote registra um no pyproject.toml.
+#: Grupo de entry points dos hosts de PR. O nucleo nao registra nenhum.
 GRUPO_PRS = "monitor_versoes.prs"
 GRUPO_SUGESTAO = "monitor_versoes.sugestao"
 

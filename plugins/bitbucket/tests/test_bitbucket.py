@@ -8,26 +8,40 @@ filtro de merge commit. httpx.MockTransport no lugar de servidor real.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
+from enum import StrEnum
 from typing import Any
 
 import httpx
 import pytest
+from monitor_versoes_bitbucket import BitbucketPrs, Var, parse_workspace_repo
 
-from motor.adapters.commitsource.bitbucket import BitbucketPrs, parse_workspace_repo
+from motor.config import Chave
 from motor.domain.types import CommitRef
 from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
+from motor.montagem import GRUPO_PRS
+from motor.plugins import carregar_plugin
 
 # Corpo de JSON da API, igual ao alias do adapter.
 JSON = dict[str, Any]
+Handler = Callable[[httpx.Request], httpx.Response]
 
 TOKEN, EMAIL = "tok123", "dev@x.com"
 REMOTE = "git@bitbucket.org:acme/monitor.git"
 
 
+class _Plugin(StrEnum):
+    BITBUCKET = "bitbucket"
+
+
+def test_entry_point_bitbucket_carrega_o_host() -> None:
+    assert carregar_plugin(GRUPO_PRS, _Plugin.BITBUCKET) is BitbucketPrs
+
+
 @pytest.fixture(autouse=True)
-def credenciais(monkeypatch):
-    monkeypatch.setenv("BITBUCKET_TOKEN", TOKEN)
-    monkeypatch.setenv("BITBUCKET_EMAIL", EMAIL)
+def credenciais(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(Var.TOKEN, TOKEN)
+    monkeypatch.setenv(Var.EMAIL, EMAIL)
 
 
 @pytest.mark.parametrize(
@@ -38,13 +52,17 @@ def credenciais(monkeypatch):
         ("https://bitbucket.org/acme/monitor", ("acme", "monitor")),
     ],
 )
-def test_parse_workspace_repo(url, esperado):
+def test_parse_workspace_repo(url: str, esperado: tuple[str, str]) -> None:
     assert parse_workspace_repo(url) == esperado
 
 
-def _host(handler, remote_url=lambda: REMOTE, base_url="http://testserver"):
+def _host(
+    handler: Handler,
+    remote_url: Callable[[], str] = lambda: REMOTE,
+    base_url: str = "http://testserver",
+) -> BitbucketPrs:
     return BitbucketPrs(
-        prs={"fonte": "bitbucket"},
+        prs={Chave.FONTE: _Plugin.BITBUCKET},
         arquivos=("/cfg/config.toml",),
         remote_url=remote_url,
         client=httpx.Client(transport=httpx.MockTransport(handler)),
@@ -56,7 +74,7 @@ def _handler_pr(
     prs: list[JSON],
     commits_por_pr: dict[int, list[JSON]] | None = None,
     buscas: list[httpx.Request] | None = None,
-):
+) -> Handler:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers.get("Authorization") == "Basic ZGV2QHguY29tOnRvazEyMw=="
         if buscas is not None:
@@ -90,20 +108,20 @@ def _commit_bruto(hash_: str, parents: list[str] | None = None) -> JSON:
     }
 
 
-def test_prs_mergeadas_converte_o_json():
+def test_prs_mergeadas_converte_o_json() -> None:
     [pr] = _host(_handler_pr([_pr(7)])).prs_mergeadas(None)
 
     assert (pr.pr_id, pr.titulo, pr.branch) == (7, "ch255514 corrige logs", "feature/x")
     assert pr.updated_on == datetime.datetime(2026, 8, 1, 10, tzinfo=datetime.UTC)
 
 
-def test_pr_sem_id_e_descartada():
+def test_pr_sem_id_e_descartada() -> None:
     sem_id = {**_pr(7), "id": None}
     prs = _host(_handler_pr([sem_id, _pr(8)])).prs_mergeadas(None)
     assert [p.pr_id for p in prs] == [8]
 
 
-def test_desde_vira_filtro_updated_on():
+def test_desde_vira_filtro_updated_on() -> None:
     buscas: list[httpx.Request] = []
     host = _host(_handler_pr([], buscas=buscas))
     desde = datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC)
@@ -131,7 +149,7 @@ def _filtrar(item: Any, caminhos: list[list[str]]) -> Any:
     return saida
 
 
-def _handler_com_fields(paginas: dict[str, Any]):
+def _handler_com_fields(paginas: dict[str, Any]) -> Handler:
     """Serve `paginas` por path, devolvendo só o que o `fields` pede."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -148,7 +166,7 @@ def _handler_com_fields(paginas: dict[str, Any]):
     return handler
 
 
-def test_com_fields_filtrados_o_resultado_continua_completo():
+def test_com_fields_filtrados_o_resultado_continua_completo() -> None:
     base = "/repositories/acme/monitor/pullrequests"
     paginas = {
         base: {"values": [_pr(1)], "next": f"http://testserver{base}/p2"},
@@ -174,7 +192,7 @@ def test_com_fields_filtrados_o_resultado_continua_completo():
     )
 
 
-def test_paginacao_segue_next():
+def test_paginacao_segue_next() -> None:
     paginas = {
         "/repositories/acme/monitor/pullrequests": {
             "values": [_pr(1)],
@@ -189,7 +207,7 @@ def test_paginacao_segue_next():
     assert [p.pr_id for p in _host(handler).prs_mergeadas(None)] == [1, 2]
 
 
-def test_commits_da_pr_descarta_merge_commit():
+def test_commits_da_pr_descarta_merge_commit() -> None:
     # merge commit: cherry-pick -x sem -m falha, e o núcleo cacheia o que vier.
     commits = {7: [_commit_bruto("merge1", ["a", "b"]), _commit_bruto("c1")]}
 
@@ -198,7 +216,7 @@ def test_commits_da_pr_descarta_merge_commit():
     assert (c.hash_origem, c.parent, c.msg, c.chamado) == ("c1", "p1", "fix c1", "")
 
 
-def test_resposta_de_pullrequests_fora_de_forma_vira_respostainvalida():
+def test_resposta_de_pullrequests_fora_de_forma_vira_respostainvalida() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         # lista crua em vez do envelope {"values": [...]}
         return httpx.Response(200, json=["nao", "e", "um", "objeto"])
@@ -210,24 +228,24 @@ def test_resposta_de_pullrequests_fora_de_forma_vira_respostainvalida():
 @pytest.mark.parametrize(
     "pr", ["nao-e-um-dict", {"id": 1, "title": 12345, "source": {}}]
 )
-def test_pr_fora_de_forma_vira_respostainvalida(pr):
+def test_pr_fora_de_forma_vira_respostainvalida(pr: Any) -> None:
     with pytest.raises(RespostaInvalida):
         _host(_handler_pr([pr])).prs_mergeadas(None)
 
 
-def test_parent_de_commit_fora_de_forma_vira_respostainvalida():
+def test_parent_de_commit_fora_de_forma_vira_respostainvalida() -> None:
     commits = {7: [{**_commit_bruto("c1"), "parents": ["nao-e-um-dict"]}]}
 
     with pytest.raises(RespostaInvalida):
         _host(_handler_pr([], commits)).commits_da_pr(7)
 
 
-def test_resposta_nao_ok_vira_backendindisponivel():
+def test_resposta_nao_ok_vira_backendindisponivel() -> None:
     with pytest.raises(BackendIndisponivel):
         _host(lambda r: httpx.Response(500)).prs_mergeadas(None)
 
 
-def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
+def test_base_url_malformada_vira_errodeentrada_nao_invalidurl() -> None:
     """httpx.InvalidURL não herda de httpx.HTTPError (verificado em 0.28.1) — sem
     a captura extra isto escapava do `except httpx.HTTPError` como traceback.
     """
@@ -239,10 +257,12 @@ def test_base_url_malformada_vira_errodeentrada_nao_invalidurl():
         host.prs_mergeadas(None)
 
 
-def test_construir_nao_le_remote_nem_credencial(monkeypatch):
+def test_construir_nao_le_remote_nem_credencial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Montar não é usar: `atualizar --abort` e `reconstruir-estado` constroem a
     fonte e nunca a chamam."""
-    monkeypatch.delenv("BITBUCKET_TOKEN")
+    monkeypatch.delenv(Var.TOKEN)
     remotes: list[int] = []
 
     def remote_url() -> str:
@@ -254,7 +274,7 @@ def test_construir_nao_le_remote_nem_credencial(monkeypatch):
     assert remotes == []
 
 
-def test_workspace_e_repo_saem_do_remote_uma_vez():
+def test_workspace_e_repo_saem_do_remote_uma_vez() -> None:
     remotes: list[int] = []
     caminhos: list[str] = []
 
@@ -277,8 +297,10 @@ def test_workspace_e_repo_saem_do_remote_uma_vez():
     ]
 
 
-@pytest.mark.parametrize("falta", ["BITBUCKET_TOKEN", "BITBUCKET_EMAIL"])
-def test_sem_credencial_falha_na_primeira_busca_nao_no_construtor(monkeypatch, falta):
+@pytest.mark.parametrize("falta", list(Var))
+def test_sem_credencial_falha_na_primeira_busca_nao_no_construtor(
+    monkeypatch: pytest.MonkeyPatch, falta: Var
+) -> None:
     monkeypatch.delenv(falta)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -292,7 +314,7 @@ def test_sem_credencial_falha_na_primeira_busca_nao_no_construtor(monkeypatch, f
     assert "/cfg/config.toml" in str(e.value)
 
 
-def test_repr_nao_vaza_credencial():
+def test_repr_nao_vaza_credencial() -> None:
     host = _host(_handler_pr([]))
     host.prs_mergeadas(None)  # a credencial já foi lida
 
@@ -303,7 +325,7 @@ def test_repr_nao_vaza_credencial():
 # -- verificar_credenciais (monitor-versoes diagnostico) ----------------------
 
 
-def test_verificar_credenciais_aceita_e_manda_basic():
+def test_verificar_credenciais_aceita_e_manda_basic() -> None:
     vistos: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -317,13 +339,15 @@ def test_verificar_credenciais_aceita_e_manda_basic():
     assert vistos[0].headers["Authorization"] == "Basic ZGV2QHguY29tOnRvazEyMw=="
 
 
-def test_verificar_credenciais_recusada():
+def test_verificar_credenciais_recusada() -> None:
     with pytest.raises(BackendIndisponivel):
         _host(lambda r: httpx.Response(401)).verificar_credenciais()
 
 
-def test_verificar_credenciais_sem_email_nao_faz_requisicao(monkeypatch):
-    monkeypatch.delenv("BITBUCKET_EMAIL")
+def test_verificar_credenciais_sem_email_nao_faz_requisicao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(Var.EMAIL)
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("não deveria chamar a rede")
@@ -332,7 +356,7 @@ def test_verificar_credenciais_sem_email_nao_faz_requisicao(monkeypatch):
         _host(handler).verificar_credenciais()
 
 
-def test_verificar_credenciais_nao_precisa_de_repo():
+def test_verificar_credenciais_nao_precisa_de_repo() -> None:
     def sem_repo() -> str:
         raise ErroDeEntrada("sem repo")
 
@@ -342,7 +366,7 @@ def test_verificar_credenciais_nao_precisa_de_repo():
 
 
 @pytest.fixture
-def clientes_criados(monkeypatch) -> list[httpx.Client]:
+def clientes_criados(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Client]:
     original = httpx.Client
     criados: list[httpx.Client] = []
 
@@ -357,14 +381,16 @@ def clientes_criados(monkeypatch) -> list[httpx.Client]:
 
 def _host_proprio() -> BitbucketPrs:
     return BitbucketPrs(
-        prs={"fonte": "bitbucket"},
+        prs={Chave.FONTE: _Plugin.BITBUCKET},
         arquivos=("/cfg/config.toml",),
         remote_url=lambda: REMOTE,
         base_url="http://testserver",
     )
 
 
-def test_sem_cliente_injetado_reaproveita_um_cliente(clientes_criados):
+def test_sem_cliente_injetado_reaproveita_um_cliente(
+    clientes_criados: list[httpx.Client],
+) -> None:
     # Um cliente por requisição pagava um handshake TLS por PR.
     host = _host_proprio()
 
@@ -374,7 +400,9 @@ def test_sem_cliente_injetado_reaproveita_um_cliente(clientes_criados):
     assert len(clientes_criados) == 1
 
 
-def test_fechar_fecha_o_cliente_proprio_e_a_proxima_chamada_recria(clientes_criados):
+def test_fechar_fecha_o_cliente_proprio_e_a_proxima_chamada_recria(
+    clientes_criados: list[httpx.Client],
+) -> None:
     # O daemon monta por operação: sem fechar, o pool keep-alive vive até o GC.
     host = _host_proprio()
     host.commits_da_pr(7)
@@ -383,14 +411,14 @@ def test_fechar_fecha_o_cliente_proprio_e_a_proxima_chamada_recria(clientes_cria
 
     host.commits_da_pr(8)
 
-    assert len(clientes_criados) == 2
-    assert not clientes_criados[1].is_closed
+    _, recriado = clientes_criados
+    assert not recriado.is_closed
 
 
-def test_fechar_nao_fecha_o_cliente_injetado():
+def test_fechar_nao_fecha_o_cliente_injetado() -> None:
     cliente = httpx.Client(transport=httpx.MockTransport(_handler_pr([])))
     host = BitbucketPrs(
-        prs={"fonte": "bitbucket"},
+        prs={Chave.FONTE: _Plugin.BITBUCKET},
         arquivos=("/cfg/config.toml",),
         remote_url=lambda: REMOTE,
         base_url="http://testserver",

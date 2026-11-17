@@ -3,9 +3,9 @@ import os
 from pathlib import Path
 
 import pytest
+from monitor_versoes_bitbucket import Var as VarBitbucket
 from textual.widgets import Checkbox, Input, Label, OptionList, Select, TabbedContent
 
-from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     CHAVE_CAMINHO,
     TABELA_AMBIENTE,

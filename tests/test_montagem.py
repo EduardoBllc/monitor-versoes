@@ -142,7 +142,7 @@ def test_plugin_de_pr_inexistente_nao_derruba_a_montagem():
 
     with pytest.raises(ErroDeEntrada, match="plugin 'inexistente' nao encontrado") as e:
         fonte.resolve(["123456"])
-    # lista os instalados: o Bitbucket vem no pacote.
+    # lista os instalados: o plugin bitbucket do workspace.
     assert "bitbucket" in str(e.value)
 
 

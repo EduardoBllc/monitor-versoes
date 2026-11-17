@@ -9,9 +9,9 @@ import sys
 import tempfile
 
 import pytest
+from monitor_versoes_bitbucket import Var as VarBitbucket
 
 from motor import teste_config
-from motor.adapters.commitsource.bitbucket import Var as VarBitbucket
 from motor.config import (
     AMBIENTE_PADRAO,
     CHAVE_CAMINHO,
