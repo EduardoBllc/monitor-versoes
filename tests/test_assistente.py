@@ -9,7 +9,7 @@ import tomllib
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from importlib.metadata import EntryPoint, entry_points
+from importlib.metadata import EntryPoint
 from pathlib import Path
 from unittest.mock import patch
 
@@ -157,10 +157,12 @@ def cen(monkeypatch, tmp_path) -> Cenario:
         pontos={GrupoPlugin.TAREFAS: {JIRA: FONTE}, GrupoPlugin.PRS: {BITBUCKET: HOST}}
     )
 
-    def pontos(group: str) -> list[EntryPoint]:
-        if group not in c.pontos:
-            return list(entry_points(group=group))
-        return [EntryPoint(n, v, group) for n, v in c.pontos[group].items()]
+    instalados = plugins.pontos_instalados
+
+    def pontos(grupo: str) -> tuple[EntryPoint, ...]:
+        if grupo not in c.pontos:
+            return instalados(grupo)
+        return tuple(EntryPoint(n, v, grupo) for n, v in c.pontos[grupo].items())
 
     def instalar(origem: str) -> bool:
         c.instalados.append(origem)
@@ -168,7 +170,7 @@ def cen(monkeypatch, tmp_path) -> Cenario:
             c.pontos[grupo].update(novos)
         return True
 
-    monkeypatch.setattr(plugins, "entry_points", pontos)
+    monkeypatch.setattr(plugins, "pontos_instalados", pontos)
     monkeypatch.setattr(assistente, "instalar_plugin", instalar)
     monkeypatch.setattr(assistente, "_terminal", lambda: True)
     monkeypatch.setattr(servico, "serve_responde", lambda esperar: False)
