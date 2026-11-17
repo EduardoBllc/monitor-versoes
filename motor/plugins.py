@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import importlib
-from importlib.metadata import entry_points
+import os
+import sys
+from importlib.metadata import EntryPoint, entry_points
 
 from motor.errors import ErroDeEntrada
 
@@ -11,9 +14,31 @@ from motor.errors import ErroDeEntrada
 MARCADOR_IMPORT = ":"
 
 
+def pontos_instalados(grupo: str) -> tuple[EntryPoint, ...]:
+    """Entry points do `grupo`; só relê os pacotes quando uma pasta do `sys.path` muda.
+
+    Ler custa milissegundos (abre o `entry_points.txt` de cada pacote), e o
+    catálogo da configuração consulta dezenas de vezes por operação.
+    """
+    return _pontos_em_cache(grupo, _assinatura_dos_pacotes())
+
+
+# shortcut: editar só o `entry_points.txt` de um dist-info que já existe não muda a
+# pasta e não invalida; instalar, atualizar ou remover pacote cria ou apaga dist-info.
+def _assinatura_dos_pacotes() -> tuple[int, ...]:
+    return tuple(os.stat(p).st_mtime_ns for p in sys.path if os.path.isdir(p))
+
+
+@functools.cache
+def _pontos_em_cache(
+    grupo: str, _assinatura: tuple[int, ...]
+) -> tuple[EntryPoint, ...]:
+    return tuple(entry_points(group=grupo))
+
+
 def nomes_instalados(grupo: str) -> list[str]:
     """Nomes dos entry points instalados no `grupo`, em ordem."""
-    return sorted(ep.name for ep in entry_points(group=grupo))
+    return sorted(ep.name for ep in pontos_instalados(grupo))
 
 
 def carregar_plugin(grupo: str, nome: str) -> type:
@@ -24,7 +49,7 @@ def carregar_plugin(grupo: str, nome: str) -> type:
     """
     if MARCADOR_IMPORT in nome:
         return _importar(nome)
-    pontos = {ep.name: ep for ep in entry_points(group=grupo)}
+    pontos = {ep.name: ep for ep in pontos_instalados(grupo)}
     if nome not in pontos:
         instalados = ", ".join(sorted(pontos)) or "nenhum"
         raise ErroDeEntrada(

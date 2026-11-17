@@ -18,11 +18,11 @@ NAO_E_CLASSE = 42
 
 
 def _instalar(monkeypatch, *pontos: EntryPoint):
-    def falso(group):
-        assert group == GRUPO
-        return [p for p in pontos]
+    def falso(grupo):
+        assert grupo == GRUPO
+        return pontos
 
-    monkeypatch.setattr(plugins, "entry_points", falso)
+    monkeypatch.setattr(plugins, "pontos_instalados", falso)
 
 
 def _ep(nome: str, valor: str) -> EntryPoint:
@@ -72,3 +72,27 @@ def test_import_direto_aceito_sem_origem():
 def test_import_direto_invalido_e_erro(pedido):
     with pytest.raises(ErroDeEntrada):
         plugins.carregar_plugin(GRUPO, pedido)
+
+
+def _pacote_instalado(pasta, nome: str) -> None:
+    info = pasta / f"{nome}-1.0.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {nome}\nVersion: 1.0\n"
+    )
+    (info / "entry_points.txt").write_text(
+        f"[{GRUPO}]\n{nome} = tests.test_plugins:PluginDeTeste\n"
+    )
+
+
+def test_plugin_instalado_depois_da_consulta_aparece_sem_reiniciar(
+    tmp_path, monkeypatch
+):
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _pacote_instalado(tmp_path, "primeiro")
+    assert plugins.nomes_instalados(GRUPO) == ["primeiro"]
+
+    _pacote_instalado(tmp_path, "segundo")
+
+    assert plugins.nomes_instalados(GRUPO) == ["primeiro", "segundo"]
+    assert plugins.carregar_plugin(GRUPO, "segundo") is PluginDeTeste

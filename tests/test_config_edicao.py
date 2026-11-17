@@ -4,7 +4,7 @@ import hashlib
 import os
 import stat
 import sys
-from importlib.metadata import EntryPoint, entry_points
+from importlib.metadata import EntryPoint
 
 import pytest
 from monitor_versoes_bitbucket import Var as VarBitbucket
@@ -109,12 +109,11 @@ def _escrever(texto: str) -> None:
 
 
 def _instalar(monkeypatch, *pontos: EntryPoint) -> None:
+    instalados = plugins.pontos_instalados
     monkeypatch.setattr(
         plugins,
-        "entry_points",
-        lambda group: (
-            list(pontos) if group == GRUPO_TAREFAS else entry_points(group=group)
-        ),
+        "pontos_instalados",
+        lambda grupo: pontos if grupo == GRUPO_TAREFAS else instalados(grupo),
     )
 
 
