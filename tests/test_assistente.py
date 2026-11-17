@@ -310,14 +310,17 @@ def test_pacote_nos_dois_grupos_aparece_com_o_rotulo_de_cada_grupo():
 
 
 @pytest.mark.usefixtures("host_nos_dois_grupos")
-def test_pacote_ja_instalado_pela_outra_pergunta_nao_reinstala(monkeypatch):
-    instalados: list[str] = []
-    monkeypatch.setattr(assistente, "_fontes", lambda grupo: {HOST_NOVO})
-    monkeypatch.setattr(assistente, "perguntar", lambda pergunta: HOST_NOVO)
-    monkeypatch.setattr(assistente, "instalar_plugin", instalados.append)
-    prs = _pergunta(GrupoPlugin.PRS)
-    assert assistente._escolher(prs, None, URL_MOTOR) == HOST_NOVO
-    assert instalados == []
+def test_pacote_instalado_pela_pergunta_de_tarefas_nao_reinstala_na_de_prs(cen):
+    cen.pontos = {GrupoPlugin.TAREFAS: {}, GrupoPlugin.PRS: {}}
+    cen.pacote = {
+        GrupoPlugin.TAREFAS: {HOST_NOVO: FONTE},
+        GrupoPlugin.PRS: {HOST_NOVO: HOST},
+    }
+    assert _rodar(CIMA, ENTER, CIMA, ENTER, ENTER) == CodigoSaida.OK
+    assert cen.instalados == [
+        f"{PREFIXO_GIT}{URL_MOTOR}#{PARAMETRO_SUBDIRETORIO}={PASTA_HOST}"
+    ]
+    assert cen.fontes() == {Tabela.TAREFAS: HOST_NOVO, Tabela.PRS: HOST_NOVO}
 
 
 @pytest.mark.parametrize("saida", [CodigoSaida.OK, CodigoSaida.ERRO])
