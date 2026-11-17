@@ -116,6 +116,13 @@ def abrir_sessao(garantir: bool = True) -> Iterator[Session]:
         engine.dispose()
 
 
+@contextmanager
+def abrir_estado() -> Iterator[EstadoRepo]:
+    """O estado sobre uma sessão de `abrir_sessao`, sem expor o adapter."""
+    with abrir_sessao() as sessao:
+        yield Estado(sessao=sessao)
+
+
 def instanciar_fonte_tarefas(config: ConfigProjeto) -> TaskSource:
     """Carrega o plugin de `[tarefas] fonte` e o instancia.
 

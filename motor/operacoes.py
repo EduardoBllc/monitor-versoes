@@ -11,7 +11,6 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from motor.adapters.estado.sqlite import Estado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config_repo, repos_configurados
 from motor.domain.conflito import PropostaDeBloco
@@ -38,8 +37,13 @@ from motor.engine.deps import Deps
 from motor.engine.orfaos import OrfaoDaVersao, julgar_orfao, listar_orfaos
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado
-from motor.montagem import abrir_sessao, montar_deps, resolver_versionamento
-from motor.ports import EstadoRepo, GitRepo
+from motor.montagem import (
+    abrir_estado,
+    abrir_sessao,
+    montar_deps,
+    resolver_versionamento,
+)
+from motor.ports import EsquemaVersao, EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
@@ -252,10 +256,22 @@ def versoes_gravadas(
         infos = {v.numero: v for v in estado.versoes(repo)}
     except NaoEncontrado:
         return []
+    esquema = versionamento.esquema
+    # Número que o esquema atual não lê (esquema trocado depois de gravar) sai da
+    # lista, como no catálogo, em vez de derrubá-la.
+    reconhecidas = [n for n in infos if _reconhecida(esquema, n)]
     return [
         VersionOption(numero, infos[numero].liberada_em is not None)
-        for numero in reversed(versionamento.esquema.ordenar(list(infos)))
+        for numero in reversed(esquema.ordenar(reconhecidas))
     ]
+
+
+def _reconhecida(esquema: EsquemaVersao, numero: str) -> bool:
+    try:
+        esquema.validar(numero)
+    except ErroDeEntrada:
+        return False
+    return True
 
 
 def listar(
@@ -286,8 +302,7 @@ def listar_versoes_repo(
     if repo.caminho is None:
         return []
     opcoes = None if gravadas else versoes_do_repo(repo, progresso=progresso)
-    with abrir_sessao() as sessao:
-        estado = Estado(sessao=sessao)
+    with abrir_estado() as estado:
         if opcoes is None:
             opcoes = versoes_gravadas(estado, repo.nome, versionamento_do_repo(repo))
         return listar(estado, repo.nome, opcoes)

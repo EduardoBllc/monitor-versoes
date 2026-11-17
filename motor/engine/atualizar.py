@@ -307,7 +307,7 @@ def atualizar_continue(
             )
         deps.git.commit_pick_vazio()
         resultado = _atualizar(deps, versao, retomou=True)
-        # O `atualizar` acima abre lote novo e nao sabe deste pick; sem
+        # O `_atualizar` acima abre lote novo e nao sabe deste pick; sem
         # reinjetar, o commit vazio que acabou de entrar na branch nao apareceria
         # em relatorio nenhum.
         return replace(

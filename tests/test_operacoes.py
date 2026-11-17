@@ -360,6 +360,7 @@ QUANDO = datetime.datetime(2026, 11, 17, 9, tzinfo=datetime.UTC)
 REPO_ESTADO = "alpha"
 LIBERADA = "13.9.0"
 ABERTA = "13.10.0"
+FORA_DO_ESQUEMA = "release-antiga"
 
 
 def _commits(quantos: int) -> list[CommitRef]:
@@ -396,6 +397,17 @@ def test_resumir_conta_cada_secao():
 
 def test_versoes_gravadas_seguem_a_ordem_do_esquema():
     estado = _estado_com_versoes()
+
+    assert versoes_gravadas(estado, REPO_ESTADO, versionamento_padrao()) == [
+        VersionOption(ABERTA, False),
+        VersionOption(LIBERADA, True),
+    ]
+
+
+def test_versoes_gravadas_ignoram_numero_que_o_esquema_nao_reconhece():
+    # Esquema trocado depois de gravar: o número antigo some da lista em vez de derrubá-la.
+    estado = _estado_com_versoes()
+    estado.registrar_versao(REPO_ESTADO, VersaoInfo(numero=FORA_DO_ESQUEMA))
 
     assert versoes_gravadas(estado, REPO_ESTADO, versionamento_padrao()) == [
         VersionOption(ABERTA, False),
