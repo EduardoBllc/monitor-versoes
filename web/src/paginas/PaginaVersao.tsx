@@ -1,5 +1,5 @@
 import { Alert, Box, Flex, Group, Loader, Modal, Stack, Text, Title } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect, useState, type JSX } from "react";
 import { Metodo, api, consultaRepos } from "../api/cliente";
 import { AtualizarStatus } from "../api/enums";
@@ -19,7 +19,7 @@ import { consultaInscricoes } from "../inscricoes";
 import { useGuardaDeSaida } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { FONTE_MONO } from "../tema";
-import { chaveVerificacao, useVersoes } from "../versoes";
+import { chaveVerificacao, invalidarFetch, useVersoes } from "../versoes";
 import type { VerificacaoGravada } from "../api/tipos";
 import { Historico } from "./versao/Historico";
 import { InscricaoDaVersao } from "./versao/InscricaoDaVersao";
@@ -82,8 +82,18 @@ export function PaginaVersao({
   const continuar = () => operacoes.aplicar(repo, versao, true);
   const listada = versoes?.find((v) => v.numero === versao);
   // Lista velha em recarga (versão recém-criada) não conta como ausência.
-  const inexistente =
+  const ausente =
     versoes !== undefined && !buscando && erro === null && listada === undefined;
+  // A lista com fetch fica em cache: a versão pode ter sido criada fora desta aba depois
+  // dela. Relê uma vez antes de afirmar que não existe.
+  const cliente = useQueryClient();
+  const [releu, setReleu] = useState(false);
+  useEffect(() => {
+    if (!ausente || releu) return;
+    setReleu(true);
+    invalidarFetch(cliente, repo);
+  }, [ausente, releu, cliente, repo]);
+  const inexistente = ausente && releu;
 
   if (caminho === null)
     return (
