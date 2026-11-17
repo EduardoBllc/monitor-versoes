@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from importlib.metadata import EntryPoint
 
 import pytest
@@ -8,6 +9,7 @@ from motor import plugins
 from motor.errors import ErroDeEntrada
 
 GRUPO = "monitor_versoes.teste"
+UM_SEGUNDO_NS = 1_000_000_000
 
 
 class PluginDeTeste:
@@ -93,6 +95,9 @@ def test_plugin_instalado_depois_da_consulta_aparece_sem_reiniciar(
     assert plugins.nomes_instalados(GRUPO) == ["primeiro"]
 
     _pacote_instalado(tmp_path, "segundo")
+    # A segunda criação pode cair no mesmo tick do relógio do sistema de arquivos.
+    depois = tmp_path.stat().st_mtime_ns + UM_SEGUNDO_NS
+    os.utime(tmp_path, ns=(depois, depois))
 
     assert plugins.nomes_instalados(GRUPO) == ["primeiro", "segundo"]
     assert plugins.carregar_plugin(GRUPO, "segundo") is PluginDeTeste

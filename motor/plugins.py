@@ -23,15 +23,19 @@ def pontos_instalados(grupo: str) -> tuple[EntryPoint, ...]:
     return _pontos_em_cache(grupo, _assinatura_dos_pacotes())
 
 
-# shortcut: editar só o `entry_points.txt` de um dist-info que já existe não muda a
-# pasta e não invalida; instalar, atualizar ou remover pacote cria ou apaga dist-info.
-def _assinatura_dos_pacotes() -> tuple[int, ...]:
-    return tuple(os.stat(p).st_mtime_ns for p in sys.path if os.path.isdir(p))
+#: Grupos x estados dos pacotes guardados; o estado antigo sai do cache sozinho.
+MAXIMO_EM_CACHE = 32
 
 
-@functools.cache
+# Editar só o `entry_points.txt` de um dist-info existente não muda a pasta e não
+# invalida; aceito porque instalar, atualizar ou remover pacote cria ou apaga dist-info.
+def _assinatura_dos_pacotes() -> tuple[tuple[str, int], ...]:
+    return tuple((p, os.stat(p).st_mtime_ns) for p in sys.path if os.path.isdir(p))
+
+
+@functools.lru_cache(maxsize=MAXIMO_EM_CACHE)
 def _pontos_em_cache(
-    grupo: str, _assinatura: tuple[int, ...]
+    grupo: str, _assinatura: tuple[tuple[str, int], ...]
 ) -> tuple[EntryPoint, ...]:
     return tuple(entry_points(group=grupo))
 
