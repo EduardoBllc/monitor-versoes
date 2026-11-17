@@ -425,13 +425,17 @@ class GitSubprocess:
             return True
         if proc.returncode == 1:
             return False
-        # Commit que nao existe no clone (PR rebaseada, squash, fetch parcial) da
-        # exit 128 como qualquer outra falha; so ele vira False, branch ausente
-        # continua erro.
-        existe = _rodar_git(
+        # Commit que não existe no clone (PR rebaseada, squash, fetch parcial) dá
+        # exit 128 como qualquer outra falha: só ele vira False, e só se a branch
+        # existe; branch ausente continua erro.
+        commit_existe = _rodar_git(
             ["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=self.repo_path
         )
-        if existe.returncode != 0:
+        branch_existe = _rodar_git(
+            ["git", "rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}"],
+            cwd=self.repo_path,
+        )
+        if commit_existe.returncode != 0 and branch_existe.returncode == 0:
             return False
         raise MotorError(
             "git merge-base --is-ancestor: exit status "

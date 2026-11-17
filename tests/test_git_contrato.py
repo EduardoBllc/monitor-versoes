@@ -242,6 +242,21 @@ def test_ancestral_de_branch_inexistente_e_erro(semente):
         semente.git.is_ancestor(raiz, V4)
 
 
+def test_ancestral_de_commit_e_branch_inexistentes_e_erro(semente):
+    _raiz(semente)
+
+    with pytest.raises(MotorError):
+        semente.git.is_ancestor(HASH_AUSENTE, V4)
+
+
+def test_ancestral_aceita_a_ref_curta_de_rastreamento(semente):
+    """É a forma que a fonte de commits por PR usa para a principal."""
+    c = _raiz(semente)
+    semente.ref_remota(PRINCIPAL, c)
+
+    assert semente.git.is_ancestor(c, f"origin/{PRINCIPAL}")
+
+
 def test_commit_fora_do_clone_nao_e_ancestral(semente):
     """Commit de PR rebaseada ou squashada não existe no clone: a verificação
     segue para os outros níveis em vez de cair."""
