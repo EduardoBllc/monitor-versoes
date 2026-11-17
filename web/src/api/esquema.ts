@@ -903,6 +903,26 @@ export interface components {
             /** Correcao */
             correcao: string;
         };
+        /** ResumoVerificacao */
+        ResumoVerificacao: {
+            /**
+             * Verificado Em
+             * Format: date-time
+             */
+            verificado_em: string;
+            /** Verde */
+            verde: boolean;
+            /** Presentes */
+            presentes: number;
+            /** Faltantes */
+            faltantes: number;
+            /** Conflitantes */
+            conflitantes: number;
+            /** Suspeitos */
+            suspeitos: number;
+            /** Sem Commits */
+            sem_commits: number;
+        };
         /** Sugestao */
         Sugestao: {
             /** Numero */
@@ -975,12 +995,15 @@ export interface components {
             /** Editavel */
             editavel: boolean;
         };
-        /** VersionOption */
-        VersionOption: {
+        /** VersaoListada */
+        VersaoListada: {
             /** Numero */
             numero: string;
             /** Liberada */
             liberada: boolean;
+            /** Atualizada Em */
+            atualizada_em: string | null;
+            verificacao: components["schemas"]["ResumoVerificacao"] | null;
         };
         /** VersionStatus */
         VersionStatus: {
@@ -1052,7 +1075,9 @@ export interface operations {
     };
     listar_versoes_api_repos__repo__versoes_get: {
         parameters: {
-            query?: never;
+            query?: {
+                gravadas?: boolean;
+            };
             header?: never;
             path: {
                 repo: string;
@@ -1067,7 +1092,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VersionOption"][];
+                    "application/json": components["schemas"]["VersaoListada"][];
                 };
             };
             /** @description Validation Error */

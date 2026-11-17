@@ -41,7 +41,7 @@ import {
   type EventoSimples,
 } from "./atualizacao";
 import { acompanhar, type Execucao } from "./api/eventos";
-import type { RepoOption, VersionOption } from "./api/tipos";
+import type { RepoOption, VersaoListada } from "./api/tipos";
 import { Barra } from "./componentes/Barra";
 import { Consulta } from "./componentes/Consulta";
 import type { EstadoConflitoWeb } from "./componentes/EditorConflito";
@@ -146,7 +146,7 @@ function Tela() {
   const versoes = useQuery({
     queryKey: ["versoes", repo],
     queryFn: () =>
-      api<VersionOption[]>(
+      api<VersaoListada[]>(
         Metodo.GET,
         `/api/repos/${encodeURIComponent(repo ?? "")}/versoes`,
       ),

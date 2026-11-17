@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -10,10 +11,11 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from motor.adapters.estado.sqlite import Estado
 from motor.adapters.git.subprocess import new_git_subprocess
 from motor.config import carregar_config_repo, repos_configurados
 from motor.domain.conflito import PropostaDeBloco
-from motor.domain.types import JulgamentoOrfao, VersionStatus
+from motor.domain.types import JulgamentoOrfao, Verificacao, VersionStatus
 from motor.engine.atualizar import (
     AtualizarResult,
     atualizar,
@@ -37,7 +39,7 @@ from motor.engine.orfaos import OrfaoDaVersao, julgar_orfao, listar_orfaos
 from motor.engine.verificar import verificar
 from motor.errors import ErroDeEntrada, MotorError, NaoEncontrado
 from motor.montagem import abrir_sessao, montar_deps, resolver_versionamento
-from motor.ports import GitRepo
+from motor.ports import EstadoRepo, GitRepo
 from motor.progresso import Progresso, RelatorProgresso, silencioso
 from motor.services.catalogo import Catalogo
 from motor.services.versionamento import Versionamento
@@ -86,6 +88,25 @@ class VersionOption:
     liberada: bool
 
 
+@dataclass(frozen=True)
+class ResumoVerificacao:
+    verificado_em: datetime.datetime
+    verde: bool
+    presentes: int
+    faltantes: int
+    conflitantes: int
+    suspeitos: int
+    sem_commits: int
+
+
+@dataclass(frozen=True)
+class VersaoListada:
+    numero: str
+    liberada: bool
+    atualizada_em: datetime.datetime | None
+    verificacao: ResumoVerificacao | None
+
+
 RepoLoader = Callable[[], list[RepoOption]]
 VersionLoader = Callable[[RepoOption], list[VersionOption]]
 VerifyRunner = Callable[[RepoOption, str, bool], VersionStatus]
@@ -99,6 +120,8 @@ LerArquivoConflitoRunner = Callable[[RepoOption, str, str], ConteudoDoConflito]
 ResolverArquivoRunner = Callable[[RepoOption, str, Resolucao], None]
 ReabrirArquivoRunner = Callable[[RepoOption, str, str], None]
 ProporRunner = Callable[[RepoOption, str, PedidoProposta], list[PropostaDeBloco]]
+# (repo, gravadas): gravadas lista só o que o estado conhece, sem fetch.
+ListagemRunner = Callable[[RepoOption, bool], list[VersaoListada]]
 
 
 class ContinueRunner(Protocol):
@@ -140,6 +163,7 @@ class Runners:
     propor_resolucao: ProporRunner | None = None
     listar_orfaos: OrfaosRunner | None = None
     julgar_orfao: JulgarRunner | None = None
+    listar_versoes: ListagemRunner | None = None
 
 
 def descobrir_repos(
@@ -205,6 +229,68 @@ def versoes_do_repo(
         versionamento,
         progresso=progresso,
     )
+
+
+def resumir(v: Verificacao) -> ResumoVerificacao:
+    s = v.status
+    return ResumoVerificacao(
+        verificado_em=v.verificado_em,
+        verde=s.verde,
+        presentes=len(s.ancestrais),
+        faltantes=len(s.faltantes),
+        conflitantes=len(s.conflitantes),
+        suspeitos=len(s.suspeitos_conteudo),
+        sem_commits=len(s.tasks_sem_commits),
+    )
+
+
+def versoes_gravadas(
+    estado: EstadoRepo, repo: str, versionamento: Versionamento
+) -> list[VersionOption]:
+    """As versões do estado, da mais nova à mais antiga; [] se o repo nunca foi operado."""
+    try:
+        infos = {v.numero: v for v in estado.versoes(repo)}
+    except NaoEncontrado:
+        return []
+    return [
+        VersionOption(numero, infos[numero].liberada_em is not None)
+        for numero in reversed(versionamento.esquema.ordenar(list(infos)))
+    ]
+
+
+def listar(
+    estado: EstadoRepo, repo: str, opcoes: list[VersionOption]
+) -> list[VersaoListada]:
+    try:
+        infos = {v.numero: v for v in estado.versoes(repo)}
+    except NaoEncontrado:
+        infos = {}
+    listadas = []
+    for opcao in opcoes:
+        info = infos.get(opcao.numero)
+        verificacao = None if info is None else estado.verificacao(repo, opcao.numero)
+        listadas.append(
+            VersaoListada(
+                opcao.numero,
+                opcao.liberada,
+                None if info is None else info.atualizada_em,
+                None if verificacao is None else resumir(verificacao),
+            )
+        )
+    return listadas
+
+
+def listar_versoes_repo(
+    repo: RepoOption, gravadas: bool, *, progresso: RelatorProgresso = silencioso
+) -> list[VersaoListada]:
+    if repo.caminho is None:
+        return []
+    opcoes = None if gravadas else versoes_do_repo(repo, progresso=progresso)
+    with abrir_sessao() as sessao:
+        estado = Estado(sessao=sessao)
+        if opcoes is None:
+            opcoes = versoes_gravadas(estado, repo.nome, versionamento_do_repo(repo))
+        return listar(estado, repo.nome, opcoes)
 
 
 def _deps_do_repo(
@@ -413,4 +499,5 @@ def runners_com_progresso(relatar: RelatorProgresso) -> Runners:
         propor_resolucao=partial(propor_resolucao_repo, progresso=relatar),
         listar_orfaos=partial(orfaos_repo, progresso=relatar),
         julgar_orfao=partial(julgar_orfao_repo, progresso=relatar),
+        listar_versoes=partial(listar_versoes_repo, progresso=relatar),
     )

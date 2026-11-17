@@ -67,6 +67,7 @@ from motor.operacoes import (
     RepoOption,
     Resolucao,
     Runners,
+    VersaoListada,
     VersionOption,
 )
 from motor.progresso import Progresso, RelatorProgresso
@@ -102,6 +103,7 @@ class Ambiente:
         self.relatar: RelatorProgresso | None = None
         self.iniciou = threading.Event()
         self.versoes = [VersionOption("14.0.0", True), VersionOption("13.0.0", True)]
+        self.gravadas: list[bool] = []
         self.resultado: VersionStatus | AtualizarResult = VersionStatus(verde=True)
         self.inscricoes = tmp_path / "inscricoes.json"
         self.erro_conflito: MotorError | None = None
@@ -178,7 +180,12 @@ class Ambiente:
             versionamento_repo=lambda repo: ESCALONADO_COMPOSTA(),
             listar_orfaos=self.listar_orfaos,
             julgar_orfao=self.julgar_orfao,
+            listar_versoes=self.listar_versoes,
         )
+
+    def listar_versoes(self, repo: RepoOption, gravadas: bool) -> list[VersaoListada]:
+        self.gravadas.append(gravadas)
+        return [VersaoListada(v.numero, v.liberada, None, None) for v in self.versoes]
 
     def listar_orfaos(self, repo: RepoOption, versao: str) -> list[OrfaoDaVersao]:
         return [
@@ -238,6 +245,15 @@ def test_lista_repos_e_versoes(cliente: TestClient) -> None:
     assert repos[1]["caminho"] is None
     versoes = cliente.get(f"/api/repos/{REPO}/versoes").json()
     assert [v["numero"] for v in versoes] == ["14.0.0", "13.0.0"]
+
+
+def test_listar_versoes_repassa_gravadas(cliente: TestClient, amb: Ambiente) -> None:
+    gravadas = cliente.get(f"/api/repos/{REPO}/versoes", params={"gravadas": True})
+    padrao = cliente.get(f"/api/repos/{REPO}/versoes")
+
+    assert amb.gravadas == [True, False]
+    assert {"atualizada_em", "verificacao"} <= set(gravadas.json()[0])
+    assert padrao.json() == gravadas.json()
 
 
 def test_operacao_em_repo_sem_checkout_da_404_com_mensagem_do_motor(
@@ -494,13 +510,13 @@ def test_inscrever_repo_sem_checkout_da_404(cliente: TestClient) -> None:
 def test_erro_nas_leituras_segue_a_tabela(
     amb: Ambiente, erro: Exception, status: HTTPStatus, tipo: TipoErro
 ) -> None:
-    def falha(repo: RepoOption) -> list[VersionOption]:
+    def falha(repo: RepoOption, gravadas: bool) -> list[VersaoListada]:
         raise erro
 
     original = amb.fabrica
 
     def fabrica(relatar: RelatorProgresso) -> Runners:
-        return replace(original(relatar), carregar_versoes=falha)
+        return replace(original(relatar), listar_versoes=falha)
 
     app = criar_app(
         fabrica,
