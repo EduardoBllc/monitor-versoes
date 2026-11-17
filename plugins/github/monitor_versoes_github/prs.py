@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime
 import os
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 
 import httpx
@@ -142,10 +142,10 @@ def _autoria(dados: Mapping[str, object]) -> tuple[str, datetime.datetime] | Non
     return mensagem, data
 
 
-def _eh_rebase(merge: Mapping[str, object], ultimo: Mapping[str, object]) -> bool:
-    """O rebase recria o último commit com a mesma mensagem e a mesma autoria."""
-    autoria = _autoria(merge)
-    return autoria is not None and autoria == _autoria(_sub(ultimo, _Campo.COMMIT))
+def _eh_rebase(git: Mapping[str, object], do_pr: Mapping[str, object]) -> bool:
+    """`git` recria `do_pr`: o rebase mantém a mensagem e a autoria."""
+    autoria = _autoria(git)
+    return autoria is not None and autoria == _autoria(_sub(do_pr, _Campo.COMMIT))
 
 
 class GithubPrs:
@@ -272,9 +272,10 @@ class GithubPrs:
         total = pr.get(_Campo.COMMITS)
         if isinstance(total, int) and total > _MAX_COMMITS_PR:
             return [_ref_git(merge)]
-        do_pr = self._commits_do_pr(repo, pr_id)
+        # O rebase não recria merge commit do PR, como o do "Update branch".
+        do_pr = [c for c in self._commits_do_pr(repo, pr_id) if len(_pais(c)) <= 1]
         if do_pr and _eh_rebase(merge, do_pr[-1]):
-            return self._caminho_do_rebase(repo, merge, len(do_pr))
+            return self._caminho_do_rebase(repo, merge, do_pr)
         return [_ref_git(merge)]
 
     def _commit(self, repo: str, sha: str) -> Mapping[str, object] | None:
@@ -288,18 +289,26 @@ class GithubPrs:
         return [_objeto(c, "commit do PR") for c in itens]
 
     def _caminho_do_rebase(
-        self, repo: str, merge: Mapping[str, object], total: int
+        self,
+        repo: str,
+        merge: Mapping[str, object],
+        do_pr: Sequence[Mapping[str, object]],
     ) -> list[CommitRef]:
-        """Os `total` commits da principal que terminam em `merge`, pelo primeiro pai.
+        """Os commits da principal que terminam em `merge` e recriam os de `do_pr`.
 
-        Merge commit ou commit não encontrado encerra o caminho: devolve o já
-        percorrido.
+        Anda pelo primeiro pai, do mais novo ao mais antigo, conferindo cada
+        commit contra o do PR na mesma posição. Merge commit, commit não
+        encontrado ou divergência encerra o caminho: devolve o já percorrido.
         """
         caminho = [merge]
-        while len(caminho) < total:
+        while len(caminho) < len(do_pr):
             pais = _pais(caminho[-1])
             anterior = self._commit(repo, pais[0]) if pais else None
-            if anterior is None or len(_pais(anterior)) > 1:
+            if (
+                anterior is None
+                or len(_pais(anterior)) > 1
+                or not _eh_rebase(anterior, do_pr[-1 - len(caminho)])
+            ):
                 break
             caminho.append(anterior)
         return [_ref_git(c) for c in reversed(caminho)]

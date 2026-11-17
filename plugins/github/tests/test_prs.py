@@ -182,8 +182,10 @@ def test_sem_api_url_usa_api_github_com() -> None:
 
 def test_api_url_sem_https_e_erro_de_entrada() -> None:
     host, _ = _host(lambda r: _pagina(), prs={ChavePrs.API_URL: f"http://{HOST_GHE}"})
-    with pytest.raises(ErroDeEntrada):
+    with pytest.raises(ErroDeEntrada) as erro:
         host.prs_mergeadas(None)
+    # O texto é requisito: o operador de PR precisa ver a tabela [prs].
+    assert f"[{Tabela.PRS}] {ChavePrs.API_URL}" in str(erro.value)
 
 
 @pytest.mark.parametrize(
@@ -372,6 +374,37 @@ def test_rebase_para_em_merge_commit_no_caminho() -> None:
         do_pr=[_do_pr("c1", BASE), _do_pr("c2", "c1"), _do_pr("c3", "c2")],
     )
     assert _hashes(rota) == ["r2", "r3"]
+
+
+def test_rebase_ignora_merge_commit_do_pr_e_nao_passa_do_pr() -> None:
+    rota = _github(
+        merge="r2",
+        principal=[
+            _git(BASE, "antes", msg="#11 outro PR"),
+            _git("r1", BASE, msg="um"),
+            _git("r2", "r1", msg="dois"),
+        ],
+        do_pr=[
+            _do_pr("c1", BASE, msg="um"),
+            _do_pr("mm", "c1", "main", msg="Merge branch 'main'"),
+            _do_pr("c2", "mm", msg="dois"),
+        ],
+    )
+    assert _hashes(rota) == ["r1", "r2"]
+
+
+def test_rebase_para_no_commit_que_nao_recria_o_do_pr() -> None:
+    # O rebase descartou o c2, vazio: o r1 recria o c1, não o c2.
+    rota = _github(
+        merge="r3",
+        principal=[_git("r1", BASE, msg="um"), _git("r3", "r1", msg="tres")],
+        do_pr=[
+            _do_pr("c1", BASE, msg="um"),
+            _do_pr("c2", "c1", msg="dois"),
+            _do_pr("c3", "c2", msg="tres"),
+        ],
+    )
+    assert _hashes(rota) == ["r3"]
 
 
 @pytest.mark.parametrize("merge", [None, "sumiu"])
