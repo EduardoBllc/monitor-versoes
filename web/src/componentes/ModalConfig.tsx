@@ -400,6 +400,9 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
   const fechar = () => {
     setConfirmar(false);
     setRetomar(null);
+    // Sem isto, reabrir monta o editor com o cache e o remonta quando a recarga chega,
+    // descartando a seção escolhida e o que já foi digitado.
+    cliente.removeQueries({ queryKey: CHAVE });
     aoFechar();
   };
 
