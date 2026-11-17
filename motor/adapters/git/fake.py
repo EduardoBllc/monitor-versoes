@@ -18,6 +18,7 @@ from motor.ports import CherryPickOutcome, MergePrediction
 
 # refs/remotes/<remoto>/<nome> — igual ao adapter real, o remoto e arbitrario.
 _PREFIXO_REF_REMOTA = re.compile(r"^refs/remotes/origin/")
+PREFIXO_ORIGIN = "origin/"
 
 
 FAKE_WORKTREES = "/fake-worktrees"
@@ -138,7 +139,7 @@ class FakeGit:
         return self.branches.get(ref, ref)
 
     def is_ancestor(self, commit: str, branch: str, /) -> bool:
-        h = self._resolve_ref_local(branch)
+        h = self.resolve_ref(branch)
         while h != "":
             if h == commit:
                 return True
@@ -245,7 +246,7 @@ class FakeGit:
 
     def resolve_ref(self, ref: str, /) -> str:
         if (m := _PREFIXO_REF_REMOTA.match(ref)) is not None:
-            # So a ref qualificada resolve, como no git de verdade.
+            # O nome puro nao resolve a ref de rastreamento, como no git de verdade.
             remota = self.remote_refs.get(ref[m.end() :])
             if remota is None:
                 raise NaoEncontrado(f"ref {ref} nao encontrada")
@@ -257,6 +258,14 @@ class FakeGit:
             return self.branches[nome]
         if nome in self.commits:
             return nome
+        # `origin/X` resolve pela ref de rastreamento, como no git; uma branch
+        # local com esse nome literal vem antes, também como no git.
+        if (
+            ref.startswith(PREFIXO_ORIGIN)
+            and (remota := self.remote_refs.get(ref.removeprefix(PREFIXO_ORIGIN)))
+            is not None
+        ):
+            return remota
         raise NaoEncontrado(f"ref {ref} nao encontrada")
 
     def use_worktree(self, branch: str, /) -> None:

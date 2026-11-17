@@ -141,7 +141,8 @@ class GitRepo(Protocol):
         ...
 
     def is_ancestor(self, commit: str, branch: str, /) -> bool:
-        """Verifica se commit é ancestral de branch."""
+        """Verifica se commit é ancestral de branch. Commit que não existe no
+        clone não é ancestral; branch inexistente é erro."""
         ...
 
     def search_commits(self, padroes: list[str], refs: str, /) -> list[CommitRef]:
