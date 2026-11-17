@@ -352,7 +352,12 @@ function Editor({
           <Fragment key={JSON.stringify(destino)}>{conteudo}</Fragment>
         </Stack>
       </Group>
-      <Group justify="flex-end" pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
+      <Group
+        justify="flex-end"
+        py="sm"
+        bg="var(--mantine-color-body)"
+        style={{ position: "sticky", bottom: 0, borderTop: "1px solid var(--mantine-color-default-border)" }}
+      >
         {pendentes > 0 && (
           <Text c="dimmed" size="sm">
             {pendentes === 1 ? "1 alteração não salva" : `${pendentes} alterações não salvas`}

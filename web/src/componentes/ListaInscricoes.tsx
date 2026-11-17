@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { JSX } from "react";
 import { consultaInscricoes } from "../inscricoes";
 import { Link } from "../navegacao";
+import { chaveVersao } from "../operacoes/chave";
 import { Pagina } from "../rotas";
 import { FONTE_MONO } from "../tema";
 import { INTERVALO_RELOGIO_MS, ha, useAgora } from "../tempo";
@@ -29,7 +30,7 @@ export function ListaInscricoes({ repo }: { repo?: string }): JSX.Element {
           </Text>
         )}
         {lista.map((i) => (
-          <Group key={`${i.repo}@${i.versao}`} gap="xs" justify="space-between" wrap="nowrap">
+          <Group key={chaveVersao(i.repo, i.versao)} gap="xs" justify="space-between" wrap="nowrap">
             <Group gap="xs" wrap="nowrap">
               {repo === undefined && <Text size="sm">{i.repo}</Text>}
               <Link

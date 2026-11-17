@@ -13,6 +13,7 @@ import { acoesDaPaleta } from "./paleta";
 const ATALHO = "mod+K";
 const MACOS: UseOSReturnValue = "macos";
 const ROTULO_BUSCA = "Buscar";
+const LIMITE_RESULTADOS = 50;
 
 enum RotuloAtalho {
   MAC = "⌘K",
@@ -39,6 +40,7 @@ export function Paleta(): JSX.Element {
     <Spotlight
       actions={acoes}
       shortcut={ATALHO}
+      limit={LIMITE_RESULTADOS}
       nothingFound="Nada encontrado"
       searchProps={{ placeholder: "Buscar repo, versão ou chamado" }}
     />

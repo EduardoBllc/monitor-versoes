@@ -414,6 +414,11 @@ o resto.
 (padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
 `--sem-navegador` sobe sem abrir o navegador: é como o serviço de login o roda.
 
+A interface tem uma página por nível: **Início** (versões em aberto, o que precisa de você,
+inscrições e a execução em curso), **repositório** (versões abertas e liberadas, inscrições e
+Nova versão) e **versão** (veredito, ações do estado, chamados, inscrição e histórico). A
+trilha no topo volta um nível, e **⌘K** (Ctrl+K fora do macOS) busca repo, versão ou chamado.
+
 As operações seguem rodando se a aba fechar. O porquê em
 [decisão 030](docs/decisoes/030-front-end-web-spa-com-dist-versionado.md).
 
@@ -474,7 +479,7 @@ O porquê em [decisão 038](docs/decisoes/038-sugestao-de-resolucao-por-ia.md).
 
 ### Editar a configuração pela interface
 
-Na TUI, a tecla `g` abre a tela de configuração; na web, o botão **Configuração** da barra. As
+Na TUI, a tecla `g` abre a tela de configuração; na web, a página `/config`, com link no cabeçalho. As
 duas editam o `config.toml` central (geral, por repo e `[ambiente]`), preservam os comentários
 do arquivo e validam antes de gravar. Mudanças no `[ambiente]` valem sem reiniciar. Salvar não
 consulta o lock do clone: edite por um lugar de cada vez. O porquê:
@@ -522,7 +527,7 @@ No `[ambiente]`, `tabela` é `TABELA_AMBIENTE`; `segredo=True` esconde o valor n
 O atributo `campos_config` é opcional e plugin que falha ao carregar é ignorado; na TUI, a
 aba Plugins só aparece quando algum plugin declara campos. Opcionais do `Campo`: `descricao`
 (o tooltip da web), `padrao` (o valor sem a chave, mostrado ao lado do campo), `exemplo` (o placeholder da
-web), `aviso_vazio` (aviso na modal enquanto o campo está vazio; num segredo, enquanto não está definido) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
+web), `aviso_vazio` (aviso na tela enquanto o campo está vazio; num segredo, enquanto não está definido) e `backend` (o campo só aparece com aquele `DATABASE_BACKEND`).
 
 Um host de PR implementa a porta `HostPr` (`motor/ports.py`): `prs_mergeadas(desde)`, as PRs
 mergeadas desde a data (`None` = histórico inteiro), e `commits_da_pr(pr_id)`, os commits da
@@ -577,7 +582,7 @@ o `serve` remove o timer do systemd ou o LaunchAgent que versões antigas instal
 disparam em dobro: mantenha um só.
 A execução não depende de diretório e não lê `.env`, nem quando o daemon a dispara: o filho usa
 o `[ambiente]` do config central ou o ambiente que o `serve` herdou.
-Também dá para gerenciar na TUI (tecla `i`) e na web (botão **Inscrições** da barra).
+Também dá para gerenciar na TUI (tecla `i`) e na web (na página da versão se inscreve; a lista aparece no Início e na página do repositório).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
 outras. O desfecho da última execução aparece no `listar`:

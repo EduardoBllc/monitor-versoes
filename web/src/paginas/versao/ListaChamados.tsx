@@ -157,6 +157,7 @@ export function ListaChamados({
           onChange={(e) => setBusca(e.currentTarget.value)}
         />
       </Group>
+      {lista.length === 0 && <Text c="dimmed">Nenhum chamado encontrado.</Text>}
       {lista.map((c) => (
         <Linha key={c.chamado} chamado={c} />
       ))}

@@ -10,6 +10,9 @@ export enum OrigemVersoes {
 // Sem git, é barata: acompanha as verificações das rodadas agendadas.
 const INTERVALO_GRAVADAS_MS = 15_000;
 
+// O fetch roda git: reaproveita o resultado por alguns minutos; criar versão força a releitura.
+const VALIDADE_FETCH_MS = 3 * 60_000;
+
 const chaveVersoes = (repo: string, origem: OrigemVersoes) =>
   ["versoes", repo, origem] as const;
 
@@ -75,6 +78,7 @@ export function useVersoes(
   const comFetch = useQuery({
     ...consultaVersoes(repo, OrigemVersoes.FETCH),
     enabled: habilitado,
+    staleTime: VALIDADE_FETCH_MS,
   });
   return {
     versoes: juntarVersoes(gravadas.data, comFetch.data),
