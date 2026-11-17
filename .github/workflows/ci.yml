@@ -70,10 +70,13 @@ jobs:
       # antes garante que o `npx` use a versão travada no lock.
       - run: cd web && npm ci && npx playwright install --with-deps chromium
         if: matrix.alvo == 'web-e2e'
+      - name: bench disco
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "TEMP=$TEMP"
+          for i in 1 2; do uv run python bench_disco.py "$TEMP" "$RUNNER_TEMP"; done
       - run: make ${{ matrix.alvo }}
-        env:
-          TEMP: ${{ runner.os == 'Windows' && runner.temp || '' }}
-          TMP: ${{ runner.os == 'Windows' && runner.temp || '' }}
 
   instalador-windows:
     # Fora da matriz e dos checks exigidos: baixa a última release e liga e
