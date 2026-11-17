@@ -22,7 +22,6 @@ export enum Acao {
 /** Os lados do bloco em conflito, como o editor web os oferece. */
 export enum LadoConflito {
   THEIRS = "Aceitar theirs",
-  OURS = "Aceitar ours",
 }
 
 enum Campo {

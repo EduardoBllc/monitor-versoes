@@ -43,11 +43,10 @@ function assinar(ouvinte: () => void): () => void {
   };
 }
 
-export function ir(rota: Rota, trocar = false): void {
+export function ir(rota: Rota): void {
   const destino = caminhoDa(rota);
   if (destino === atual || !podeSair()) return;
-  if (trocar) window.history.replaceState(null, "", destino);
-  else window.history.pushState(null, "", destino);
+  window.history.pushState(null, "", destino);
   atual = destino;
   avisar();
 }
@@ -55,10 +54,6 @@ export function ir(rota: Rota, trocar = false): void {
 export function useRota(): Rota {
   const caminho = useSyncExternalStore(assinar, () => atual);
   return useMemo(() => lerRota(caminho), [caminho]);
-}
-
-export function useIr(): (rota: Rota, trocar?: boolean) => void {
-  return ir;
 }
 
 /** Clique num link da SPA: navega aqui, salvo quando o navegador deve abrir em outra aba. */
