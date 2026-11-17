@@ -313,6 +313,29 @@ describe("chave declarada por dois plugins", () => {
     expect(origens(doPlugin[fonteRepo] ?? [], projetoRepo)).toEqual([JIRA]);
     expect(origens(sobrescritas, projetoRepo)).toEqual([JIRA]);
   });
+
+  it("mesmo plugin nos dois grupos aparece uma vez, na seção do grupo escolhido", () => {
+    const GITHUB = "github";
+    const GITHUB_TOKEN = "GITHUB_TOKEN";
+    const token = (grupo: GrupoPlugin) =>
+      campo(Escopo.AMBIENTE, TABELA_AMBIENTE, GITHUB_TOKEN, { ...plugin(grupo, GITHUB), ...segredo });
+    const dosDois: ConfigEditavel = {
+      ...CONFIG,
+      campos: [...CAMPOS, token(GrupoPlugin.TAREFAS), token(GrupoPlugin.PRS)],
+    };
+    const chave = ambiente(GITHUB_TOKEN);
+    const onde = (f: Formulario) =>
+      Object.values(Secao).flatMap((s) =>
+        chaves(linhasDaSecao(dosDois, f, s))
+          .filter((c) => c === chave)
+          .map(() => s),
+      );
+
+    expect(onde(formulario({ [fonteTarefas]: JIRA, [fontePrs]: GITHUB }))).toEqual([Secao.PRS]);
+    expect(onde(formulario({ [fonteTarefas]: GITHUB }))).toEqual([Secao.TAREFAS]);
+    expect(onde(formulario({ [fonteTarefas]: GITHUB, [fontePrs]: GITHUB }))).toHaveLength(1);
+    expect(onde(formulario({ [fonteTarefas]: JIRA }))).toEqual([]);
+  });
 });
 
 const VAZIA: ConfigEditavel = { versao: "v1", repos: [], campos: CAMPOS, valores: [] };
