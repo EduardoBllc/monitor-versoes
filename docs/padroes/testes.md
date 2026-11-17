@@ -17,8 +17,9 @@ ficam em [codigo.md](codigo.md); como rodar a suíte, no [README](../../README.m
   representante existente ou fica fora da suíte.
 - Não entra teste que só prova que uma alteração foi feita ("o comando não aceita
   mais `--x`", "o campo antigo não é gravado", texto de docstring), nem teste que
-  varre o código-fonte atrás de um termo ou import proibido. Regra de arquitetura e
-  de convenção se protege na documentação e na revisão, não na suíte.
+  varre o código-fonte atrás de um termo ou import proibido, nem teste que confere
+  documentação (link, citação, texto). Regra de arquitetura, de convenção e de
+  documentação se protege na revisão, não na suíte.
 
 Antes de adicionar ou preservar um teste, responda:
 
