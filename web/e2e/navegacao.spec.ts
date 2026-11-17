@@ -26,8 +26,6 @@ test("repo sem checkout fica indisponível", async ({ page, manifesto }) => {
 });
 
 test("versão inexistente mostra erro", async ({ page, manifesto }) => {
-  // Lacuna da UI atual: a versão inexistente cai em "Nenhum snapshot ainda", sem erro.
-  test.fail();
   await abrir(page, manifesto.repo, VERSAO_INEXISTENTE);
   await expect(erro(page)).toBeVisible();
 });

@@ -1,29 +1,44 @@
-import { Group, Loader, Modal, Stack, Title } from "@mantine/core";
+import { Alert, Box, Group, Loader, Modal, Stack, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect, useState, type JSX } from "react";
-import { consultaRepos } from "../api/cliente";
+import { Metodo, api, consultaRepos } from "../api/cliente";
 import { AtualizarStatus } from "../api/enums";
 import { FaseAtualizacao } from "../atualizacao";
 import { AcoesVersao } from "../componentes/AcoesVersao";
-import { Consulta } from "../componentes/Consulta";
 import type { EstadoConflitoWeb } from "../componentes/EditorConflito";
 import { ModalAbortar } from "../componentes/ModalAbortar";
 import { ModalConfirmarLote } from "../componentes/ModalConfirmarLote";
-import { ModalInscricoes } from "../componentes/ModalInscricoes";
 import { ModalOrfaos } from "../componentes/ModalOrfaos";
 import { PainelBloqueio } from "../componentes/PainelBloqueio";
 import { ProgressoExecucao } from "../componentes/ProgressoExecucao";
 import { ResultadoAtualizacao } from "../componentes/ResultadoAtualizacao";
 import { Status } from "../componentes/Status";
 import { PROGRESSO_INICIAL, estaRodando } from "../execucoes";
+import { consultaInscricoes } from "../inscricoes";
 import { useGuardaDeSaida } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { FONTE_MONO } from "../tema";
 import { useVersoes } from "../versoes";
+import type { VerificacaoGravada } from "../api/tipos";
+import { Historico } from "./versao/Historico";
+import { InscricaoDaVersao } from "./versao/InscricaoDaVersao";
+import { ListaChamados } from "./versao/ListaChamados";
+import { Veredito } from "./versao/Veredito";
 
 // Lazy: o Monaco fica fora do chunk principal.
 const EditorConflito = lazy(() => import("../componentes/EditorConflito"));
 const CONFLITO_ABRINDO: EstadoConflitoWeb = { pendente: true, sujo: false };
+const LARGURA_LATERAL = 280;
+
+// Sob ["versoes", repo]: o fim de qualquer execução do repo já invalida esse prefixo.
+const consultaVerificacao = (repo: string, versao: string) => ({
+  queryKey: ["versoes", repo, versao, "verificacao"],
+  queryFn: () =>
+    api<VerificacaoGravada | null>(
+      Metodo.GET,
+      `/api/repos/${encodeURIComponent(repo)}/versoes/${encodeURIComponent(versao)}/verificacao`,
+    ),
+});
 
 export function PaginaVersao({
   repo,
@@ -34,13 +49,16 @@ export function PaginaVersao({
 }): JSX.Element {
   const operacoes = useOperacoes();
   const { execucoes, retomar } = operacoes;
-  const [inscricoes, setInscricoes] = useState(false);
   const [orfaos, setOrfaos] = useState(false);
   const [abortando, setAbortando] = useState(false);
   const [resolvendo, setResolvendo] = useState(false);
   const [conflitoWeb, setConflitoWeb] = useState(CONFLITO_ABRINDO);
   const repos = useQuery(consultaRepos);
-  const { versoes } = useVersoes(repo, true);
+  const { versoes, buscando, erro } = useVersoes(repo, true);
+  const verificacao = useQuery(consultaVerificacao(repo, versao));
+  const inscricao = useQuery(consultaInscricoes).data?.find(
+    (i) => i.repo === repo && i.versao === versao,
+  );
 
   useEffect(() => {
     retomar(repo);
@@ -61,6 +79,22 @@ export function PaginaVersao({
     atualizacao.resultado?.status === AtualizarStatus.BLOCKED;
   useGuardaDeSaida(naTelaConflito && conflitoWeb.sujo);
   const continuar = () => operacoes.aplicar(repo, versao, true);
+  const listada = versoes?.find((v) => v.numero === versao);
+  // Lista velha em recarga (versão recém-criada) não conta como ausência.
+  const inexistente =
+    versoes !== undefined && !buscando && erro === null && listada === undefined;
+
+  if (inexistente)
+    return (
+      <Stack gap="md">
+        <Title order={1} size="h3" ff={FONTE_MONO}>
+          {versao}
+        </Title>
+        <Alert color="red" title="Versão não encontrada">
+          {repo} não tem a versão {versao}.
+        </Alert>
+      </Stack>
+    );
 
   return (
     <Stack gap="md">
@@ -70,7 +104,7 @@ export function PaginaVersao({
         </Title>
         <AcoesVersao
           fase={atualizacao.fase}
-          liberada={versoes?.find((v) => v.numero === versao)?.liberada === true}
+          liberada={listada?.liberada === true}
           disponivel={repos.data?.find((r) => r.nome === repo)?.caminho != null}
           ocupado={ocupado}
           continuarBarrado={naTelaConflito && conflitoWeb.pendente}
@@ -79,35 +113,49 @@ export function PaginaVersao({
           aoContinuar={continuar}
           aoAbortar={() => setAbortando(true)}
           aoOrfaos={() => setOrfaos(true)}
-          aoInscricoes={() => setInscricoes(true)}
         />
       </Group>
-      {ocupado ? (
-        <ProgressoExecucao
-          progresso={execucoes.progresso[repo] ?? PROGRESSO_INICIAL}
-        />
-      ) : naTelaConflito && atualizacao.resultado ? (
-        <Suspense fallback={<Loader />}>
-          <EditorConflito
-            repo={repo}
-            versao={versao}
-            resultado={atualizacao.resultado}
-            aoSair={() => setResolvendo(false)}
-            aoMudar={setConflitoWeb}
-            aoContinuar={continuar}
-          />
-        </Suspense>
-      ) : pendente && atualizacao.resultado ? (
-        <PainelBloqueio
-          resultado={atualizacao.resultado}
-          aoResolver={() => {
-            setConflitoWeb(CONFLITO_ABRINDO);
-            setResolvendo(true);
-          }}
-        />
-      ) : (
-        <Consulta repo={repo} versao={versao} />
-      )}
+      <Veredito gravada={verificacao.data} />
+      <Group align="flex-start" wrap="nowrap">
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          {ocupado ? (
+            <ProgressoExecucao
+              progresso={execucoes.progresso[repo] ?? PROGRESSO_INICIAL}
+            />
+          ) : naTelaConflito && atualizacao.resultado ? (
+            <Suspense fallback={<Loader />}>
+              <EditorConflito
+                repo={repo}
+                versao={versao}
+                resultado={atualizacao.resultado}
+                aoSair={() => setResolvendo(false)}
+                aoMudar={setConflitoWeb}
+                aoContinuar={continuar}
+              />
+            </Suspense>
+          ) : pendente && atualizacao.resultado ? (
+            <PainelBloqueio
+              resultado={atualizacao.resultado}
+              aoResolver={() => {
+                setConflitoWeb(CONFLITO_ABRINDO);
+                setResolvendo(true);
+              }}
+            />
+          ) : (
+            <ListaChamados
+              repo={repo}
+              versao={versao}
+              status={verificacao.data?.status ?? null}
+            />
+          )}
+        </Box>
+        {!naTelaConflito && (
+          <Stack gap="sm" w={LARGURA_LATERAL} style={{ flexShrink: 0 }}>
+            <InscricaoDaVersao repo={repo} versao={versao} />
+            <Historico gravada={verificacao.data} inscricao={inscricao} />
+          </Stack>
+        )}
+      </Group>
       <ModalConfirmarLote
         status={
           atualizacao.fase === FaseAtualizacao.CONFIRMANDO
@@ -145,12 +193,6 @@ export function PaginaVersao({
         versao={versao}
         aberto={orfaos}
         aoFechar={() => setOrfaos(false)}
-      />
-      <ModalInscricoes
-        aberto={inscricoes}
-        aoFechar={() => setInscricoes(false)}
-        repo={repo}
-        versao={versao}
       />
     </Stack>
   );

@@ -58,6 +58,7 @@ export function assertNever(valor: never): never {
 
 export enum EstadoChamado {
   APLICADO = "aplicado",
+  PENDENTE = "pendente",
 }
 
 export enum Escopo {

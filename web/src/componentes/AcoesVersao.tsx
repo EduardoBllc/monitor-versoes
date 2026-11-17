@@ -16,7 +16,6 @@ export interface PropsAcoesVersao {
   aoContinuar: () => void;
   aoAbortar: () => void;
   aoOrfaos: () => void;
-  aoInscricoes: () => void;
 }
 
 export function AcoesVersao(p: PropsAcoesVersao): JSX.Element {
@@ -73,9 +72,6 @@ export function AcoesVersao(p: PropsAcoesVersao): JSX.Element {
           </Button>
         </Group>
       </Tooltip>
-      <Button variant="default" onClick={p.aoInscricoes}>
-        Inscrições
-      </Button>
     </Group>
   );
 }

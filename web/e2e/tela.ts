@@ -14,7 +14,6 @@ export enum Acao {
   ABORTAR = "Abortar",
   NOVA_VERSAO = "Nova versão",
   ORFAOS = "Órfãos",
-  INSCRICOES = "Inscrições",
   CONFIGURACAO = "Configuração",
   RESOLVER_NA_WEB = "Resolver na web",
   MARCAR_RESOLVIDO = "Marcar resolvido",
@@ -40,8 +39,8 @@ enum Dialogo {
   PREFIXO_LOTE = "Atualizar",
   NOVA_VERSAO = "Nova versão",
   PREFIXO_ORFAOS = "Órfãos de",
-  INSCRICOES = "Inscrições",
   CONFIGURACAO = "Configuração",
+  RESULTADO = "Resultado",
 }
 
 enum Botao {
@@ -78,6 +77,10 @@ enum Aviso {
   PREFIXO_TESTE_OK = "✓",
   CONFIG_SALVA = "Configuração salva",
   REPO_OCUPADO = "ocupado por outra operação",
+}
+
+enum Regiao {
+  INSCRICAO = "Inscrição",
 }
 
 /** Peças do texto das linhas: "#chamado · assunto", "versão · repo". */
@@ -134,8 +137,11 @@ export function tituloDaVersao(page: Page): Locator {
   return page.getByRole("heading", { level: 1 });
 }
 
+/** O conteúdo da página, fora dos diálogos. */
+const pagina = (page: Page): Locator => page.getByRole("main");
+
 export function chamadoListado(page: Page, chamado: string): Locator {
-  return page.getByText(`${Formato.PREFIXO_CHAMADO}${chamado}`, { exact: true }).first();
+  return pagina(page).getByText(`${Formato.PREFIXO_CHAMADO}${chamado}`, { exact: true });
 }
 
 /** Volta ao início pela trilha e devolve o repo listado (link, ou item indisponível). */
@@ -163,22 +169,24 @@ export function erro(page: Page): Locator {
   return page.getByRole("alert").first();
 }
 
-// Vereditos e avisos
+// Vereditos e avisos: os do resultado da verificação recém-rodada.
+
+const resultado = (page: Page): Locator => dialogo(page, Dialogo.RESULTADO);
 
 export function vereditoVerde(page: Page): Locator {
-  return page.getByText(Veredito.VERDE, { exact: true });
+  return resultado(page).getByText(Veredito.VERDE, { exact: true });
 }
 
 export function vereditoPendencias(page: Page): Locator {
-  return page.getByText(Veredito.PENDENCIAS);
+  return resultado(page).getByText(Veredito.PENDENCIAS);
 }
 
 export function avisoAuditoria(page: Page): Locator {
-  return page.getByText(Aviso.AUDITORIA);
+  return resultado(page).getByText(Aviso.AUDITORIA);
 }
 
 export function avisoSemCommits(page: Page, chamado: string): Locator {
-  return page.getByText(`${Aviso.PREFIXO_SEM_COMMITS} ${chamado}`);
+  return resultado(page).getByText(`${Aviso.PREFIXO_SEM_COMMITS} ${chamado}`);
 }
 
 export function avisoBloqueio(page: Page): Locator {
@@ -341,26 +349,27 @@ export function orfaoJulgado(
     .filter({ hasText: trecho(motivo) });
 }
 
-// Inscrições
+// Inscrições: o bloco da inscrição na página da versão.
 
-const dialogoInscricoes = (page: Page): Locator => dialogo(page, Dialogo.INSCRICOES);
+const blocoInscricao = (page: Page): Locator =>
+  page.getByRole("region", { name: Regiao.INSCRICAO, exact: true });
 
 /** Inscreve a versão aberta nas rodadas agendadas. */
 export async function inscrever(page: Page): Promise<void> {
-  await acao(page, Acao.INSCRICOES).click();
-  await botao(dialogoInscricoes(page), Botao.INSCREVER).click();
+  await botao(blocoInscricao(page), Botao.INSCREVER).click();
 }
 
-export function linhaDaInscricao(page: Page, versao: string): Locator {
-  return dialogoInscricoes(page).getByRole("row").filter({ hasText: versao });
+/** A versão aberta está inscrita: o bloco oferece remover. */
+export function inscricaoAtiva(page: Page): Locator {
+  return botao(blocoInscricao(page), Botao.REMOVER);
 }
 
-export async function removerInscricao(page: Page, versao: string): Promise<void> {
-  await botao(linhaDaInscricao(page, versao), Botao.REMOVER).click();
+export async function removerInscricao(page: Page): Promise<void> {
+  await inscricaoAtiva(page).click();
 }
 
-export function inscricaoNuncaExecutou(page: Page, versao: string): Locator {
-  return linhaDaInscricao(page, versao).getByText(Aviso.NUNCA_EXECUTOU);
+export function inscricaoNuncaExecutou(page: Page): Locator {
+  return blocoInscricao(page).getByText(Aviso.NUNCA_EXECUTOU);
 }
 
 /** A notificação da rodada: título "versão · repo". */
@@ -477,4 +486,25 @@ export function verificacaoNaLinha(page: Page, numero: string): Locator {
 
 export function atualizacaoNaLinha(page: Page, numero: string): Locator {
   return linhaDaVersao(page, numero).getByText(trecho(TextoLinha.ATUALIZADA));
+}
+
+// Chamados da versão
+
+/** Motivo de um commit do chamado, como a lista da página o mostra. */
+export enum MotivoCommit {
+  FALTA = "falta",
+}
+
+const TAMANHO_HASH = 8;
+
+export async function expandirChamado(page: Page, chamado: string): Promise<void> {
+  await chamadoListado(page, chamado).click();
+}
+
+/** O commit listado sob o chamado expandido, pelo hash curto e com o motivo. */
+export function commitDoChamado(page: Page, hash: string, motivo: MotivoCommit): Locator {
+  return pagina(page)
+    .getByRole("row")
+    .filter({ hasText: hash.slice(0, TAMANHO_HASH) })
+    .filter({ hasText: trecho(motivo) });
 }

@@ -2,10 +2,14 @@ import { RecursoApi, expect, rotaApi, test } from "./fixtures";
 import { PapelVersao } from "./papeis";
 import {
   Acao,
+  MotivoCommit,
   abrir,
   acao,
   avisoAuditoria,
   avisoSemCommits,
+  commitDoChamado,
+  expandirChamado,
+  fecharDialogo,
   vereditoPendencias,
   vereditoVerde,
 } from "./tela";
@@ -21,6 +25,25 @@ test("verificar uma versão verde mostra o veredito verde", async ({ page, manif
   await abrir(page, manifesto.repo, manifesto.versoes[PapelVersao.VERDE]);
   await acao(page, Acao.VERIFICAR).click();
   await expect(vereditoVerde(page)).toBeVisible();
+});
+
+test("os commits de um chamado faltante aparecem com o motivo", async ({
+  page,
+  manifesto,
+  request,
+}) => {
+  const versao = manifesto.versoes[PapelVersao.FALTANTES];
+  const chamado = manifesto.chamados[PapelVersao.FALTANTES];
+  await abrir(page, manifesto.repo, versao);
+  await acao(page, Acao.VERIFICAR).click();
+  await expect(vereditoPendencias(page)).toBeVisible();
+  await fecharDialogo(page);
+  const chamados = (await (
+    await request.get(rotaApi(manifesto.repo, RecursoApi.CHAMADOS, versao))
+  ).json()) as { chamado: string; commits: { hash_origem: string }[] }[];
+  const hash = chamados.find((c) => c.chamado === chamado)!.commits[0]!.hash_origem;
+  await expandirChamado(page, chamado);
+  await expect(commitDoChamado(page, hash, MotivoCommit.FALTA)).toBeVisible();
 });
 
 const CHAMADO_NOVO_NO_MAPA = "999";
