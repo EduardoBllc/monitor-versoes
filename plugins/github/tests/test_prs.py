@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -231,3 +232,178 @@ def test_404_do_repo_cita_o_origin_e_nao_o_tarefas() -> None:
     assert REPO in mensagem
     assert "origin" in mensagem
     assert f"[{Tabela.TAREFAS}]" not in mensagem
+
+
+PR_ID = 7
+CAMINHO_PR = f"{CAMINHO_PULLS}/{PR_ID}"
+CAMINHO_COMMITS_PR = f"{CAMINHO_PR}/commits"
+CAMINHO_GIT = f"/repos/{REPO}/git/commits/"
+AUTORIA = "2026-02-10T10:00:00Z"
+OUTRA_AUTORIA = "2026-02-11T10:00:00Z"
+COMMIT_NA_PRINCIPAL = "2026-03-01T12:00:00Z"
+MSG = "#12 parte"
+BASE = "base"
+
+
+def _dados(msg: str, autoria: str, data: str) -> dict[str, object]:
+    return {
+        "message": msg,
+        "author": {"date": autoria},
+        "committer": {"date": data},
+    }
+
+
+def _git(
+    sha: str, *pais: str, msg: str = MSG, autoria: str = AUTORIA
+) -> dict[str, object]:
+    """Commit no formato de `git/commits/{sha}`."""
+    return {
+        "sha": sha,
+        "parents": [{"sha": p} for p in pais],
+        **_dados(msg, autoria, COMMIT_NA_PRINCIPAL),
+    }
+
+
+def _do_pr(
+    sha: str, *pais: str, msg: str = MSG, autoria: str = AUTORIA
+) -> dict[str, object]:
+    """Commit no formato de `pulls/{n}/commits`."""
+    return {
+        "sha": sha,
+        "parents": [{"sha": p} for p in pais],
+        "commit": _dados(msg, autoria, AUTORIA),
+    }
+
+
+def _github(
+    *,
+    merge: str | None,
+    principal: list[dict[str, object]],
+    do_pr: list[dict[str, object]] | None,
+    total: int | None = None,
+) -> Rota:
+    """GitHub falso de um PR; `do_pr=None` falha se a lista for pedida."""
+    commits = {str(c["sha"]): c for c in principal}
+
+    def rota(request: httpx.Request) -> httpx.Response:
+        caminho = request.url.path
+        if caminho == CAMINHO_PR:
+            quantos = total if total is not None else len(do_pr or [])
+            return httpx.Response(
+                httpx.codes.OK,
+                json={"number": PR_ID, "merge_commit_sha": merge, "commits": quantos},
+            )
+        if caminho == CAMINHO_COMMITS_PR:
+            if do_pr is None:
+                pytest.fail("os commits do PR não podiam ser pedidos")
+            return _pagina(*do_pr)
+        if caminho.startswith(CAMINHO_GIT):
+            commit = commits.get(caminho.removeprefix(CAMINHO_GIT))
+            if commit is None:
+                return httpx.Response(httpx.codes.NOT_FOUND)
+            return httpx.Response(httpx.codes.OK, json=commit)
+        pytest.fail(f"pedido inesperado: {request.url}")
+
+    return rota
+
+
+def _hashes(rota: Rota) -> list[str]:
+    host, _ = _host(rota)
+    return [c.hash_origem for c in host.commits_da_pr(PR_ID)]
+
+
+def test_merge_comum_devolve_os_commits_do_pr_sem_merge_commit() -> None:
+    rota = _github(
+        merge="m",
+        principal=[_git("m", BASE, "c3")],
+        do_pr=[_do_pr("c1", BASE), _do_pr("c2", "c1", BASE), _do_pr("c3", "c2")],
+    )
+    assert _hashes(rota) == ["c1", "c3"]
+
+
+def test_squash_devolve_so_o_merge_commit_sha() -> None:
+    rota = _github(
+        merge="s",
+        principal=[_git("s", BASE, msg="#12 tudo")],
+        do_pr=[_do_pr("c1", BASE), _do_pr("c2", "c1")],
+    )
+    assert _hashes(rota) == ["s"]
+
+
+def test_rebase_de_tres_commits_devolve_os_tres_da_principal() -> None:
+    msgs = ["um", "dois", "tres"]
+    rota = _github(
+        merge="r3",
+        principal=[
+            _git("r1", BASE, msg=msgs[0]),
+            _git("r2", "r1", msg=msgs[1]),
+            _git("r3", "r2", msg=msgs[2]),
+        ],
+        do_pr=[
+            _do_pr("c1", BASE, msg=msgs[0]),
+            _do_pr("c2", "c1", msg=msgs[1]),
+            _do_pr("c3", "c2", msg=msgs[2]),
+        ],
+    )
+    assert _hashes(rota) == ["r1", "r2", "r3"]
+
+
+def test_ambiguo_vale_squash() -> None:
+    rota = _github(
+        merge="s",
+        principal=[_git("s", "antes"), _git("antes", BASE)],
+        do_pr=[_do_pr("c1", BASE), _do_pr("c2", "c1", autoria=OUTRA_AUTORIA)],
+    )
+    assert _hashes(rota) == ["s"]
+
+
+def test_rebase_com_mais_de_250_commits_vira_squash() -> None:
+    rota = _github(merge="r", principal=[_git("r", "antes")], do_pr=None, total=251)
+    assert _hashes(rota) == ["r"]
+
+
+def test_rebase_para_em_merge_commit_no_caminho() -> None:
+    rota = _github(
+        merge="r3",
+        principal=[_git("r1", BASE, "outro"), _git("r2", "r1"), _git("r3", "r2")],
+        do_pr=[_do_pr("c1", BASE), _do_pr("c2", "c1"), _do_pr("c3", "c2")],
+    )
+    assert _hashes(rota) == ["r2", "r3"]
+
+
+@pytest.mark.parametrize("merge", [None, "sumiu"])
+def test_sem_merge_commit_sha_ou_com_404_devolve_vazio(merge: str | None) -> None:
+    rota = _github(merge=merge, principal=[], do_pr=None)
+    assert _hashes(rota) == []
+
+
+def test_data_do_commit_ref_e_a_do_committer() -> None:
+    rota = _github(
+        merge="s",
+        principal=[_git("s", BASE, msg="#12 tudo")],
+        do_pr=[_do_pr("c1", BASE)],
+    )
+    host, _ = _host(rota)
+    [ref] = host.commits_da_pr(PR_ID)
+    assert ref.commit_date == datetime.datetime.fromisoformat(COMMIT_NA_PRINCIPAL)
+    assert (ref.parent, ref.msg, ref.chamado) == (BASE, "#12 tudo", "")
+
+
+def test_commits_da_pr_concorrente_usa_um_cliente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rota = _github(merge="s", principal=[_git("s", BASE)], do_pr=[_do_pr("c1", "x")])
+    criados: list[httpx.Client] = []
+    original = httpx.Client
+
+    def fabrica() -> httpx.Client:
+        client = original(transport=httpx.MockTransport(rota))
+        criados.append(client)
+        return client
+
+    monkeypatch.setattr("monitor_versoes_github.api.httpx.Client", fabrica)
+    host = GithubPrs(prs={}, arquivos=(), remote_url=lambda: REMOTE, env=ENV)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        resultados = list(pool.map(host.commits_da_pr, [PR_ID] * 4))
+    assert all([c.hash_origem for c in r] == ["s"] for r in resultados)
+    assert len(criados) == 1

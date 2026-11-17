@@ -28,13 +28,15 @@ from monitor_versoes_github.api import (
 )
 from motor.config import Tabela
 from motor.config_edicao import Campo, Escopo, TipoCampo
-from motor.domain.types import SEM_DATA, PrIndex
+from motor.domain.types import SEM_DATA, CommitRef, PrIndex
 from motor.errors import ErroDeEntrada, RespostaInvalida
 
 # git@github.com:dono/nome.git  |  https://usuario@github.com/dono/nome(.git)
 _PADRAO_REMOTE = re.compile(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$")
 
 _PARAMS_PRS = {"state": "closed", "sort": "updated", "direction": "desc"}
+# Acima disso a API não lista os commits do PR: o rebase não é reconhecível.
+_MAX_COMMITS_PR = 250
 
 
 class ChavePrs(StrEnum):
@@ -52,6 +54,15 @@ class _Campo(StrEnum):
     REF = "ref"
     MERGED_AT = "merged_at"
     UPDATED_AT = "updated_at"
+    MERGE_COMMIT_SHA = "merge_commit_sha"
+    COMMITS = "commits"
+    SHA = "sha"
+    PARENTS = "parents"
+    COMMIT = "commit"
+    MESSAGE = "message"
+    AUTHOR = "author"
+    COMMITTER = "committer"
+    DATE = "date"
 
 
 def parse_dono_repo(url: str) -> tuple[str, str]:
@@ -94,6 +105,47 @@ def _numero(pr: Mapping[str, object]) -> int | None:
     if not isinstance(numero, int) or isinstance(numero, bool):
         return None
     return numero
+
+
+def _pais(commit: Mapping[str, object]) -> list[str]:
+    pais = commit.get(_Campo.PARENTS) or []
+    if not isinstance(pais, list):
+        raise RespostaInvalida(f"parents do GitHub em formato inesperado: {pais!r}")
+    return [_texto(_objeto(p, "parent"), _Campo.SHA) for p in pais]
+
+
+def _ref(commit: Mapping[str, object], dados: Mapping[str, object]) -> CommitRef:
+    """`dados` é o próprio commit no `git/commits` e o `commit` no item do PR."""
+    pais = _pais(commit)
+    return CommitRef(
+        hash_origem=_texto(commit, _Campo.SHA),
+        parent=pais[0] if pais else "",
+        commit_date=_data(_sub(dados, _Campo.COMMITTER).get(_Campo.DATE)),
+        msg=_texto(dados, _Campo.MESSAGE),
+    )
+
+
+def _ref_git(commit: Mapping[str, object]) -> CommitRef:
+    return _ref(commit, commit)
+
+
+def _ref_do_pr(item: Mapping[str, object]) -> CommitRef:
+    return _ref(item, _sub(item, _Campo.COMMIT))
+
+
+def _autoria(dados: Mapping[str, object]) -> tuple[str, datetime.datetime] | None:
+    """Mensagem e data de autoria; sem uma das duas, não serve para comparar."""
+    mensagem = dados.get(_Campo.MESSAGE)
+    data = _data(_sub(dados, _Campo.AUTHOR).get(_Campo.DATE))
+    if not isinstance(mensagem, str) or data == SEM_DATA:
+        return None
+    return mensagem, data
+
+
+def _eh_rebase(merge: Mapping[str, object], ultimo: Mapping[str, object]) -> bool:
+    """O rebase recria o último commit com a mesma mensagem e a mesma autoria."""
+    autoria = _autoria(merge)
+    return autoria is not None and autoria == _autoria(_sub(ultimo, _Campo.COMMIT))
 
 
 class GithubPrs:
@@ -191,6 +243,66 @@ class GithubPrs:
             if passou:
                 break
         return indices
+
+    def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
+        """Os commits do PR que chegaram à principal, pelo modo de merge inferido.
+
+        Na dúvida entre rebase e squash vale squash: só devolve o commit que o
+        próprio PR produziu, nunca um de outro PR.
+        """
+        repo = self._repo()
+        base = self._api.base()
+        pr = _objeto(
+            self._api.json(
+                self._api.obter(f"{base}/repos/{repo}/pulls/{pr_id}", None, repo)
+            ),
+            "PR",
+        )
+        sha = _texto(pr, _Campo.MERGE_COMMIT_SHA)
+        merge = self._commit(repo, sha) if sha else None
+        if merge is None:
+            # Sem o commit na principal, o chamado cai no grep.
+            return []
+        if len(_pais(merge)) > 1:
+            return [
+                _ref_do_pr(c)
+                for c in self._commits_do_pr(repo, pr_id)
+                if len(_pais(c)) <= 1
+            ]
+        total = pr.get(_Campo.COMMITS)
+        if isinstance(total, int) and total > _MAX_COMMITS_PR:
+            return [_ref_git(merge)]
+        do_pr = self._commits_do_pr(repo, pr_id)
+        if do_pr and _eh_rebase(merge, do_pr[-1]):
+            return self._caminho_do_rebase(repo, merge, len(do_pr))
+        return [_ref_git(merge)]
+
+    def _commit(self, repo: str, sha: str) -> Mapping[str, object] | None:
+        """Commit pelo `git/commits`; None se a API não o encontra."""
+        url = f"{self._api.base()}/repos/{repo}/git/commits/{sha}"
+        resp = self._api.get(url, None, repo, ausente=True)
+        return None if resp is None else _objeto(self._api.json(resp), "commit")
+
+    def _commits_do_pr(self, repo: str, pr_id: int) -> list[Mapping[str, object]]:
+        itens = self._api.listar(f"/repos/{repo}/pulls/{pr_id}/commits", {}, repo)
+        return [_objeto(c, "commit do PR") for c in itens]
+
+    def _caminho_do_rebase(
+        self, repo: str, merge: Mapping[str, object], total: int
+    ) -> list[CommitRef]:
+        """Os `total` commits da principal que terminam em `merge`, pelo primeiro pai.
+
+        Merge commit ou commit não encontrado encerra o caminho: devolve o já
+        percorrido.
+        """
+        caminho = [merge]
+        while len(caminho) < total:
+            pais = _pais(caminho[-1])
+            anterior = self._commit(repo, pais[0]) if pais else None
+            if anterior is None or len(_pais(anterior)) > 1:
+                break
+            caminho.append(anterior)
+        return [_ref_git(c) for c in reversed(caminho)]
 
     def verificar_credenciais(self) -> None:
         """Chamada autenticada que não depende de repo (`GET /user`)."""
