@@ -418,6 +418,16 @@ class EstadoRepo(Protocol):
         tip atual da principal em vez do ponto onde a branch foi cortada."""
         ...
 
+    def versoes(self, repo: str, /) -> list[VersaoInfo]:
+        """As versoes do repo no estado, por `numero`."""
+        ...
+
+    def marcar_atualizada(
+        self, repo: str, versao: str, quando: datetime.datetime, /
+    ) -> None:
+        """Grava quando a versao foi atualizada pela ultima vez; sobrescreve."""
+        ...
+
     def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]: ...
 
     def substituir_atribuicoes(

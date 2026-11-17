@@ -40,6 +40,16 @@
               "type": "string",
               "title": "Repo"
             }
+          },
+          {
+            "name": "gravadas",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Gravadas"
+            }
           }
         ],
         "responses": {
@@ -50,7 +60,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/VersionOption"
+                    "$ref": "#/components/schemas/VersaoListada"
                   },
                   "title": "Response Listar Versoes Api Repos  Repo  Versoes Get"
                 }
@@ -2516,6 +2526,50 @@
         ],
         "title": "ResultadoTeste"
       },
+      "ResumoVerificacao": {
+        "properties": {
+          "verificado_em": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verificado Em"
+          },
+          "verde": {
+            "type": "boolean",
+            "title": "Verde"
+          },
+          "presentes": {
+            "type": "integer",
+            "title": "Presentes"
+          },
+          "faltantes": {
+            "type": "integer",
+            "title": "Faltantes"
+          },
+          "conflitantes": {
+            "type": "integer",
+            "title": "Conflitantes"
+          },
+          "suspeitos": {
+            "type": "integer",
+            "title": "Suspeitos"
+          },
+          "sem_commits": {
+            "type": "integer",
+            "title": "Sem Commits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verificado_em",
+          "verde",
+          "presentes",
+          "faltantes",
+          "conflitantes",
+          "suspeitos",
+          "sem_commits"
+        ],
+        "title": "ResumoVerificacao"
+      },
       "Sugestao": {
         "properties": {
           "numero": {
@@ -2725,7 +2779,7 @@
         ],
         "title": "ValorLido"
       },
-      "VersionOption": {
+      "VersaoListada": {
         "properties": {
           "numero": {
             "type": "string",
@@ -2734,14 +2788,38 @@
           "liberada": {
             "type": "boolean",
             "title": "Liberada"
+          },
+          "atualizada_em": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atualizada Em"
+          },
+          "verificacao": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResumoVerificacao"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "required": [
           "numero",
-          "liberada"
+          "liberada",
+          "atualizada_em",
+          "verificacao"
         ],
-        "title": "VersionOption"
+        "title": "VersaoListada"
       },
       "VersionStatus": {
         "properties": {

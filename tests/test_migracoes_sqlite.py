@@ -19,6 +19,7 @@ REV_COM_TRACKER = "f6b9c3d2e1a7"
 REV_SEM_TRACKER = "a7c3e9d1f2b4"
 REV_CHECK_COM_NOME_DUPLICADO = "c9d2e4f6a8b0"
 REV_VARREDURA_SEM_HOST = "e50b3d6e40a1"
+REV_VERSAO_SEM_ATUALIZADA_EM = "a95857a66f91"
 
 
 @pytest.fixture
@@ -169,6 +170,27 @@ def test_varredura_anterior_ao_host_fica_com_bitbucket(url: str) -> None:
     engine.dispose()
 
 
+def test_versao_anterior_fica_sem_atualizada_em(url: str) -> None:
+    command.upgrade(config_alembic(url), REV_VERSAO_SEM_ATUALIZADA_EM)
+    engine = create_engine(url)
+    with engine.begin() as con:
+        con.execute(text("insert into repo (id, nome) values (1, 'webapp')"))
+        con.execute(
+            text(
+                "insert into versao (repo_id, numero, tipo, base_ref, base_commit) "
+                "values (1, '14.1.0', null, '14.0.0', 'aaa111')"
+            )
+        )
+
+    command.upgrade(config_alembic(url), "head")
+
+    with engine.connect() as con:
+        assert (
+            con.execute(text("select atualizada_em from versao")).scalar_one() is None
+        )
+    engine.dispose()
+
+
 def test_downgrade_base_funciona(url: str) -> None:
     command.upgrade(config_alembic(url), "head")
     command.downgrade(config_alembic(url), "base")
@@ -252,7 +274,10 @@ def test_dados_sobrevivem_a_troca_do_nome_do_check(url: str) -> None:
     engine = create_engine(url)
     consultas = {
         "repo": "select * from repo",
-        "versao": "select * from versao",
+        "versao": (
+            "select id, repo_id, numero, tipo, base_ref, base_commit, liberada_em "
+            "from versao"
+        ),
         "atribuicao": "select * from atribuicao",
         "atribuicao_commit": "select * from atribuicao_commit",
         "exclusao": "select * from exclusao",

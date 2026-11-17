@@ -1,6 +1,6 @@
 import { Button, Code, Group, Loader, Select, Text, Tooltip } from "@mantine/core";
 import type { ReactNode } from "react";
-import type { NovidadeVista, RepoOption, VersionOption } from "../api/tipos";
+import type { NovidadeVista, RepoOption, VersaoListada } from "../api/tipos";
 
 const SEM_CHECKOUT = "checkout local não encontrado";
 const CARREGANDO = "carregando…";
@@ -10,7 +10,7 @@ export interface PropsBarra {
   repos: RepoOption[];
   carregandoRepos?: boolean;
   repo?: string;
-  versoes: VersionOption[];
+  versoes: VersaoListada[];
   carregandoVersoes?: boolean;
   versao?: string;
   ocupado: boolean;

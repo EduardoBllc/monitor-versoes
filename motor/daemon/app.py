@@ -49,8 +49,8 @@ from motor.operacoes import (
     RepoOption,
     Resolucao,
     Runners,
+    VersaoListada,
     VersionamentoLoader,
-    VersionOption,
     avaliar_numero,
     runners_com_progresso,
     travar_repo,
@@ -239,8 +239,8 @@ def _rotas_repos(app: FastAPI, ctx: _Contexto) -> None:
         return ctx.leitura().carregar_repos()
 
     @app.get("/api/repos/{repo}/versoes")
-    def listar_versoes(repo: str) -> list[VersionOption]:
-        return ctx.leitura().carregar_versoes(ctx.achar(repo))
+    def listar_versoes(repo: str, gravadas: bool = False) -> list[VersaoListada]:
+        return _exigir(ctx.leitura().listar_versoes)(ctx.achar(repo), gravadas)
 
     # As versões existentes vêm da lista que o cliente já tem, como na TUI:
     # carregar de novo faria um git fetch por tecla digitada.

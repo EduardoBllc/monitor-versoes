@@ -46,6 +46,8 @@ VERSAO_DO_PICK = "13.7.0"
 CHAMADO_DO_PICK = "255514"
 COM_MARCADOR = "a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> a0\n"
 D1 = D + datetime.timedelta(minutes=1)
+QUANDO = datetime.datetime(2026, 3, 1, 12, tzinfo=datetime.UTC)
+DEPOIS = QUANDO + datetime.timedelta(hours=1)
 
 UM = {
     "255514": [
@@ -971,3 +973,86 @@ def test_atualizar_mantem_orfao_julgado_na_atribuicao():
     assert [
         (a.chamado, a.estado, a.commits) for a in estado.atribuicoes("r", "13.7.0")
     ] == [("255514", "aplicado", ["a0", "o1"])]
+
+
+def _com_agora(deps: Deps, instante: datetime.datetime) -> Deps:
+    return replace(deps, agora=lambda: instante)
+
+
+def _atualizada_em(estado: FakeEstado) -> datetime.datetime | None:
+    info = estado.versao("r", VERSAO_DO_PICK)
+    assert info is not None
+    return info.atualizada_em
+
+
+def test_lote_que_aplica_grava_atualizada_em():
+    estado = _estado()
+    deps = _com_agora(_deps(_git(), estado, ["255514"], UM), QUANDO)
+
+    resultado = atualizar(deps, VERSAO_DO_PICK)
+
+    assert resultado.aplicados
+    assert _atualizada_em(estado) == QUANDO
+
+
+def test_lote_sem_nada_a_aplicar_nao_grava():
+    estado = _estado()
+    deps = _deps(_git(), estado, ["255514"], UM)
+    atualizar(_com_agora(deps, QUANDO), VERSAO_DO_PICK)
+
+    resultado = atualizar(_com_agora(deps, DEPOIS), VERSAO_DO_PICK)
+
+    assert resultado.aplicados == []
+    assert _atualizada_em(estado) == QUANDO
+
+
+def test_lote_que_para_em_conflito_nao_grava():
+    g = _git()
+    g.conflict_on["a0"] = True
+    estado = _estado()
+    deps = _com_agora(_deps(g, estado, ["255514"], UM), QUANDO)
+
+    resultado = atualizar(deps, VERSAO_DO_PICK)
+
+    assert resultado.status == AtualizarStatus.BLOCKED
+    assert _atualizada_em(estado) is None
+
+
+def test_continue_que_termina_o_lote_grava_atualizada_em():
+    g = _git()
+    g.conflict_on["a0"] = True
+    estado = _estado()
+    deps = _com_agora(_deps(g, estado, ["255514"], UM), QUANDO)
+    atualizar(deps, VERSAO_DO_PICK)
+
+    resultado = atualizar_continue(deps, VERSAO_DO_PICK)
+
+    assert resultado.status == AtualizarStatus.DONE
+    assert _atualizada_em(estado) == QUANDO
+
+
+def test_registrar_vazio_grava_atualizada_em():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.vazio_on["a0"] = True
+    estado = _estado()
+    deps = _com_agora(_deps(g, estado, ["255514"], UM), QUANDO)
+    atualizar(deps, VERSAO_DO_PICK)
+
+    atualizar_continue(deps, VERSAO_DO_PICK, allow_empty=True)
+
+    assert _atualizada_em(estado) == QUANDO
+
+
+def test_vazio_sem_confirmacao_nao_grava():
+    g = _git()
+    g.conflict_on["a0"] = True
+    g.vazio_on["a0"] = True
+    estado = _estado()
+    deps = _com_agora(_deps(g, estado, ["255514"], UM), QUANDO)
+    atualizar(deps, VERSAO_DO_PICK)
+
+    resultado = atualizar_continue(deps, VERSAO_DO_PICK)
+
+    assert resultado.status == AtualizarStatus.VAZIO
+    assert _atualizada_em(estado) is None

@@ -162,7 +162,10 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     versao (docs/decisoes/010-travas-publicada-e-liberada.md).
     """
     _recusar_se_liberada(deps, versao)
+    return _atualizar(deps, versao, retomou=False)
 
+
+def _atualizar(deps: Deps, versao: str, *, retomou: bool) -> AtualizarResult:
     status, reaproveitada_de = _status_do_lote(deps, versao)
 
     if status.suspeitos_conteudo:
@@ -234,6 +237,9 @@ def atualizar(deps: Deps, versao: str) -> AtualizarResult:
     # esta na branch e no remoto. use_worktree recria sob demanda. Com
     # worktrees_mantidas > 0 este checkout fica, e o proximo run nao o paga.
     descartar_worktrees(deps, versao)
+    # Pick retomado conta mesmo sem aplicados: o commit entrou antes deste lote.
+    if retomou or aplicados or vazios:
+        deps.estado.marcar_atualizada(deps.repo, versao, deps.agora())
     return AtualizarResult(
         status=AtualizarStatus.DONE,
         aplicados=aplicados,
@@ -266,14 +272,14 @@ def atualizar_continue(
     docs/decisoes/013-conflito-e-checkpoint.md).
 
     Invocacao nova do CLI, sem contexto em memoria de quais commits do lote ja
-    foram aplicados. Nao precisa reconstruir nada a mao: o `atualizar` abaixo
+    foram aplicados. Nao precisa reconstruir nada a mao: o `_atualizar` abaixo
     verifica de novo, porque o pick resolvido mudou o tip da branch e o carimbo
     deixou de valer, e a verificacao reprojeta o estado a partir do git de verdade.
 
     A recusa por tag e reavaliada aqui, antes do `continue_cherry_pick`: se a
     versao foi liberada enquanto o conflito estava aberto, deixar o pick entrar
-    poria um commit na branch de uma versao congelada — a recusa do `atualizar`
-    la embaixo chegaria tarde.
+    poria um commit na branch de uma versao congelada — o `_atualizar` abaixo
+    nao repete a recusa, entao ela so acontece aqui.
 
     Resolucao que nao deixou alteracao para com `AtualizarStatus.VAZIO` em vez de
     decidir sozinha, e `allow_empty=True` (o operador confirmando) fecha o pick
@@ -300,15 +306,15 @@ def atualizar_continue(
                 worktree=deps.git.worktree_atual(),
             )
         deps.git.commit_pick_vazio()
-        resultado = atualizar(deps, versao)
-        # O `atualizar` acima abre lote novo e nao sabe deste pick; sem
+        resultado = _atualizar(deps, versao, retomou=True)
+        # O `_atualizar` acima abre lote novo e nao sabe deste pick; sem
         # reinjetar, o commit vazio que acabou de entrar na branch nao apareceria
         # em relatorio nenhum.
         return replace(
             resultado,
             vazios=[CommitRef(hash_origem=pendente), *resultado.vazios],
         )
-    return atualizar(deps, versao)
+    return _atualizar(deps, versao, retomou=True)
 
 
 def atualizar_abort(deps: Deps, versao: str) -> None:

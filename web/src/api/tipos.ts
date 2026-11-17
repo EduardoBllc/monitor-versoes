@@ -2,7 +2,7 @@ import type { components } from "./esquema";
 
 type Esquemas = components["schemas"];
 export type RepoOption = Esquemas["RepoOption"];
-export type VersionOption = Esquemas["VersionOption"];
+export type VersaoListada = Esquemas["VersaoListada"];
 export type VersionStatus = Esquemas["VersionStatus"];
 export type ChamadoConsultado = Esquemas["ChamadoConsultado"];
 export type CommitRef = Esquemas["CommitRef"];

@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import io
 from functools import partial
 from pathlib import Path
@@ -10,13 +11,25 @@ from rich.console import Console
 import motor.montagem as montagem
 import motor.operacoes as operacoes
 from motor.adapters.estado.fake import FakeEstado
-from motor.domain.types import RepoInfo, VersionStatus
+from motor.adapters.estado.sqlite import Estado
+from motor.domain.types import (
+    CommitRef,
+    RepoInfo,
+    Verificacao,
+    VersaoInfo,
+    VersionStatus,
+)
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.operacoes import (
     RepoOption,
+    ResumoVerificacao,
+    VersaoListada,
     VersionOption,
     descobrir_repos,
     descobrir_versoes,
+    listar,
+    resumir,
+    versoes_gravadas,
 )
 from motor.ports import GitRepo
 from motor.progresso import Progresso, SlotProgresso
@@ -336,7 +349,115 @@ def test_runners_com_progresso_liga_cada_runner_ao_relator():
         (r.previa_atualizacao, operacoes.previa_repo),
         (r.listar_orfaos, operacoes.orfaos_repo),
         (r.julgar_orfao, operacoes.julgar_orfao_repo),
+        (r.listar_versoes, operacoes.listar_versoes_repo),
     ]
     for runner, alvo in ligados:
         assert isinstance(runner, partial) and runner.func is alvo
         assert runner.keywords == {"progresso": relatar}
+
+
+QUANDO = datetime.datetime(2026, 11, 17, 9, tzinfo=datetime.UTC)
+REPO_ESTADO = "alpha"
+LIBERADA = "13.9.0"
+ABERTA = "13.10.0"
+FORA_DO_ESQUEMA = "release-antiga"
+
+
+def _commits(quantos: int) -> list[CommitRef]:
+    return [CommitRef(hash_origem=f"h{i}") for i in range(quantos)]
+
+
+def _verificacao(status: VersionStatus) -> Verificacao:
+    return Verificacao(tip="t", impressao="i", verificado_em=QUANDO, status=status)
+
+
+def _estado_com_versoes() -> FakeEstado:
+    estado = FakeEstado()
+    estado.garantir_repo(REPO_ESTADO)
+    estado.registrar_versao(REPO_ESTADO, VersaoInfo(numero=LIBERADA))
+    estado.registrar_versao(REPO_ESTADO, VersaoInfo(numero=ABERTA))
+    estado.marcar_liberadas(REPO_ESTADO, {LIBERADA: QUANDO})
+    return estado
+
+
+def test_resumir_conta_cada_secao():
+    status = VersionStatus(
+        verde=False,
+        ancestrais=_commits(2),
+        faltantes=_commits(3),
+        conflitantes=_commits(1),
+        suspeitos_conteudo=_commits(1),
+        tasks_sem_commits=["c1"],
+    )
+
+    assert resumir(_verificacao(status)) == ResumoVerificacao(
+        QUANDO, False, 2, 3, 1, 1, 1
+    )
+
+
+def test_versoes_gravadas_seguem_a_ordem_do_esquema():
+    estado = _estado_com_versoes()
+
+    assert versoes_gravadas(estado, REPO_ESTADO, versionamento_padrao()) == [
+        VersionOption(ABERTA, False),
+        VersionOption(LIBERADA, True),
+    ]
+
+
+def test_versoes_gravadas_ignoram_numero_que_o_esquema_nao_reconhece():
+    # Esquema trocado depois de gravar: o número antigo some da lista em vez de derrubá-la.
+    estado = _estado_com_versoes()
+    estado.registrar_versao(REPO_ESTADO, VersaoInfo(numero=FORA_DO_ESQUEMA))
+
+    assert versoes_gravadas(estado, REPO_ESTADO, versionamento_padrao()) == [
+        VersionOption(ABERTA, False),
+        VersionOption(LIBERADA, True),
+    ]
+
+
+def test_listar_junta_atualizada_em_e_resumo():
+    estado = _estado_com_versoes()
+    estado.marcar_atualizada(REPO_ESTADO, LIBERADA, QUANDO)
+    status = VersionStatus(verde=True, ancestrais=_commits(1))
+    estado.gravar_verificacao(REPO_ESTADO, LIBERADA, _verificacao(status))
+
+    listadas = listar(
+        estado,
+        REPO_ESTADO,
+        [VersionOption(LIBERADA, True), VersionOption(ABERTA, False)],
+    )
+
+    assert listadas == [
+        VersaoListada(LIBERADA, True, QUANDO, resumir(_verificacao(status))),
+        VersaoListada(ABERTA, False, None, None),
+    ]
+
+
+def test_repo_fora_do_estado_lista_sem_resumo():
+    estado = FakeEstado()
+    opcoes = [VersionOption(ABERTA, False)]
+
+    assert versoes_gravadas(estado, REPO_ESTADO, versionamento_padrao()) == []
+    assert listar(estado, REPO_ESTADO, opcoes) == [
+        VersaoListada(ABERTA, False, None, None)
+    ]
+
+
+def test_listar_versoes_repo_gravadas_nao_faz_fetch(monkeypatch, tmp_path, xdg_isolado):
+    checkout = _checkout(tmp_path, REPO_ESTADO)
+    _registrar_repo(xdg_isolado, REPO_ESTADO, checkout)
+    monkeypatch.setattr(
+        operacoes,
+        "new_git_subprocess",
+        lambda *_, **__: pytest.fail("modo gravadas não abre o git"),
+    )
+    with montagem.abrir_sessao() as sessao:
+        estado = Estado(sessao=sessao)
+        estado.garantir_repo(REPO_ESTADO)
+        estado.registrar_versao(REPO_ESTADO, VersaoInfo(numero=ABERTA))
+
+    listadas = operacoes.listar_versoes_repo(
+        RepoOption(nome=REPO_ESTADO, caminho=str(checkout)), True
+    )
+
+    assert listadas == [VersaoListada(ABERTA, False, None, None)]

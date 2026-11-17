@@ -611,3 +611,44 @@ def test_julgar_orfao_aceita_versao_liberada(estado):
     estado.julgar_orfao(REPO, j)
 
     assert estado.julgamentos_orfao(REPO) == [j]
+
+
+# -- atualizada_em e listagem das versoes -------------------------------------
+
+
+def test_versao_nasce_sem_atualizada_em(estado):
+    estado.registrar_versao(REPO, _base())
+    assert estado.versao(REPO, "13.34.0").atualizada_em is None
+
+
+def test_marcar_atualizada_grava_e_sobrescreve(estado):
+    estado.registrar_versao(REPO, _base())
+    estado.marcar_atualizada(REPO, "13.34.0", QUANDO)
+    estado.marcar_atualizada(REPO, "13.34.0", DEPOIS)
+    assert estado.versao(REPO, "13.34.0").atualizada_em == DEPOIS
+
+
+def test_marcar_atualizada_em_versao_ausente_recusa(estado):
+    with pytest.raises(NaoEncontrado):
+        estado.marcar_atualizada(REPO, "13.34.0", QUANDO)
+
+
+def test_registrar_de_novo_preserva_atualizada_em(estado):
+    estado.registrar_versao(REPO, _base())
+    estado.marcar_atualizada(REPO, "13.34.0", QUANDO)
+    estado.registrar_versao(REPO, _base())
+    assert estado.versao(REPO, "13.34.0").atualizada_em == QUANDO
+
+
+def test_versoes_lista_as_do_repo(estado):
+    estado.registrar_versao(REPO, _base("13.9.0"))
+    estado.registrar_versao(REPO, _base("13.10.0"))
+    estado.marcar_liberadas(REPO, {"13.9.0": QUANDO})
+    listadas = estado.versoes(REPO)
+    assert {v.numero for v in listadas} == {"13.9.0", "13.10.0"}
+    assert {v.numero: v.liberada_em for v in listadas}["13.9.0"] == QUANDO
+
+
+def test_versoes_de_repo_desconhecido_recusa(estado):
+    with pytest.raises(NaoEncontrado):
+        estado.versoes("outro")

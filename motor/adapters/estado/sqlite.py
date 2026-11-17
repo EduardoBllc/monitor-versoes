@@ -66,6 +66,17 @@ def _status_de_json(texto: str) -> VersionStatus:
     return VersionStatus(**d)
 
 
+def _versao_info(linha: models.Versao) -> VersaoInfo:
+    return VersaoInfo(
+        numero=linha.numero,
+        tipo=linha.tipo,
+        base_ref=linha.base_ref,
+        base_commit=linha.base_commit,
+        liberada_em=linha.liberada_em,
+        atualizada_em=linha.atualizada_em,
+    )
+
+
 def _repo_info(linha: models.Repo) -> RepoInfo:
     return RepoInfo(nome=linha.nome)
 
@@ -141,13 +152,26 @@ class Estado:
         linha = self._versao(self._repo_id(repo), numero)
         if linha is None:
             return None
-        return VersaoInfo(
-            numero=linha.numero,
-            tipo=linha.tipo,
-            base_ref=linha.base_ref,
-            base_commit=linha.base_commit,
-            liberada_em=linha.liberada_em,
-        )
+        return _versao_info(linha)
+
+    def versoes(self, repo: str, /) -> list[VersaoInfo]:
+        return [
+            _versao_info(linha)
+            for linha in self._scalars(
+                select(models.Versao)
+                .where(models.Versao.repo_id == self._repo_id(repo))
+                .order_by(models.Versao.numero)
+            )
+        ]
+
+    def marcar_atualizada(
+        self, repo: str, versao: str, quando: datetime.datetime, /
+    ) -> None:
+        linha = self._versao(self._repo_id(repo), versao)
+        if linha is None:
+            raise NaoEncontrado(f"versão {versao} não registrada em {repo}")
+        linha.atualizada_em = quando
+        self._commit()
 
     def atribuicoes(self, repo: str, versao: str, /) -> list[Atribuicao]:
         versao_id = self._versao_id(repo, versao)
