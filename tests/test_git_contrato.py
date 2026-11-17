@@ -31,6 +31,7 @@ CEDO = datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
 TARDE = CEDO + datetime.timedelta(days=5)
 TRAILER_PICK = "(cherry picked from commit {})"
 HASH_AUSENTE = "f" * 40
+FORA_DO_FORMATO = "v1.0"
 
 
 class Implementacao(StrEnum):
@@ -121,10 +122,11 @@ class _SementeGit:
         data: datetime.datetime,
     ) -> str:
         linhas = "".join(
-            f"100644 blob {self._git('hash-object', '-w', '--stdin', entrada=conteudo)}\t{nome}\n"
+            f"100644 blob {self._git('hash-object', '-w', '--stdin', entrada=conteudo)}\t{nome}\0"
             for nome, conteudo in arquivos.items()
         )
-        arvore = self._git("mktree", entrada=linhas)
+        # -z: no Windows o stdin em modo texto vira \r\n e o \r entraria no nome.
+        arvore = self._git("mktree", "-z", entrada=linhas)
         pais = ["-p", pai] if pai else []
         return self._git("commit-tree", arvore, *pais, "-m", msg, data=data.isoformat())
 
@@ -181,14 +183,19 @@ def test_ref_ausente_e_erro(semente):
         semente.git.resolve_ref(V4)
 
 
-def test_branches_sem_tags_e_tags_sem_branches(semente):
+def test_branches_e_tags_sem_filtro_e_com_o_mesmo_nome(semente):
+    """Versão liberada cuja branch não foi apagada tem branch e tag com o mesmo
+    nome: as duas listas a mostram."""
     c = _raiz(semente)
     semente.branch(PRINCIPAL, c)
     semente.branch(V4, c)
+    semente.branch(V2, c)
+    semente.tag(V2, c)
     semente.tag(V3, c)
+    semente.tag(FORA_DO_FORMATO, c)
 
-    assert semente.git.listar_branches() == [V4, PRINCIPAL]
-    assert semente.git.listar_tags() == [V3]
+    assert semente.git.listar_branches() == [V2, V4, PRINCIPAL]
+    assert semente.git.listar_tags() == [V2, V3, FORA_DO_FORMATO]
 
 
 # -- metadados e grafo -----------------------------------------------------------
@@ -203,6 +210,7 @@ def test_commits_meta_omite_hash_ausente_e_bate_com_commit_meta(semente):
     assert set(lote) == {raiz, filho}
     assert lote[raiz] == semente.git.commit_meta(raiz)
     assert lote[filho] == semente.git.commit_meta(filho)
+    assert semente.git.commits_meta([HASH_AUSENTE]) == {}
     assert semente.git.commits_meta([]) == {}
 
 
@@ -225,6 +233,13 @@ def test_is_ancestor(semente):
 
     assert semente.git.is_ancestor(raiz, PRINCIPAL)
     assert not semente.git.is_ancestor(lateral, PRINCIPAL)
+
+
+def test_ancestral_de_branch_inexistente_e_erro(semente):
+    raiz = _raiz(semente)
+
+    with pytest.raises(MotorError):
+        semente.git.is_ancestor(raiz, V4)
 
 
 def test_commit_fora_do_clone_nao_e_ancestral(semente):

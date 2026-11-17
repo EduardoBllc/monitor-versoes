@@ -356,41 +356,6 @@ def test_git_subprocess_versao_so_como_ref_de_rastreamento_e_vista_como_aberta(
     assert catalogo.liberadas() == set()
 
 
-def test_git_subprocess_commits_meta_concorda_com_commit_meta(tmp_path):
-    """O lote existe para substituir `commit_meta` em laco — se divergir num
-    campo, a consulta de versao passa a mostrar outra coisa que a verificacao.
-    """
-    repo_dir = init_repo_de_teste(tmp_path)
-    (tmp_path / "arquivo.txt").write_text("v2\n")
-    _run_git(repo_dir, "commit", "-am", "ch123456 segundo")
-    (tmp_path / "arquivo.txt").write_text("v3\n")
-    _run_git(repo_dir, "commit", "-am", "ch654321 terceiro")
-
-    g = new_git_subprocess(repo_dir)
-    hashes = [c.hash_origem for c in g.commits_in_range("master~2", "master")]
-    assert len(hashes) == 2
-
-    lote = g.commits_meta(hashes)
-
-    assert set(lote) == set(hashes)
-    for h in hashes:
-        assert lote[h] == g.commit_meta(h)
-
-
-def test_git_subprocess_commits_meta_ignora_hash_ausente_e_lote_vazio(tmp_path):
-    """Hash que o repo nao tem (rebase, gc) nao pode derrubar o lote — e lote
-    vazio nao pode virar `git log` sem revisao, que assume HEAD.
-    """
-    repo_dir = init_repo_de_teste(tmp_path)
-    g = new_git_subprocess(repo_dir)
-    existente = g.resolve_ref("master")
-    ausente = "0" * 40
-
-    assert set(g.commits_meta([existente, ausente])) == {existente}
-    assert g.commits_meta([ausente]) == {}
-    assert g.commits_meta([]) == {}
-
-
 def test_git_subprocess_commits_meta_nao_anda_pelos_ancestrais(tmp_path):
     """`git log <hash>` sem `--no-walk` devolveria o historico inteiro a partir
     dele — o lote tem de devolver so o que foi pedido.
@@ -477,24 +442,6 @@ def test_hash_desconhecido_nao_derruba_o_lote_para_um_processo_por_hash(
         assert processos == esperados
 
 
-def test_git_subprocess_ordem_topologica_segue_o_grafo_nao_a_data(tmp_path):
-    """O filho tem data de autor ANTERIOR a do pai — e o que o rebase deixa. A
-    ordem tem de vir do grafo; hash ausente falta, e lista vazia nao vira
-    `rev-list` sem revisao.
-    """
-    repo_dir = init_repo_de_teste(tmp_path)
-    (tmp_path / "arquivo.txt").write_text("v2\n")
-    _run_git(repo_dir, "commit", "-am", "pai", "--date=2026-09-29T11:45:40-03:00")
-    (tmp_path / "arquivo.txt").write_text("v3\n")
-    _run_git(repo_dir, "commit", "-am", "filho", "--date=2026-09-24T15:30:12-03:00")
-
-    g = new_git_subprocess(repo_dir)
-    pai, filho = g.resolve_ref("master~1"), g.resolve_ref("master")
-
-    assert g.ordem_topologica([filho, "0" * 40, pai]) == [pai, filho]
-    assert g.ordem_topologica([]) == []
-
-
 def test_git_subprocess_resolve_ref_descasca_tag_anotada(tmp_path):
     """As tags de release deste projeto sao anotadas: `rev-parse refs/tags/X`
     devolve o SHA do OBJETO DE TAG, nao do commit. Sem descascar, o
@@ -569,31 +516,6 @@ def test_worktree_atual_aponta_o_diretorio_da_branch(tmp_path):
     g.use_worktree("14.0.0")
 
     assert g.worktree_atual() == g._worktree_dir("14.0.0")
-
-
-def test_git_subprocess_listar_tags(tmp_path):
-    """listar_tags devolve so tags (nao branches), sem filtro de formato e
-    sem repeticao. Cobre: tag-only, branch-only, ambas, fora do formato.
-    """
-    dir_ = str(tmp_path)
-    _run_git(dir_, "init", "-b", "master")
-    _config_identidade_local(dir_)
-    (tmp_path / "arquivo.txt").write_text("v1\n")
-    _run_git(dir_, "add", "arquivo.txt")
-    _run_git(dir_, "commit", "-m", "base")
-
-    _run_git(dir_, "tag", "13.33.0")
-    _run_git(dir_, "branch", "13.34.0")
-    _run_git(dir_, "branch", "13.36.0")
-    _run_git(dir_, "tag", "13.36.0")
-    _run_git(dir_, "tag", "v1.0")
-
-    g = new_git_subprocess(dir_)
-    tags = g.listar_tags()
-    branches = g.listar_branches()
-
-    assert tags == ["13.33.0", "13.36.0", "v1.0"], f"tags = {tags!r}"
-    assert branches == ["13.34.0", "13.36.0", "master"], f"branches = {branches!r}"
 
 
 def test_git_subprocess_use_worktree_falha_quando_branch_nao_existe(tmp_path):

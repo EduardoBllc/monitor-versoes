@@ -138,7 +138,7 @@ class FakeGit:
         return self.branches.get(ref, ref)
 
     def is_ancestor(self, commit: str, branch: str, /) -> bool:
-        h = self._resolve_ref_local(branch)
+        h = self.resolve_ref(branch)
         while h != "":
             if h == commit:
                 return True
