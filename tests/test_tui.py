@@ -1239,6 +1239,9 @@ async def _ate_o_bloqueio(app, pilot, repo, versao) -> None:
     await pilot.pause()
     await pilot.click("#confirmar-sim")
     await app.workers.wait_for_complete()
+    # Sem esperar o layout, o clique no `#abortar` recém-exibido cai na origem da
+    # tela, no ícone do Header, e abre a paleta de comandos.
+    await pilot.pause()
 
 
 def test_app_bloqueio_oferece_abortar_sob_confirmacao():

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from motor.trava import caminho_trava, caminho_trava_inscricoes, travar, travar_
 
 RAIZ = Path(__file__).resolve().parents[1]
 NOME_TRAVA = "trava de teste"
+PRAZO_PARA_SOLTAR_S = 10
+INTERVALO_DE_ESPERA_S = 0.05
 
 
 @pytest.fixture
@@ -96,8 +99,17 @@ def test_processo_morto_com_sigkill_nao_deixa_o_repo_travado(clone, tmp_path):
         filho.wait()
         if filho.stdout is not None:
             filho.stdout.close()
-    with travar("r", clone):
-        pass
+    # No Windows a trava solta com atraso: o `wait()` é do lançador do venv, o neto
+    # que segura a trava morre depois, e o SO libera lock de processo morto só quando puder.
+    prazo = time.monotonic() + PRAZO_PARA_SOLTAR_S
+    while True:
+        try:
+            with travar("r", clone):
+                break
+        except RepoOcupado:
+            if time.monotonic() > prazo:
+                raise
+            time.sleep(INTERVALO_DE_ESPERA_S)
 
 
 _SEGURA_ARQUIVO = """
