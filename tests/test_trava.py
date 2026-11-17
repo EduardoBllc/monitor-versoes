@@ -10,9 +10,10 @@ from pathlib import Path
 import pytest
 
 from motor.errors import ErroDeEntrada, RepoOcupado
-from motor.trava import caminho_trava, travar
+from motor.trava import caminho_trava, caminho_trava_inscricoes, travar, travar_arquivo
 
 RAIZ = Path(__file__).resolve().parents[1]
+NOME_TRAVA = "trava de teste"
 
 
 @pytest.fixture
@@ -96,4 +97,37 @@ def test_processo_morto_com_sigkill_nao_deixa_o_repo_travado(clone, tmp_path):
         if filho.stdout is not None:
             filho.stdout.close()
     with travar("r", clone):
+        pass
+
+
+_SEGURA_ARQUIVO = """
+import sys
+import time
+from pathlib import Path
+from motor.trava import travar_arquivo
+trava = travar_arquivo(sys.argv[2], Path(sys.argv[1]))
+print("pronto", flush=True)
+time.sleep(60)
+"""
+
+
+def test_travar_arquivo_exclui_outro_processo():
+    caminho = caminho_trava_inscricoes()
+    filho = subprocess.Popen(
+        [sys.executable, "-c", _SEGURA_ARQUIVO, str(caminho), NOME_TRAVA],
+        cwd=RAIZ,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert filho.stdout is not None
+        filho.stdout.readline()
+        with pytest.raises(RepoOcupado):
+            travar_arquivo(NOME_TRAVA, caminho)
+    finally:
+        filho.kill()
+        filho.wait()
+        if filho.stdout is not None:
+            filho.stdout.close()
+    with travar_arquivo(NOME_TRAVA, caminho):
         pass

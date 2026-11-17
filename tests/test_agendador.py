@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from motor.agendador import (
+    NOME_TAREFA_INSCRICOES,
+    SCHTASKS,
     Acao,
+    AcaoSchtasks,
     Sistema,
     caminhos,
     instalado,
@@ -17,7 +20,7 @@ from motor.agendador import (
 )
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 
-SO_SEM_AGENDADOR = "win32"
+SO_SEM_AGENDADOR = "sunos5"
 
 
 MOTIVO_FALHA = "falhou"
@@ -41,7 +44,7 @@ def _instalar(sistema: Sistema, home: Path, monkeypatch: pytest.MonkeyPatch) -> 
         caminho.touch()
 
 
-@pytest.mark.parametrize("sistema", list(Sistema))
+@pytest.mark.parametrize("sistema", [Sistema.LINUX, Sistema.MACOS])
 def test_remover_agendador_antigo_instalado_remove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema
 ) -> None:
@@ -98,3 +101,31 @@ def test_rodar_comando_traduz_erros(
     monkeypatch.setattr(subprocess, "run", levanta)
     with pytest.raises(BackendIndisponivel):
         rodar_comando_do_sistema(["x"])
+
+
+def test_remover_agendador_antigo_windows_apaga_a_tarefa_manual(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "platform", Sistema.WINDOWS.value)
+    registro = Registro()
+    assert remover_agendador_antigo(tmp_path, registro)
+    assert [c[1] for c in registro.comandos] == [
+        AcaoSchtasks.QUERY,
+        AcaoSchtasks.END,
+        AcaoSchtasks.DELETE,
+    ]
+    assert all(
+        c[0] == SCHTASKS and NOME_TAREFA_INSCRICOES in c for c in registro.comandos
+    )
+    assert "timer antigo das inscrições removido" in capsys.readouterr().err
+
+
+def test_remover_agendador_antigo_windows_sem_tarefa(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", Sistema.WINDOWS.value)
+    registro = Registro(falhar_em=AcaoSchtasks.QUERY)
+    assert not remover_agendador_antigo(tmp_path, registro)
+    assert len(registro.comandos) == 1

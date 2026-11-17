@@ -71,3 +71,74 @@ jobs:
       - run: cd web && npm ci && npx playwright install --with-deps chromium
         if: matrix.alvo == 'web-e2e'
       - run: make ${{ matrix.alvo }}
+
+  instalador-windows:
+    # Fora da matriz e dos checks exigidos: baixa a última release e liga e
+    # desliga o Agendador de Tarefas de verdade.
+    name: instalador windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: PSScriptAnalyzer
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          # O -Path recebe um caminho só.
+          $achados = 'install.ps1', 'motor/ajudante_windows.ps1' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ }
+          $achados | Format-Table -AutoSize
+          if ($achados) { exit 1 }
+
+      - name: install.ps1 -SemConfigurar (PowerShell 5.1)
+        env: &ambiente-51
+          LOCALAPPDATA: ${{ runner.temp }}\ps51\local
+          APPDATA: ${{ runner.temp }}\ps51\roaming
+          UV_TOOL_DIR: ${{ runner.temp }}\ps51\tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\ps51\bin
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -SemConfigurar
+      - name: "--version da release (PowerShell 5.1)"
+        env: *ambiente-51
+        run: '& "$env:UV_TOOL_BIN_DIR\monitor-versoes.exe" --version'
+      - name: install.ps1 -Desinstalar (PowerShell 5.1)
+        env: *ambiente-51
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Desinstalar
+
+      - name: install.ps1 -SemConfigurar (PowerShell 7)
+        env: &ambiente-7
+          LOCALAPPDATA: ${{ runner.temp }}\ps7\local
+          APPDATA: ${{ runner.temp }}\ps7\roaming
+          UV_TOOL_DIR: ${{ runner.temp }}\ps7\tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\ps7\bin
+        run: pwsh -NoProfile -File install.ps1 -SemConfigurar
+      - name: "--version da release (PowerShell 7)"
+        env: *ambiente-7
+        run: '& "$env:UV_TOOL_BIN_DIR\monitor-versoes.exe" --version'
+      - name: install.ps1 -Desinstalar (PowerShell 7)
+        env: *ambiente-7
+        run: pwsh -NoProfile -File install.ps1 -Desinstalar
+
+      - run: uv sync --all-extras --locked --python 3.14
+      # Os testes leem os mesmos UV_TOOL_DIR e UV_TOOL_BIN_DIR do motor instalado aqui.
+      - name: motor do commit como uv tool
+        shell: bash
+        env:
+          LOCALAPPDATA: ${{ runner.temp }}\integracao\local
+          APPDATA: ${{ runner.temp }}\integracao\roaming
+          UV_TOOL_DIR: ${{ runner.temp }}\integracao\tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\integracao\bin
+        run: uv tool install --python 3.14 "monitor-versoes @ git+file:///$(pwd -W)@$(git rev-parse HEAD)"
+      - name: integração do serviço e da reinstalação
+        shell: bash
+        # Sem LOCALAPPDATA e APPDATA: o `conftest` os troca pelo `tmp_path` de cada teste.
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}\integracao\tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\integracao\bin
+          UV_LOCKED: "1"
+          MONITOR_VERSOES_INTEGRACAO_WINDOWS: "1"
+        # Teste pulado é conferência que não aconteceu: o passo falha.
+        run: |
+          uv run pytest tests/test_windows_integracao.py -rs | tee "$RUNNER_TEMP/pytest.txt"
+          if grep -q SKIPPED "$RUNNER_TEMP/pytest.txt"; then
+            echo "::error::teste de integração pulado"
+            exit 1
+          fi

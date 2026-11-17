@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import socket
 import sys
+import sysconfig
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,19 +15,33 @@ import pytest
 
 from motor import servico
 from motor.__main__ import COMANDO_SERVE, main
-from motor.agendador import LAUNCHCTL, SYSTEMCTL, Acao, Sistema
+from motor.agendador import (
+    FLAG_FORCAR_SCHTASKS,
+    FLAG_TAREFA,
+    FLAG_XML,
+    LAUNCHCTL,
+    SCHTASKS,
+    SYSTEMCTL,
+    Acao,
+    AcaoSchtasks,
+    Sistema,
+)
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 from motor.servico import (
     ARGUMENTOS_SERVE,
     ARQUIVO_LOG_LAUNCHD,
+    ARQUIVO_LOG_SERVE,
     ARQUIVO_SERVICE,
+    EXECUTAVEL_SERVE,
     FLAG_FORCAR,
     FLAG_PERSISTIR,
+    NOME_TAREFA_SERVE,
     ROTULO_LAUNCHD,
     EstadoServico,
     caminho,
     desligar,
     executavel_motor,
+    executavel_servico,
     ligado,
     ligar,
     reiniciar_se_ligado,
@@ -41,6 +58,11 @@ VER_LOG_LINUX = f"journalctl --user -u {ARQUIVO_SERVICE}"
 VER_LOG_MACOS = f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}"
 FLAG_PORTA = "--porta"
 FLAG_SEM_NAVEGADOR = ARGUMENTOS_SERVE[-1]
+
+
+def _nunca_pergunta() -> bool:
+    raise AssertionError("só o Windows pergunta se o serve responde")
+
 
 pula_mac_no_windows = pytest.mark.skipif(
     sys.platform == PLATAFORMA_WINDOWS, reason="launchctl usa o uid do POSIX"
@@ -180,19 +202,28 @@ def test_situacao(
     ver_log: str,
 ) -> None:
     _como(sistema, monkeypatch)
-    assert situacao(tmp_path, lambda _: ativo).estado is EstadoServico.DESLIGADO
+    assert (
+        situacao(tmp_path, lambda _: ativo, _nunca_pergunta).estado
+        is EstadoServico.DESLIGADO
+    )
 
     _criar_arquivo(sistema, tmp_path)
-    assert situacao(tmp_path, lambda _: ativo).estado is EstadoServico.ATIVO
+    assert (
+        situacao(tmp_path, lambda _: ativo, _nunca_pergunta).estado
+        is EstadoServico.ATIVO
+    )
     for saida in OUTROS_ESTADOS:
-        parado = situacao(tmp_path, _devolvendo(saida))
+        parado = situacao(tmp_path, _devolvendo(saida), _nunca_pergunta)
         assert parado.estado is EstadoServico.PARADO
         assert parado.ver_log == ver_log
 
 
 def test_situacao_sem_suporte(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(servico, "sistema_atual", _sem_suporte)
-    assert situacao(tmp_path, lambda _: None).estado is EstadoServico.SEM_SUPORTE
+    assert (
+        situacao(tmp_path, lambda _: None, _nunca_pergunta).estado
+        is EstadoServico.SEM_SUPORTE
+    )
 
 
 def test_executavel_motor_nao_depende_do_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -279,3 +310,129 @@ def test_ligar_no_macos_com_o_job_ja_carregado_recarrega(
     registro = Registro(falhar_em=Acao.UNLOAD)
     ligar(Sistema.MACOS, tmp_path, EXE, registro)
     assert registro.comandos[-1][1] == Acao.LOAD
+
+
+EXE_WINDOWS = r"C:\venv\Scripts\monitor-versoes-serve.exe"
+SAIDA_ALEMA = "FEHLER: Das System kann die angegebene Datei nicht finden."
+SUFIXO_EXE = ".exe"
+VAR_CONFIG_EXE = "EXE"
+NS = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
+USUARIO = ("DOMINIO", "fulano")
+PADRAO_INICIO = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d"
+XPATH_USUARIO = "Triggers/LogonTrigger/UserId"
+XPATH_INICIO = "Triggers/TimeTrigger/StartBoundary"
+INTERVALO_REPETICAO = "PT1M"
+LOGON_INTERATIVO = "InteractiveToken"
+NIVEL_MINIMO = "LeastPrivilege"
+POLITICA_IGNORAR = "IgnoreNew"
+SEM_LIMITE = "PT0S"
+FALSO = "false"
+XML_ESPERADO = {
+    "Triggers/TimeTrigger/Repetition/Interval": INTERVALO_REPETICAO,
+    "Principals/Principal/LogonType": LOGON_INTERATIVO,
+    "Principals/Principal/RunLevel": NIVEL_MINIMO,
+    "Settings/MultipleInstancesPolicy": POLITICA_IGNORAR,
+    "Settings/DisallowStartIfOnBatteries": FALSO,
+    "Settings/StopIfGoingOnBatteries": FALSO,
+    "Settings/ExecutionTimeLimit": SEM_LIMITE,
+    "Actions/Exec/Command": EXE_WINDOWS,
+}
+
+
+def _schtasks(acao: AcaoSchtasks, *resto: str) -> list[str]:
+    return [SCHTASKS, acao, FLAG_TAREFA, NOME_TAREFA_SERVE, *resto]
+
+
+def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("USERDOMAIN", USUARIO[0])
+    monkeypatch.setenv("USERNAME", USUARIO[1])
+    chamadas: list[list[str]] = []
+    xmls: list[str] = []
+
+    def rodar(cmd: list[str]) -> None:
+        chamadas.append(cmd)
+        if AcaoSchtasks.CREATE in cmd:
+            xmls.append(Path(cmd[cmd.index(FLAG_XML) + 1]).read_text("utf-16"))
+
+    ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, rodar)
+
+    arquivo = chamadas[1][chamadas[1].index(FLAG_XML) + 1]
+    assert chamadas == [
+        _schtasks(AcaoSchtasks.END),
+        _schtasks(AcaoSchtasks.CREATE, FLAG_XML, arquivo, FLAG_FORCAR_SCHTASKS),
+        _schtasks(AcaoSchtasks.RUN),
+    ]
+    (xml,) = xmls
+    raiz = ET.fromstring(xml.split("?>", 1)[1])
+
+    def texto(caminho: str) -> str | None:
+        return raiz.findtext("/".join(NS + p for p in caminho.split("/")))
+
+    assert texto(XPATH_USUARIO) == "\\".join(USUARIO)
+    assert re.fullmatch(PADRAO_INICIO, texto(XPATH_INICIO) or "")
+    assert raiz.find(f".//{NS}Repetition/{NS}Duration") is None
+    for xpath, esperado in XML_ESPERADO.items():
+        assert texto(xpath) == esperado, xpath
+    assert not Path(arquivo).exists()
+
+
+def test_ligar_windows_sem_tarefa_anterior_cria_e_roda(tmp_path: Path) -> None:
+    registro = Registro(falhar_em=AcaoSchtasks.END)
+    ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
+    assert [cmd[1] for cmd in registro.comandos] == [
+        AcaoSchtasks.END,
+        AcaoSchtasks.CREATE,
+        AcaoSchtasks.RUN,
+    ]
+
+
+def test_ligar_windows_que_falha_apaga_a_tarefa(tmp_path: Path) -> None:
+    registro = Registro(falhar_em=AcaoSchtasks.RUN)
+    with pytest.raises(BackendIndisponivel):
+        ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
+    assert registro.comandos[-1] == _schtasks(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
+
+
+def test_desligar_windows_encerra_e_apaga(tmp_path: Path) -> None:
+    registro = Registro(falhar_em=AcaoSchtasks.END)
+    desligar(Sistema.WINDOWS, tmp_path, registro)
+    assert registro.comandos == [
+        _schtasks(AcaoSchtasks.END),
+        _schtasks(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
+    ]
+
+
+def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _como(Sistema.WINDOWS, monkeypatch)
+    assert (
+        situacao(tmp_path, _devolvendo(None), _nunca_pergunta).estado
+        is EstadoServico.DESLIGADO
+    )
+    parado = situacao(tmp_path, _devolvendo(SAIDA_ALEMA), lambda: False)
+    assert parado.estado is EstadoServico.PARADO
+    assert parado.ver_log.endswith(f"{ARQUIVO_LOG_SERVE}'")
+    assert parado.ver_log.startswith("Get-Content -Wait '")
+    assert (
+        situacao(tmp_path, _devolvendo(""), lambda: True).estado is EstadoServico.ATIVO
+    )
+
+
+def test_reiniciar_se_ligado_no_windows_nao_age(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _como(Sistema.WINDOWS, monkeypatch)
+    registro = Registro()
+    assert not reiniciar_se_ligado(tmp_path, registro)
+    assert not registro.comandos
+
+
+def test_executavel_servico_windows_tem_exe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", PLATAFORMA_WINDOWS)
+    monkeypatch.setattr(
+        sysconfig,
+        "get_config_var",
+        lambda nome: SUFIXO_EXE if nome == VAR_CONFIG_EXE else None,
+    )
+    assert executavel_servico().endswith(f"{EXECUTAVEL_SERVE}{SUFIXO_EXE}")

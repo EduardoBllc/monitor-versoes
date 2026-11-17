@@ -15,6 +15,7 @@ from enum import StrEnum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from motor import console
 from motor.config import checagem_ligada, diretorio_cache
 from motor.errors import MotorError
 from motor.instalacao import (
@@ -101,6 +102,7 @@ def _ssh_da_config() -> str | None:
             text=True,
             timeout=TIMEOUT_GIT_S,
             stdin=subprocess.DEVNULL,
+            creationflags=console.FLAGS_SEM_JANELA,
         )
     except OSError, subprocess.TimeoutExpired:
         return None
@@ -129,6 +131,7 @@ def rodar_git(args: list[str], env: Mapping[str, str]) -> str | None:
             text=True,
             timeout=TIMEOUT_GIT_S,
             stdin=subprocess.DEVNULL,
+            creationflags=console.FLAGS_SEM_JANELA,
         )
     except OSError, subprocess.TimeoutExpired:
         return None

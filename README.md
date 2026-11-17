@@ -34,8 +34,8 @@ sem adaptação:
 
 | Ferramenta | Para quê | Instalação |
 | --- | --- | --- |
-| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | Linux e macOS: o `install.sh` instala se faltar (à mão: `curl -LsSf https://astral.sh/uv/install.sh \| sh`); Windows: veja "Windows" |
-| git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install`; Windows: [Git for Windows](https://git-scm.com/download/win) |
+| [uv](https://docs.astral.sh/uv/) | dependências e Python 3.14 (o `uv` baixa o Python se faltar) | Linux e macOS: o `install.sh` instala se faltar (à mão: `curl -LsSf https://astral.sh/uv/install.sh \| sh`); Windows: o `install.ps1` instala se faltar |
+| git | os repositórios auditados | Debian/Ubuntu: `sudo apt install git`; macOS: `xcode-select --install`; Windows: `winget install --id Git.Git -e` ou [Git for Windows](https://git-scm.com/download/win) (o `install.ps1` confere e, sem o git, para e diz isso) |
 
 ## Instalação
 
@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/in
 curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh -s -- --desinstalar
 ```
 
-À mão, ou no Windows (veja "Windows"), pelo `uv`:
+No Windows, veja "Windows" (o `install.ps1`). À mão, pelo `uv`:
 
 ```bash
 uv tool install git+https://github.com/EduardoBllc/monitor-versoes@v0.4.1 # x-release-please-version
@@ -133,7 +133,7 @@ Em Linux e macOS ele também pergunta se o `serve` deve subir no login (padrão 
 configuração e, depois, o estado atual). Ligado, vira um serviço de usuário (systemd) ou um
 LaunchAgent, sem root, que roda `serve --sem-navegador` pelo executável do `uv` e é
 reiniciado após `plugin instalar`, `plugin remover`, `plugin atualizar`, `atualizar-motor`
-e `configurar`. Subir sem login fica fora. No Windows a pergunta não aparece. O `diagnostico` mostra a peça "Daemon". Ao fechar,
+e `configurar`. No Windows a pergunta também aparece, e o serviço é uma tarefa do Agendador de Tarefas (veja "Windows"). Subir sem login fica fora. O `diagnostico` mostra a peça "Daemon". Ao fechar,
 o assistente roda o `diagnostico` e só oferece abrir o navegador se o `serve` responde.
 O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
 
@@ -143,7 +143,13 @@ O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
 curl -fsSL https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.sh | sh -s -- --desinstalar
 ```
 
-Ele remove o serviço do login, o timer antigo das inscrições, a
+No Windows, pelo PowerShell (veja "Windows"):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1))) -Desinstalar
+```
+
+Ele remove o serviço do login, o timer antigo das inscrições (no Windows, a tarefa manual), a
 ferramenta e os plugins. Config, estado, inscrições e cache ficam, e os caminhos são
 impressos; ele só os apaga se você responder sim (padrão não, e sem terminal ficam sempre).
 Sem o motor, ou com ele quebrado, o script ainda remove os serviços e mantém os dados. À
@@ -157,14 +163,28 @@ Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md
 
 ### Windows
 
-O motor roda nativo no Windows: CLI, TUI, `serve` e inscrições. Instale o
-[Git for Windows](https://git-scm.com/download/win) e o `uv`, no PowerShell:
+O motor roda nativo no Windows: CLI, TUI, `serve` e inscrições. No Windows PowerShell 5.1 ou no
+PowerShell 7, sem administrador (precisa do git; sem ele o script para e diz como instalar):
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1 | iex
 ```
 
-Depois, o mesmo `uv tool install` dos outros sistemas. Os caminhos mudam:
+O script instala o `uv` se faltar e o motor na última release, e abre o `monitor-versoes configurar`.
+Já instalado, ele roda o `atualizar-motor`, como o `install.sh`. Sem terminal interativo, pula o
+`configurar`. Opções:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1))) -SemConfigurar
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1))) -Desinstalar
+```
+
+Como arquivo: `powershell -ExecutionPolicy Bypass -File install.ps1` (a política padrão recusa o
+`-File` puro). O arquivo é UTF-8 sem BOM, então no 5.1 o `-File` mostra os acentos trocados; pelo
+`irm … | iex` eles saem certos. Alternativa manual: instale o git e o `uv` e rode o mesmo
+`uv tool install` dos outros sistemas.
+
+Os caminhos mudam:
 
 | O quê | Windows | Linux e macOS |
 | --- | --- | --- |
@@ -174,12 +194,22 @@ Depois, o mesmo `uv tool install` dos outros sistemas. Os caminhos mudam:
 `XDG_CONFIG_HOME`, se definida, vale também no Windows. No TOML, escreva caminhos do Windows
 entre aspas simples, `caminho = 'C:\repos\app'`: entre aspas duplas, `\` é escape.
 
-No Windows não há disparo automático sem o daemon; crie a tarefa agendada uma vez, à mão. Ela
+O serviço do login é a tarefa `monitor-versoes-serve` do Agendador de Tarefas, do seu usuário, que
+o `configurar` cria e remove. Ela sobe no logon e se repete a cada minuto (sem nova instância
+se já roda), então um `serve` que cai volta em até 1 minuto; não tem limite de tempo nem condição
+de bateria. Roda sem janela de console e grava o log em `serve.log`, na pasta de estado, truncado a
+cada subida. O `plugin instalar|remover|atualizar`, o `atualizar-motor` e o `configurar` (ao
+instalar um plugin) entregam a reinstalação a um ajudante fora do ambiente, que encerra o `serve`,
+roda o `uv`, sobe o `serve` de novo e mostra o resultado no console; o comando sai antes. Depois
+de instalar um plugin pelo `configurar`, rode-o de novo para gravar a fonte. O porquê:
+[042](docs/decisoes/042-instalador-e-daemon-no-login.md) e
+[043](docs/decisoes/043-reinstalacao-no-windows-por-ajudante.md).
+
+Sem o daemon, o disparo automático das inscrições é uma tarefa agendada criada à mão. Ela
 chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que `monitor-versoes inscricao rodar`
-sem abrir janela de console. Com o `serve` não crie a tarefa, e apague a que já criou
-(`schtasks /delete /tn monitor-versoes-inscricoes /f`): o `serve` não remove nada no Windows e
-os dois disparariam em dobro. No Prompt de Comando (`cmd`), ache o executável e crie a tarefa com
-o caminho que o `where` mostrar:
+sem abrir janela de console. Com o `serve` não crie a tarefa: se ela existir, o `serve` a encerra
+e apaga ao subir (e avisa), porque os dois disparariam em dobro. No Prompt de Comando (`cmd`),
+ache o executável e crie a tarefa com o caminho que o `where` mostrar:
 
 ```bat
 where monitor-versoes-inscricoes
@@ -562,7 +592,7 @@ outras. O desfecho da última execução aparece no `listar`:
 
 Sem o `serve`, agende você mesmo o `inscricao rodar` a cada minuto, com o caminho absoluto
 do executável (`which monitor-versoes`). **Não use junto com o `serve`** (vale para cron,
-systemd e Windows): os dois disparariam em dobro. Com cron:
+systemd e Windows): os dois disparariam em dobro (no Windows, o `serve` apaga a tarefa manual ao subir). Com cron:
 
 ```cron
 * * * * * /caminho/absoluto/monitor-versoes inscricao rodar
@@ -615,7 +645,7 @@ desfecho):
 | `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `monitor-versoes serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
 | `error: argument --repo: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
 | ``ERROR: o monitor-versoes não está instalado como `uv tool` ...`` | `plugin instalar`, `remover`, `atualizar` ou `atualizar-motor` rodado num checkout de desenvolvimento ou com `uv run`. Ali, plugins e atualização são pelo git e pelo `uv sync`; o `plugin listar` funciona. |
-| `A reinstalação falhou (o erro do uv está acima). Para tentar à mão: ...` | O `uv` não conseguiu reinstalar (rede, credencial, conflito de dependência), e a instalação anterior continua como estava. No Windows, o executável em uso trava a reinstalação: feche o `monitor-versoes serve` e a TUI e rode a linha impressa no terminal. |
+| `A reinstalação falhou (o erro do uv está acima). Para tentar à mão: ...` | O `uv` não conseguiu reinstalar (rede, credencial, conflito de dependência), e a instalação anterior continua como estava. No Windows, o ajudante encerra sozinho o `serve` do serviço e mostra o resultado; um processo do motor vivo (a TUI ou um `serve` manual) trava a troca, então feche-os e rode a linha impressa no terminal. Com uma inscrição em andamento, a reinstalação recusa: tente quando ela terminar. |
 
 ## Próximos passos
 

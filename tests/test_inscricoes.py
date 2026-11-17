@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import logging
@@ -12,15 +13,18 @@ from typing import Any
 
 import pytest
 
+from motor import console, inscricoes
 from motor.adapters.notificador.fake import FakeNotificador
 from motor.domain.inscricao import Desfecho, Resultado, UltimaExecucao
-from motor.errors import ErroDeEntrada, RespostaInvalida
+from motor.errors import ErroDeEntrada, MotorError, RepoOcupado, RespostaInvalida
 from motor.inscricoes import (
+    ADIADO,
     ARQUIVO_INSCRICOES,
     CAMPO_CLONE_ANTIGO,
     LIMITE_EXECUCAO_S,
     MENSAGEM_SEM_RESULTADO,
     MENSAGEM_TEMPO_ESGOTADO,
+    NOME_TRAVA_INSCRICOES,
     PREFIXO_TITULO,
     SEM_PROCESSO,
     TEMPO_ESGOTADO,
@@ -37,6 +41,7 @@ from motor.inscricoes import (
     salvar,
     vencidas,
 )
+from motor.trava import caminho_trava_inscricoes, travar_arquivo
 
 HORA = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 MIN30 = datetime.timedelta(minutes=30)
@@ -333,6 +338,10 @@ def test_disparar_subprocesso_monta_o_comando(
 
     monkeypatch.setattr(subprocess, "run", falso)
     monkeypatch.setattr(sys, "platform", SO_POSIX)
+    # A trava escolhe fcntl/msvcrt pelo `sys.platform`, que aqui é falso.
+    monkeypatch.setattr(
+        inscricoes, "travar_arquivo", lambda _nome, _arquivo: contextlib.nullcontext()
+    )
     i = _insc()
     ambiente = {"CHAVE_PAI": "v"}
     assert disparar_subprocesso(i, ambiente) == 0
@@ -344,7 +353,7 @@ def test_disparar_subprocesso_monta_o_comando(
     assert visto["env"] == ambiente
     assert visto["timeout"] == LIMITE_EXECUCAO_S
     assert visto["start_new_session"] is True
-    assert visto["creationflags"] == 0
+    assert visto["creationflags"] == console.FLAGS_SEM_JANELA
 
 
 @pytest.mark.parametrize(
@@ -357,3 +366,61 @@ def test_disparar_subprocesso_monta_o_comando(
 )
 def test_formatar_intervalo(intervalo: datetime.timedelta, esperado: str) -> None:
     assert formatar_intervalo(intervalo) == esperado
+
+
+def test_disparar_subprocesso_segura_a_trava_enquanto_o_filho_roda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recusou: list[bool] = []
+
+    def falso(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        try:
+            travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes())
+        except RepoOcupado:
+            recusou.append(True)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", falso)
+    assert disparar_subprocesso(_insc(), {}) == 0
+    assert recusou == [True]
+    with travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes()):
+        pass
+
+
+def test_disparo_com_trava_ocupada_adia_a_inscricao(
+    arq: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def nao_deve_rodar(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
+        raise AssertionError("o filho não deveria rodar")
+
+    monkeypatch.setattr(subprocess, "run", nao_deve_rodar)
+    salvar(arq, [_insc()])
+    antes = arq.read_bytes()
+    fake = FakeNotificador()
+    with travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes()):
+        assert disparar_subprocesso(_insc(), {}) == ADIADO
+        rodar(arq, HORA, lambda i: disparar_subprocesso(i, {}), fake)
+    assert arq.read_bytes() == antes
+    assert fake.enviadas == []
+
+
+def test_trava_inutilizavel_nao_aborta_a_rodada(
+    arq: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def falha(nome: str, arquivo: Path) -> None:
+        raise MotorError("sem acesso à trava")
+
+    monkeypatch.setattr("motor.inscricoes.travar_arquivo", falha)
+    salvar(arq, [_insc(Repo.A), _insc(Repo.B)])
+    chamadas: list[str] = []
+
+    def disparar(i: Inscricao) -> int:
+        chamadas.append(i.repo)
+        return disparar_subprocesso(i, {})
+
+    rodar(arq, HORA, disparar, FakeNotificador())
+    assert chamadas == [Repo.A, Repo.B]
+    for i in carregar(arq):
+        assert i.ultima is not None
+        assert i.ultima.desfecho == Desfecho.ERRO
+        assert i.ultima.mensagem == MENSAGEM_SEM_RESULTADO.format(codigo=SEM_PROCESSO)

@@ -25,7 +25,6 @@ from motor.config import (
     repos_configurados,
 )
 from motor.diagnostico import (
-    URL_ISSUE_DAEMON,
     Estado,
     Peca,
     PecaTestavel,
@@ -797,7 +796,7 @@ VER_LOG = "dica de log opaca"
             Situacao(EstadoServico.SEM_SUPORTE),
             Estado.NAO_CONFIGURADO,
             "",
-            URL_ISSUE_DAEMON,
+            "sem suporte neste sistema",
         ),
     ],
 )

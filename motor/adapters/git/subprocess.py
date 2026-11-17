@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any, NamedTuple
 
+from motor import console
 from motor.domain.conflito import Estagios
 from motor.domain.types import CommitRef
 from motor.domain.worktrees import worktrees_a_remover
@@ -166,6 +167,7 @@ def _rodar_git(
             encoding="utf-8",
             errors="replace",
             check=False,
+            creationflags=console.FLAGS_SEM_JANELA,
             **extra,
         )
     except OSError as e:
@@ -179,7 +181,13 @@ def _rodar_git_bytes(
     e `diff --quiet` so olha o returncode. A guarda de `OSError` e a mesma.
     """
     try:
-        return subprocess.run(args, cwd=cwd, capture_output=True, check=False)
+        return subprocess.run(
+            args,
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            creationflags=console.FLAGS_SEM_JANELA,
+        )
     except OSError as e:
         raise BackendIndisponivel(f"git {' '.join(args[1:])}: {e}") from e
 
@@ -378,6 +386,7 @@ class GitSubprocess:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     env={**os.environ, "LC_ALL": "C"},
+                    creationflags=console.FLAGS_SEM_JANELA,
                 )
             except OSError as e:
                 raise BackendIndisponivel(f"git {' '.join(args)}: {e}") from e
@@ -604,6 +613,7 @@ class GitSubprocess:
                     # stderr nunca foi lido — sem DEVNULL ele era herdado e ia
                     # direto para o terminal, rasgando o desenho da TUI.
                     stderr=subprocess.DEVNULL,
+                    creationflags=console.FLAGS_SEM_JANELA,
                 )
             except OSError as e:
                 raise BackendIndisponivel(f"git show {' '.join(lote)}: {e}") from e

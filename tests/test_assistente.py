@@ -20,7 +20,15 @@ from prompt_toolkit.output import DummyOutput
 
 from motor import agendador, assistente, instalacao, plugins, servico
 from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
-from motor.agendador import ARQUIVO_TIMER, FLAG_AGORA, SYSTEMCTL, Acao, Sistema
+from motor.agendador import (
+    ARQUIVO_TIMER,
+    FLAG_AGORA,
+    NOME_TAREFA_INSCRICOES,
+    SYSTEMCTL,
+    Acao,
+    AcaoSchtasks,
+    Sistema,
+)
 from motor.assistente import EMBUTIDOS, SUFIXOS_SQLITE, Marca, OrigemOutro, Situacao
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
@@ -37,7 +45,12 @@ from motor.config_edicao import GrupoPlugin
 from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
-from motor.servico import ARQUIVO_SERVICE, COMANDO_CONFIGURAR, EXECUTAVEL
+from motor.servico import (
+    ARQUIVO_SERVICE,
+    COMANDO_CONFIGURAR,
+    EXECUTAVEL,
+    NOME_TAREFA_SERVE,
+)
 
 BAIXO = "\x1b[B"
 CIMA = "\x1b[A"
@@ -118,6 +131,11 @@ class Cenario:
         return servico.caminho(Sistema.LINUX, Path.home())
 
 
+@pytest.fixture(autouse=True)
+def _sem_parada_do_windows(monkeypatch):
+    monkeypatch.setattr(assistente, "_para_depois_de_instalar", lambda: False)
+
+
 @pytest.fixture
 def cen(monkeypatch, tmp_path) -> Cenario:
     monkeypatch.setenv(VAR_XDG_CONFIG_HOME, str(tmp_path / "xdg"))
@@ -139,7 +157,7 @@ def cen(monkeypatch, tmp_path) -> Cenario:
     monkeypatch.setattr(plugins, "entry_points", pontos)
     monkeypatch.setattr(assistente, "instalar_plugin", instalar)
     monkeypatch.setattr(assistente, "_terminal", lambda: True)
-    monkeypatch.setattr(assistente, "_serve_responde", lambda esperar: False)
+    monkeypatch.setattr(servico, "serve_responde", lambda esperar: False)
     monkeypatch.setattr(webbrowser, "open", c.abertos.append)
     monkeypatch.setattr(instalacao, "url_do_motor", lambda: URL_MOTOR)
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", c.comandos.append)
@@ -233,7 +251,9 @@ def test_embutido_instalado_sem_a_fonte_avisa_e_volta(cen, capsys):
 def test_instalar_plugin_chama_o_plugin_instalar_do_motor(monkeypatch, saida):
     chamados: list[list[str]] = []
 
-    def rodar(cmd: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+    def rodar(
+        cmd: list[str], check: bool, **_: object
+    ) -> subprocess.CompletedProcess[str]:
         chamados.append(cmd)
         return subprocess.CompletedProcess(cmd, saida)
 
@@ -327,16 +347,61 @@ def test_padrao_do_login(cen, com_config, ligado, comandos):
     assert cen.unit().exists() is (ligado or not com_config)
 
 
-def test_windows_nao_pergunta_o_login(cen):
+def test_sistema_sem_suporte_nao_pergunta_o_login(cen):
     assert _rodar(ENTER, ENTER, sistema=None) == CodigoSaida.OK
     assert cen.comandos == []
+
+
+def test_windows_pergunta_o_login_e_liga_pelo_agendador(cen, monkeypatch):
+    ligadas: list[tuple[object, ...]] = []
+    monkeypatch.setattr(servico, "ligar", lambda *args: ligadas.append(args))
+    assert _rodar(ENTER, ENTER, SIM, sistema=Sistema.WINDOWS) == CodigoSaida.OK
+    assert ligadas == [
+        (
+            Sistema.WINDOWS,
+            Path.home(),
+            servico.executavel_servico(),
+            agendador.rodar_comando_do_sistema,
+        )
+    ]
+
+
+class _SysWindows:
+    """O `sys` do assistente em Windows; o asyncio do teste segue no real."""
+
+    platform = Sistema.WINDOWS
+
+    def __getattr__(self, nome: str) -> object:
+        return getattr(sys, nome)
+
+
+def test_windows_conta_como_ambiente_grafico(cen, monkeypatch):
+    for var in assistente.VARS_DISPLAY:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(servico, "serve_responde", lambda esperar: True)
+    monkeypatch.setattr(assistente, "sys", _SysWindows())
+    assert _rodar(ENTER, ENTER, ENTER, SIM) == CodigoSaida.OK
+    assert cen.abertos == [servico.ENDERECO_WEB]
+
+
+def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
+    cen, monkeypatch, capsys
+):
+    cen.pontos[GrupoPlugin.TAREFAS] = {}
+    gravados: list[object] = []
+    monkeypatch.setattr(assistente, "_para_depois_de_instalar", lambda: True)
+    monkeypatch.setattr(assistente, "gravar", lambda *args: gravados.append(args))
+    assert _rodar(_subir_ate(JIRA), ENTER) == CodigoSaida.OK
+    assert len(cen.instalados) == 1
+    assert gravados == []
+    assert f"{EXECUTAVEL} {COMANDO_CONFIGURAR}" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
     ("serve", "grafico", "teclas", "abertos", "no_stdout"),
     [
-        (True, True, (SIM,), [assistente.ENDERECO_WEB], ""),
-        (True, False, (), [], assistente.ENDERECO_WEB),
+        (True, True, (SIM,), [servico.ENDERECO_WEB], ""),
+        (True, False, (), [], servico.ENDERECO_WEB),
         (False, True, (), [], f"{EXECUTAVEL} {COMANDO_SERVE}"),
     ],
     ids=["abre", "sem-grafico", "sem-serve"],
@@ -344,7 +409,7 @@ def test_windows_nao_pergunta_o_login(cen):
 def test_fechamento(
     cen, monkeypatch, capsys, serve, grafico, teclas, abertos, no_stdout
 ):
-    monkeypatch.setattr(assistente, "_serve_responde", lambda esperar: serve)
+    monkeypatch.setattr(servico, "serve_responde", lambda esperar: serve)
     monkeypatch.setattr(assistente, "_ambiente_grafico", lambda: grafico)
     assert _rodar(ENTER, ENTER, ENTER, *teclas) == CodigoSaida.OK
     saida = capsys.readouterr().out
@@ -356,6 +421,9 @@ def test_fechamento(
 def test_configurar_no_primeiro_uso_nao_acusa_falta_de_migracao(cen, capsys):
     assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert f"{Estado.FALHA.value}  {Peca.MIGRACAO}" not in capsys.readouterr().out
+
+
+TAREFA_EXISTE = ""  # `consultar_do_sistema` devolve texto se existe, None se não
 
 
 def _dados_do_usuario(tmp_path, monkeypatch, cache_base=None) -> list[Path]:
@@ -398,6 +466,31 @@ def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
         [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_TIMER],
         [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     ]
+    assert all(d.exists() for d in dados)
+
+
+def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
+    cen, tmp_path, monkeypatch
+):
+    dados = _dados_do_usuario(tmp_path, monkeypatch)
+    monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: TAREFA_EXISTE)
+
+    assert (
+        _rodar(NAO, sistema=Sistema.WINDOWS, comando=COMANDO_DESINSTALAR)
+        == CodigoSaida.OK
+    )
+
+    tarefas = (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES)
+    ordem = [
+        (acao, tarefa)
+        for _, acao, _, tarefa, *_ in cen.comandos
+        if tarefa in tarefas and acao != AcaoSchtasks.QUERY
+    ]
+    for tarefa in tarefas:
+        assert [a for a, t in ordem if t == tarefa] == [
+            AcaoSchtasks.END,
+            AcaoSchtasks.DELETE,
+        ]
     assert all(d.exists() for d in dados)
 
 

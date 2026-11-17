@@ -34,6 +34,7 @@ from motor.config import (
     carregar_config_repo,
     checar_backend,
     database_url,
+    diretorio_dados,
     repos_configurados,
     validar_nome_repo,
 )
@@ -192,7 +193,13 @@ def _imprimir_diagnostico(args: argparse.Namespace) -> bool:
         novidades=novidades_do_cache,
     )
     resultados.append(
-        peca_daemon(servico.situacao(Path.home(), servico.consultar_do_sistema))
+        peca_daemon(
+            servico.situacao(
+                Path.home(),
+                servico.consultar_do_sistema,
+                lambda: servico.serve_responde(esperar=False),
+            )
+        )
     )
     for resultado in resultados:
         print(formatar(resultado))
@@ -325,6 +332,7 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     COMANDO_INSCRICAO: _inscricao,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
+    cli_instalacao.COMANDO_POS_REINSTALAR: cli_instalacao.pos_reinstalar,
 }
 
 
@@ -827,6 +835,7 @@ _SEM_AVISO = frozenset(
         COMANDO_DESINSTALAR,
         cli_instalacao.COMANDO_PLUGIN,
         cli_instalacao.COMANDO_ATUALIZAR_MOTOR,
+        cli_instalacao.COMANDO_POS_REINSTALAR,
     }
 )
 
@@ -933,6 +942,19 @@ def main_inscricoes() -> None:
     `print`, `logging` e `argparse` já os toleram, e o teste confere.
     """
     main(["inscricao", AcaoInscricao.RODAR])
+
+
+def main_serve() -> None:
+    """`serve` como executável sem console: o log do serviço vai para `serve.log`."""
+    log = Path(diretorio_dados()) / servico.ARQUIVO_LOG_SERVE
+    log.parent.mkdir(parents=True, exist_ok=True)
+    # Sem console não há stdout/stderr; "w" a cada subida mantém o log do tamanho de uma sessão.
+    with (
+        log.open("w", encoding="utf-8", buffering=1) as saida,
+        contextlib.redirect_stdout(saida),
+        contextlib.redirect_stderr(saida),
+    ):
+        main([*servico.ARGUMENTOS_SERVE])
 
 
 if __name__ == "__main__":

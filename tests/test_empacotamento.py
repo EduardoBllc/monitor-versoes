@@ -43,6 +43,7 @@ def test_wheel_contem_migracoes_e_build_da_web(tmp_path: Path):
         "motor/migracoes/env.py",
         "motor/migracoes/script.py.mako",
         "motor/daemon/static/index.html",
+        "motor/ajudante_windows.ps1",
     }
     versions = RAIZ / "motor" / "migracoes" / "versions"
     esperados |= {f"motor/migracoes/versions/{f.name}" for f in versions.glob("*.py")}

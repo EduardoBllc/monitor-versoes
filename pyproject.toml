@@ -34,9 +34,10 @@ anthropic = [
 [project.scripts]
 monitor-versoes = "motor.__main__:main"
 
-# Sem console no Windows: o que a tarefa agendada das inscrições chama.
+# Sem console no Windows: o que as tarefas agendadas chamam.
 [project.gui-scripts]
 monitor-versoes-inscricoes = "motor.__main__:main_inscricoes"
+monitor-versoes-serve = "motor.__main__:main_serve"
 
 [project.entry-points."monitor_versoes.esquemas"]
 semver = "motor.esquemas.semver:Semver"
@@ -67,7 +68,12 @@ build-backend = "setuptools.build_meta"
 include = ["motor*"]
 
 [tool.setuptools.package-data]
-motor = ["migracoes/script.py.mako", "migracoes/versions/*.py", "daemon/static/**/*"]
+motor = [
+    "migracoes/script.py.mako",
+    "migracoes/versions/*.py",
+    "daemon/static/**/*",
+    "ajudante_windows.ps1",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "plugins/jira/tests", "plugins/github/tests", "plugins/gitlab/tests"]

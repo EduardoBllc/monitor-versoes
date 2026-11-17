@@ -14,7 +14,8 @@ from itertools import groupby
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
-from motor import agendador, servico
+from motor import agendador, ajudante, console, servico
+from motor.agendador import Sistema
 from motor.config import diretorio_cache
 from motor.errors import BackendIndisponivel, CodigoSaida, ErroDeEntrada, OrigemRecusada
 from motor.instalacao import (
@@ -51,6 +52,7 @@ from motor.novidades import (
 
 COMANDO_PLUGIN = "plugin"
 COMANDO_ATUALIZAR_MOTOR = "atualizar-motor"
+COMANDO_POS_REINSTALAR = "pos-reinstalar"
 URL_INSTALAR_UV = "https://docs.astral.sh/uv/getting-started/installation/"
 # `git@host:caminho`: o git aceita, o `uv` só aceita como `ssh://git@host/caminho`.
 _SCP = re.compile(r"([^@/:]+@[^/:]+):(?!//)(.+)")
@@ -65,7 +67,9 @@ class AcaoPlugin(StrEnum):
 
 
 def executar_uv(cmd: list[str]) -> int:
-    return subprocess.run(cmd, check=False).returncode
+    return subprocess.run(
+        cmd, check=False, creationflags=console.FLAGS_SEM_JANELA
+    ).returncode
 
 
 def _ref_curta(ref: str | None) -> str:
@@ -152,7 +156,28 @@ def _mudancas(antes: Registro, depois: Registro) -> list[str]:
     return linhas
 
 
+def _depois_do_uv(antes: Registro) -> None:
+    # O aviso guardado descreve a instalação que acabou de ser trocada.
+    (Path(diretorio_cache()) / ARQUIVO_CACHE).unlink(missing_ok=True)
+    depois = ler_registro()
+    for linha in _mudancas(antes, depois) if depois else []:
+        print(linha)
+
+
+def pos_reinstalar(_args: argparse.Namespace) -> None:
+    _depois_do_uv(ajudante.ler_antes())
+
+
+def _reinstala_pelo_ajudante() -> bool:
+    # O `uv` não troca o ambiente com um processo dele vivo, nem este.
+    return sys.platform == Sistema.WINDOWS
+
+
 def _reinstalar(antes: Registro, cmd: list[str]) -> None:
+    if _reinstala_pelo_ajudante():
+        ajudante.entregar(antes, cmd)
+        print("A reinstalação continua num processo à parte, neste console.")
+        return
     if executar_uv(cmd) != 0:
         print(
             "A reinstalação falhou (o erro do uv está acima). Para tentar à mão:\n"
@@ -160,11 +185,7 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
             file=sys.stderr,
         )
         sys.exit(CodigoSaida.ERRO)
-    # O aviso guardado descreve a instalação que acabou de ser trocada.
-    (Path(diretorio_cache()) / ARQUIVO_CACHE).unlink(missing_ok=True)
-    depois = ler_registro()
-    for linha in _mudancas(antes, depois) if depois else []:
-        print(linha)
+    _depois_do_uv(antes)
     lembrete = f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o."
     try:
         if not servico.reiniciar_se_ligado(
@@ -349,6 +370,7 @@ def adicionar_parsers(
     acoes.add_parser(AcaoPlugin.ATUALIZAR, help="atualiza os plugins").add_argument(
         "pacote", nargs="?", help="só este pacote (padrão: todos os de fora)"
     )
+    sub.add_parser(COMANDO_POS_REINSTALAR)  # interno do ajudante do Windows: sem help
     sub.add_parser(
         COMANDO_ATUALIZAR_MOTOR,
         help="leva o motor à release mais nova e atualiza os plugins",
