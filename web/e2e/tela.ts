@@ -410,3 +410,71 @@ export async function salvarConfiguracao(page: Page): Promise<void> {
 export function avisoConfiguracaoSalva(page: Page): Locator {
   return page.getByText(Aviso.CONFIG_SALVA, { exact: true });
 }
+
+// Início e página do repo
+
+enum Regiao {
+  PRECISA_DE_VOCE = "Precisa de você",
+}
+
+enum TextoLinha {
+  INDISPONIVEL = "indisponível",
+  VERIFICADA = "verificada há",
+  ATUALIZADA = "atualizada há",
+  RESOLVER = "Resolver",
+}
+
+/** Na home, cada repo é uma região com o nome dele. */
+const regiaoDoRepo = (page: Page, repo: string): Locator =>
+  page.getByRole("region", { name: repo, exact: true });
+
+/** A linha da versão nas listas da home e do repo. */
+const linhaDaVersao = (page: Page, numero: string): Locator =>
+  page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("link", { name: numero, exact: true }) });
+
+const pendenciaNaInicio = (page: Page, versao: string): Locator =>
+  page
+    .getByRole("region", { name: Regiao.PRECISA_DE_VOCE, exact: true })
+    .getByRole("listitem")
+    .filter({ has: page.getByText(versao, { exact: true }) });
+
+export async function abrirInicio(page: Page): Promise<void> {
+  await page.goto("/");
+}
+
+export async function voltarAoInicio(page: Page): Promise<void> {
+  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
+}
+
+export async function subirAoRepo(page: Page): Promise<void> {
+  await irAoRepoPelaTrilha(page);
+}
+
+export function versaoNaInicio(page: Page, repo: string, numero: string): Locator {
+  return regiaoDoRepo(page, repo).getByRole("link", { name: numero, exact: true });
+}
+
+export function repoIndisponivelNaInicio(page: Page, repo: string): Locator {
+  return regiaoDoRepo(page, repo).getByText(TextoLinha.INDISPONIVEL);
+}
+
+export function bloqueioNaInicio(page: Page, versao: string): Locator {
+  return pendenciaNaInicio(page, versao);
+}
+
+/** Pelo "Precisa de você" da home, vai à versão bloqueada. */
+export async function resolverPelaInicio(page: Page, versao: string): Promise<void> {
+  await pendenciaNaInicio(page, versao)
+    .getByRole("link", { name: TextoLinha.RESOLVER, exact: true })
+    .click();
+}
+
+export function verificacaoNaLinha(page: Page, numero: string): Locator {
+  return linhaDaVersao(page, numero).getByText(trecho(TextoLinha.VERIFICADA));
+}
+
+export function atualizacaoNaLinha(page: Page, numero: string): Locator {
+  return linhaDaVersao(page, numero).getByText(trecho(TextoLinha.ATUALIZADA));
+}

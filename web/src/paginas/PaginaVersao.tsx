@@ -1,7 +1,7 @@
 import { Group, Loader, Modal, Stack, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect, useState, type JSX } from "react";
-import { consultaRepos, consultaVersoes } from "../api/cliente";
+import { consultaRepos } from "../api/cliente";
 import { AtualizarStatus } from "../api/enums";
 import { FaseAtualizacao } from "../atualizacao";
 import { AcoesVersao } from "../componentes/AcoesVersao";
@@ -19,6 +19,7 @@ import { PROGRESSO_INICIAL, estaRodando } from "../execucoes";
 import { useGuardaDeSaida } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
 import { FONTE_MONO } from "../tema";
+import { useVersoes } from "../versoes";
 
 // Lazy: o Monaco fica fora do chunk principal.
 const EditorConflito = lazy(() => import("../componentes/EditorConflito"));
@@ -39,7 +40,7 @@ export function PaginaVersao({
   const [resolvendo, setResolvendo] = useState(false);
   const [conflitoWeb, setConflitoWeb] = useState(CONFLITO_ABRINDO);
   const repos = useQuery(consultaRepos);
-  const versoes = useQuery(consultaVersoes(repo));
+  const { versoes } = useVersoes(repo, true);
 
   useEffect(() => {
     retomar(repo);
@@ -69,7 +70,7 @@ export function PaginaVersao({
         </Title>
         <AcoesVersao
           fase={atualizacao.fase}
-          liberada={versoes.data?.find((v) => v.numero === versao)?.liberada === true}
+          liberada={versoes?.find((v) => v.numero === versao)?.liberada === true}
           disponivel={repos.data?.find((r) => r.nome === repo)?.caminho != null}
           ocupado={ocupado}
           continuarBarrado={naTelaConflito && conflitoWeb.pendente}

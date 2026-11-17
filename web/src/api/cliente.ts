@@ -1,5 +1,5 @@
 import { TipoErro } from "./enums";
-import type { RepoOption, VersaoListada } from "./tipos";
+import type { RepoOption } from "./tipos";
 
 export class ErroApi extends Error {
   constructor(
@@ -24,16 +24,6 @@ export const consultaRepos = {
   queryKey: CHAVE_REPOS,
   queryFn: () => api<RepoOption[]>(Metodo.GET, "/api/repos"),
 };
-
-// Cada leitura faz git fetch no repo.
-export const consultaVersoes = (repo: string) => ({
-  queryKey: ["versoes", repo],
-  queryFn: () =>
-    api<VersaoListada[]>(
-      Metodo.GET,
-      `/api/repos/${encodeURIComponent(repo)}/versoes`,
-    ),
-});
 
 const STATUS_ERRO_MIN = 400;
 const STATUS_SEM_CORPO = 204;
