@@ -1,7 +1,4 @@
-"""Transcrição de internal/adapters/git/subprocess_test.go.
-
-Usa git real em tmp_path (o Go não pula esses testes, então este também não).
-"""
+"""Usa git real em tmp_path."""
 
 from __future__ import annotations
 

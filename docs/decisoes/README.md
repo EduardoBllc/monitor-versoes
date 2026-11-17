@@ -12,7 +12,7 @@ aqui — essa o código responde melhor e sem apodrecer. Uso: [README.md](../../
 Uma linha por decisão, na ordem em que a narrativa se encadeia.
 
 1. [001](001-problema-completude-de-commits.md) — o problema: cherry-pick troca o hash; o escopo é completude de commits.
-2. [002](002-oraculo-tres-fontes.md) — presença cruza Tickio, estado e git; verde só quando os três concordam.
+2. [002](002-oraculo-tres-fontes.md) — presença cruza fonte de tarefas, estado e git; verde só quando os três concordam.
 3. [003](003-definicao-de-presente.md) — "presente" em três níveis: ancestral, trailer `-x`, patch-id legado.
 4. [004](004-estado-descartavel.md) — o estado é projeção recuperável mais julgamento humano que só existe no banco.
 5. [005](005-alvo-distribuicao-entre-versoes.md) — política `composta`: tarefa marcada em `V` vale para as abertas maiores e para liberadas após o corte.

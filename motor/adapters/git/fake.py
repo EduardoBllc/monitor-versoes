@@ -1,8 +1,7 @@
 """Double em memória de GitRepo, para testes de services/engine.
 
-Transcrição 1-pra-1 de internal/adapters/git/fake.go. Não simula merge de
-verdade: conflitos e previsão de merge são configurados explicitamente via
-os atributos públicos abaixo.
+Não simula merge de verdade: conflitos e previsão de merge são configurados
+explicitamente via os atributos públicos abaixo.
 """
 
 from __future__ import annotations

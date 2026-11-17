@@ -1,5 +1,3 @@
-"""Porte de internal/services/publication_gate_test.go."""
-
 from motor.adapters.git.fake import FakeGit
 from motor.ports import GitRepo
 from motor.services.catalogo import Catalogo

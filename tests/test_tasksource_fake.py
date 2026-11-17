@@ -1,5 +1,3 @@
-"""Porte de internal/adapters/tasksource/fake_test.go."""
-
 import pytest
 
 from motor.adapters.tasksource.fake import FakeTaskSource

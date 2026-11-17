@@ -160,8 +160,8 @@ class GitRepo(Protocol):
     def commits_meta(self, hashes: list[str], /) -> dict[str, CommitRef]:
         """Metadados de vários commits numa varredura só.
 
-        Nao existe no ports.go: o Go le meta commit por commit, e num snapshot
-        de versao inteira isso e um processo git por commit (dois, com o parent).
+        Ler meta commit por commit custa, num snapshot de versao inteira, um
+        processo git por commit (dois, com o parent).
         Recebe o lote pelo mesmo motivo que o CommitSource recebe: deixar o
         adapter varrer uma vez.
 

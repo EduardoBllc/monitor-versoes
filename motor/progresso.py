@@ -1,9 +1,5 @@
 """Canal de progresso: o motor conta em que fase esta, quem chamou desenha.
 
-Nao vive em `ports.py` de proposito — aquele arquivo se declara transcricao
-1-pra-1 de `internal/ports/ports.go`, e conceito que nao existe no original
-mentiria pro proximo leitor.
-
 Um relator e uma funcao, nao um Protocol: `relatos.append` e uma barra de
 progresso satisfazem os dois o mesmo contrato, e nada no motor precisa de mais
 que "me avise". Nenhuma porta de `ports.py` muda por causa disto — services e

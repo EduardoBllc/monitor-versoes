@@ -1,4 +1,4 @@
-"""Tipos do domínio (§ver internal/domain/types.go). Só dados, sem comportamento."""
+"""Tipos do domínio. Só dados, sem comportamento."""
 
 from __future__ import annotations
 

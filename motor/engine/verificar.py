@@ -1,4 +1,4 @@
-"""Porte de internal/engine/verificar.go."""
+"""`verificar`: cruza alvo, estado e git e diz o que falta na versão."""
 
 from __future__ import annotations
 

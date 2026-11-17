@@ -1,9 +1,8 @@
-"""Transcrição 1-pra-1 de internal/adapters/git/subprocess.go.
+"""GitSubprocess fala com git via subprocess.
 
-GitSubprocess fala com git via subprocess (equivalente a os/exec no Go).
 Assume git >= 2.38 (`merge-tree --write-tree`). rerere.enabled/autoUpdate
 são configurados aqui, no construtor (`new_git_subprocess`) — não no
-engine — espelhando onde o Go liga isso.
+engine.
 """
 
 from __future__ import annotations
@@ -312,8 +311,7 @@ def _parse_conflict_files(out: str) -> list[str]:
 class GitSubprocess:
     repo_path: str
     #: Relator do `fetch`, que e a espera mais longa do motor. Entra por
-    #: construtor e nao pela porta: `ports.py` se declara transcricao de
-    #: `ports.go`, onde progresso nao existe (ver motor/progresso.py).
+    #: construtor e nao pela porta, como todo relator (ver motor/progresso.py).
     progresso: RelatorProgresso = silencioso
     _current_branch: str = field(default="", repr=False)
 
