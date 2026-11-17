@@ -1,6 +1,7 @@
 # Fonte de PR plugável
 
-- **Status:** aceita
+- **Status:** substituída por [044](044-plugins-por-host.md) no ponto "o Bitbucket vem no
+  pacote"; vale nos demais pontos
 - **Data:** 2026-11-13
 - **Depende de:** [024](024-config-por-projeto.md), [025](025-reaproveitamento-da-verificacao.md),
   [027](027-fonte-de-tarefas-plugavel.md)
