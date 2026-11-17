@@ -59,6 +59,16 @@ const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const ROTA_CONFIG = "/api/config";
 
+/** Espera o React processar o que já chegou: dois quadros cobrem o commit e a pintura. */
+export async function esperarRender(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((pronto) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => pronto())),
+      ),
+  );
+}
+
 /** Atrasa as respostas da rota, como numa máquina lenta; vale até o fim do teste. */
 export async function atrasarRota(page: Page, rota: string, ms: number): Promise<void> {
   await page.route(`**${rota}`, async (pedido) => {

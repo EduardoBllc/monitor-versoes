@@ -1,5 +1,5 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { ROTA_CONFIG, atrasarRota, expect, test } from "./fixtures";
+import { ROTA_CONFIG, atrasarRota, esperarRender, expect, test } from "./fixtures";
 import {
   abrir,
   avisoConfiguracaoSalva,
@@ -38,7 +38,8 @@ test("reabrir com a config lenta não descarta a seção nem a edição", async 
 
   const campo = await pisoNaConfiguracao(page, manifesto.repo);
   await campo.fill(PISO);
-  await recarga;
+  await (await recarga).finished();
+  await esperarRender(page);
 
   await expect(campo).toHaveValue(PISO);
 });
