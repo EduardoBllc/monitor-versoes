@@ -31,7 +31,12 @@ from motor.ajudante import (
     VAR_ESTADO,
     ArgPowershell,
 )
-from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR, COMANDO_PLUGIN, AcaoPlugin
+from motor.cli_instalacao import (
+    COMANDO_ATUALIZAR_MOTOR,
+    COMANDO_PLUGIN,
+    COMANDO_POS_REINSTALAR,
+    AcaoPlugin,
+)
 from motor.errors import CodigoSaida
 from motor.instalacao import PACOTE_MOTOR, UV, ArgUv
 from motor.servico import NOME_TAREFA_SERVE
@@ -128,6 +133,7 @@ class Var(StrEnum):
     SAIDA_UV = "FALSO_SAIDA_UV"
     SAIDA_QUERY = "FALSO_SAIDA_QUERY"
     SAIDA_SONDA = "FALSO_SAIDA_SONDA"
+    SAIDA_SONDA_AJUDANTE = "FALSO_SAIDA_SONDA_AJUDANTE"
     SAIDA_ATUALIZAR = "FALSO_SAIDA_ATUALIZAR"
     SAIDA_DESINSTALAR = "FALSO_SAIDA_DESINSTALAR"
     RESULTADO = "FALSO_RESULTADO"
@@ -196,6 +202,8 @@ elif nome == "{Falso.SCHTASKS}" and args[:1] == ["{AcaoSchtasks.QUERY}"]:
 elif nome == "{Falso.MOTOR}":
     if args == ["{COMANDO_ATUALIZAR_MOTOR}", "{FLAG_HELP}"]:
         codigo = int(env["{Var.SAIDA_SONDA}"])
+    elif args == ["{COMANDO_POS_REINSTALAR}", "{FLAG_HELP}"]:
+        codigo = int(env["{Var.SAIDA_SONDA_AJUDANTE}"])
     elif args == ["{COMANDO_ATUALIZAR_MOTOR}"]:
         codigo = int(env["{Var.SAIDA_ATUALIZAR}"])
         if "{Var.RESULTADO}" in env:
@@ -356,6 +364,7 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
         Var.SAIDA_UV: str(CodigoSaida.OK),
         Var.SAIDA_QUERY: str(CodigoSaida.ERRO),
         Var.SAIDA_SONDA: str(CodigoSaida.OK),
+        Var.SAIDA_SONDA_AJUDANTE: str(CodigoSaida.OK),
         Var.SAIDA_ATUALIZAR: str(CodigoSaida.OK),
         Var.SAIDA_DESINSTALAR: str(CodigoSaida.OK),
     }
@@ -500,13 +509,17 @@ def test_falha_do_motor_instalado_nao_reinstala(maquina, sonda, atualizar):
 
 @pytest.mark.parametrize("sufixo_repo", ["", ".git"])
 @pytest.mark.parametrize(
-    ("sonda", "atualizar"),
+    ("sonda", "sonda_ajudante", "atualizar"),
     [
-        (CodigoSaida.USO, CodigoSaida.OK),
-        (CodigoSaida.OK, CodigoSaida.ORIGEM_RECUSADA),
+        (CodigoSaida.USO, CodigoSaida.OK, CodigoSaida.OK),
+        (CodigoSaida.OK, CodigoSaida.OK, CodigoSaida.ORIGEM_RECUSADA),
+        # Motor publicado sem o ajudante: o `atualizar-motor` dele quebraria o ambiente.
+        (CodigoSaida.OK, CodigoSaida.USO, CodigoSaida.OK),
     ],
 )
-def test_sonda_2_ou_3_reinstala_e_lista_plugins(maquina, sonda, atualizar, sufixo_repo):
+def test_sonda_2_ou_3_reinstala_e_lista_plugins(
+    maquina, sonda, sonda_ajudante, atualizar, sufixo_repo
+):
     jira = f"git+{URL_REPO}{sufixo_repo}@{VERSAO_ANTIGA}{SUBPASTA_JIRA}"
     pasta = maquina.raiz / NOME_PLUGIN_LOCAL
     linha = (
@@ -516,6 +529,7 @@ def test_sonda_2_ou_3_reinstala_e_lista_plugins(maquina, sonda, atualizar, sufix
     )
     maquina.env |= {
         Var.SAIDA_SONDA: str(sonda),
+        Var.SAIDA_SONDA_AJUDANTE: str(sonda_ajudante),
         Var.SAIDA_ATUALIZAR: str(atualizar),
         Var.LINHA_UV: linha,
     }

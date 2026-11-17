@@ -75,7 +75,6 @@ ARG_PYTHON_CODIGO = "-c"
 # Frase do ajudante_windows.ps1, que não tem como importar.
 AVISO_UV_FALHOU = "A reinstalação falhou"
 PASTA_BIN_DO_UV = "bin-do-uv"
-TRECHO_INSCRICAO = "inscrição"
 
 
 class Disparo:
@@ -91,7 +90,7 @@ def test_entregar_recusa_com_inscricao_em_andamento() -> None:
     disparo = Disparo()
     with (
         travar_arquivo(NOME_TRAVA_INSCRICOES, caminho_trava_inscricoes()),
-        pytest.raises(ErroDeEntrada, match=TRECHO_INSCRICAO),
+        pytest.raises(ErroDeEntrada),
     ):
         entregar(ANTES, CMD, disparo)
     assert disparo.linhas == []

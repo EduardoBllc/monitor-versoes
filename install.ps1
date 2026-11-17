@@ -39,6 +39,7 @@ $POWERSHELL = 'powershell'
 $PACOTE = 'monitor-versoes'
 $EXECUTAVEL = 'monitor-versoes'
 $CMD_ATUALIZAR = 'atualizar-motor'
+$CMD_POS_REINSTALAR = 'pos-reinstalar'
 $CMD_CONFIGURAR = 'configurar'
 $CMD_DESINSTALAR = 'desinstalar'
 $CMD_PLUGIN_INSTALAR = 'plugin instalar'
@@ -200,6 +201,12 @@ function Invoke-Atualizacao {
     if ($sonda -ne $SAIDA_OK) {
         # Reinstalar agora perderia os plugins; a config quebrada se corrige antes.
         throw "$Motor não roda; corrija o erro (rode ``$Motor $CMD_ATUALIZAR --help``) e rode o script de novo"
+    }
+    # Motor sem o ajudante (até a v0.4.1) reinstala de dentro do próprio ambiente e se quebra.
+    & $Motor $CMD_POS_REINSTALAR --help *> $null
+    if ($LASTEXITCODE -ne $SAIDA_OK) {
+        Invoke-Reinstalacao -Requisito $Requisito -Tag $Tag
+        return
     }
     $estado = [IO.Path]::GetTempFileName()
     [Environment]::SetEnvironmentVariable($VAR_AJUDANTE_ESTADO, $estado)
