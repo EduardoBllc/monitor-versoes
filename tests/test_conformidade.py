@@ -89,23 +89,6 @@ _NOTIFICADORES: list[type[Notificador]] = [NotificadorDesktop, FakeNotificador]
 _SUGESTAO: list[type[ProvedorSugestao]] = [ProvedorAnthropic, FakeProvedorSugestao]
 
 
-def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
-    """A checagem de verdade e estatica; isto so impede o arquivo de virar
-    codigo morto que ninguem executa nem importa.
-    """
-    assert [
-        len(_GIT),
-        len(_ESTADO),
-        len(_TASKS),
-        len(_COMMITS),
-        len(_HOSTS_PR),
-        len(_ESQUEMAS),
-        len(_ATRIBUICOES),
-        len(_NOTIFICADORES),
-        len(_SUGESTAO),
-    ] == [2, 2, 8, 4, 3, 2, 2, 2, 2]
-
-
 def test_porta_nao_aceita_argumento_nomeado() -> None:
     """Os parametros das portas sao posicionais, de proposito.
 

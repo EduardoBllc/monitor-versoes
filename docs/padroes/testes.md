@@ -15,11 +15,12 @@ ficam em [codigo.md](codigo.md); como rodar a suíte, no [README](../../README.m
 - Não crie teste para elevar contagem ou cobertura. Uma correção específica só
   ganha caso próprio quando revela uma regra durável; senão, entra num
   representante existente ou fica fora da suíte.
-- Não entra teste que só prova que uma alteração foi feita ("o comando não aceita
-  mais `--x`", "o campo antigo não é gravado", texto de docstring), nem teste que
-  varre o código-fonte atrás de um termo ou import proibido, nem teste que confere
-  documentação (link, citação, texto). Regra de arquitetura, de convenção e de
-  documentação se protege na revisão, não na suíte.
+- Teste garante única e exclusivamente comportamento da aplicação: de uma unidade
+  (função, classe) ou de uma das interfaces. Não entra teste que só prova que uma
+  alteração foi feita ("o comando não aceita mais `--x`", "o campo antigo não é
+  gravado"), que varre o código-fonte atrás de um termo ou import proibido, ou que
+  confere documentação, docstring ou a própria suíte. Arquitetura, convenção e
+  documentação se protegem na revisão.
 
 Antes de adicionar ou preservar um teste, responda:
 
