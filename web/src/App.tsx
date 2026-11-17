@@ -6,6 +6,7 @@ import { Casca } from "./casca/Casca";
 import { useRota } from "./navegacao";
 import { chaveVersao } from "./operacoes/chave";
 import { OperacoesProvider } from "./operacoes/OperacoesProvider";
+import { PaginaConfig } from "./paginas/PaginaConfig";
 import { PaginaInicio } from "./paginas/PaginaInicio";
 import { PaginaRepo } from "./paginas/PaginaRepo";
 import { PaginaVersao } from "./paginas/PaginaVersao";
@@ -20,10 +21,10 @@ const queryClient = new QueryClient({
 function Roteador(): JSX.Element {
   const rota = useRota();
   switch (rota.pagina) {
-    // A configuração ainda abre no modal da casca.
     case Pagina.INICIO:
-    case Pagina.CONFIG:
       return <PaginaInicio />;
+    case Pagina.CONFIG:
+      return <PaginaConfig />;
     case Pagina.REPO:
       return <PaginaRepo key={rota.repo} repo={rota.repo} />;
     case Pagina.VERSAO:

@@ -5,7 +5,6 @@ import {
   Divider,
   Group,
   Loader,
-  Modal,
   NavLink,
   Paper,
   Progress,
@@ -15,10 +14,9 @@ import {
   Title,
   UnstyledButton,
   VisuallyHidden,
-  getDefaultZIndex,
 } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useState, type JSX, type ReactNode } from "react";
 import { CHAVE_REPOS, Metodo, ErroApi, api } from "../api/cliente";
 import { PecaTestavel, TipoErro } from "../api/enums";
 import type { ConfigEditavel, ResultadoTeste } from "../api/tipos";
@@ -48,10 +46,11 @@ import {
   type Segmento,
 } from "../configSecoes";
 import { pluginsDaSecao, useInstalacao } from "../instalacao";
-import { Entrada, type Valores } from "./CampoConfig";
-import { notificarErro, notificarOk } from "./notificar";
-import { SecaoRepo } from "./SecaoRepo";
-import { TestarSecao } from "./TestarSecao";
+import { Entrada, type Valores } from "../componentes/CampoConfig";
+import { notificarErro, notificarOk } from "../componentes/notificar";
+import { SecaoRepo } from "../componentes/SecaoRepo";
+import { TestarSecao } from "../componentes/TestarSecao";
+import { useGuardaDeSaida } from "../navegacao";
 
 const CHAVE = ["config"];
 
@@ -179,7 +178,7 @@ function Editor({
   salvando,
   recusada,
   retomar,
-  sujo,
+  aoSujar,
   aoSalvar,
   aoRecusa,
   aoRecarregar,
@@ -188,7 +187,7 @@ function Editor({
   salvando: boolean;
   recusada: boolean;
   retomar: Destino | null;
-  sujo: RefObject<boolean>;
+  aoSujar: (sujo: boolean) => void;
   aoSalvar: (f: Formulario, destino: Destino) => void;
   aoRecusa: () => void;
   aoRecarregar: () => void;
@@ -211,11 +210,9 @@ function Editor({
 
   const pendentes = alteracoesDe(config, formulario).length;
   useEffect(() => {
-    sujo.current = pendentes > 0;
-    return () => {
-      sujo.current = false;
-    };
-  }, [pendentes, sujo]);
+    aoSujar(pendentes > 0);
+    return () => aoSujar(false);
+  }, [pendentes, aoSujar]);
 
   const { segmentos, proxima } = pendencias(config, formulario, testes, pulados);
   const marca = (d: Destino) => marcaDe(d, config, formulario, testes, pulados);
@@ -311,8 +308,8 @@ function Editor({
   }
 
   return (
-    <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
-      <Group align="flex-start" wrap="nowrap" gap="xl" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+    <Stack gap={0}>
+      <Group align="flex-start" wrap="nowrap" gap="xl">
         <Box component="nav" aria-label="Seções da configuração" w={240} style={{ flexShrink: 0 }}>
           {LATERAL.map(({ grupo, secoes }) => (
             <Fragment key={grupo}>
@@ -369,19 +366,21 @@ function Editor({
   );
 }
 
-export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
+export function PaginaConfig(): JSX.Element {
   const cliente = useQueryClient();
   const [recusada, setRecusada] = useState(false);
-  // Salvar recarrega o editor na seção aberta; recarregar e fechar voltam à próxima pendência.
+  // Salvar recarrega o editor na seção aberta; recarregar volta à próxima pendência.
   const [retomar, setRetomar] = useState<Destino | null>(null);
-  const [confirmar, setConfirmar] = useState(false);
-  const sujo = useRef(false);
+  const [sujo, setSujo] = useState(false);
+  useGuardaDeSaida(sujo);
   const config = useQuery({
     queryKey: CHAVE,
     queryFn: () => api<ConfigEditavel>(Metodo.GET, "/api/config"),
-    enabled: aberto,
     gcTime: 0,
   });
+  // Sem isto, reentrar monta o editor com o cache e o remonta quando a recarga chega,
+  // descartando a seção escolhida e o que já foi digitado.
+  useEffect(() => () => cliente.removeQueries({ queryKey: CHAVE }), [cliente]);
   const salvar = useMutation({
     mutationFn: (corpo: { alteracoes: ReturnType<typeof alteracoesDe>; versao: string }) =>
       api<ConfigEditavel>(Metodo.PUT, "/api/config", corpo),
@@ -397,32 +396,10 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
     },
   });
   const dados = config.data;
-  const fechar = () => {
-    setConfirmar(false);
-    setRetomar(null);
-    // Sem isto, reabrir monta o editor com o cache e o remonta quando a recarga chega,
-    // descartando a seção escolhida e o que já foi digitado.
-    cliente.removeQueries({ queryKey: CHAVE });
-    aoFechar();
-  };
 
   return (
-    <Modal
-      opened={aberto}
-      onClose={() => {
-        // O Escape chega às duas modais; a confirmação não o escuta, e quem a fecha é este handler.
-        if (confirmar) setConfirmar(false);
-        else if (sujo.current) setConfirmar(true);
-        else fechar();
-      }}
-      title="Configuração"
-      fullScreen
-      // Rodapé fixo: o corpo ocupa a altura e só o meio rola.
-      styles={{
-        content: { display: "flex", flexDirection: "column" },
-        body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
-      }}
-    >
+    <Stack>
+      <Title order={2}>Configuração</Title>
       {config.isLoading && <Loader mx="auto" display="block" />}
       {config.error && <Alert color="red">{config.error.message}</Alert>}
       {dados && (
@@ -432,7 +409,7 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
           salvando={salvar.isPending}
           recusada={recusada}
           retomar={retomar}
-          sujo={sujo}
+          aoSujar={setSujo}
           aoSalvar={(f, destino) => {
             setRetomar(destino);
             salvar.mutate({ alteracoes: alteracoesDe(dados, f), versao: dados.versao });
@@ -445,23 +422,6 @@ export function ModalConfig({ aberto, aoFechar }: { aberto: boolean; aoFechar: (
           }}
         />
       )}
-      <Modal
-        opened={confirmar}
-        onClose={() => setConfirmar(false)}
-        title="Descartar as alterações não salvas?"
-        centered
-        closeOnEscape={false}
-        zIndex={getDefaultZIndex("modal") + 1}
-      >
-        <Group justify="flex-end">
-          <Button variant="default" data-autofocus onClick={() => setConfirmar(false)}>
-            Continuar editando
-          </Button>
-          <Button color="red" onClick={fechar}>
-            Descartar
-          </Button>
-        </Group>
-      </Modal>
-    </Modal>
+    </Stack>
   );
 }

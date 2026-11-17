@@ -1,10 +1,9 @@
 import { AppShell, Button, Group, Progress, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
+import { useEffect, useRef, type JSX, type MouseEvent, type ReactNode } from "react";
 import type { InscricaoVista } from "../api/tipos";
 import { AvisoVersao } from "../componentes/AvisoVersao";
-import { ModalConfig } from "../componentes/ModalConfig";
 import { ModalResultado } from "../componentes/ModalResultado";
 import { PROGRESSO_INICIAL, estaRodando } from "../execucoes";
 import {
@@ -13,9 +12,9 @@ import {
   consultaInscricoes,
 } from "../inscricoes";
 import { useInstalacao } from "../instalacao";
-import { Link, useRota } from "../navegacao";
+import { Link, ir, useRota } from "../navegacao";
 import { useOperacoes } from "../operacoes/OperacoesProvider";
-import { Pagina, alvoDa } from "../rotas";
+import { Pagina, alvoDa, caminhoDa } from "../rotas";
 import { FONTE_MONO } from "../tema";
 import { Trilha } from "./Trilha";
 
@@ -64,7 +63,6 @@ export function Casca({ children }: { children: ReactNode }): JSX.Element {
   const operacoes = useOperacoes();
   const { repo } = alvoDa(useRota());
   const instalacao = useInstalacao();
-  const [configurando, setConfigurando] = useState(false);
   useAvisosDasInscricoes();
   return (
     <AppShell header={{ height: ALTURA_CABECALHO }} padding="md">
@@ -79,8 +77,13 @@ export function Casca({ children }: { children: ReactNode }): JSX.Element {
             <AvisoVersao novidades={instalacao.data?.novidades ?? []} />
             <Button
               variant="default"
+              component="a"
+              href={caminhoDa({ pagina: Pagina.CONFIG })}
+              onClick={(e: MouseEvent) => {
+                e.preventDefault();
+                ir({ pagina: Pagina.CONFIG });
+              }}
               disabled={repo !== undefined && estaRodando(operacoes.execucoes, repo)}
-              onClick={() => setConfigurando(true)}
             >
               Configuração
             </Button>
@@ -92,7 +95,6 @@ export function Casca({ children }: { children: ReactNode }): JSX.Element {
         resultado={operacoes.resultado}
         aoFechar={operacoes.fecharResultado}
       />
-      <ModalConfig aberto={configurando} aoFechar={() => setConfigurando(false)} />
     </AppShell>
   );
 }

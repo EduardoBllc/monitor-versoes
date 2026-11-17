@@ -379,27 +379,32 @@ export async function esperarAvisoDaRodada(
 
 // Configuração
 
-const dialogoConfig = (page: Page): Locator => dialogo(page, Dialogo.CONFIGURACAO);
+const paginaConfig = (page: Page): Locator => page.getByRole("main");
+
+/** Sai da configuração pela trilha, de volta ao Início. */
+export async function sairDaConfiguracao(page: Page): Promise<void> {
+  await trilha(page).getByRole("link", { name: Trilha.INICIO, exact: true }).click();
+}
 
 /** Abre a configuração na seção do repo e devolve o campo do piso. */
 export async function pisoNaConfiguracao(page: Page, repo: string): Promise<Locator> {
-  await acao(page, Acao.CONFIGURACAO).click();
-  await dialogoConfig(page).getByRole("navigation").getByRole("button", { name: repo }).click();
-  return dialogoConfig(page).getByLabel(Campo.PISO);
+  await page.getByRole("link", { name: Acao.CONFIGURACAO, exact: true }).click();
+  await paginaConfig(page).getByRole("navigation").getByRole("button", { name: repo }).click();
+  return paginaConfig(page).getByLabel(Campo.PISO);
 }
 
 /** Muda o piso do repo e pede o teste da seção, sem salvar. */
 export async function editarPisoETestar(page: Page, repo: string, piso: string): Promise<void> {
   await (await pisoNaConfiguracao(page, repo)).fill(piso);
-  await botao(dialogoConfig(page), Botao.TESTAR).click();
+  await botao(paginaConfig(page), Botao.TESTAR).click();
 }
 
 export function resultadoDoTeste(page: Page, nome: string): Locator {
-  return dialogoConfig(page).getByText(`${Aviso.PREFIXO_TESTE_OK} ${nome}`, { exact: true });
+  return paginaConfig(page).getByText(`${Aviso.PREFIXO_TESTE_OK} ${nome}`, { exact: true });
 }
 
 export async function salvarConfiguracao(page: Page): Promise<void> {
-  await botao(dialogoConfig(page), Botao.SALVAR).click();
+  await botao(paginaConfig(page), Botao.SALVAR).click();
 }
 
 export function avisoConfiguracaoSalva(page: Page): Locator {
