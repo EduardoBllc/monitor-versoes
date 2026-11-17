@@ -102,12 +102,11 @@ def test_processo_morto_com_sigkill_nao_deixa_o_repo_travado(clone, tmp_path):
 
 _SEGURA_ARQUIVO = """
 import sys
-import time
 from pathlib import Path
 from motor.trava import travar_arquivo
 trava = travar_arquivo(sys.argv[2], Path(sys.argv[1]))
 print("pronto", flush=True)
-time.sleep(60)
+sys.stdin.read()
 """
 
 
@@ -116,18 +115,18 @@ def test_travar_arquivo_exclui_outro_processo():
     filho = subprocess.Popen(
         [sys.executable, "-c", _SEGURA_ARQUIVO, str(caminho), NOME_TRAVA],
         cwd=RAIZ,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     )
+    # Saída pelo stdin, não `kill()`: no Windows o kill mata só o lançador do venv,
+    # e o neto que segura a trava morre depois, sem o `wait()` esperar por ele.
     try:
         assert filho.stdout is not None
         filho.stdout.readline()
         with pytest.raises(RepoOcupado):
             travar_arquivo(NOME_TRAVA, caminho)
     finally:
-        filho.kill()
-        filho.wait()
-        if filho.stdout is not None:
-            filho.stdout.close()
+        filho.communicate(timeout=30)
     with travar_arquivo(NOME_TRAVA, caminho):
         pass

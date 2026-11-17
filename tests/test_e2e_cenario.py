@@ -34,7 +34,8 @@ def cenario(_cenario_compartilhado, monkeypatch) -> Manifesto:
 
 @pytest.fixture
 def cenario_proprio(tmp_path, monkeypatch) -> Manifesto:
-    """Para quem altera o clone ou o estado."""
+    """Para quem muda o que o teste seguinte veria: o clone, ou o estado de outro
+    jeito que não a gravação idempotente do `verificar`."""
     return _aplicar(montar(tmp_path / "cenario"), monkeypatch)
 
 
