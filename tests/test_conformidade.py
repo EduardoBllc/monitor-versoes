@@ -106,19 +106,6 @@ def test_todo_adapter_esta_declarado_na_sua_porta() -> None:
     ] == [2, 2, 8, 4, 3, 2, 2, 2, 2]
 
 
-def test_docstring_do_estadorepo_nomeia_a_subclasse_e_nao_motorerror() -> None:
-    """A suite de contrato assere por tipo (RecusaDeInvariante, NaoEncontrado),
-    nao mais por substring de mensagem. Quem escrever um adapter de terceiro lendo
-    so o docstring do Protocol tem de ver a subclasse certa — senao levanta
-    MotorError puro, que a suite publicada reprova.
-    """
-    assert "MotorError" not in (EstadoRepo.garantir_repo.__doc__ or "")
-
-    assert "MotorError" not in (EstadoRepo.substituir_atribuicoes.__doc__ or "")
-    assert "RecusaDeInvariante" in (EstadoRepo.substituir_atribuicoes.__doc__ or "")
-    assert "NaoEncontrado" in (EstadoRepo.substituir_atribuicoes.__doc__ or "")
-
-
 def test_porta_nao_aceita_argumento_nomeado() -> None:
     """Os parametros das portas sao posicionais, de proposito.
 

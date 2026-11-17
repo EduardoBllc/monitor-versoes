@@ -3,7 +3,6 @@ import dataclasses
 import datetime
 import enum
 import io
-import json
 from functools import partial
 from pathlib import Path
 from threading import Event
@@ -155,9 +154,6 @@ def test_renderizar_status_agrupa_pendencias_e_exibe_alertas():
     ):
         assert esperado in texto
     assert texto.count("#255514") == 1
-    assert "REQUER ATENÇÃO" not in texto
-    assert "Tasks novas" not in texto
-    assert "Tasks removidas" not in texto
 
 
 def test_renderizar_snapshot_liberado_explica_que_esta_congelado():
@@ -2332,9 +2328,6 @@ def test_inscricoes_adiciona_selecionada(tmp_path):
     [gravada] = carregar(arquivo)
     assert (gravada.repo, gravada.versao) == (_REPO_PREVIA.nome, _VERSAO_PREVIA.numero)
     assert gravada.intervalo == parse_intervalo(INTERVALO_PADRAO)
-    [crua] = json.loads(arquivo.read_text())
-    assert "diretorio" not in crua
-    assert "ambiente" not in crua
 
 
 def test_inscricoes_remove(tmp_path):

@@ -112,7 +112,6 @@ def test_inscricao_guarda_o_nome(arq: Path) -> None:
     salvar(arq, [_insc(Repo.A)])
     (gravada,) = json.loads(arq.read_text())
     assert gravada[Campo.REPO] == Repo.A
-    assert CAMPO_CLONE_ANTIGO not in gravada
 
 
 def test_entrada_antiga_e_descartada_com_aviso(

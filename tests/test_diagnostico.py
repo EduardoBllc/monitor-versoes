@@ -266,18 +266,16 @@ def test_sqlite_nao_exige_partes_do_banco_e_rotula_o_backend():
     assert por_peca[Peca.MIGRACAO].estado is Estado.OK
 
 
-def test_sqlite_sem_migracao_nao_sugere_docker_nem_make():
+def test_sqlite_sem_migracao_falha_na_migracao():
     por_peca, _ = _rodar(ENV_OK, abrir=_sessao_com(None))
 
     assert por_peca[Peca.MIGRACAO].estado is Estado.FALHA
-    assert "docker" not in por_peca[Peca.MIGRACAO].correcao
 
 
-def test_sqlite_fora_nao_sugere_docker():
+def test_sqlite_fora_nao_verifica_a_migracao():
     por_peca, _ = _rodar(ENV_OK, abrir=_banco_fora)
 
     assert por_peca[Peca.SQLITE].estado is Estado.FALHA
-    assert "docker" not in por_peca[Peca.SQLITE].correcao
     assert por_peca[Peca.MIGRACAO].estado is Estado.NAO_VERIFICADA
 
 

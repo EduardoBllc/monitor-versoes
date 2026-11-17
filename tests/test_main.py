@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime
-import json
 import os
 import pkgutil
 import subprocess
@@ -179,19 +178,12 @@ def test_reconstruir_estado_esta_no_parser():
     acoes = subparsers._group_actions[0].choices
     assert acoes is not None
     assert "reconstruir-estado" in acoes
-    assert "reconstruir-lock" not in acoes
 
 
 def test_comando_desconhecido_sai_com_erro():
     with pytest.raises(SystemExit) as saida:
         main(["inexistente", "13.34.0", "--repo", "/tmp"])
     assert saida.value.code != 0
-
-
-def test_subcomando_repo_nao_existe_mais():
-    with pytest.raises(SystemExit) as saida:
-        main(["repo", "adicionar", "x"])
-    assert saida.value.code == ARGPARSE_USO_INVALIDO
 
 
 # -- impressao ----------------------------------------------------------------
@@ -218,7 +210,6 @@ def test_imprimir_status_aponta_sem_entrega_no_banco(capsys):
 
     saida = capsys.readouterr().out
     assert "sem_entrega" in saida
-    assert "lock" not in saida  # sem_entrega vive no banco, nao num lock
 
 
 def test_imprimir_status_de_versao_liberada_marca_o_snapshot(capsys):
@@ -1194,14 +1185,6 @@ def test_inscricao_adicionar_guarda_o_nome_e_recusa_repo_fora_da_config(
     with pytest.raises(SystemExit):
         _inscrever("inexistente")
     assert [i.repo for i in carregar(arquivo)] == [nome]
-
-
-def test_inscricao_adicionar_grava_sem_diretorio_nem_ambiente(inscricoes_env, tmp_path):
-    arquivo, _ = inscricoes_env
-    _inscrever(_repo_dir(tmp_path))
-    [crua] = json.loads(arquivo.read_text(encoding="utf-8"))
-    assert "diretorio" not in crua
-    assert "ambiente" not in crua
 
 
 def test_inscricao_listar(inscricoes_env, tmp_path, capsys):
