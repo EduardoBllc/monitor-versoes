@@ -1,12 +1,15 @@
 [project]
 name = "monitor-versoes-gitlab"
 version = "0.1.0"
-description = "Fonte de tarefas do monitor-versoes para o GitLab Issues"
+description = "Fonte de tarefas (GitLab Issues) e de PR do monitor-versoes para o GitLab"
 requires-python = ">=3.14"
 dependencies = ["monitor-versoes", "httpx"]
 
 [project.entry-points."monitor_versoes.tarefas"]
 gitlab = "monitor_versoes_gitlab:FonteGitlab"
+
+[project.entry-points."monitor_versoes.prs"]
+gitlab = "monitor_versoes_gitlab:GitlabPrs"
 
 [build-system]
 requires = ["setuptools"]
