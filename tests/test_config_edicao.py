@@ -35,7 +35,7 @@ from motor.config_edicao import (
     rascunho,
 )
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
-from motor.montagem import GRUPO_TAREFAS
+from motor.montagem import GRUPO_PRS, GRUPO_TAREFAS
 
 SEGREDO = "s3nha"
 NOME_PLUGIN = "falso"
@@ -109,16 +109,20 @@ def _escrever(texto: str) -> None:
 
 
 def _instalar(monkeypatch, *pontos: EntryPoint) -> None:
+    """Os grupos com algum ponto falso veem só os falsos; os demais, os reais."""
     instalados = plugins.pontos_instalados
-    monkeypatch.setattr(
-        plugins,
-        "pontos_instalados",
-        lambda grupo: pontos if grupo == GRUPO_TAREFAS else instalados(grupo),
-    )
+    falsos = {p.group for p in pontos}
+
+    def pontos_do_grupo(grupo: str) -> tuple[EntryPoint, ...]:
+        if grupo in falsos:
+            return tuple(p for p in pontos if p.group == grupo)
+        return instalados(grupo)
+
+    monkeypatch.setattr(plugins, "pontos_instalados", pontos_do_grupo)
 
 
-def _ep(nome: str, valor: str) -> EntryPoint:
-    return EntryPoint(name=nome, value=valor, group=GRUPO_TAREFAS)
+def _ep(nome: str, valor: str, grupo: str = GRUPO_TAREFAS) -> EntryPoint:
+    return EntryPoint(name=nome, value=valor, group=grupo)
 
 
 def test_segredo_nunca_sai_na_leitura():
@@ -177,6 +181,29 @@ def test_segredo_de_um_plugin_vale_para_a_chave_em_todos(monkeypatch):
     campos = [c for c in catalogo_campos({}) if c.chave == CHAVE_TOKEN_FALSO]
     assert sorted(c.origem for c in campos) == sorted([NOME_PLUGIN, NOME_OUTRO])
     assert all(c.segredo for c in campos)
+
+
+def test_mesmo_plugin_em_dois_grupos_mantem_a_declaracao_de_cada_grupo(monkeypatch):
+    fonte = "tests.test_config_edicao:FonteFalsa"
+    _instalar(
+        monkeypatch,
+        _ep(NOME_PLUGIN, fonte),
+        _ep(NOME_PLUGIN, fonte, GRUPO_PRS),
+    )
+    grupos = [
+        c.grupo
+        for c in catalogo_campos({})
+        if c.chave == CHAVE_TOKEN_FALSO and c.origem == NOME_PLUGIN
+    ]
+    assert len(grupos) == 2
+    assert set(grupos) == {GrupoPlugin.TAREFAS, GrupoPlugin.PRS}
+
+
+def test_mesmo_plugin_no_mesmo_grupo_nao_repete(monkeypatch):
+    fonte = "tests.test_config_edicao:FonteFalsa"
+    _instalar(monkeypatch, _ep(NOME_PLUGIN, fonte), _ep(NOME_PLUGIN, fonte))
+    campos = [c for c in catalogo_campos({}) if c.chave == CHAVE_TOKEN_FALSO]
+    assert [c.origem for c in campos] == [NOME_PLUGIN]
 
 
 def test_host_de_pr_do_pacote_declara_campos_do_grupo_prs():

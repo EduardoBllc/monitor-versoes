@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import pytest
 from monitor_versoes_bitbucket import BitbucketPrs
+from monitor_versoes_github import GithubPrs
 
 from motor.adapters.commitsource.chain import ChainCommitSource
 from motor.adapters.commitsource.fake import FakeCommitSource, FakeHostPr
@@ -81,7 +82,7 @@ _COMMITS: list[type[CommitSource]] = [
     ChainCommitSource,
     FakeCommitSource,
 ]
-_HOSTS_PR: list[type[HostPr]] = [BitbucketPrs, HostDaConfig, FakeHostPr]
+_HOSTS_PR: list[type[HostPr]] = [BitbucketPrs, GithubPrs, HostDaConfig, FakeHostPr]
 _ESQUEMAS: list[type[EsquemaVersao]] = [Semver, Escalonado]
 _ATRIBUICOES: list[type[PoliticaAtribuicao]] = [Exata, Composta]
 

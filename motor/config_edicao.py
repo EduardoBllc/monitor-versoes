@@ -292,11 +292,13 @@ def catalogo_campos(dados: Mapping[str, object]) -> list[Campo]:
         campos.append(base if opcoes is None else replace(base, opcoes=opcoes))
     do_motor = {(c.escopo, c.tabela, c.chave) for c in campos}
     # Plugins diferentes podem declarar a mesma chave: a modal mostra a do escolhido.
-    vistos: set[tuple[Escopo, str | None, str, str]] = set()
+    # O mesmo plugin pode declará-la em dois grupos (um pacote, dois papéis): cada
+    # grupo mantém a sua, para o campo aparecer com qualquer um dos dois escolhido.
+    vistos: set[tuple[Escopo, str | None, str, str, GrupoPlugin | None]] = set()
     for grupo in _GRUPOS:
         for nome in [*instalados[grupo], *sorted(em_uso[grupo])]:
             for c in _campos_do_plugin(grupo, nome):
-                chave = (c.escopo, c.tabela, c.chave, c.origem)
+                chave = (c.escopo, c.tabela, c.chave, c.origem, c.grupo)
                 if chave[:3] not in do_motor and chave not in vistos:
                     vistos.add(chave)
                     campos.append(c)

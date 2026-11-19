@@ -68,7 +68,10 @@ EMBUTIDOS: dict[GrupoPlugin, tuple[Embutido, ...]] = {
         Embutido("GitHub Issues", "github", "plugins/github"),
         Embutido("GitLab Issues", "gitlab", "plugins/gitlab"),
     ),
-    GrupoPlugin.PRS: (Embutido("Bitbucket", "bitbucket", "plugins/bitbucket"),),
+    GrupoPlugin.PRS: (
+        Embutido("Bitbucket", "bitbucket", "plugins/bitbucket"),
+        Embutido("GitHub", "github", "plugins/github"),
+    ),
 }
 
 

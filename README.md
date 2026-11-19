@@ -325,9 +325,10 @@ O porquê: [027](docs/decisoes/027-fonte-de-tarefas-plugavel.md).
 Há plugins para o Jira Cloud ([`monitor-versoes-jira`](plugins/jira/README.md)), o GitHub Issues ([`monitor-versoes-github`](plugins/github/README.md)) e o GitLab Issues ([`monitor-versoes-gitlab`](plugins/gitlab/README.md)).
 
 O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
-ou um `modulo:Classe`. Há plugin para o Bitbucket Cloud
-([`monitor-versoes-bitbucket`](plugins/bitbucket/README.md)), instalado à parte como os de
-tarefas. Não há padrão: sem `fonte`, os commits
+ou um `modulo:Classe`. Há plugins para o Bitbucket Cloud
+([`monitor-versoes-bitbucket`](plugins/bitbucket/README.md)) e o GitHub
+([`monitor-versoes-github`](plugins/github/README.md), o mesmo pacote da fonte de tarefas),
+instalados à parte como os de tarefas. Não há padrão: sem `fonte`, os commits
 saem só do grep na branch principal. Fora `fonte`, as chaves de `[prs]` são do plugin. Como
 na fonte de tarefas, o plugin e as credenciais só são cobrados na primeira busca de commits.
 Trocar de host zera o que o estado guardou das PRs do repo e a próxima varredura percorre o
@@ -550,7 +551,8 @@ núcleo o chama ao fim de cada busca.
 - **Tasks:** a `[tarefas] fonte` da config por padrão. Sem ela, `--task-source manual --lista arquivo.txt` lê um
   id de task por linha (`#` comenta).
 - **Commits:** com `[prs] fonte`, os commits de cada task vêm das PRs mergeadas no host
-  (o plugin `bitbucket` usa `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` do `[ambiente]`); o grep
+  (o plugin `bitbucket` usa `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` do `[ambiente]`; o
+  plugin `github`, o `GITHUB_TOKEN`); o grep
   pela referência em `origin/<principal>` fica como fallback. Sem `fonte`, só o grep.
 
 ### Worktrees mantidas em disco
