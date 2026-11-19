@@ -15,7 +15,7 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from enum import StrEnum
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -54,6 +54,11 @@ class _Campo(StrEnum):
     TITLE = "title"
     SOURCE_BRANCH = "source_branch"
     UPDATED_AT = "updated_at"
+    SQUASH_COMMIT_SHA = "squash_commit_sha"
+    ID = "id"
+    PARENT_IDS = "parent_ids"
+    COMMITTED_DATE = "committed_date"
+    MESSAGE = "message"
 
 
 class _Param(StrEnum):
@@ -113,6 +118,23 @@ def _data(bruto: object) -> datetime.datetime:
         return datetime.datetime.fromisoformat(bruto)
     except ValueError:
         return SEM_DATA
+
+
+def _pais(commit: Mapping[str, object]) -> list[str]:
+    pais = commit.get(_Campo.PARENT_IDS) or []
+    if not isinstance(pais, list) or not all(isinstance(p, str) for p in pais):
+        raise RespostaInvalida(f"parent_ids do GitLab em formato inesperado: {pais!r}")
+    return pais
+
+
+def _ref(commit: Mapping[str, object]) -> CommitRef:
+    pais = _pais(commit)
+    return CommitRef(
+        hash_origem=_texto(commit, _Campo.ID),
+        parent=pais[0] if pais else "",
+        commit_date=_data(commit.get(_Campo.COMMITTED_DATE)),
+        msg=_texto(commit, _Campo.MESSAGE),
+    )
 
 
 class GitlabPrs:
@@ -209,7 +231,41 @@ class GitlabPrs:
         return indices
 
     def commits_da_pr(self, pr_id: int, /) -> list[CommitRef]:
-        raise NotImplementedError  # Task 3
+        """Os commits do MR; com squash, só o commit de squash.
+
+        404 em qualquer consulta devolve vazio: o projeto já foi achado na
+        varredura, então o MR ou commit é que sumiu, e o chamado cai no grep.
+        """
+        projeto = self._projeto()
+        raiz = f"{caminho_projeto(projeto)}/merge_requests/{pr_id}"
+        resp = self._api.get(self._api.url(raiz), None, projeto, ausente=True)
+        if resp is None:
+            return []
+        mr = _objeto(self._api.json(resp), "MR")
+        sha = _texto(mr, _Campo.SQUASH_COMMIT_SHA)
+        if sha:
+            commit = self._commit(projeto, sha)
+            return [] if commit is None else [_ref(commit)]
+        itens = self._api.listar(f"{raiz}/commits", {}, projeto, ausente=True)
+        if itens is None:
+            return []
+        commits: list[Mapping[str, object]] = []
+        for item in itens:
+            id_ = _texto(_objeto(item, "commit do MR"), _Campo.ID)
+            if not id_:
+                raise RespostaInvalida(f"commit do MR sem id: {item!r}")
+            # A lista não traz `parent_ids` de forma confiável: cada commit é pedido.
+            commit = self._commit(projeto, id_)
+            if commit is None:
+                return []
+            commits.append(commit)
+        return [_ref(c) for c in commits if len(_pais(c)) <= 1]
+
+    def _commit(self, projeto: str, sha: str) -> Mapping[str, object] | None:
+        """Commit do repositório; None se a API não o encontra."""
+        caminho = f"{caminho_projeto(projeto)}/repository/commits/{quote(sha, safe='')}"
+        resp = self._api.get(self._api.url(caminho), None, projeto, ausente=True)
+        return None if resp is None else _objeto(self._api.json(resp), "commit")
 
     def verificar_credenciais(self) -> str | None:
         """Chamada autenticada que não depende de projeto (`GET /user`)."""

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -285,3 +286,177 @@ def test_campos_aparecem_no_catalogo() -> None:
     for token in tokens:
         assert token.segredo
         assert "Obrigatório para a fonte de PR" in token.aviso_vazio
+
+
+PR_ID = 12
+# `url.path` já vem decodificado.
+CAMINHO = "/api/v4/projects/grupo/nome"
+BASE_MR = f"{CAMINHO}/merge_requests/{PR_ID}"
+BASE_COMMITS = f"{CAMINHO}/repository/commits"
+DATA_COMMIT = "2026-03-02T10:00:00.000+00:00"
+
+
+def _commit(sha: str, *pais: str, msg: str = "msg", **extra: object) -> object:
+    return {
+        "id": sha,
+        "parent_ids": list(pais),
+        "committed_date": DATA_COMMIT,
+        "message": msg,
+        **extra,
+    }
+
+
+def _gitlab(
+    *,
+    mr: object = None,
+    squash: str | None = None,
+    lista: object = None,
+    commits: Mapping[str, object] | None = None,
+) -> Rota:
+    """Rota por caminho; o que não está no mapa responde 404."""
+    corpo_mr = {"iid": PR_ID, "squash_commit_sha": squash} if mr is None else mr
+    por_caminho: dict[str, object] = {BASE_MR: corpo_mr}
+    if lista is not None:
+        por_caminho[f"{BASE_MR}/commits"] = lista
+    for sha, commit in (commits or {}).items():
+        por_caminho[f"{BASE_COMMITS}/{sha}"] = commit
+
+    def rota(request: httpx.Request) -> httpx.Response:
+        if request.url.path not in por_caminho:
+            return httpx.Response(httpx.codes.NOT_FOUND)
+        return httpx.Response(httpx.codes.OK, json=por_caminho[request.url.path])
+
+    return rota
+
+
+def _hashes(rota: Rota) -> list[str]:
+    host, _ = _host(rota)
+    return [c.hash_origem for c in host.commits_da_pr(PR_ID)]
+
+
+def test_squash_devolve_so_o_commit_de_squash() -> None:
+    rota = _gitlab(squash="s", commits={"s": _commit("s", "base")})
+    host, pedidos = _host(rota)
+    assert [c.hash_origem for c in host.commits_da_pr(PR_ID)] == ["s"]
+    assert not any(p.url.path.endswith("/commits") for p in pedidos)
+
+
+@pytest.mark.parametrize("squash", [None, ""])
+def test_sem_squash_tira_o_merge_commit_mesmo_sem_parent_ids_na_lista(
+    squash: str | None,
+) -> None:
+    rota = _gitlab(
+        squash=squash,
+        lista=[{"id": "c1"}, {"id": "m"}, {"id": "c2"}],
+        commits={
+            "c1": _commit("c1", "base"),
+            "m": _commit("m", "c1", "outro"),
+            "c2": _commit("c2", "m"),
+        },
+    )
+    assert _hashes(rota) == ["c1", "c2"]
+
+
+def test_mr_com_squash_ligado_e_sem_sha_cai_na_lista() -> None:
+    mr = {"iid": PR_ID, "squash": True}
+    rota = _gitlab(mr=mr, lista=[{"id": "c1"}], commits={"c1": _commit("c1", "b")})
+    assert _hashes(rota) == ["c1"]
+
+
+@pytest.mark.parametrize(
+    "rota",
+    [
+        pytest.param(_gitlab(squash="s"), id="squash"),
+        pytest.param(lambda r: httpx.Response(httpx.codes.NOT_FOUND), id="mr"),
+        pytest.param(_gitlab(lista=None), id="lista"),
+        pytest.param(
+            _gitlab(lista=[{"id": "c1"}, {"id": "c2"}], commits={"c1": _commit("c1")}),
+            id="commit-da-lista",
+        ),
+    ],
+)
+def test_404_devolve_vazio_sem_erro(rota: Rota) -> None:
+    assert _hashes(rota) == []
+
+
+@pytest.mark.parametrize(
+    "rota",
+    [
+        pytest.param(_gitlab(mr=[]), id="mr-lista"),
+        pytest.param(_gitlab(squash="s", commits={"s": []}), id="commit-lista"),
+        pytest.param(_gitlab(lista={}), id="commits-objeto"),
+        pytest.param(_gitlab(lista=[1]), id="item-nao-objeto"),
+        pytest.param(_gitlab(lista=[{"x": 1}]), id="item-sem-id"),
+        pytest.param(
+            _gitlab(squash="s", commits={"s": {"id": "s", "parent_ids": ["a", 1]}}),
+            id="pais-invalidos",
+        ),
+        pytest.param(
+            _gitlab(squash="s", commits={"s": {"id": "s", "parent_ids": "a"}}),
+            id="pais-texto",
+        ),
+    ],
+)
+def test_forma_inesperada_levanta(rota: Rota) -> None:
+    host, _ = _host(rota)
+    with pytest.raises(RespostaInvalida):
+        host.commits_da_pr(PR_ID)
+
+
+def test_commit_ref_usa_data_pai_e_mensagem_do_commit() -> None:
+    rota = _gitlab(
+        squash="s", commits={"s": _commit("s", "base", "x", msg="#12 tudo\n\ncorpo")}
+    )
+    host, _ = _host(rota)
+    [ref] = host.commits_da_pr(PR_ID)
+    assert ref.commit_date == datetime.datetime.fromisoformat(DATA_COMMIT)
+    assert (ref.parent, ref.msg, ref.chamado) == ("base", "#12 tudo\n\ncorpo", "")
+
+
+def _fabrica(rota: Rota, criados: list[httpx.Client]) -> Callable[[], httpx.Client]:
+    original = httpx.Client
+
+    def fabrica() -> httpx.Client:
+        client = original(transport=httpx.MockTransport(rota))
+        criados.append(client)
+        return client
+
+    return fabrica
+
+
+def test_commits_da_pr_concorrente_usa_um_cliente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rota = _gitlab(squash="s", commits={"s": _commit("s", "b")})
+    criados: list[httpx.Client] = []
+    monkeypatch.setattr(
+        "monitor_versoes_gitlab.api.httpx.Client", _fabrica(rota, criados)
+    )
+    host = GitlabPrs(prs={}, arquivos=(), remote_url=lambda: REMOTE, env=ENV)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        resultados = list(pool.map(host.commits_da_pr, [PR_ID] * 4))
+    assert all([c.hash_origem for c in r] == ["s"] for r in resultados)
+    assert len(criados) == 1
+
+
+def test_fechar_fecha_o_proprio_e_nao_o_injetado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rota = _gitlab(squash="s", commits={"s": _commit("s", "b")})
+    criados: list[httpx.Client] = []
+    original = httpx.Client
+    monkeypatch.setattr(
+        "monitor_versoes_gitlab.api.httpx.Client", _fabrica(rota, criados)
+    )
+    proprio = GitlabPrs(prs={}, arquivos=(), remote_url=lambda: REMOTE, env=ENV)
+    proprio.commits_da_pr(PR_ID)
+    proprio.fechar()
+    assert [c.is_closed for c in criados] == [True]
+
+    injetado = original(transport=httpx.MockTransport(rota))
+    host = GitlabPrs(
+        prs={}, arquivos=(), remote_url=lambda: REMOTE, env=ENV, client=injetado
+    )
+    host.commits_da_pr(PR_ID)
+    host.fechar()
+    assert not injetado.is_closed
