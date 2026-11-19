@@ -8,7 +8,7 @@ import httpx
 import pytest
 from monitor_versoes_gitlab import GitlabPrs
 from monitor_versoes_gitlab.api import VarGitlab
-from monitor_versoes_gitlab.prs import ChavePrs
+from monitor_versoes_gitlab.prs import ChavePrs, _Campo, _Estado, _Param
 
 from motor.config import Chave, Tabela
 from motor.config_edicao import GrupoPlugin, catalogo_campos
@@ -16,6 +16,11 @@ from motor.errors import BackendIndisponivel, ErroDeEntrada, RespostaInvalida
 from motor.montagem import GRUPO_PRS
 from motor.plugins import carregar_plugin
 
+PLUGIN = "gitlab"
+PARAM_PAGINA = "page"
+CABECALHO_LINK = "Link"
+CAMPO_SQUASH_LIGADO = "squash"
+SUBCAMINHO_NO_PROJETO = "gitlab%2Fgrupo%2Fnome"
 HOST_PADRAO = "https://gitlab.com"
 HOST_PROPRIO = "https://git.x/gitlab"
 PROJETO = "grupo%2Fnome"
@@ -34,16 +39,16 @@ Rota = Callable[[httpx.Request], httpx.Response]
 
 
 def _pagina(*itens: object, proxima: str | None = None) -> httpx.Response:
-    headers = {"Link": f'<{proxima}>; rel="next"'} if proxima else {}
+    headers = {CABECALHO_LINK: f'<{proxima}>; rel="next"'} if proxima else {}
     return httpx.Response(httpx.codes.OK, json=list(itens), headers=headers)
 
 
 def _mr(iid: object) -> dict[str, object]:
     return {
-        "iid": iid,
-        "title": TITULO,
-        "source_branch": BRANCH,
-        "updated_at": ATUALIZADO,
+        _Campo.IID: iid,
+        _Campo.TITLE: TITULO,
+        _Campo.SOURCE_BRANCH: BRANCH,
+        _Campo.UPDATED_AT: ATUALIZADO,
     }
 
 
@@ -76,7 +81,7 @@ def _vazio(request: httpx.Request) -> httpx.Response:
 
 
 def test_carregar_plugin_prs_gitlab_devolve_a_classe() -> None:
-    assert carregar_plugin(GRUPO_PRS, "gitlab") is GitlabPrs
+    assert carregar_plugin(GRUPO_PRS, PLUGIN) is GitlabPrs
 
 
 def test_construir_nao_le_token_nem_remote() -> None:
@@ -119,6 +124,14 @@ def test_sem_token_a_primeira_busca_falha_citando_a_variavel() -> None:
             HOST_PROPRIO,
             f"/gitlab/api/v4/projects/{PROJETO}/merge_requests",
         ),
+        *[
+            (remote, HOST_PROPRIO, f"/gitlab/api/v4/projects/{SUBCAMINHO_NO_PROJETO}")
+            for remote in (
+                "https://outro.x/gitlab/grupo/nome.git",
+                "https://git.x:8443/gitlab/grupo/nome.git",
+                "git@git.x:gitlab/grupo/nome.git",
+            )
+        ],
     ],
 )
 def test_projeto_derivado_do_remote(
@@ -143,23 +156,23 @@ def test_prs_mergeadas_segue_o_link_e_descarta_sem_iid() -> None:
     proxima = f"{HOST_PADRAO}{CAMINHO_MRS}?page=2"
 
     def rota(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("page") == "2":
+        if request.url.params.get(PARAM_PAGINA) == "2":
             return _pagina(_mr(2))
-        return _pagina(_mr(1), {"title": "sem iid"}, _mr(True), proxima=proxima)
+        return _pagina(_mr(1), {_Campo.TITLE: "sem iid"}, _mr(True), proxima=proxima)
 
     host, pedidos = _host(rota)
     indices = host.prs_mergeadas(None)
     assert [p.pr_id for p in indices] == [1, 2]
     assert (indices[0].titulo, indices[0].branch) == (TITULO, BRANCH)
     assert indices[0].updated_on == datetime.datetime.fromisoformat(ATUALIZADO)
-    assert pedidos[0].url.params["state"] == "merged"
-    assert "updated_after" not in pedidos[0].url.params
+    assert pedidos[0].url.params[_Param.STATE] == _Estado.MERGED
+    assert _Param.UPDATED_AFTER not in pedidos[0].url.params
 
 
 def test_prs_mergeadas_manda_updated_after() -> None:
     host, pedidos = _host(_vazio)
     host.prs_mergeadas(DESDE)
-    assert pedidos[0].url.params["updated_after"] == DESDE.isoformat()
+    assert pedidos[0].url.params[_Param.UPDATED_AFTER] == DESDE.isoformat()
 
 
 def test_requisicoes_vao_para_a_url_self_managed() -> None:
@@ -275,10 +288,10 @@ def test_verificar_credenciais_sem_token_levanta() -> None:
 
 def test_campos_aparecem_no_catalogo() -> None:
     config: dict[str, object] = {
-        Tabela.TAREFAS: {Chave.FONTE: "gitlab"},
-        Tabela.PRS: {Chave.FONTE: "gitlab"},
+        Tabela.TAREFAS: {Chave.FONTE: PLUGIN},
+        Tabela.PRS: {Chave.FONTE: PLUGIN},
     }
-    campos = [c for c in catalogo_campos(config) if c.origem == "gitlab"]
+    campos = [c for c in catalogo_campos(config) if c.origem == PLUGIN]
     assert any(c.tabela == Tabela.PRS and c.chave == ChavePrs.URL for c in campos)
     tokens = [c for c in campos if c.chave == VarGitlab.TOKEN]
     assert {c.grupo for c in tokens} == {GrupoPlugin.TAREFAS, GrupoPlugin.PRS}
@@ -298,10 +311,10 @@ DATA_COMMIT = "2026-03-02T10:00:00.000+00:00"
 
 def _commit(sha: str, *pais: str, msg: str = "msg", **extra: object) -> object:
     return {
-        "id": sha,
-        "parent_ids": list(pais),
-        "committed_date": DATA_COMMIT,
-        "message": msg,
+        _Campo.ID: sha,
+        _Campo.PARENT_IDS: list(pais),
+        _Campo.COMMITTED_DATE: DATA_COMMIT,
+        _Campo.MESSAGE: msg,
         **extra,
     }
 
@@ -314,7 +327,9 @@ def _gitlab(
     commits: Mapping[str, object] | None = None,
 ) -> Rota:
     """Rota por caminho; o que não está no mapa responde 404."""
-    corpo_mr = {"iid": PR_ID, "squash_commit_sha": squash} if mr is None else mr
+    corpo_mr = (
+        {_Campo.IID: PR_ID, _Campo.SQUASH_COMMIT_SHA: squash} if mr is None else mr
+    )
     por_caminho: dict[str, object] = {BASE_MR: corpo_mr}
     if lista is not None:
         por_caminho[f"{BASE_MR}/commits"] = lista
@@ -347,7 +362,7 @@ def test_sem_squash_tira_o_merge_commit_mesmo_sem_parent_ids_na_lista(
 ) -> None:
     rota = _gitlab(
         squash=squash,
-        lista=[{"id": "c1"}, {"id": "m"}, {"id": "c2"}],
+        lista=[{_Campo.ID: "c1"}, {_Campo.ID: "m"}, {_Campo.ID: "c2"}],
         commits={
             "c1": _commit("c1", "base"),
             "m": _commit("m", "c1", "outro"),
@@ -358,8 +373,8 @@ def test_sem_squash_tira_o_merge_commit_mesmo_sem_parent_ids_na_lista(
 
 
 def test_mr_com_squash_ligado_e_sem_sha_cai_na_lista() -> None:
-    mr = {"iid": PR_ID, "squash": True}
-    rota = _gitlab(mr=mr, lista=[{"id": "c1"}], commits={"c1": _commit("c1", "b")})
+    mr = {_Campo.IID: PR_ID, CAMPO_SQUASH_LIGADO: True}
+    rota = _gitlab(mr=mr, lista=[{_Campo.ID: "c1"}], commits={"c1": _commit("c1", "b")})
     assert _hashes(rota) == ["c1"]
 
 
@@ -370,7 +385,10 @@ def test_mr_com_squash_ligado_e_sem_sha_cai_na_lista() -> None:
         pytest.param(lambda r: httpx.Response(httpx.codes.NOT_FOUND), id="mr"),
         pytest.param(_gitlab(lista=None), id="lista"),
         pytest.param(
-            _gitlab(lista=[{"id": "c1"}, {"id": "c2"}], commits={"c1": _commit("c1")}),
+            _gitlab(
+                lista=[{_Campo.ID: "c1"}, {_Campo.ID: "c2"}],
+                commits={"c1": _commit("c1")},
+            ),
             id="commit-da-lista",
         ),
     ],
@@ -386,13 +404,17 @@ def test_404_devolve_vazio_sem_erro(rota: Rota) -> None:
         pytest.param(_gitlab(squash="s", commits={"s": []}), id="commit-lista"),
         pytest.param(_gitlab(lista={}), id="commits-objeto"),
         pytest.param(_gitlab(lista=[1]), id="item-nao-objeto"),
-        pytest.param(_gitlab(lista=[{"x": 1}]), id="item-sem-id"),
+        pytest.param(_gitlab(lista=[{"outro": 1}]), id="item-sem-id"),
         pytest.param(
-            _gitlab(squash="s", commits={"s": {"id": "s", "parent_ids": ["a", 1]}}),
+            _gitlab(
+                squash="s", commits={"s": {_Campo.ID: "s", _Campo.PARENT_IDS: ["a", 1]}}
+            ),
             id="pais-invalidos",
         ),
         pytest.param(
-            _gitlab(squash="s", commits={"s": {"id": "s", "parent_ids": "a"}}),
+            _gitlab(
+                squash="s", commits={"s": {_Campo.ID: "s", _Campo.PARENT_IDS: "a"}}
+            ),
             id="pais-texto",
         ),
     ],
