@@ -100,7 +100,8 @@ O caminho do projeto (`grupo/subgrupo/nome`, com quantos subgrupos houver) sai d
 remote `origin`, em SSH (`git@host:grupo/nome.git`, `ssh://git@host[:porta]/grupo/nome.git`)
 ou HTTPS (`https://[usuario@]host[:porta]/grupo/nome[.git]`). Numa instância em subcaminho
 (`[prs] url = "https://empresa.com/gitlab"`), o subcaminho é removido do remote HTTPS só
-quando esquema, host e porta batem com a `[prs] url`; remote SSH nunca é alterado. Não há chave `projeto` em `[prs]`.
+quando esquema, host e porta batem com a `[prs] url`; remote SSH nunca é alterado. Não há
+chave `projeto` em `[prs]`.
 
 ### Squash
 
@@ -141,5 +142,5 @@ caminho derivado do `origin` e manda conferir o remote e o `GITLAB_TOKEN`.
 
 Os dois papéis consultam `GET /api/v4/user` na `url`. Sem token, a fonte de tarefas informa
 "não verificada": não há o que checar; a fonte de PR falha, porque o token é obrigatório. Com
-token, o diagnóstico só prova que a credencial é aceita pelo GitLab; não prova acesso ao projeto. Um token só com
-`read_user` passa no diagnóstico e falha na busca.
+token, o diagnóstico só prova que a credencial é aceita pelo GitLab; não prova acesso ao
+projeto. Um token só com `read_user` passa no diagnóstico e falha na busca.

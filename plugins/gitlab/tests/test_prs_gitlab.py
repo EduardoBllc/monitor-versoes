@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,6 +19,10 @@ from motor.plugins import carregar_plugin
 
 PLUGIN = "gitlab"
 PARAM_PAGINA = "page"
+SEGUNDA_PAGINA = "2"
+DICA_ORIGEM = "origin"
+PROJETO_LEGIVEL = "grupo/nome"
+AVISO_TOKEN_PRS = "Obrigatório para a fonte de PR"
 CABECALHO_LINK = "Link"
 CAMPO_SQUASH_LIGADO = "squash"
 SUBCAMINHO_NO_PROJETO = "gitlab%2Fgrupo%2Fnome"
@@ -144,7 +149,13 @@ def test_projeto_derivado_do_remote(
 
 
 @pytest.mark.parametrize(
-    "remote", ["nada", "git@gitlab.com:nome.git", "http://gitlab.com/grupo/nome"]
+    "remote",
+    [
+        "nada",
+        "git@gitlab.com:nome.git",
+        "http://gitlab.com/grupo/nome",
+        "https://git.x:abc/grupo/nome",
+    ],
 )
 def test_remote_fora_de_forma_e_resposta_invalida(remote: str) -> None:
     host, _ = _host(_vazio, remote=lambda: remote)
@@ -156,7 +167,7 @@ def test_prs_mergeadas_segue_o_link_e_descarta_sem_iid() -> None:
     proxima = f"{HOST_PADRAO}{CAMINHO_MRS}?page=2"
 
     def rota(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get(PARAM_PAGINA) == "2":
+        if request.url.params.get(PARAM_PAGINA) == SEGUNDA_PAGINA:
             return _pagina(_mr(2))
         return _pagina(_mr(1), {_Campo.TITLE: "sem iid"}, _mr(True), proxima=proxima)
 
@@ -191,7 +202,9 @@ def test_sem_url_usa_gitlab_com() -> None:
 
 def test_url_sem_https_levanta_citando_a_chave() -> None:
     host, pedidos = _host(_vazio, prs={ChavePrs.URL: "http://git.x"})
-    with pytest.raises(ErroDeEntrada, match=r"\[prs\] url"):
+    with pytest.raises(
+        ErroDeEntrada, match=re.escape(f"[{Tabela.PRS}] {ChavePrs.URL}")
+    ):
         host.prs_mergeadas(None)
     assert pedidos == []
 
@@ -254,8 +267,8 @@ def test_404_da_lista_cita_o_caminho_derivado_e_o_origin() -> None:
     with pytest.raises(ErroDeEntrada) as erro:
         host.prs_mergeadas(None)
     texto = str(erro.value)
-    assert "grupo/nome" in texto
-    assert "origin" in texto
+    assert PROJETO_LEGIVEL in texto
+    assert DICA_ORIGEM in texto
     assert f"[{Tabela.TAREFAS}]" not in texto
 
 
@@ -298,7 +311,7 @@ def test_campos_aparecem_no_catalogo() -> None:
     assert len(tokens) == len({c.grupo for c in tokens})
     for token in tokens:
         assert token.segredo
-        assert "Obrigatório para a fonte de PR" in token.aviso_vazio
+        assert AVISO_TOKEN_PRS in token.aviso_vazio
 
 
 PR_ID = 12
@@ -482,3 +495,16 @@ def test_fechar_fecha_o_proprio_e_nao_o_injetado(
     host.commits_da_pr(PR_ID)
     host.fechar()
     assert not injetado.is_closed
+
+
+def test_404_na_segunda_pagina_dos_commits_do_mr_devolve_vazio() -> None:
+    proxima = f"{HOST_PADRAO}{BASE_MR}/commits?{PARAM_PAGINA}={SEGUNDA_PAGINA}"
+
+    def rota(request: httpx.Request) -> httpx.Response:
+        if request.url.path == BASE_MR:
+            return httpx.Response(httpx.codes.OK, json={_Campo.IID: PR_ID})
+        if request.url.params.get(PARAM_PAGINA) == SEGUNDA_PAGINA:
+            return httpx.Response(httpx.codes.NOT_FOUND)
+        return _pagina({_Campo.ID: "c1"}, proxima=proxima)
+
+    assert _hashes(rota) == []

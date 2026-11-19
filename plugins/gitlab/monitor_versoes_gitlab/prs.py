@@ -73,19 +73,26 @@ class _Estado(StrEnum):
 def _caminho_do_projeto(remote: str, base: str) -> str:
     """Caminho do projeto (`grupo/sub/nome`) na URL do `origin`, SSH ou HTTPS."""
     remote = remote.strip()
-    partes = urlsplit(remote)
+    invalido = RespostaInvalida(
+        f"não consegui extrair o projeto de {remote!r} (aceitos: SSH e https://)"
+    )
+    try:
+        partes = urlsplit(remote)
+        porta = partes.port
+    except ValueError as e:
+        raise invalido from e
     scp = _PADRAO_SCP.match(remote)
     if partes.scheme in (_ESQUEMA_SSH, _ESQUEMA_HTTPS):
         caminho = partes.path
     elif scp is not None:
         caminho = scp.group(1)
     else:
-        raise RespostaInvalida(f"não consegui extrair o projeto de {remote!r}")
+        raise invalido
     if partes.scheme == _ESQUEMA_HTTPS:
         # Instância em subcaminho: ele faz parte da URL, não do projeto.
         b = urlsplit(base)
         prefixo = b.path.rstrip("/")
-        mesma = (partes.scheme, partes.hostname, partes.port) == (
+        mesma = (partes.scheme, partes.hostname, porta) == (
             b.scheme,
             b.hostname,
             b.port,
@@ -95,7 +102,7 @@ def _caminho_do_projeto(remote: str, base: str) -> str:
     caminho = caminho.strip("/").removesuffix(_SUFIXO_GIT)
     segmentos = caminho.split("/")
     if len(segmentos) < _MIN_SEGMENTOS or "" in segmentos:
-        raise RespostaInvalida(f"não consegui extrair o projeto de {remote!r}")
+        raise invalido
     return caminho
 
 
