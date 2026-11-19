@@ -426,6 +426,24 @@ def test_bitbucket_sem_credencial_falha_sem_rede(tmp_path, monkeypatch):
     assert "BITBUCKET_EMAIL" in por_peca[Peca.PRS].detalhe
 
 
+def test_gitlab_sem_token_falha_em_prs_e_tarefas_fica_nao_verificada(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("GITLAB_TOKEN", raising=False)
+    central = tmp_path / "monitor-versoes" / "config.toml"
+    central.parent.mkdir()
+    central.write_text(
+        '[tarefas]\nfonte = "gitlab"\nprojeto = "grupo/nome"\n[prs]\nfonte = "gitlab"\n'
+    )
+
+    por_peca, _ = _rodar(config_central=carregar_config_global)
+
+    assert por_peca[Peca.PRS].estado is Estado.FALHA
+    assert "GITLAB_TOKEN" in por_peca[Peca.PRS].detalhe
+    assert por_peca[Peca.TAREFAS].estado is Estado.NAO_VERIFICADA
+
+
 def test_config_central_invalida_falha_so_nas_linhas_de_plugin():
     def invalida() -> ConfigProjeto:
         raise ErroDeEntrada("config.toml: TOML invalido")
