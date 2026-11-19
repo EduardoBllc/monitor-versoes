@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.4.1...v0.5.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* a fonte de PR bitbucket saiu do pacote do motor; instale com monitor-versoes plugin instalar 'git+https://github.com/EduardoBllc/monitor-versoes#subdirectory=plugins/bitbucket'
+
+### Novidades
+
+* backend da web nova com atualizada_em e listagem com resumo da verificação ([#232](https://github.com/EduardoBllc/monitor-versoes/issues/232)) ([8718fa4](https://github.com/EduardoBllc/monitor-versoes/commit/8718fa4d9339f0cbf3a7ac35e9c48c8732b97317))
+* Bitbucket vira plugin em plugins/bitbucket ([9713f6b](https://github.com/EduardoBllc/monitor-versoes/commit/9713f6b61e87fdb156ba5bcacbc1edc0af412dd2))
+* consulta aos plugins instalados sem reler os pacotes a cada chamada ([#236](https://github.com/EduardoBllc/monitor-versoes/issues/236)) ([9f44de3](https://github.com/EduardoBllc/monitor-versoes/commit/9f44de3d75ad7b596bdb455076cccfd4ca069d1a))
+* fonte de PR do GitLab ([#240](https://github.com/EduardoBllc/monitor-versoes/issues/240)) ([b6f9c63](https://github.com/EduardoBllc/monitor-versoes/commit/b6f9c63d617975e4992023b483beed59b5f52c12))
+* **github:** fonte de PR do GitHub ([#239](https://github.com/EduardoBllc/monitor-versoes/issues/239)) ([4df24aa](https://github.com/EduardoBllc/monitor-versoes/commit/4df24aa4a403d74457da0dc6943e7c5abde35876))
+* instalador PowerShell e serviço de login no Windows ([#220](https://github.com/EduardoBllc/monitor-versoes/issues/220)) ([588de64](https://github.com/EduardoBllc/monitor-versoes/commit/588de6401c17f7b56c5ccd12bad266d65cc02f3c))
+* **web:** interface nova com páginas de início, repo e versão ([#237](https://github.com/EduardoBllc/monitor-versoes/issues/237)) ([4c61729](https://github.com/EduardoBllc/monitor-versoes/commit/4c6172969d7dc676433606f930c16d140ef3a960))
+
+
+### Correções
+
+* commit fora do clone não é ancestral em vez de derrubar a verificação ([#238](https://github.com/EduardoBllc/monitor-versoes/issues/238)) ([4c37163](https://github.com/EduardoBllc/monitor-versoes/commit/4c3716323c27cad3001400df92b08adc1ce75065))
+* reabrir a configuração na web não descarta a seção escolhida ([#227](https://github.com/EduardoBllc/monitor-versoes/issues/227)) ([b92e098](https://github.com/EduardoBllc/monitor-versoes/commit/b92e098744ed49343aea4fd417a562dbfdb433e6))
+
 ## [0.4.1](https://github.com/EduardoBllc/monitor-versoes/compare/v0.4.0...v0.4.1) (2026-11-16)
 
 
