@@ -29,6 +29,8 @@ O plugin acompanha a tag do motor, e o `monitor-versoes atualizar-motor` o atual
 
 ## Configuração
 
+Esta seção é a da fonte de tarefas; a da fonte de PR está em [Fonte de PR](#fonte-de-pr).
+
 | Onde | Chave | Obrigatória | Significado |
 | --- | --- | --- | --- |
 | `[tarefas]` | `fonte = "gitlab"` | sim | escolhe o plugin |
@@ -59,6 +61,8 @@ Em Preferences, Access tokens (pessoal) ou Settings, Access tokens (do projeto o
 crie um token com o escopo `read_api` e use-o em `GITLAB_TOKEN`.
 
 ## ID e referência
+
+Vale para a fonte de tarefas.
 
 O ID da tarefa é o `iid` da issue (o número exibido no projeto): `#123` vira `123`. O plugin
 propõe a referência `#{id}` (alfabeto `0-9`), então um commit `corrige x #123` é atribuído a
@@ -95,8 +99,8 @@ GITLAB_TOKEN = "..."
 O caminho do projeto (`grupo/subgrupo/nome`, com quantos subgrupos houver) sai da URL do
 remote `origin`, em SSH (`git@host:grupo/nome.git`, `ssh://git@host[:porta]/grupo/nome.git`)
 ou HTTPS (`https://[usuario@]host[:porta]/grupo/nome[.git]`). Numa instância em subcaminho
-(`[prs] url = "https://empresa.com/gitlab"`), o subcaminho é removido do remote HTTPS do mesmo
-host. Não há chave `projeto` em `[prs]`.
+(`[prs] url = "https://empresa.com/gitlab"`), o subcaminho é removido do remote HTTPS só
+quando esquema, host e porta batem com a `[prs] url`; remote SSH nunca é alterado. Não há chave `projeto` em `[prs]`.
 
 ### Squash
 
@@ -107,8 +111,9 @@ host. Não há chave `projeto` em `[prs]`.
 
 Com squash, o commit vai para a tarefa pelo título ou branch do MR, mesmo que a mensagem
 dele não cite a referência. Em instância antiga, um MR com squash e sem `squash_commit_sha`
-cai no segundo caso: os originais não estão na principal, e a tarefa cai no grep. Um 404 ao
-buscar o MR ou seus commits devolve lista vazia, sem erro, e a tarefa também cai no grep.
+cai no segundo caso: os originais não estão na principal, e a tarefa cai no grep. Um 404 em qualquer
+consulta dos commits do MR (o MR, o commit de squash, qualquer página da lista de commits do
+MR ou um commit dela) devolve lista vazia, sem erro, e a tarefa também cai no grep.
 
 ## Erros
 
