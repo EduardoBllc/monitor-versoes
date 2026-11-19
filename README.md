@@ -326,8 +326,9 @@ Há plugins para o Jira Cloud ([`monitor-versoes-jira`](plugins/jira/README.md))
 
 O host de PR também é plugin: `[prs] fonte` é um entry point do grupo `monitor_versoes.prs`
 ou um `modulo:Classe`. Há plugins para o Bitbucket Cloud
-([`monitor-versoes-bitbucket`](plugins/bitbucket/README.md)) e o GitHub
-([`monitor-versoes-github`](plugins/github/README.md), o mesmo pacote da fonte de tarefas),
+([`monitor-versoes-bitbucket`](plugins/bitbucket/README.md)), o GitHub
+([`monitor-versoes-github`](plugins/github/README.md), o mesmo pacote da fonte de tarefas)
+e o GitLab ([`monitor-versoes-gitlab`](plugins/gitlab/README.md), idem),
 instalados à parte como os de tarefas. Não há padrão: sem `fonte`, os commits
 saem só do grep na branch principal. Fora `fonte`, as chaves de `[prs]` são do plugin. Como
 na fonte de tarefas, o plugin e as credenciais só são cobrados na primeira busca de commits.
@@ -552,7 +553,7 @@ núcleo o chama ao fim de cada busca.
   id de task por linha (`#` comenta).
 - **Commits:** com `[prs] fonte`, os commits de cada task vêm das PRs mergeadas no host
   (o plugin `bitbucket` usa `BITBUCKET_TOKEN` e `BITBUCKET_EMAIL` do `[ambiente]`; o
-  plugin `github`, o `GITHUB_TOKEN`); o grep
+  plugin `github`, o `GITHUB_TOKEN`; o plugin `gitlab`, o `GITLAB_TOKEN`); o grep
   pela referência em `origin/<principal>` fica como fallback. Sem `fonte`, só o grep.
 
 ### Worktrees mantidas em disco
