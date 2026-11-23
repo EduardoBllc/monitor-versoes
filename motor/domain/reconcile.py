@@ -12,6 +12,7 @@ from motor.domain.types import (
     Exclusion,
     Presence,
     TargetSet,
+    TaskTarget,
     VersionStatus,
 )
 
@@ -69,25 +70,42 @@ def diff_tasks(
     return sorted(novas), sorted(removidas)
 
 
-def atribuicoes_de(alvo: TargetSet, presentes: dict[str, Presence]) -> list[Atribuicao]:
-    """Projeta o alvo resolvido no formato que vai para o estado."""
-    return [
-        Atribuicao(
-            chamado=tt.chamado,
-            marcada=tt.marcada,
-            estado=(
-                "aplicado"
-                if tt.commits
-                and all(
-                    presentes.get(c.hash_origem, Presence.AUSENTE) != Presence.AUSENTE
-                    for c in tt.commits
-                )
-                else "pendente"
-            ),
-            commits=[c.hash_origem for c in tt.commits],
+def atribuicoes_de(
+    alvo: TargetSet,
+    presentes: dict[str, Presence],
+    anteriores: Sequence[Atribuicao] = (),
+) -> list[Atribuicao]:
+    """Projeta o alvo resolvido no formato que vai para o estado.
+
+    Tarefa com commit que ja foi aplicado e agora esta ausente continua
+    `aplicado`: rebaixar para `pendente` apagaria o sinal de commit sumido no
+    proximo `reconciliar`, que e uma correcao automatica do estado
+    (docs/decisoes/012-divergencia-entre-fontes.md). O sinal se desfaz sozinho
+    quando o commit volta a estar presente no alvo. Nesse caso misto, commit
+    novo ainda ausente fica fora da atribuicao: gravado como aplicado, viraria
+    falso sumido; o alvo segue cobrando-o como faltante.
+    """
+    aplicados_antes = {
+        h for a in anteriores if a.estado == "aplicado" for h in a.commits
+    }
+
+    def ausente(hash_origem: str) -> bool:
+        return presentes.get(hash_origem, Presence.AUSENTE) == Presence.AUSENTE
+
+    def projetar(tt: TaskTarget) -> Atribuicao:
+        hashes = [c.hash_origem for c in tt.commits]
+        if hashes and not any(ausente(h) for h in hashes):
+            estado, gravados = "aplicado", hashes
+        elif any(ausente(h) and h in aplicados_antes for h in hashes):
+            estado = "aplicado"
+            gravados = [h for h in hashes if not ausente(h) or h in aplicados_antes]
+        else:
+            estado, gravados = "pendente", hashes
+        return Atribuicao(
+            chamado=tt.chamado, marcada=tt.marcada, estado=estado, commits=gravados
         )
-        for tt in alvo.values()
-    ]
+
+    return [projetar(tt) for tt in alvo.values()]
 
 
 @dataclass(frozen=True)

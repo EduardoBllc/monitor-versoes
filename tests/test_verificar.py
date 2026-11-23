@@ -19,6 +19,7 @@ from motor.domain.types import (
     RepoInfo,
     VersaoInfo,
 )
+from motor.engine.atualizar import atualizar
 from motor.engine.deps import Deps
 from motor.engine.orfaos import julgar_orfao
 from motor.engine.reconstruir_estado import reconstruir_estado
@@ -1571,3 +1572,75 @@ def test_verificar_le_os_arquivos_do_nivel_4_num_processo_so():
 
     assert git.changed_files_lote_chamadas == 1
     assert git.changed_files_chamadas == 0
+
+
+def _deps_com_aplicado(*commits: CommitRef, aplicados: list[str]) -> Deps:
+    """A 14.0.0 (em m0) com o chamado 123123 gravado `aplicado` com `aplicados`,
+    e a fonte de commits devolvendo `commits` para ele."""
+    estado = _estado_com_repo()
+    _versao_registrada(estado)
+    estado.substituir_atribuicoes(
+        "r",
+        "14.0.0",
+        [
+            Atribuicao(
+                chamado="123123",
+                marcada="14.0.0",
+                estado="aplicado",
+                commits=aplicados,
+            )
+        ],
+    )
+    tasks = FakeTaskSource(chamados={"14.0.0": ["123123"]})
+    fonte = FakeCommitSource(por_chamado={"123123": list(commits)})
+    return _deps(_git(), tasks, fonte, estado)
+
+
+def test_commit_sumido_segue_alertado_ate_o_atualizar_reaplicar():
+    """Rebase tirou da versao o a0, ja aplicado. Regravar o estado nao pode
+    apagar o alerta: ele vale em todo verificar, aparece no atualizar que
+    reaplica e so some quando o commit volta (012)."""
+    deps = _deps_com_aplicado(A0, aplicados=["a0"])
+
+    for _ in range(2):
+        status = verificar(deps, "14.0.0")
+        assert status.commits_sumidos == ["a0"]
+        assert status.estado_integro is False
+
+    resultado = atualizar(deps, "14.0.0")
+    assert [c.hash_origem for c in resultado.aplicados] == ["a0"]
+    assert resultado.status_versao is not None
+    assert resultado.status_versao.commits_sumidos == ["a0"]
+
+    status = verificar(deps, "14.0.0")
+    assert status.commits_sumidos == []
+    assert status.estado_integro is True
+
+
+@pytest.mark.parametrize(
+    "branch, sumidos",
+    [
+        pytest.param("pa0", [], id="aplicado-presente"),
+        pytest.param("m0", ["a0"], id="aplicado-sumido"),
+    ],
+)
+def test_commit_novo_de_tarefa_aplicada_e_faltante_nunca_sumido(branch, sumidos):
+    """b0 entrou na tarefa depois do a0 aplicado e nunca foi cherry-pickado: e
+    faltante em todo verificar, nunca sumido, com ou sem o a0 sumido junto."""
+    deps = _deps_com_aplicado(
+        A0,
+        CommitRef(
+            hash_origem="b0", parent="a0", chamado="123123", commit_date=D, msg="b"
+        ),
+        aplicados=["a0"],
+    )
+    git = deps.git
+    assert isinstance(git, FakeGit)
+    git.add_commit("b0", "a0", "ch123123 beta", D)
+    git.add_commit("pa0", "m0", "ch123123 alfa\n\n(cherry picked from commit a0)", D)
+    git.set_branch("14.0.0", branch)
+
+    for _ in range(2):
+        status = verificar(deps, "14.0.0")
+        assert status.commits_sumidos == sumidos
+        assert "b0" in [c.hash_origem for c in status.faltantes]
