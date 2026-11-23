@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.5.0...v0.6.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* comando daemon no lugar do serve ([#243](https://github.com/EduardoBllc/monitor-versoes/issues/243))
+
+### Novidades
+
+* comando daemon no lugar do serve ([#243](https://github.com/EduardoBllc/monitor-versoes/issues/243)) ([c5c9b90](https://github.com/EduardoBllc/monitor-versoes/commit/c5c9b90476b77a1b2402bda1ea23a6d32eb053b0))
+
+
+### Correções
+
+* alerta de commit sumido persiste até o commit voltar ([#242](https://github.com/EduardoBllc/monitor-versoes/issues/242)) ([22e534f](https://github.com/EduardoBllc/monitor-versoes/commit/22e534f406ed8b2207a33cb2217361ae2627e7d9))
+
 ## [0.5.0](https://github.com/EduardoBllc/monitor-versoes/compare/v0.4.1...v0.5.0) (2026-11-19)
 
 
