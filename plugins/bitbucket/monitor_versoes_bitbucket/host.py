@@ -86,7 +86,10 @@ class BitbucketPrs:
             TipoCampo.TEXTO,
             "Token do Bitbucket",
             segredo=True,
-            descricao="API token da conta do Bitbucket",
+            descricao=(
+                "API token da conta do Bitbucket, com os escopos "
+                "read:user:bitbucket e read:pullrequest:bitbucket"
+            ),
         ),
     )
 
