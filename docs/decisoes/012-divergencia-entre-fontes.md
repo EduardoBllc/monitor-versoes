@@ -17,5 +17,10 @@ marcada, commit ainda não cherry-pickado — está ausente do git por definiç�
 como sumida faria toda versão recém-criada reportar estado divergente entre um `verificar` e o
 `atualizar` seguinte, sem nada de errado ter acontecido: veredito certo, diagnóstico errado.
 
+**O alerta persiste até o commit voltar a estar presente no alvo.** A regravação do estado não
+rebaixa para `pendente` a atribuição com commit sumido: isso seria auto-corrigir, e o sinal
+duraria uma execução só. Quando o commit volta (o `atualizar` o reaplica, por exemplo), o
+alerta some sozinho, sem comando de reconhecimento.
+
 Aplicar o que falta: [013](013-conflito-e-checkpoint.md),
 [014](014-ordem-de-aplicacao-pelo-grafo.md), [015](015-estado-regravado-ao-final-do-lote.md).

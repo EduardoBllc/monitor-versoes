@@ -331,7 +331,7 @@ def verificar_sem_fetch(
         deps.progresso(Progresso("gravando estado"))
         with cronometrar(Etapa.GRAVACAO):
             deps.estado.substituir_atribuicoes(
-                deps.repo, versao, atribuicoes_de(alvo, presentes)
+                deps.repo, versao, atribuicoes_de(alvo, presentes, anteriores)
             )
             deps.estado.gravar_verificacao(
                 deps.repo,
