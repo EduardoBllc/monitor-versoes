@@ -25,6 +25,7 @@ $ACAO_ALTERAR = '/change'
 $FLAG_DESATIVAR = '/disable'
 $FLAG_ATIVAR = '/enable'
 $TAREFA_DAEMON = 'monitor-versoes-daemon'
+$TAREFA_SERVE = 'monitor-versoes-serve'
 $ESTADO_DESATIVADA = 'Disabled'
 $COMANDO_POS_REINSTALAR = 'pos-reinstalar'
 $ARQUIVO_COMANDO = 'comando.json'
@@ -73,7 +74,7 @@ try {
 }
 
 $resultado = $RESULTADO_FALHA
-$daemonAtivado = $false
+$ativadas = @()
 # Um prazo só para a espera dos PIDs e a do ambiente.
 $limite = (Get-Date).AddSeconds($PrazoProcessos)
 try {
@@ -83,12 +84,17 @@ try {
     }
 
     # Ativada é o daemon que deve rodar; desativada é um `daemon parar`, que a reinstalação respeita.
-    $tarefa = Get-ScheduledTask -TaskName $TAREFA_DAEMON -ErrorAction SilentlyContinue
-    $daemonAtivado = $null -ne $tarefa -and $tarefa.State -ne $ESTADO_DESATIVADA
-    if ($daemonAtivado) {
+    # A tarefa legada (`serve`) também segura o ambiente se a migração do `pos-reinstalar` falhou.
+    $ativadas = @(foreach ($nome in @($TAREFA_DAEMON, $TAREFA_SERVE)) {
+            $tarefa = Get-ScheduledTask -TaskName $nome -ErrorAction SilentlyContinue
+            if ($null -ne $tarefa -and $tarefa.State -ne $ESTADO_DESATIVADA) {
+                $nome
+            }
+        })
+    foreach ($nome in $ativadas) {
         # Desativada, o gatilho de 1 min não sobe o daemon no meio do uv.
-        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_DAEMON $FLAG_DESATIVAR *> $null
-        & $SCHTASKS /end /tn $TAREFA_DAEMON *> $null
+        & $SCHTASKS $ACAO_ALTERAR /tn $nome $FLAG_DESATIVAR *> $null
+        & $SCHTASKS /end /tn $nome *> $null
     }
 
     $vivos = @(Wait-AmbienteLivre -Ambiente $Ambiente -Bin $Bin -Executaveis $EXECUTAVEIS_DO_MOTOR -Limite $limite -IntervaloMs $INTERVALO_MS)
@@ -123,9 +129,9 @@ try {
         }
     }
 } finally {
-    if ($daemonAtivado) {
-        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_DAEMON $FLAG_ATIVAR *> $null
-        & $SCHTASKS /run /tn $TAREFA_DAEMON *> $null
+    foreach ($nome in $ativadas) {
+        & $SCHTASKS $ACAO_ALTERAR /tn $nome $FLAG_ATIVAR *> $null
+        & $SCHTASKS /run /tn $nome *> $null
     }
     Set-Content -LiteralPath (Join-Path -Path $Pasta -ChildPath $ARQUIVO_RESULTADO) -Value $resultado -NoNewline -Encoding Ascii
     if ($codificacaoTrocada) {

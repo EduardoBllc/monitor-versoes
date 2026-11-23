@@ -332,7 +332,7 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
         pytest.skip("install.ps1 é PowerShell do Windows")
     casca = shutil.which(request.param)
     assert casca is not None, request.param
-    home, falsos, pacotes, toolbin, tooldir, local, roaming = (
+    home, falsos, pacotes, toolbin, tooldir, local, roaming, _modulos = (
         tmp_path / pasta for pasta in Pasta
     )
     for pasta in (home, falsos, pacotes, toolbin, tooldir, local, roaming):

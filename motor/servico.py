@@ -422,7 +422,7 @@ def migrar_legado(
         legado = _agente(home, ROTULO_LEGADO)
         if not legado.exists():
             return False
-        # O antigo só sai depois do novo de pé: se subir falhar, a próxima reinstalação tenta de novo.
+        # O legado só sai depois de as peças novas serem criadas e carregadas: se falhar, a próxima reinstalação tenta de novo.
         ligar_login(sistema, home, executavel, rodar_comando)
         subir(sistema, home, executavel, rodar_comando)
         with contextlib.suppress(BackendIndisponivel):

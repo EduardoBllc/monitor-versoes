@@ -363,7 +363,8 @@ def _aplicar_login(home: Path, quer: bool | None) -> None:
         if quer:
             servico.ligar_login(sistema, home, servico.executavel_servico(), rodar)
             servico.subir(sistema, home, servico.executavel_servico(), rodar)
-            gravar_nunca_iniciar_login(False)
+            if nunca_iniciar_login():
+                gravar_nunca_iniciar_login(False)
         else:
             servico.desligar_login(sistema, home, rodar)
     except MotorError as e:

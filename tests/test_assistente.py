@@ -65,6 +65,7 @@ from motor.servico import (
     NOME_TAREFA_SERVE,
     ROTULO_LEGADO,
 )
+from tests.test_servico import pula_mac_no_windows
 
 BAIXO = "\x1b[B"
 CIMA = "\x1b[A"
@@ -449,6 +450,17 @@ def test_configurar_login(cen, ligado, tecla, comandos, nunca_depois):
     assert nunca_iniciar_login() is nunca_depois
 
 
+@pytest.mark.parametrize("com_config", [True, False], ids=["com-config", "sem-config"])
+def test_sim_sem_nunca_salvo_nao_mexe_na_config(cen, com_config):
+    if not com_config:
+        cen.config.unlink()
+    assert _rodar(ENTER, ENTER, SIM) == CodigoSaida.OK
+    assert cen.comandos == LIGAR
+    assert cen.config.exists() is com_config
+    if com_config:
+        assert cen.config.read_text() == cen.original
+
+
 @pytest.mark.parametrize(
     ("com_config", "ligado", "nunca", "comandos"),
     [
@@ -491,6 +503,7 @@ def test_windows_pergunta_o_login_e_liga_pelo_agendador(cen, monkeypatch):
     assert ligadas == [(peca, *argumentos) for peca in pecas]
 
 
+@pula_mac_no_windows
 @pytest.mark.parametrize(
     ("tecla", "login_depois"), [(ENTER, True), (NAO, False)], ids=["padrao", "nao"]
 )
