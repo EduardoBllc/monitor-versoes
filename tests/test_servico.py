@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from motor import servico
-from motor.__main__ import COMANDO_SERVE, main
+from motor.__main__ import main
 from motor.agendador import (
     FLAG_FORCAR_SCHTASKS,
     FLAG_TAREFA,
@@ -26,6 +26,7 @@ from motor.agendador import (
     AcaoSchtasks,
     Sistema,
 )
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.config import diretorio_dados
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 from motor.servico import (
@@ -461,14 +462,13 @@ def test_executavel_motor_nao_depende_do_path(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.parametrize("sem_navegador", [False, True])
-def test_serve_sem_navegador_nao_abre(
+def test_daemon_rodar_sem_navegador_nao_abre(
     monkeypatch: pytest.MonkeyPatch, sem_navegador: bool
 ) -> None:
     import threading
 
     import uvicorn
 
-    import motor.__main__ as cli
     import motor.daemon.app as daemon_app
 
     with socket.socket() as livre:
@@ -479,13 +479,18 @@ def test_serve_sem_navegador_nao_abre(
     def timer(_atraso, funcao, args):
         return SimpleNamespace(start=lambda: funcao(*args))
 
-    monkeypatch.setattr(cli, "checar_backend", lambda: None)
     monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
     monkeypatch.setattr(threading, "Timer", timer)
     monkeypatch.setattr(daemon_app, "_abrir_navegador", abertos.append)
 
     main(
-        [COMANDO_SERVE, FLAG_PORTA, str(porta), *([FLAG_SEM_NAVEGADOR] * sem_navegador)]
+        [
+            COMANDO_DAEMON,
+            AcaoDaemon.RODAR,
+            FLAG_PORTA,
+            str(porta),
+            *([FLAG_SEM_NAVEGADOR] * sem_navegador),
+        ]
     )
 
     assert bool(abertos) is not sem_navegador

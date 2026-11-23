@@ -19,7 +19,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from motor import agendador, assistente, instalacao, plugins, servico
-from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
+from motor.__main__ import COMANDO_DESINSTALAR, main
 from motor.agendador import (
     ARQUIVO_TIMER,
     FLAG_AGORA,
@@ -55,6 +55,7 @@ from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
 from motor.servico import (
+    ARGUMENTOS_LEGADOS,
     ARQUIVO_SERVICE,
     COMANDO_CONFIGURAR,
     EXECUTAVEL,
@@ -183,7 +184,7 @@ def cen(monkeypatch, tmp_path) -> Cenario:
 
     monkeypatch.setattr(plugins, "pontos_instalados", pontos)
     monkeypatch.setattr(assistente, "instalar_plugin", instalar)
-    monkeypatch.setattr(assistente, "_terminal", lambda: True)
+    monkeypatch.setattr(assistente, "terminal", lambda: True)
     monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: False)
     monkeypatch.setattr(webbrowser, "open", c.abertos.append)
     monkeypatch.setattr(instalacao, "url_do_motor", lambda: URL_MOTOR)
@@ -422,7 +423,7 @@ def test_ctrl_c_nao_grava(cen):
 
 
 def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, caplog):
-    monkeypatch.setattr(assistente, "_terminal", lambda: False)
+    monkeypatch.setattr(assistente, "terminal", lambda: False)
     assert _rodar() == CodigoSaida.ERRO
     assert "interativo" in caplog.text
     assert cen.config.read_text() == cen.original
@@ -512,7 +513,7 @@ def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
     [
         (True, True, (SIM,), [ENDERECO_WEB], ""),
         (True, False, (), [], ENDERECO_WEB),
-        (False, True, (), [], f"{EXECUTAVEL} {COMANDO_SERVE}"),
+        (False, True, (), [], f"{EXECUTAVEL} {ARGUMENTOS_LEGADOS[0]}"),
     ],
     ids=["abre", "sem-grafico", "sem-serve"],
 )
@@ -613,7 +614,7 @@ def test_desinstalar_apaga_dados_so_com_sim(
     cen, tmp_path, monkeypatch, capsys, teclas, terminal, apagou
 ):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
-    monkeypatch.setattr(assistente, "_terminal", lambda: terminal)
+    monkeypatch.setattr(assistente, "terminal", lambda: terminal)
 
     assert _rodar(*teclas, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 

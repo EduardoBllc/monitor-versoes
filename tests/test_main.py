@@ -36,6 +36,7 @@ from motor.__main__ import (
 )
 from motor.adapters.estado.fake import FakeEstado
 from motor.adapters.git.fake import FakeGit
+from motor.cli_daemon import COMANDO_DAEMON, FLAG_PORTA, AcaoDaemon
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR
 from motor.config import SECAO_REPOS
 from motor.diagnostico import Estado, Peca, Resultado, formatar
@@ -1388,7 +1389,10 @@ def test_executar_fora_do_help(capsys):
     assert "executar" not in saida
 
 
-def test_serve_com_porta_ocupada_sai_com_uma_linha(bordas, caplog):
+DAEMON_RODAR = [COMANDO_DAEMON, AcaoDaemon.RODAR]
+
+
+def test_daemon_rodar_com_porta_ocupada_sai_com_uma_linha(bordas, caplog):
     import socket
 
     with socket.socket() as ocupada:
@@ -1396,13 +1400,13 @@ def test_serve_com_porta_ocupada_sai_com_uma_linha(bordas, caplog):
         porta = ocupada.getsockname()[1]
         ocupada.listen()
         with pytest.raises(SystemExit) as saida:
-            main(["serve", "--porta", str(porta)])
+            main([*DAEMON_RODAR, FLAG_PORTA, str(porta)])
 
     assert saida.value.code == 1
     assert caplog.messages == [f"porta {porta} em uso; use --porta"]
 
 
-def test_serve_aceita_porta_so_com_time_wait(monkeypatch):
+def test_daemon_aceita_porta_so_com_time_wait(monkeypatch):
     import socket
 
     import motor.daemon.app as daemon_app
@@ -1430,14 +1434,13 @@ VAR_DO_DOTENV = "MONITOR_TESTE_VAR_DO_DOTENV"
 VALOR_DO_DOTENV = "do-dotenv"
 
 
-def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
+def test_daemon_rodar_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
     import motor.daemon.app as daemon_app
 
     (tmp_path / ".env").write_text(f"{VAR_DO_DOTENV}={VALOR_DO_DOTENV}\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(VAR_DO_DOTENV, "")
     monkeypatch.setattr(cli, "load_dotenv", dotenv.load_dotenv)
-    monkeypatch.setattr(cli, "checar_backend", lambda: None)
     vistos = []
     monkeypatch.setattr(
         daemon_app,
@@ -1445,7 +1448,7 @@ def test_serve_nao_repassa_o_env_aos_filhos(monkeypatch, tmp_path):
         lambda porta, ambiente, abrir_navegador: vistos.append(ambiente),
     )
 
-    main(["serve"])
+    main(DAEMON_RODAR)
 
     (ambiente,) = vistos
     assert ambiente[VAR_DO_DOTENV] != VALOR_DO_DOTENV
@@ -1525,13 +1528,13 @@ def test_tui_com_config_antiga_nao_monta_a_tela(monkeypatch, tmp_path, caplog):
     _sai_com_o_erro_da_config_antiga(["tui"], caplog)
 
 
-def test_serve_com_config_antiga_nao_abre_a_porta(monkeypatch, tmp_path, caplog):
+def test_daemon_rodar_com_config_antiga_nao_abre_a_porta(monkeypatch, tmp_path, caplog):
     import motor.daemon.app as daemon_app
 
     _central_com(monkeypatch, tmp_path, _BACKEND_POSTGRES)
     monkeypatch.setattr(daemon_app, "servir", lambda porta: pytest.fail("subiu"))
 
-    _sai_com_o_erro_da_config_antiga(["serve"], caplog)
+    _sai_com_o_erro_da_config_antiga(DAEMON_RODAR, caplog)
 
 
 def test_inscricao_executar_com_config_antiga_grava_o_erro(
