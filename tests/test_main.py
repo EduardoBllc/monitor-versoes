@@ -1257,6 +1257,8 @@ def test_main_serve_grava_o_log_e_trunca(monkeypatch, tmp_path):
         print(f"erro {len(chamadas)}", file=sys.stderr)
 
     monkeypatch.setattr(cli, "main", falso)
+    monkeypatch.setattr(sys, "argv", [servico.EXECUTAVEL_SERVE])
+    monkeypatch.setattr(servico, "deve_encerrar_no_windows", lambda *_: False)
     cli.main_serve()
     cli.main_serve()
     log = tmp_path / "dados" / servico.ARQUIVO_LOG_SERVE

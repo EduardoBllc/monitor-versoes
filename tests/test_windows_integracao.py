@@ -43,7 +43,7 @@ from motor.instalacao import (
     PASTA_PLUGINS,
     PREFIXO_GIT,
 )
-from motor.servico import NOME_TAREFA_SERVE, consultar_do_sistema
+from motor.servico import NOME_TAREFA_PROCESSO, consultar_do_sistema
 
 VAR_INTEGRACAO_WINDOWS = "MONITOR_VERSOES_INTEGRACAO_WINDOWS"
 VAR_UV_TOOL_DIR = "UV_TOOL_DIR"
@@ -78,7 +78,7 @@ CAMINHO_RUN_LEVEL = "t:Principals/t:Principal/t:RunLevel"
 RUN_LEVEL_SEM_ELEVACAO = "LeastPrivilege"
 PS_SAIDA_UTF8 = "[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false"
 PS_EXPORTAR_TAREFA = (
-    f"{PS_SAIDA_UTF8}; Export-ScheduledTask -TaskName '{NOME_TAREFA_SERVE}'"
+    f"{PS_SAIDA_UTF8}; Export-ScheduledTask -TaskName '{NOME_TAREFA_PROCESSO}'"
 )
 # Filtrar em vez de `-Name`: sem processo, o `-Name` erra e o `-Command` sai com 1.
 PS_MATAR_SERVE = (
@@ -162,13 +162,15 @@ def _tarefa_xml() -> ET.Element:
 
 def _consultar_tarefa() -> str | None:
     return consultar_do_sistema(
-        [SCHTASKS, AcaoSchtasks.QUERY, FLAG_TAREFA, NOME_TAREFA_SERVE]
+        [SCHTASKS, AcaoSchtasks.QUERY, FLAG_TAREFA, NOME_TAREFA_PROCESSO]
     )
 
 
 @pytest.fixture(scope="module")
 def servico_ligado() -> Iterator[str]:
     serve = _serve_instalado()
+    # A marca de boot vai no LOCALAPPDATA do teste, que a tarefa não vê: sem login, o daemon se encerraria.
+    servico.ligar_login(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
     servico.subir(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
     yield serve
     # O `remover` tolera a tarefa já apagada; o serve que sobrar morre aqui.
@@ -181,7 +183,7 @@ def test_ligar_sobe_o_serve(servico_ligado):
     assert _serve_de_pe(PRAZO_SERVE_SUBIR_S)
     tarefa = _tarefa_xml()
     assert tarefa.findtext(CAMINHO_COMANDO, namespaces=NS_TAREFA) == servico_ligado
-    assert tarefa.find(CAMINHO_LOGON, NS_TAREFA) is not None
+    assert tarefa.find(CAMINHO_LOGON, NS_TAREFA) is None
     for caminho, valor in VALORES_DA_TAREFA.items():
         assert tarefa.findtext(caminho, namespaces=NS_TAREFA) == valor, caminho
     # O Export omite o RunLevel quando é o padrão; o que importa é nunca elevar.

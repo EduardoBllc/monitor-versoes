@@ -19,7 +19,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
-from motor import cli_instalacao, servico
+from motor import agendador, cli_instalacao, servico
 from motor.adapters.estado.engine import garantir_esquema
 from motor.config import (
     AMBIENTE_PADRAO,
@@ -943,7 +943,13 @@ def main_inscricoes() -> None:
 
 
 def main_serve() -> None:
-    """`serve` como executável sem console: o log do serviço vai para `serve.log`."""
+    """Executável sem console: com argumentos é a tarefa de login; sem, o daemon, com o log em `serve.log`."""
+    if sys.argv[1:]:
+        main(sys.argv[1:])
+        return
+    if servico.deve_encerrar_no_windows(Path.home(), servico.consultar_do_sistema):
+        servico.desativar_processo_windows(agendador.rodar_comando_do_sistema)
+        return
     log = Path(diretorio_dados()) / servico.ARQUIVO_LOG_SERVE
     log.parent.mkdir(parents=True, exist_ok=True)
     # Sem console não há stdout/stderr; "w" a cada subida mantém o log do tamanho de uma sessão.

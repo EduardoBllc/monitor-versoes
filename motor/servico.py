@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import plistlib
+import re
 import subprocess
 import sys
 import sysconfig
@@ -21,6 +22,8 @@ import httpx
 
 from motor import console
 from motor.agendador import (
+    FLAG_ATIVAR_SCHTASKS,
+    FLAG_DESATIVAR_SCHTASKS,
     FLAG_FORCAR_SCHTASKS,
     FLAG_TAREFA,
     FLAG_XML,
@@ -44,6 +47,10 @@ ARQUIVO_LOG_LAUNCHD = "monitor-versoes-serve.log"
 EXECUTAVEL = "monitor-versoes"
 EXECUTAVEL_SERVE = "monitor-versoes-serve"
 NOME_TAREFA_SERVE = "monitor-versoes-serve"
+NOME_TAREFA_PROCESSO = "monitor-versoes-daemon"
+NOME_TAREFA_LOGIN = "monitor-versoes-login"
+ARQUIVO_MARCA_BOOT = "daemon.boot"
+TOLERANCIA_BOOT_S = 60
 ARQUIVO_LOG_SERVE = "serve.log"
 PRAZO_SUBIDA_S = 10
 INTERVALO_SONDA_S = 0.5
@@ -58,6 +65,8 @@ FLAG_PERSISTIR = "-w"
 ESTADO_SYSTEMD_ATIVO = "active"
 ESTADO_SYSTEMD_HABILITADO = "enabled"
 ESTADO_LAUNCHD_ATIVO = "state = running"
+TAREFA_DESATIVADA = "<Enabled>false</Enabled>"
+SETTINGS_DA_TAREFA = re.compile(r"<Settings>.*?</Settings>", re.DOTALL)
 
 Consultar = Callable[[list[str]], str | None]
 
@@ -171,27 +180,39 @@ def _plist(executavel: str, home: Path) -> bytes:
     )
 
 
-def _tarefa(acao: AcaoSchtasks, *resto: str) -> list[str]:
-    return [SCHTASKS, acao, FLAG_TAREFA, NOME_TAREFA_SERVE, *resto]
+def _tarefa(nome: str, acao: AcaoSchtasks, *resto: str) -> list[str]:
+    return [SCHTASKS, acao, FLAG_TAREFA, nome, *resto]
 
 
-def _xml_tarefa(executavel: str) -> str:
+def _gatilho_logon() -> str:
     usuario = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}"
-    inicio = datetime.now().strftime(FORMATO_INICIO_TAREFA)
-    return f"""<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <Triggers>
-    <LogonTrigger>
+    return f"""    <LogonTrigger>
       <Enabled>true</Enabled>
       <UserId>{escape(usuario)}</UserId>
-    </LogonTrigger>
-    <TimeTrigger>
+    </LogonTrigger>"""
+
+
+def _gatilho_repetido() -> str:
+    inicio = datetime.now().strftime(FORMATO_INICIO_TAREFA)
+    return f"""    <TimeTrigger>
       <StartBoundary>{inicio}</StartBoundary>
       <Enabled>true</Enabled>
       <Repetition>
         <Interval>PT1M</Interval>
       </Repetition>
-    </TimeTrigger>
+    </TimeTrigger>"""
+
+
+def _xml_tarefa(gatilho: str, executavel: str, argumentos: tuple[str, ...]) -> str:
+    args = (
+        f"\n      <Arguments>{escape(' '.join(argumentos))}</Arguments>"
+        if argumentos
+        else ""
+    )
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+{gatilho}
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -207,48 +228,76 @@ def _xml_tarefa(executavel: str) -> str:
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>{escape(executavel)}</Command>
+      <Command>{escape(executavel)}</Command>{args}
     </Exec>
   </Actions>
 </Task>
 """
 
 
-def _ligar_windows(executavel: str, rodar_comando: Comando) -> None:
+def _criar_tarefa(nome: str, xml_tarefa: str, rodar_comando: Comando) -> None:
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-16", suffix=".xml", delete=False
     ) as xml:
-        xml.write(_xml_tarefa(executavel))
-    # Com IgnoreNew, o `/run` deixaria de pé o serve antigo; parar o que não roda é inócuo.
-    with contextlib.suppress(BackendIndisponivel):
-        rodar_comando(_tarefa(AcaoSchtasks.END))
+        xml.write(xml_tarefa)
     try:
         rodar_comando(
-            _tarefa(AcaoSchtasks.CREATE, FLAG_XML, xml.name, FLAG_FORCAR_SCHTASKS)
+            _tarefa(nome, AcaoSchtasks.CREATE, FLAG_XML, xml.name, FLAG_FORCAR_SCHTASKS)
         )
     finally:
         Path(xml.name).unlink(missing_ok=True)
+
+
+def _marca_boot() -> Path:
+    return Path(diretorio_dados()) / ARQUIVO_MARCA_BOOT
+
+
+def _boot_atual() -> int:
+    return int(time.time() - time.monotonic())
+
+
+def _subir_windows(executavel: str, rodar_comando: Comando) -> None:
+    # Antes do `/run`: o processo que sobe lê a marca para decidir se fica.
+    _marca_boot().parent.mkdir(parents=True, exist_ok=True)
+    _marca_boot().write_text(str(_boot_atual()))
+    _criar_tarefa(
+        NOME_TAREFA_PROCESSO,
+        _xml_tarefa(_gatilho_repetido(), executavel, ()),
+        rodar_comando,
+    )
+    rodar_comando(
+        _tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.CHANGE, FLAG_ATIVAR_SCHTASKS)
+    )
     try:
-        rodar_comando(_tarefa(AcaoSchtasks.RUN))
+        rodar_comando(_tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.RUN))
     except BackendIndisponivel:
         with contextlib.suppress(BackendIndisponivel):
-            rodar_comando(_tarefa(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS))
+            rodar_comando(
+                _tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
+            )
         raise
 
 
+def desativar_processo_windows(rodar_comando: Comando) -> None:
+    rodar_comando(
+        _tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS)
+    )
+
+
 def _remover_windows(rodar_comando: Comando) -> None:
-    for acao in (
-        _tarefa(AcaoSchtasks.END),
-        _tarefa(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
-    ):
-        with contextlib.suppress(BackendIndisponivel):
-            rodar_comando(acao)
+    for nome in (NOME_TAREFA_PROCESSO, NOME_TAREFA_LOGIN, NOME_TAREFA_SERVE):
+        for acao in (
+            _tarefa(nome, AcaoSchtasks.END),
+            _tarefa(nome, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
+        ):
+            with contextlib.suppress(BackendIndisponivel):
+                rodar_comando(acao)
 
 
 def regravar(
     sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
 ) -> None:
-    # shortcut: no Windows a tarefa única só se grava ao subir; separar é da Tarefa 3.
+    # No Windows gravar a tarefa a ativa, e o gatilho de 1 min subiria o processo.
     if sistema is Sistema.WINDOWS:
         return
     arquivo = caminho(sistema, home)
@@ -265,7 +314,7 @@ def subir(
     sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
 ) -> None:
     if sistema is Sistema.WINDOWS:
-        _ligar_windows(executavel, rodar_comando)
+        _subir_windows(executavel, rodar_comando)
         return
     regravar(sistema, home, executavel, rodar_comando)
     if sistema is Sistema.MACOS:
@@ -281,7 +330,10 @@ def subir(
 
 def parar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
     if sistema is Sistema.WINDOWS:
-        rodar_comando(_tarefa(AcaoSchtasks.END))
+        desativar_processo_windows(rodar_comando)
+        # Desativada a tarefa, encerrar o processo que já caiu é inócuo.
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando(_tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.END))
     elif sistema is Sistema.MACOS:
         rodar_comando([LAUNCHCTL, Acao.UNLOAD, str(caminho(sistema, home))])
     else:
@@ -290,7 +342,11 @@ def parar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
 
 def rodando(sistema: Sistema, home: Path, consultar: Consultar) -> bool:
     if sistema is Sistema.WINDOWS:
-        return _tarefa_existe(consultar)
+        saida = consultar(_tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.QUERY, FLAG_XML))
+        if saida is None:
+            return False
+        settings = SETTINGS_DA_TAREFA.search(saida)
+        return settings is None or TAREFA_DESATIVADA not in settings.group()
     if sistema is Sistema.MACOS:
         saida = consultar([LAUNCHCTL, Acao.PRINT, _alvo_launchd()])
         return saida is not None and ESTADO_LAUNCHD_ATIVO in saida
@@ -302,8 +358,8 @@ def ligar_login(
     sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
 ) -> None:
     if sistema is Sistema.WINDOWS:
-        # Até a Tarefa 3, a tarefa única é processo e login: o gatilho de logon vem com ela.
-        _ligar_windows(executavel, rodar_comando)
+        xml_login = _xml_tarefa(_gatilho_logon(), executavel, ARGUMENTOS_LOGIN)
+        _criar_tarefa(NOME_TAREFA_LOGIN, xml_login, rodar_comando)
         return
     if sistema is Sistema.MACOS:
         arquivo = _agente(home, ROTULO_LOGIN)
@@ -320,7 +376,9 @@ def ligar_login(
 
 def desligar_login(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
     if sistema is Sistema.WINDOWS:
-        _remover_windows(rodar_comando)
+        rodar_comando(
+            _tarefa(NOME_TAREFA_LOGIN, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
+        )
     elif sistema is Sistema.MACOS:
         arquivo = _agente(home, ROTULO_LOGIN)
         # O arquivo é o que `login_ligado` olha: falha no unload não pode deixá-lo.
@@ -333,7 +391,7 @@ def desligar_login(sistema: Sistema, home: Path, rodar_comando: Comando) -> None
 
 def login_ligado(sistema: Sistema, home: Path, consultar: Consultar) -> bool:
     if sistema is Sistema.WINDOWS:
-        return _tarefa_existe(consultar)
+        return _tarefa_existe(NOME_TAREFA_LOGIN, consultar)
     if sistema is Sistema.MACOS:
         return _agente(home, ROTULO_LOGIN).exists()
     saida = consultar([*SYSTEMCTL, Acao.IS_ENABLED, ARQUIVO_SERVICE])
@@ -348,7 +406,16 @@ def migrar_legado(
     consultar: Consultar,
 ) -> bool:
     if sistema is Sistema.WINDOWS:
-        return False
+        if not _tarefa_existe(NOME_TAREFA_SERVE, consultar):
+            return False
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando(_tarefa(NOME_TAREFA_SERVE, AcaoSchtasks.END))
+        rodar_comando(
+            _tarefa(NOME_TAREFA_SERVE, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
+        )
+        ligar_login(sistema, home, executavel, rodar_comando)
+        subir(sistema, home, executavel, rodar_comando)
+        return True
     if sistema is Sistema.MACOS:
         legado = _agente(home, ROTULO_LEGADO)
         if not legado.exists():
@@ -398,8 +465,20 @@ def _sistema_ou_none() -> Sistema | None:
         return None
 
 
-def _tarefa_existe(consultar: Consultar) -> bool:
-    return consultar(_tarefa(AcaoSchtasks.QUERY)) is not None
+def _tarefa_existe(nome: str, consultar: Consultar) -> bool:
+    return consultar(_tarefa(nome, AcaoSchtasks.QUERY)) is not None
+
+
+def deve_encerrar_no_windows(home: Path, consultar: Consultar) -> bool:
+    """Sem login, o daemon só vale no boot em que foi iniciado: o gatilho de 1 min não o religa após reiniciar."""
+    if login_ligado(Sistema.WINDOWS, home, consultar):
+        return False
+    # shortcut: logoff/logon sem reiniciar traz o daemon de volta em até 1 min; marcar a sessão de logon se incomodar.
+    try:
+        marca = int(_marca_boot().read_text())
+    except OSError, ValueError:
+        return True
+    return abs(marca - _boot_atual()) > TOLERANCIA_BOOT_S
 
 
 def apos_reinstalar(home: Path, rodar_comando: Comando, consultar: Consultar) -> bool:
@@ -425,9 +504,10 @@ def situacao(
         return Situacao(EstadoServico.SEM_SUPORTE)
     login = login_ligado(sistema, home, consultar)
     if sistema is Sistema.WINDOWS:
-        # A tarefa única não diz se o processo está de pé: só a porta diz.
+        # Tarefa ativada não diz se o processo está de pé: só a porta diz.
         if responde():
-            estado = EstadoServico.ATIVO if login else EstadoServico.NO_TERMINAL
+            gerido = rodando(sistema, home, consultar)
+            estado = EstadoServico.ATIVO if gerido else EstadoServico.NO_TERMINAL
             return Situacao(estado, login)
         log = Path(diretorio_dados()) / ARQUIVO_LOG_SERVE
         return Situacao(EstadoServico.PARADO, login, f"Get-Content -Wait '{log}'")
@@ -444,18 +524,18 @@ def situacao(
 
 def consultar_do_sistema(cmd: list[str]) -> str | None:
     if cmd[0] == SCHTASKS:
-        # Só o código de saída conta: o texto vem na página OEM do console.
+        # Fora o XML, só o código de saída conta: o texto vem na página OEM do console.
         try:
-            subprocess.run(
+            schtasks = subprocess.run(
                 cmd,
                 check=True,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE if FLAG_XML in cmd else subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=console.FLAGS_SEM_JANELA,
             )
         except subprocess.CalledProcessError, OSError:
             return None
-        return ""
+        return (schtasks.stdout or b"").decode(errors="replace")
     try:
         feito = subprocess.run(
             cmd,
