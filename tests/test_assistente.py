@@ -19,7 +19,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from motor import agendador, assistente, instalacao, plugins, servico
-from motor.__main__ import COMANDO_DESINSTALAR, COMANDO_SERVE, main
+from motor.__main__ import COMANDO_DESINSTALAR, main
 from motor.agendador import (
     ARQUIVO_TIMER,
     FLAG_AGORA,
@@ -38,6 +38,7 @@ from motor.assistente import (
     Pergunta,
     Situacao,
 )
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
     VAR_XDG_CACHE_HOME,
@@ -48,8 +49,10 @@ from motor.config import (
     caminho_config_global,
     diretorio_cache,
     diretorio_dados,
+    nunca_iniciar_login,
 )
 from motor.config_edicao import GrupoPlugin
+from motor.daemon import PORTA_PADRAO
 from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
@@ -57,8 +60,12 @@ from motor.servico import (
     ARQUIVO_SERVICE,
     COMANDO_CONFIGURAR,
     EXECUTAVEL,
+    NOME_TAREFA_LOGIN,
+    NOME_TAREFA_PROCESSO,
     NOME_TAREFA_SERVE,
+    ROTULO_LEGADO,
 )
+from tests.test_servico import pula_mac_no_windows
 
 BAIXO = "\x1b[B"
 CIMA = "\x1b[A"
@@ -67,6 +74,7 @@ CTRL_C = "\x03"
 SIM = "s"
 NAO = "n"
 MOTIVO_NEGADO = "sem permissão"
+ENDERECO_WEB = servico.endereco_web(PORTA_PADRAO)
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes.git"
 URL_OUTRO = "https://example.com/outro-plugin.git"
@@ -89,12 +97,18 @@ NOMES_PRS = [e.nome for e in EMBUTIDOS[GrupoPlugin.PRS]]
 LIGAR = [
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     [*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE],
+    [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE],
 ]
-DESLIGAR = [
-    [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_SERVICE],
+DESLIGAR = [[*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE]]
+REMOVER = [
+    [*SYSTEMCTL, Acao.STOP, ARQUIVO_SERVICE],
+    [*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE],
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
 ]
+HABILITADO = "enabled\n"
+NUNCA_SALVO = f"\n[{Tabela.DAEMON}]\n{Chave.NUNCA_INICIAR_LOGIN} = true\n"
+MARCA_REMOVIDOS = "daemon e início no login removidos"
 
 ORIGINAL = """\
 # config central de teste
@@ -124,6 +138,10 @@ class Cenario:
     comandos: list[list[str]] = field(default_factory=list)
     abertos: list[str] = field(default_factory=list)
     original: str = ""
+    login: bool = False
+
+    def consultar(self, cmd: list[str]) -> str | None:
+        return HABILITADO if self.login and Acao.IS_ENABLED in cmd else None
 
     @property
     def config(self) -> Path:
@@ -173,11 +191,12 @@ def cen(monkeypatch, tmp_path) -> Cenario:
 
     monkeypatch.setattr(plugins, "pontos_instalados", pontos)
     monkeypatch.setattr(assistente, "instalar_plugin", instalar)
-    monkeypatch.setattr(assistente, "_terminal", lambda: True)
-    monkeypatch.setattr(servico, "serve_responde", lambda esperar: False)
+    monkeypatch.setattr(assistente, "terminal", lambda: True)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: False)
     monkeypatch.setattr(webbrowser, "open", c.abertos.append)
     monkeypatch.setattr(instalacao, "url_do_motor", lambda: URL_MOTOR)
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", c.comandos.append)
+    monkeypatch.setattr(servico, "consultar_do_sistema", c.consultar)
     repo = tmp_path / "repo"
     repo.mkdir()
     c.escrever(ORIGINAL.format(repo=repo))
@@ -411,7 +430,7 @@ def test_ctrl_c_nao_grava(cen):
 
 
 def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, caplog):
-    monkeypatch.setattr(assistente, "_terminal", lambda: False)
+    monkeypatch.setattr(assistente, "terminal", lambda: False)
     assert _rodar() == CodigoSaida.ERRO
     assert "interativo" in caplog.text
     assert cen.config.read_text() == cen.original
@@ -419,33 +438,47 @@ def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, caplog):
 
 
 @pytest.mark.parametrize(
-    ("ligado", "tecla", "comandos"),
-    [(False, SIM, LIGAR), (True, NAO, DESLIGAR)],
-    ids=["liga", "desliga"],
+    ("ligado", "tecla", "comandos", "nunca_depois"),
+    [(False, SIM, LIGAR, False), (True, NAO, DESLIGAR, True)],
+    ids=["sim-liga-sobe-e-apaga-o-nunca", "nao-so-desliga"],
 )
-def test_ligar_e_desligar_no_login(cen, ligado, tecla, comandos):
-    if ligado:
-        cen.unit().parent.mkdir(parents=True)
-        cen.unit().write_text("")
+def test_configurar_login(cen, ligado, tecla, comandos, nunca_depois):
+    cen.escrever(cen.original + NUNCA_SALVO)
+    cen.login = ligado
     assert _rodar(ENTER, ENTER, tecla) == CodigoSaida.OK
     assert cen.comandos == comandos
-    assert cen.unit().exists() is not ligado
+    assert nunca_iniciar_login() is nunca_depois
+
+
+@pytest.mark.parametrize("com_config", [True, False], ids=["com-config", "sem-config"])
+def test_sim_sem_nunca_salvo_nao_mexe_na_config(cen, com_config):
+    if not com_config:
+        cen.config.unlink()
+    assert _rodar(ENTER, ENTER, SIM) == CodigoSaida.OK
+    assert cen.comandos == LIGAR
+    assert cen.config.exists() is com_config
+    if com_config:
+        assert cen.config.read_text() == cen.original
 
 
 @pytest.mark.parametrize(
-    ("com_config", "ligado", "comandos"),
-    [(False, False, LIGAR), (True, False, []), (True, True, LIGAR)],
-    ids=["primeira-vez-liga", "desligado-fica", "ligado-religa"],
+    ("com_config", "ligado", "nunca", "comandos"),
+    [
+        (False, False, False, LIGAR),
+        (True, False, False, []),
+        (True, True, False, LIGAR),
+        (True, True, True, DESLIGAR),
+    ],
+    ids=["primeira-vez-liga", "desligado-fica", "ligado-religa", "nunca-vence"],
 )
-def test_padrao_do_login(cen, com_config, ligado, comandos):
+def test_padrao_do_login(cen, com_config, ligado, nunca, comandos):
+    if nunca:
+        cen.escrever(cen.original + NUNCA_SALVO)
     if not com_config:
         cen.config.unlink()
-    if ligado:
-        cen.unit().parent.mkdir(parents=True)
-        cen.unit().write_text("")
+    cen.login = ligado
     assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert cen.comandos == comandos
-    assert cen.unit().exists() is (ligado or not com_config)
 
 
 def test_sistema_sem_suporte_nao_pergunta_o_login(cen):
@@ -455,16 +488,38 @@ def test_sistema_sem_suporte_nao_pergunta_o_login(cen):
 
 def test_windows_pergunta_o_login_e_liga_pelo_agendador(cen, monkeypatch):
     ligadas: list[tuple[object, ...]] = []
-    monkeypatch.setattr(servico, "ligar", lambda *args: ligadas.append(args))
-    assert _rodar(ENTER, ENTER, SIM, sistema=Sistema.WINDOWS) == CodigoSaida.OK
-    assert ligadas == [
-        (
-            Sistema.WINDOWS,
-            Path.home(),
-            servico.executavel_servico(),
-            agendador.rodar_comando_do_sistema,
+    pecas = (servico.ligar_login, servico.subir)
+    for peca in pecas:
+        monkeypatch.setattr(
+            servico, peca.__name__, lambda *args, p=peca: ligadas.append((p, *args))
         )
-    ]
+    assert _rodar(ENTER, ENTER, SIM, sistema=Sistema.WINDOWS) == CodigoSaida.OK
+    argumentos = (
+        Sistema.WINDOWS,
+        Path.home(),
+        servico.executavel_servico(),
+        agendador.rodar_comando_do_sistema,
+    )
+    assert ligadas == [(peca, *argumentos) for peca in pecas]
+
+
+@pula_mac_no_windows
+@pytest.mark.parametrize(
+    ("tecla", "login_depois"), [(ENTER, True), (NAO, False)], ids=["padrao", "nao"]
+)
+def test_configurar_migra_o_login_legado_do_macos_antes_de_perguntar(
+    cen, tecla, login_depois
+):
+    legado = Path.home() / "Library" / "LaunchAgents" / f"{ROTULO_LEGADO}.plist"
+    legado.parent.mkdir(parents=True)
+    legado.touch()
+
+    assert _rodar(ENTER, ENTER, tecla, sistema=Sistema.MACOS) == CodigoSaida.OK
+
+    assert not legado.exists()
+    assert servico.login_ligado(Sistema.MACOS, Path.home(), cen.consultar) is (
+        login_depois
+    )
 
 
 class _SysWindows:
@@ -479,10 +534,10 @@ class _SysWindows:
 def test_windows_conta_como_ambiente_grafico(cen, monkeypatch):
     for var in assistente.VARS_DISPLAY:
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(servico, "serve_responde", lambda esperar: True)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: True)
     monkeypatch.setattr(assistente, "sys", _SysWindows())
     assert _rodar(ENTER, ENTER, ENTER, SIM) == CodigoSaida.OK
-    assert cen.abertos == [servico.ENDERECO_WEB]
+    assert cen.abertos == [ENDERECO_WEB]
 
 
 def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
@@ -501,16 +556,16 @@ def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
 @pytest.mark.parametrize(
     ("serve", "grafico", "teclas", "abertos", "no_stdout"),
     [
-        (True, True, (SIM,), [servico.ENDERECO_WEB], ""),
-        (True, False, (), [], servico.ENDERECO_WEB),
-        (False, True, (), [], f"{EXECUTAVEL} {COMANDO_SERVE}"),
+        (True, True, (SIM,), [ENDERECO_WEB], ""),
+        (True, False, (), [], ENDERECO_WEB),
+        (False, True, (), [], f"{EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"),
     ],
     ids=["abre", "sem-grafico", "sem-serve"],
 )
 def test_fechamento(
     cen, monkeypatch, capsys, serve, grafico, teclas, abertos, no_stdout
 ):
-    monkeypatch.setattr(servico, "serve_responde", lambda esperar: serve)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: serve)
     monkeypatch.setattr(assistente, "_ambiente_grafico", lambda: grafico)
     assert _rodar(ENTER, ENTER, ENTER, *teclas) == CodigoSaida.OK
     saida = capsys.readouterr().out
@@ -551,7 +606,9 @@ def _listados(dados: list[Path]) -> list[Path]:
     return [d for d in dados if not any(o != d and d.is_relative_to(o) for o in dados)]
 
 
-def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
+def test_desinstalar_remove_daemon_e_login_e_timer_antigo(
+    cen, tmp_path, monkeypatch, capsys
+):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
     cen.unit().parent.mkdir(parents=True)
     cen.unit().write_text("")
@@ -563,16 +620,15 @@ def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
     assert not cen.unit().exists()
     assert not any(a.exists() for a in agendador.caminhos(Sistema.LINUX, Path.home()))
     assert cen.comandos == [
-        *DESLIGAR,
+        *REMOVER,
         [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_TIMER],
         [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     ]
     assert all(d.exists() for d in dados)
+    assert MARCA_REMOVIDOS in capsys.readouterr().out
 
 
-def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
-    cen, tmp_path, monkeypatch
-):
+def test_desinstalar_windows_encerra_e_apaga_as_tarefas(cen, tmp_path, monkeypatch):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
     monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: TAREFA_EXISTE)
 
@@ -581,7 +637,12 @@ def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
         == CodigoSaida.OK
     )
 
-    tarefas = (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES)
+    tarefas = (
+        NOME_TAREFA_PROCESSO,
+        NOME_TAREFA_LOGIN,
+        NOME_TAREFA_SERVE,
+        NOME_TAREFA_INSCRICOES,
+    )
     ordem = [
         (acao, tarefa)
         for _, acao, _, tarefa, *_ in cen.comandos
@@ -604,7 +665,7 @@ def test_desinstalar_apaga_dados_so_com_sim(
     cen, tmp_path, monkeypatch, capsys, teclas, terminal, apagou
 ):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
-    monkeypatch.setattr(assistente, "_terminal", lambda: terminal)
+    monkeypatch.setattr(assistente, "terminal", lambda: terminal)
 
     assert _rodar(*teclas, comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
@@ -670,7 +731,9 @@ def test_desinstalar_sem_nada_diz_que_nao_ha_o_que_remover(cen, capsys):
 
     assert _rodar(comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
-    assert "Nenhum dado" in capsys.readouterr().out
+    saida = capsys.readouterr().out
+    assert "Nenhum dado" in saida
+    assert MARCA_REMOVIDOS not in saida
 
 
 def _trocar_por_link(caminho: Path, alvo: Path) -> None:

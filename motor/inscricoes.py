@@ -289,7 +289,7 @@ def disparar_subprocesso(i: Inscricao, env: Mapping[str, str]) -> int:
         sys.executable, "-P", "-m", "motor",
         "inscricao", "executar", i.versao, "--repo", i.repo,
     ]  # fmt: skip
-    # Grupo/sessão própria: o Ctrl+C no terminal do `serve` não chega ao filho. Ramo
+    # Grupo/sessão própria: o Ctrl+C no terminal do daemon não chega ao filho. Ramo
     # literal para o mypy não checar o do outro sistema (ver `trava.py`).
     if sys.platform == "win32":
         nova_sessao, flags = False, subprocess.CREATE_NEW_PROCESS_GROUP

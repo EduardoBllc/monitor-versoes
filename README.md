@@ -99,8 +99,8 @@ fixa cada origem git numa tag ou num commit: nada muda de versão sem pedido. Um
 ainda solta, de instalação antiga, é fixada na próxima reinstalação; "tudo em dia" não
 reinstala. Um commit à frente da última tag conta pela versão do pacote e não volta para a
 tag: atualizar nunca rebaixa. No fim, ele diz o que
-mudou; se o `monitor-versoes serve` estiver rodando, reinicie-o (com o início no login, que o
-`configurar` liga, o serviço reinicia sozinho). As mudanças de cada versão
+mudou e reinicia o daemon que roda em segundo plano; parado, ele continua parado, e um
+`daemon rodar` aberto no terminal se reinicia à mão. As mudanças de cada versão
 estão no [CHANGELOG.md](CHANGELOG.md).
 
 No máximo uma vez por dia, sem atrasar o comando, o motor confere se há versão nova do motor
@@ -129,13 +129,13 @@ manual" e "Nenhuma" removem a chave. Escolher um plugin que não está instalado
 Jira, na tag do motor), e "Outro plugin" aceita caminho ou URL. As demais chaves de cada
 plugin se editam na web ou no arquivo.
 
-Em Linux e macOS ele também pergunta se o `serve` deve subir no login (padrão Sim na primeira
-configuração e, depois, o estado atual). Ligado, vira um serviço de usuário (systemd) ou um
-LaunchAgent, sem root, que roda `serve --sem-navegador` pelo executável do `uv` e é
-reiniciado após `plugin instalar`, `plugin remover`, `plugin atualizar`, `atualizar-motor`
-e `configurar`. No Windows a pergunta também aparece, e o serviço é uma tarefa do Agendador de Tarefas (veja "Windows"). Subir sem login fica fora. O `diagnostico` mostra a peça "Daemon". Ao fechar,
-o assistente roda o `diagnostico` e só oferece abrir o navegador se o `serve` responde.
-O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md).
+Ele também pergunta se o daemon deve iniciar no login (padrão Sim na primeira configuração e,
+depois, o estado atual; Não quando "nunca iniciar no login" está salvo). Sim sobe o daemon,
+liga o início no login e apaga o "nunca"; Não só desliga o início no login, sem parar o daemon.
+As peças são do seu usuário, sem root, e rodam pelo executável do `uv`. O `diagnostico`
+mostra a peça "Daemon". Ao fechar, o assistente roda o `diagnostico` e só oferece abrir o
+navegador se o daemon responde. O porquê: [042](docs/decisoes/042-instalador-e-daemon-no-login.md)
+e [045](docs/decisoes/045-daemon-processo-e-login-separados.md).
 
 ### Desinstalar
 
@@ -149,7 +149,7 @@ No Windows, pelo PowerShell (veja "Windows"):
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/EduardoBllc/monitor-versoes/main/install.ps1))) -Desinstalar
 ```
 
-Ele remove o serviço do login, o timer antigo das inscrições (no Windows, a tarefa manual), a
+Ele remove o daemon e o início no login, o timer antigo das inscrições (no Windows, a tarefa manual), a
 ferramenta e os plugins. Config, estado, inscrições e cache ficam, e os caminhos são
 impressos; ele só os apaga se você responder sim (padrão não, e sem terminal ficam sempre).
 Sem o motor, ou com ele quebrado, o script ainda remove os serviços e mantém os dados. À
@@ -163,7 +163,7 @@ Quem quer contribuir com o código clona o repositório; veja o [CONTRIBUTING.md
 
 ### Windows
 
-O motor roda nativo no Windows: CLI, TUI, `serve` e inscrições. No Windows PowerShell 5.1 ou no
+O motor roda nativo no Windows: CLI, TUI, daemon e inscrições. No Windows PowerShell 5.1 ou no
 PowerShell 7, sem administrador (precisa do git; sem ele o script para e diz como instalar):
 
 ```powershell
@@ -194,20 +194,21 @@ Os caminhos mudam:
 `XDG_CONFIG_HOME`, se definida, vale também no Windows. No TOML, escreva caminhos do Windows
 entre aspas simples, `caminho = 'C:\repos\app'`: entre aspas duplas, `\` é escape.
 
-O serviço do login é a tarefa `monitor-versoes-serve` do Agendador de Tarefas, do seu usuário, que
-o `configurar` cria e remove. Ela sobe no logon e se repete a cada minuto (sem nova instância
-se já roda), então um `serve` que cai volta em até 1 minuto; não tem limite de tempo nem condição
-de bateria. Roda sem janela de console e grava o log em `serve.log`, na pasta de estado, truncado a
-cada subida. O `plugin instalar|remover|atualizar`, o `atualizar-motor` e o `configurar` (ao
-instalar um plugin) entregam a reinstalação a um ajudante fora do ambiente, que encerra o `serve`,
-roda o `uv`, sobe o `serve` de novo e mostra o resultado no console; o comando sai antes. Depois
-de instalar um plugin pelo `configurar`, rode-o de novo para gravar a fonte. O porquê:
-[042](docs/decisoes/042-instalador-e-daemon-no-login.md) e
-[043](docs/decisoes/043-reinstalacao-no-windows-por-ajudante.md).
+O daemon em segundo plano é a tarefa `monitor-versoes-daemon` do Agendador de Tarefas, do seu
+usuário, e o início no login é a tarefa `monitor-versoes-login`. Enquanto ativada, a do daemon se
+repete a cada minuto (sem nova instância se já roda), então um daemon que cai volta em até 1
+minuto; o `daemon parar` a desativa. Não tem limite de tempo nem condição de bateria. Roda sem
+janela de console e grava o log em `serve.log`, na pasta de estado, truncado a cada subida. O
+`plugin instalar|remover|atualizar`, o `atualizar-motor` e o `configurar` (ao instalar um plugin)
+entregam a reinstalação a um ajudante fora do ambiente, que encerra o daemon, roda o `uv`, sobe o
+daemon de novo se ele rodava e mostra o resultado no console; o comando sai antes. Depois de
+instalar um plugin pelo `configurar`, rode-o de novo para gravar a fonte. O porquê:
+[043](docs/decisoes/043-reinstalacao-no-windows-por-ajudante.md) e
+[045](docs/decisoes/045-daemon-processo-e-login-separados.md).
 
 Sem o daemon, o disparo automático das inscrições é uma tarefa agendada criada à mão. Ela
 chama o `monitor-versoes-inscricoes.exe`, que roda o mesmo que `monitor-versoes inscricao rodar`
-sem abrir janela de console. Com o `serve` não crie a tarefa: se ela existir, o `serve` a encerra
+sem abrir janela de console. Com o daemon não crie a tarefa: se ela existir, o daemon a encerra
 e apaga ao subir (e avisa), porque os dois disparariam em dobro. No Prompt de Comando (`cmd`),
 ache o executável e crie a tarefa com o caminho que o `where` mostrar:
 
@@ -402,7 +403,7 @@ monitor-versoes reconstruir-estado 13.35.0 --repo meu-repo    # regenera o estad
 monitor-versoes orfaos    13.35.0 --repo meu-repo             # commits sem referência de tarefa e o julgamento
 monitor-versoes julgar-orfao 13.35.0 <hash> --repo meu-repo --chamado 123 --motivo "..."  # ou --nenhum
 monitor-versoes tui                                           # interface interativa
-monitor-versoes serve                                         # interface web local (ver Interface web)
+monitor-versoes daemon iniciar                                # interface web local (ver Interface web)
 monitor-versoes inscricao adicionar 13.35.0 --repo meu-repo   # atualizar periodicamente (ver Inscrições)
 ```
 
@@ -412,9 +413,31 @@ o resto.
 
 ### Interface web
 
-`monitor-versoes serve` sobe um daemon local e abre o navegador na interface web. `--porta` muda a porta
-(padrão **8765**) e o `--env` global vale como nos outros comandos. Ouve só em `127.0.0.1`.
-`--sem-navegador` sobe sem abrir o navegador: é como o serviço de login o roda.
+A interface web é servida por um daemon local, que ouve só em `127.0.0.1` (porta padrão
+**8765**). O `--env` global vale como nos outros comandos.
+
+```bash
+monitor-versoes daemon iniciar     # sobe em segundo plano
+monitor-versoes daemon parar       # para o de segundo plano
+monitor-versoes daemon reiniciar   # para e sobe de novo
+monitor-versoes daemon estado      # se roda, se inicia no login e onde ver o log
+monitor-versoes daemon rodar       # em primeiro plano, no terminal, e abre o navegador
+```
+
+- `iniciar`, com o daemon parado e sem início no login, pergunta se ele também deve iniciar no
+  login; se não, oferece salvar a escolha e não perguntar mais. `--iniciar-login` liga sem
+  perguntar; `--nunca-iniciar-login` desliga e salva o "nunca" (`[daemon] nunca_iniciar_login`
+  no `config.toml` central), que só o `configurar` desfaz.
+- `parar` pergunta se também deve parar de iniciar no login (padrão não); `--parar-login` para
+  sem perguntar.
+- `--sem-perguntas`, em `iniciar` e `parar`, não pergunta nada e deixa o login como está; sem
+  terminal, é o que acontece.
+- `--porta`, em `iniciar` e `reiniciar`, muda a porta e a salva em `[daemon] porta`; em `rodar`,
+  vale só daquela vez. Sem ela, vale a salva.
+- `rodar --sem-navegador` sobe sem abrir o navegador. Com um daemon rodando no terminal,
+  `iniciar`, `parar` e `reiniciar` recusam: feche-o antes.
+
+O porquê das peças de cada sistema: [045](docs/decisoes/045-daemon-processo-e-login-separados.md).
 
 A interface tem uma página por nível: **Início** (versões em aberto, o que precisa de você,
 inscrições e a execução em curso), **repositório** (versões abertas e liberadas, inscrições e
@@ -579,12 +602,12 @@ monitor-versoes inscricao rodar                                             # di
 ```
 
 A identidade é o nome do repo mais a versão; reinscrever só troca o intervalo.
-Com o `monitor-versoes serve` de pé, as inscrições vencidas rodam sozinhas (o daemon confere a
+Com o daemon de pé, as inscrições vencidas rodam sozinhas (o daemon confere a
 cada minuto); o porquê: [041](docs/decisoes/041-disparo-das-inscricoes-pelo-daemon.md). Ao subir,
-o `serve` remove o timer do systemd ou o LaunchAgent que versões antigas instalaram. Dois `serve`
+o daemon remove o timer do systemd ou o LaunchAgent que versões antigas instalaram. Dois daemons
 disparam em dobro: mantenha um só.
 A execução não depende de diretório e não lê `.env`, nem quando o daemon a dispara: o filho usa
-o `[ambiente]` do config central ou o ambiente que o `serve` herdou.
+o `[ambiente]` do config central ou o ambiente que o daemon herdou.
 Também dá para gerenciar na TUI (tecla `i`) e na web (na página da versão se inscreve; a lista aparece no Início e na página do repositório).
 
 `rodar` executa as inscrições vencidas, uma por processo, e a falha de uma não impede as
@@ -601,9 +624,9 @@ outras. O desfecho da última execução aparece no `listar`:
 
 #### Sem o daemon
 
-Sem o `serve`, agende você mesmo o `inscricao rodar` a cada minuto, com o caminho absoluto
-do executável (`which monitor-versoes`). **Não use junto com o `serve`** (vale para cron,
-systemd e Windows): os dois disparariam em dobro (no Windows, o `serve` apaga a tarefa manual ao subir). Com cron:
+Sem o daemon, agende você mesmo o `inscricao rodar` a cada minuto, com o caminho absoluto
+do executável (`which monitor-versoes`). **Não use junto com o daemon** (vale para cron,
+systemd e Windows): os dois disparariam em dobro (no Windows, o daemon apaga a tarefa manual ao subir). Com cron:
 
 ```cron
 * * * * * /caminho/absoluto/monitor-versoes inscricao rodar
@@ -653,10 +676,10 @@ desfecho):
 | `ERROR: .../config.toml: repo 'meu-repo' sem seção [repos.meu-repo] (existentes: ...)` | `--repo` não é o nome de uma seção. Crie `[repos.meu-repo]` no `config.toml` central ou use um nome da lista (`(nenhuma)` se o arquivo não existe). |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho é obrigatório` | A seção não tem `caminho`. Aponte para o clone. |
 | `ERROR: .../config.toml: [repos.meu-repo] caminho '...' não é um diretório` | O `caminho` não existe. Confira o valor; `monitor-versoes diagnostico` checa todas as seções. |
-| `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, `monitor-versoes serve` ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
+| `ERROR: repo meu-repo ocupado por outra operação (pid N)` | Outro processo do motor (CLI, TUI, daemon ou inscrição) está criando, atualizando ou verificando nesse clone. Espere terminar; `consulta` e `verificar --auditar` rodam assim mesmo. O lock some com o processo, então não há arquivo para apagar. |
 | `error: argument --repo: use um nome simples, sem caminho` | `--repo` recebeu um path. Passe só o nome da seção. |
 | ``ERROR: o monitor-versoes não está instalado como `uv tool` ...`` | `plugin instalar`, `remover`, `atualizar` ou `atualizar-motor` rodado num checkout de desenvolvimento ou com `uv run`. Ali, plugins e atualização são pelo git e pelo `uv sync`; o `plugin listar` funciona. |
-| `A reinstalação falhou (o erro do uv está acima). Para tentar à mão: ...` | O `uv` não conseguiu reinstalar (rede, credencial, conflito de dependência), e a instalação anterior continua como estava. No Windows, o ajudante encerra sozinho o `serve` do serviço e mostra o resultado; um processo do motor vivo (a TUI ou um `serve` manual) trava a troca, então feche-os e rode a linha impressa no terminal. Com uma inscrição em andamento, a reinstalação recusa: tente quando ela terminar. |
+| `A reinstalação falhou (o erro do uv está acima). Para tentar à mão: ...` | O `uv` não conseguiu reinstalar (rede, credencial, conflito de dependência), e a instalação anterior continua como estava. No Windows, o ajudante encerra sozinho o daemon em segundo plano e mostra o resultado; um processo do motor vivo (a TUI ou um `daemon rodar`) trava a troca, então feche-os e rode a linha impressa no terminal. Com uma inscrição em andamento, a reinstalação recusa: tente quando ela terminar. |
 
 ## Próximos passos
 

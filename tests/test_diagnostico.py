@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from motor import novidades as modulo_novidades
 from motor.adapters.sugestao.anthropic import EXTRA
 from motor.adapters.sugestao.anthropic import Var as VarAnthropic
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.config import (
     SECAO_REPOS,
     VAR_XDG_CONFIG_HOME,
@@ -25,6 +26,10 @@ from motor.config import (
     repos_configurados,
 )
 from motor.diagnostico import (
+    DAEMON_NO_TERMINAL,
+    DAEMON_PARADO,
+    DAEMON_RODANDO,
+    DAEMON_SEM_SUPORTE,
     Estado,
     Peca,
     PecaTestavel,
@@ -38,7 +43,7 @@ from motor.errors import ErroDeEntrada
 from motor.instalacao import ARQUIVO_REGISTRO, ler_registro
 from motor.migracoes import head
 from motor.novidades import Cache, Novidade
-from motor.servico import COMANDO_CONFIGURAR, EXECUTAVEL, EstadoServico, Situacao
+from motor.servico import EXECUTAVEL, EstadoServico, Situacao
 from tests.config_repos import secao_repo
 from tests.fontes_falsas import HostFalso
 
@@ -789,26 +794,34 @@ def test_versao_com_registro_do_uv_ilegivel_fica_nao_verificada(monkeypatch, tmp
 
 
 VER_LOG = "dica de log opaca"
+INICIAR = f"{EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"
 
 
 @pytest.mark.parametrize(
     ("situacao", "estado", "correcao", "detalhe"),
     [
-        (Situacao(EstadoServico.ATIVO), Estado.OK, "", ""),
+        (Situacao(EstadoServico.ATIVO, login=True), Estado.OK, "", DAEMON_RODANDO),
+        (Situacao(EstadoServico.NO_TERMINAL), Estado.OK, "", DAEMON_NO_TERMINAL),
         (
-            Situacao(EstadoServico.DESLIGADO),
+            Situacao(EstadoServico.PARADO, ver_log=VER_LOG),
             Estado.NAO_CONFIGURADO,
-            f"{EXECUTAVEL} {COMANDO_CONFIGURAR}",
-            "",
+            INICIAR,
+            DAEMON_PARADO,
         ),
-        (Situacao(EstadoServico.PARADO, VER_LOG), Estado.FALHA, VER_LOG, ""),
+        (
+            Situacao(EstadoServico.PARADO, login=True, ver_log=VER_LOG),
+            Estado.NAO_CONFIGURADO,
+            f"{INICIAR}; {VER_LOG}",
+            DAEMON_PARADO,
+        ),
         (
             Situacao(EstadoServico.SEM_SUPORTE),
             Estado.NAO_CONFIGURADO,
             "",
-            "sem suporte neste sistema",
+            DAEMON_SEM_SUPORTE,
         ),
     ],
+    ids=["ativo", "no-terminal", "parado", "parado-com-login", "sem-suporte"],
 )
 def test_peca_daemon(situacao, estado, correcao, detalhe):
     r = peca_daemon(situacao)

@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from motor.daemon import PORTA_PADRAO
 from motor.domain.referencia import validar_padrao
 from motor.errors import ErroDeEntrada
 
@@ -60,6 +61,7 @@ class Tabela(StrEnum):
     PRS = "prs"
     SUGESTAO = "sugestao"
     ATUALIZACOES = "atualizacoes"
+    DAEMON = "daemon"
 
 
 class Chave(StrEnum):
@@ -73,6 +75,8 @@ class Chave(StrEnum):
     PISO = "piso"
     PROVEDOR = "provedor"
     CHECAR = "checar"
+    PORTA = "porta"
+    NUNCA_INICIAR_LOGIN = "nunca_iniciar_login"
 
 
 class VarAmbiente(StrEnum):
@@ -180,7 +184,12 @@ SECAO_REPOS = "repos"
 TABELA_AMBIENTE = "ambiente"
 CHAVE_CAMINHO = "caminho"
 #: Tabelas que valem só no topo do central: são da instalação, não do repo.
-_SO_NO_TOPO = (TABELA_AMBIENTE, Tabela.SUGESTAO, Tabela.ATUALIZACOES)
+_SO_NO_TOPO = (
+    TABELA_AMBIENTE,
+    Tabela.SUGESTAO,
+    Tabela.ATUALIZACOES,
+    Tabela.DAEMON,
+)
 
 
 @dataclass(frozen=True)
@@ -272,6 +281,49 @@ def checagem_ligada() -> bool:
         raise ErroDeEntrada(
             f"{arquivo}: [{Tabela.ATUALIZACOES}] {Chave.CHECAR} deve ser "
             f"true ou false, veio {bruto!r}"
+        )
+    return bruto
+
+
+PORTA_MINIMA = 1
+PORTA_MAXIMA = 65535
+
+
+def validar_porta(porta: object) -> int:
+    if (
+        isinstance(porta, bool)
+        or not isinstance(porta, int)
+        or not PORTA_MINIMA <= porta <= PORTA_MAXIMA
+    ):
+        raise ErroDeEntrada(
+            f"porta deve ser um inteiro de {PORTA_MINIMA} a {PORTA_MAXIMA}, "
+            f"veio {porta!r}"
+        )
+    return porta
+
+
+def porta_daemon() -> int:
+    """`[daemon] porta` do central; ausente vale `PORTA_PADRAO`."""
+    arquivo = caminho_config_global()
+    bruto = _tabela(_ler_toml(arquivo), Tabela.DAEMON, arquivo).get(Chave.PORTA)
+    if bruto is None:
+        return PORTA_PADRAO
+    try:
+        return validar_porta(bruto)
+    except ErroDeEntrada as e:
+        raise ErroDeEntrada(f"{arquivo}: [{Tabela.DAEMON}] {Chave.PORTA}: {e}") from e
+
+
+def nunca_iniciar_login() -> bool:
+    """`[daemon] nunca_iniciar_login` do central; ausente vale `False`."""
+    arquivo = caminho_config_global()
+    chave = Chave.NUNCA_INICIAR_LOGIN
+    bruto = _tabela(_ler_toml(arquivo), Tabela.DAEMON, arquivo).get(chave)
+    if bruto is None:
+        return False
+    if not isinstance(bruto, bool):
+        raise ErroDeEntrada(
+            f"{arquivo}: [{Tabela.DAEMON}] {chave} deve ser true ou false, veio {bruto!r}"
         )
     return bruto
 

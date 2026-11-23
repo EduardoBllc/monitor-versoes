@@ -44,9 +44,10 @@ from motor.instalacao import (
     Requisito,
     registro_de_json,
 )
-from motor.servico import NOME_TAREFA_SERVE
+from motor.servico import NOME_TAREFA_PROCESSO, NOME_TAREFA_SERVE
 from motor.trava import caminho_trava_inscricoes, travar_arquivo
 from tests.plataforma import PLATAFORMA_WINDOWS
+from tests.tarefas_falsas import EstadoTarefa, com_tarefas
 
 ANTES = Registro(Requisito(PACOTE_MOTOR), ())
 CMD = [UV, ArgUv.TOOL, ArgUv.INSTALL, ArgUv.REINSTALL, PACOTE_MOTOR]
@@ -75,6 +76,7 @@ ARG_PYTHON_CODIGO = "-c"
 # Frase do ajudante_windows.ps1, que não tem como importar.
 AVISO_UV_FALHOU = "A reinstalação falhou"
 PASTA_BIN_DO_UV = "bin-do-uv"
+PASTA_MODULOS = "modulos"
 
 
 class Disparo:
@@ -187,6 +189,8 @@ def _rodar(
     codigo_uv: int = 0,
     ambiente: Path | None = None,
     prazo_s: int = PRAZO_CURTO_S,
+    tarefa: EstadoTarefa | None = EstadoTarefa.ATIVADA,
+    legada: EstadoTarefa | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
     falsos = tmp_path / PASTA_FALSOS
     falsos.mkdir()
@@ -203,6 +207,15 @@ def _rodar(
         ambiente = tmp_path / PASTA_AMBIENTE
         ambiente.mkdir()
     script = Path(ajudante.__file__).with_name(ARQUIVO_SCRIPT)
+    env = {**os.environ, VAR_PATH: f"{falsos}{os.pathsep}{os.environ[VAR_PATH]}"}
+    tarefas = {
+        nome: estado
+        for nome, estado in (
+            (NOME_TAREFA_PROCESSO, tarefa),
+            (NOME_TAREFA_SERVE, legada),
+        )
+        if estado is not None
+    }
     saida = subprocess.run(
         [
             POWERSHELL,
@@ -226,7 +239,7 @@ def _rodar(
         ],
         capture_output=True,
         encoding=CODIFICACAO,
-        env={**os.environ, VAR_PATH: f"{falsos}{os.pathsep}{os.environ[VAR_PATH]}"},
+        env=com_tarefas(tmp_path / PASTA_MODULOS, env, tarefas),
         timeout=LIMITE_TESTE_S,
         check=False,
     )
@@ -234,8 +247,8 @@ def _rodar(
     return saida, [linha.strip() for linha in linhas], pasta
 
 
-def _schtasks(acao: AcaoSchtasks, *resto: str) -> str:
-    return " ".join([SCHTASKS, acao, FLAG_TAREFA, NOME_TAREFA_SERVE, *resto])
+def _schtasks(acao: AcaoSchtasks, *resto: str, nome: str = NOME_TAREFA_PROCESSO) -> str:
+    return " ".join([SCHTASKS, acao, FLAG_TAREFA, nome, *resto])
 
 
 DESATIVAR = _schtasks(AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS)
@@ -262,7 +275,6 @@ def test_ajudante_espera_os_pids_roda_o_uv_e_sobe_o_servico(tmp_path: Path) -> N
 
     assert linhas == [
         MARCA_PID,
-        _schtasks(AcaoSchtasks.QUERY),
         DESATIVAR,
         _schtasks(AcaoSchtasks.END),
         " ".join(CMD),
@@ -271,6 +283,36 @@ def test_ajudante_espera_os_pids_roda_o_uv_e_sobe_o_servico(tmp_path: Path) -> N
         _schtasks(AcaoSchtasks.RUN),
     ], saida
     assert (pasta / ARQUIVO_RESULTADO).read_text().strip() == RESULTADO_OK
+
+
+@so_windows
+@pytest.mark.parametrize("tarefa", [EstadoTarefa.DESATIVADA, None])
+def test_ajudante_nao_sobe_o_daemon_parado_ou_sem_tarefa(
+    tmp_path: Path, tarefa: EstadoTarefa | None
+) -> None:
+    saida, linhas, pasta = _rodar(tmp_path, pids=str(_pid_encerrado()), tarefa=tarefa)
+
+    assert linhas == [" ".join(CMD), f"{MOTOR_FALSO} {COMANDO_POS_REINSTALAR}"], saida
+    assert (pasta / ARQUIVO_RESULTADO).read_text().strip() == RESULTADO_OK
+
+
+@so_windows
+def test_ajudante_para_e_religa_a_tarefa_legada_ativada(tmp_path: Path) -> None:
+    saida, linhas, _ = _rodar(
+        tmp_path,
+        pids=str(_pid_encerrado()),
+        tarefa=None,
+        legada=EstadoTarefa.ATIVADA,
+    )
+
+    assert linhas == [
+        _schtasks(AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS, nome=NOME_TAREFA_SERVE),
+        _schtasks(AcaoSchtasks.END, nome=NOME_TAREFA_SERVE),
+        " ".join(CMD),
+        f"{MOTOR_FALSO} {COMANDO_POS_REINSTALAR}",
+        _schtasks(AcaoSchtasks.CHANGE, FLAG_ATIVAR_SCHTASKS, nome=NOME_TAREFA_SERVE),
+        _schtasks(AcaoSchtasks.RUN, nome=NOME_TAREFA_SERVE),
+    ], saida
 
 
 @so_windows

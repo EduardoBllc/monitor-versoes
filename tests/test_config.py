@@ -10,6 +10,8 @@ from motor import config
 from motor.config import (
     CHAVE_CAMINHO,
     DIRETORIO_APP,
+    PORTA_MAXIMA,
+    PORTA_MINIMA,
     SECAO_REPOS,
     SUBDIRETORIO_CACHE,
     TABELA_AMBIENTE,
@@ -25,8 +27,11 @@ from motor.config import (
     checar_backend,
     database_url,
     diretorio_cache,
+    nunca_iniciar_login,
+    porta_daemon,
     worktrees_mantidas,
 )
+from motor.daemon import PORTA_PADRAO
 from motor.errors import ErroDeEntrada
 from tests.config_repos import rotulo_secao, secao_repo
 
@@ -542,7 +547,7 @@ def test_ambiente_que_nao_e_tabela_e_erro(central):
 
 
 @pytest.mark.parametrize(
-    "tabela", [TABELA_AMBIENTE, Tabela.SUGESTAO, Tabela.ATUALIZACOES]
+    "tabela", [TABELA_AMBIENTE, Tabela.SUGESTAO, Tabela.ATUALIZACOES, Tabela.DAEMON]
 )
 @pytest.mark.parametrize(
     "ler", [config.ambiente_central, lambda: config.carregar_config_repo(NOME)]
@@ -617,3 +622,20 @@ def test_aplicar_ambiente_ignora_xdg():
     antes = os.environ.get(VAR_XDG_CONFIG_HOME)
     config.aplicar_ambiente_central({VAR_XDG_CONFIG_HOME: "/outro"})
     assert os.environ.get(VAR_XDG_CONFIG_HOME) == antes
+
+
+def test_porta_do_daemon_sem_config_vale_a_padrao(central):
+    assert porta_daemon() == PORTA_PADRAO
+
+
+@pytest.mark.parametrize("porta", [PORTA_MINIMA - 1, PORTA_MAXIMA + 1, '"abc"', "true"])
+def test_porta_do_daemon_invalida_recusa(central, porta):
+    central.write_text(f"[{Tabela.DAEMON}]\n{Chave.PORTA} = {porta}\n")
+    with pytest.raises(ErroDeEntrada, match=Chave.PORTA):
+        porta_daemon()
+
+
+def test_nunca_iniciar_login_nao_booleano_e_erro(central):
+    central.write_text(f'[{Tabela.DAEMON}]\n{Chave.NUNCA_INICIAR_LOGIN} = "sim"\n')
+    with pytest.raises(ErroDeEntrada, match=Chave.NUNCA_INICIAR_LOGIN):
+        nunca_iniciar_login()

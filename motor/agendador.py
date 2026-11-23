@@ -36,6 +36,8 @@ class Acao(StrEnum):
     LOAD = "load"
     KICKSTART = "kickstart"
     PRINT = "print"
+    STOP = "stop"
+    IS_ENABLED = "is-enabled"
 
 
 class AcaoSchtasks(StrEnum):
@@ -107,7 +109,7 @@ def remover_agendador_antigo(home: Path, rodar_comando: Comando) -> bool:
     else:
         desagendar(sistema, home, rodar_comando)
     print(
-        "timer antigo das inscrições removido: o `serve` passou a dispará-las",
+        "timer antigo das inscrições removido: o daemon passou a dispará-las",
         file=sys.stderr,
     )
     return True
