@@ -170,15 +170,19 @@ def _consultar_tarefa() -> str | None:
 def servico_ligado() -> Iterator[str]:
     serve = _serve_instalado()
     servico.subir(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
-    # Contra o schtasks de verdade: o XML do `/query` decodificado e o texto dos argumentos.
-    assert servico.rodando(Sistema.WINDOWS, Path.home(), consultar_do_sistema)
-    assert not servico.login_ligado(Sistema.WINDOWS, Path.home(), consultar_do_sistema)
-    servico.ligar_login(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
-    assert servico.login_ligado(Sistema.WINDOWS, Path.home(), consultar_do_sistema)
     yield serve
     # O `remover` tolera a tarefa já apagada; o serve que sobrar morre aqui.
     servico.remover(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
     _powershell(PS_MATAR_SERVE)
+
+
+def test_consultas_leem_o_schtasks_de_verdade(servico_ligado):
+    # O XML do `/query` decodificado e o texto dos argumentos, sem fakes.
+    home = Path.home()
+    assert servico.rodando(Sistema.WINDOWS, home, consultar_do_sistema)
+    assert not servico.login_ligado(Sistema.WINDOWS, home, consultar_do_sistema)
+    servico.ligar_login(Sistema.WINDOWS, home, servico_ligado, rodar_comando_do_sistema)
+    assert servico.login_ligado(Sistema.WINDOWS, home, consultar_do_sistema)
 
 
 def test_ligar_sobe_o_serve(servico_ligado):
