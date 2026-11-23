@@ -134,24 +134,30 @@ def diagnosticar(  # noqa: PLR0913
     return resultados
 
 
+DAEMON_RODANDO = "daemon rodando"
+DAEMON_NO_TERMINAL = "daemon rodando no terminal"
+DAEMON_PARADO = "daemon parado"
+DAEMON_SEM_SUPORTE = "sem suporte neste sistema"
+
+
 def peca_daemon(situacao: Situacao) -> Resultado:
     match situacao.estado:
         case EstadoServico.ATIVO:
-            return Resultado(Peca.DAEMON, Estado.OK, "daemon rodando")
+            return Resultado(Peca.DAEMON, Estado.OK, DAEMON_RODANDO)
         case EstadoServico.NO_TERMINAL:
-            return Resultado(Peca.DAEMON, Estado.OK, "daemon rodando no terminal")
+            return Resultado(Peca.DAEMON, Estado.OK, DAEMON_NO_TERMINAL)
         case EstadoServico.PARADO:
             iniciar = f"{EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"
             # Parado com o login ligado sugere queda: o log diz por quê.
             correcao = f"{iniciar}; {situacao.ver_log}" if situacao.login else iniciar
             return Resultado(
-                Peca.DAEMON, Estado.NAO_CONFIGURADO, "daemon parado", correcao
+                Peca.DAEMON, Estado.NAO_CONFIGURADO, DAEMON_PARADO, correcao
             )
         case EstadoServico.SEM_SUPORTE:
             return Resultado(
                 Peca.DAEMON,
                 Estado.NAO_CONFIGURADO,
-                "sem suporte neste sistema",
+                DAEMON_SEM_SUPORTE,
             )
 
 

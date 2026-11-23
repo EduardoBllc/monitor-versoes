@@ -782,6 +782,65 @@ def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert caiu.login
 
 
+def test_situacao_windows_com_a_tarefa_legada_nao_e_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _como(Sistema.WINDOWS, monkeypatch)
+    agendador = _Agendador()
+    agendador.ativadas[NOME_TAREFA_SERVE] = True
+    assert situacao(tmp_path, agendador.consultar, lambda: True) == Situacao(
+        EstadoServico.ATIVO
+    )
+
+
+@pula_mac_no_windows
+def test_situacao_macos_com_o_job_legado_nao_e_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _como(Sistema.MACOS, monkeypatch)
+    respostas: dict[tuple[str, ...], str] = {
+        (LAUNCHCTL, Acao.PRINT, _alvo_mac(ROTULO_LEGADO)): ATIVO_MACOS
+    }
+    assert situacao(tmp_path, _respondendo(respostas), lambda: True) == Situacao(
+        EstadoServico.ATIVO
+    )
+
+
+def test_parar_desativa_a_tarefa_armada_com_a_porta_muda(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O `parar` da tarefa de logon roda antes de o daemon responder."""
+    from motor import agendador as modulo_agendador
+
+    agendador = _Agendador()
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
+    for modulo in (modulo_agendador, servico):
+        monkeypatch.setattr(modulo, "sistema_atual", lambda: Sistema.WINDOWS)
+    monkeypatch.setattr(modulo_agendador, "rodar_comando_do_sistema", agendador)
+    monkeypatch.setattr(servico, "consultar_do_sistema", agendador.consultar)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: False)
+
+    main(list(servico.ARGUMENTOS_SEM_LOGIN))
+
+    assert agendador.ativadas[NOME_TAREFA_PROCESSO] is False
+
+
+def test_parar_sem_nada_instalado_nao_falha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from motor import agendador as modulo_agendador
+
+    _como(Sistema.LINUX, monkeypatch)
+    monkeypatch.setattr(modulo_agendador, "sistema_atual", lambda: Sistema.LINUX)
+    monkeypatch.setattr(
+        modulo_agendador, "rodar_comando_do_sistema", Registro(falhar_em=Acao.STOP)
+    )
+    monkeypatch.setattr(servico, "consultar_do_sistema", _respondendo({}))
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: False)
+
+    main([COMANDO_DAEMON, AcaoDaemon.PARAR])
+
+
 def test_executavel_servico_windows_tem_exe(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", PLATAFORMA_WINDOWS)
     monkeypatch.setattr(

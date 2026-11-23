@@ -323,9 +323,20 @@ def _login_ligado(home: Path) -> bool:
 
 def _quer_login(home: Path) -> bool | None:
     try:
-        agendador.sistema_atual()
+        sistema = agendador.sistema_atual()
     except ErroDeEntrada:
         return None
+    # Quem atualizou pode ter sido o motor antigo, que não migra: o padrão e o Sim/Não valem para a peça nova.
+    try:
+        servico.migrar_legado(
+            sistema,
+            home,
+            servico.executavel_servico(),
+            agendador.rodar_comando_do_sistema,
+            servico.consultar_do_sistema,
+        )
+    except MotorError as e:
+        marcar(Marca.FALHA, f"não deu para trocar o serviço antigo pelo daemon: {e}")
     padrao = _login_ligado(home) or not Path(caminho_config_global()).exists()
     return confirmar("Iniciar o daemon no login?", padrao and not nunca_iniciar_login())
 

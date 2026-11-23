@@ -857,7 +857,7 @@ def _ponte_do_serve() -> list[str]:
     # No macOS e no Windows a migração derrubaria o próprio serviço que nos chamou;
     # no Linux ela só regrava a unit. Falhar nela não pode impedir o daemon de subir.
     if sys.platform == agendador.Sistema.LINUX:
-        with contextlib.suppress(MotorError, OSError):
+        try:
             servico.migrar_legado(
                 agendador.Sistema.LINUX,
                 Path.home(),
@@ -865,6 +865,9 @@ def _ponte_do_serve() -> list[str]:
                 agendador.rodar_comando_do_sistema,
                 servico.consultar_do_sistema,
             )
+        except (MotorError, OSError) as e:
+            # O logger do módulo, não `logging.warning`: este configuraria o root antes do `--debug`.
+            logging.getLogger(__name__).warning("migração do serviço antigo: %s", e)
     return list(servico.ARGUMENTOS_SERVE)
 
 

@@ -188,11 +188,15 @@ def _login_ao_iniciar(
 
 def _parar(args: argparse.Namespace, alvo: _Alvo) -> None:
     situacao = _sem_daemon_no_terminal(alvo, porta_daemon())
-    if situacao.estado is EstadoServico.ATIVO:
+    ativo = situacao.estado is EstadoServico.ATIVO
+    # Porta muda não quer dizer serviço desarmado: pode estar subindo ou em queda e volta.
+    try:
         servico.parar(alvo.sistema, alvo.home, agendador.rodar_comando_do_sistema)
-        print("daemon parado")
-    else:
-        print("o daemon já está parado")
+    except BackendIndisponivel:
+        # Sem nada armado, o launchd e o schtasks falham ao parar.
+        if ativo:
+            raise
+    print("daemon parado" if ativo else "o daemon já está parado")
     if not situacao.login:
         return
     if args.parar_login or (

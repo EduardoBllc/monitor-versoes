@@ -135,8 +135,8 @@ def _log_launchd(home: Path) -> Path:
     return home / "Library" / "Logs" / ARQUIVO_LOG_LAUNCHD
 
 
-def _alvo_launchd() -> str:
-    return f"gui/{os.getuid()}/{ROTULO_PROCESSO}"
+def _alvo_launchd(rotulo: str = ROTULO_PROCESSO) -> str:
+    return f"gui/{os.getuid()}/{rotulo}"
 
 
 def _exec_start(executavel: str) -> str:
@@ -477,6 +477,15 @@ def _tarefa_existe(nome: str, consultar: Consultar) -> bool:
     return consultar(_tarefa(nome, AcaoSchtasks.QUERY)) is not None
 
 
+def _legado_rodando(sistema: Sistema, consultar: Consultar) -> bool:
+    if sistema is Sistema.WINDOWS:
+        return _tarefa_existe(NOME_TAREFA_SERVE, consultar)
+    if sistema is Sistema.MACOS:
+        saida = consultar([LAUNCHCTL, Acao.PRINT, _alvo_launchd(ROTULO_LEGADO)])
+        return saida is not None and ESTADO_LAUNCHD_ATIVO in saida
+    return False
+
+
 def apos_reinstalar(home: Path, rodar_comando: Comando, consultar: Consultar) -> bool:
     sistema = _sistema_ou_none()
     # No Windows quem reinicia é o ajudante da reinstalação, não este caminho.
@@ -502,7 +511,9 @@ def situacao(
     if sistema is Sistema.WINDOWS:
         # Tarefa ativada não diz se o processo está de pé: só a porta diz.
         if responde():
-            gerido = rodando(sistema, home, consultar)
+            gerido = rodando(sistema, home, consultar) or _legado_rodando(
+                sistema, consultar
+            )
             estado = EstadoServico.ATIVO if gerido else EstadoServico.NO_TERMINAL
             return Situacao(estado, login)
         log = Path(diretorio_dados()) / ARQUIVO_LOG_SERVE
@@ -510,7 +521,10 @@ def situacao(
     if rodando(sistema, home, consultar):
         return Situacao(EstadoServico.ATIVO, login)
     if responde():
-        return Situacao(EstadoServico.NO_TERMINAL, login)
+        # Antes da migração, quem responde pode ser a peça legada, não um terminal.
+        legado = _legado_rodando(sistema, consultar)
+        estado = EstadoServico.ATIVO if legado else EstadoServico.NO_TERMINAL
+        return Situacao(estado, login)
     if sistema is Sistema.MACOS:
         ver_log = f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}"
     else:

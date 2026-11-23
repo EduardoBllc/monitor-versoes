@@ -26,6 +26,10 @@ from motor.config import (
     repos_configurados,
 )
 from motor.diagnostico import (
+    DAEMON_NO_TERMINAL,
+    DAEMON_PARADO,
+    DAEMON_RODANDO,
+    DAEMON_SEM_SUPORTE,
     Estado,
     Peca,
     PecaTestavel,
@@ -796,25 +800,25 @@ INICIAR = f"{EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"
 @pytest.mark.parametrize(
     ("situacao", "estado", "correcao", "detalhe"),
     [
-        (Situacao(EstadoServico.ATIVO, login=True), Estado.OK, "", "daemon rodando"),
-        (Situacao(EstadoServico.NO_TERMINAL), Estado.OK, "", "no terminal"),
+        (Situacao(EstadoServico.ATIVO, login=True), Estado.OK, "", DAEMON_RODANDO),
+        (Situacao(EstadoServico.NO_TERMINAL), Estado.OK, "", DAEMON_NO_TERMINAL),
         (
             Situacao(EstadoServico.PARADO, ver_log=VER_LOG),
             Estado.NAO_CONFIGURADO,
             INICIAR,
-            "daemon parado",
+            DAEMON_PARADO,
         ),
         (
             Situacao(EstadoServico.PARADO, login=True, ver_log=VER_LOG),
             Estado.NAO_CONFIGURADO,
             f"{INICIAR}; {VER_LOG}",
-            "daemon parado",
+            DAEMON_PARADO,
         ),
         (
             Situacao(EstadoServico.SEM_SUPORTE),
             Estado.NAO_CONFIGURADO,
             "",
-            "sem suporte neste sistema",
+            DAEMON_SEM_SUPORTE,
         ),
     ],
     ids=["ativo", "no-terminal", "parado", "parado-com-login", "sem-suporte"],

@@ -36,7 +36,6 @@ class Acao(StrEnum):
     LOAD = "load"
     KICKSTART = "kickstart"
     PRINT = "print"
-    START = "start"
     STOP = "stop"
     IS_ENABLED = "is-enabled"
 

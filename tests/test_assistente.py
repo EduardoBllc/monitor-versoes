@@ -63,6 +63,7 @@ from motor.servico import (
     NOME_TAREFA_LOGIN,
     NOME_TAREFA_PROCESSO,
     NOME_TAREFA_SERVE,
+    ROTULO_LEGADO,
 )
 
 BAIXO = "\x1b[B"
@@ -488,6 +489,24 @@ def test_windows_pergunta_o_login_e_liga_pelo_agendador(cen, monkeypatch):
         agendador.rodar_comando_do_sistema,
     )
     assert ligadas == [(peca, *argumentos) for peca in pecas]
+
+
+@pytest.mark.parametrize(
+    ("tecla", "login_depois"), [(ENTER, True), (NAO, False)], ids=["padrao", "nao"]
+)
+def test_configurar_migra_o_login_legado_do_macos_antes_de_perguntar(
+    cen, tecla, login_depois
+):
+    legado = Path.home() / "Library" / "LaunchAgents" / f"{ROTULO_LEGADO}.plist"
+    legado.parent.mkdir(parents=True)
+    legado.touch()
+
+    assert _rodar(ENTER, ENTER, tecla, sistema=Sistema.MACOS) == CodigoSaida.OK
+
+    assert not legado.exists()
+    assert servico.login_ligado(Sistema.MACOS, Path.home(), cen.consultar) is (
+        login_depois
+    )
 
 
 class _SysWindows:

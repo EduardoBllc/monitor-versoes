@@ -32,7 +32,9 @@ religaria no logon seguinte um daemon iniciado sem login, porque a tarefa contin
 alternativa era gravar o horário do boot ao iniciar e ignorar a tarefa num boot novo, mas a
 Inicialização Rápida do Windows hiberna o kernel no desligamento: o uptime não zera e o "boot
 novo" não aparece. Uma tarefa de logon que sempre existe e cuja ação é `iniciar` ou `parar`
-resolve no próprio logon, sem depender do relógio.
+resolve no próprio logon, sem depender do relógio. Por isso o `daemon parar` desativa o serviço
+mesmo quando a porta não responde: o `parar` do logon roda antes de o daemon subir, e um daemon
+em queda e volta também fica mudo.
 
 **A reinstalação respeita o estado do processo.** No Linux e no macOS, o motor reinicia só o
 daemon que está rodando e, parado, apenas regrava a peça com o executável novo. No Windows, o
@@ -40,11 +42,14 @@ ajudante da [043](043-reinstalacao-no-windows-por-ajudante.md) e o `install.ps1`
 tarefa do processo estava ativada e só a religam nesse caso. O `install.sh` usa `try-restart` no
 systemd e, no macOS, só reinicia o rótulo que o launchd tem carregado.
 
-**As peças antigas migram sozinhas.** Todo `daemon` (menos o `rodar`), a reinstalação e o
-`pos-reinstalar` do Windows trocam o plist `monitor-versoes.serve` e a tarefa
+**As peças antigas migram sozinhas.** Todo `daemon` (menos o `rodar`), o `configurar`, a
+reinstalação e o `pos-reinstalar` do Windows trocam o plist `monitor-versoes.serve` e a tarefa
 `monitor-versoes-serve` pelas peças novas, com o login ligado, porque era o que a peça antiga
 fazia. No Windows quem migra é o `pos-reinstalar`: na primeira atualização ainda roda o ajudante
-antigo, que só conhece a tarefa antiga.
+antigo, que só conhece a tarefa antiga. O `configurar` migra antes de perguntar pelo login,
+porque o `install.sh` e o `install.ps1` o abrem logo depois de uma atualização feita pelo motor
+antigo; sem isso, o padrão ignoraria o login da peça antiga e um Sim subiria um segundo daemon.
+Até migrar, o diagnóstico conta a peça antiga como o serviço, não como um daemon no terminal.
 
 **O `serve --sem-navegador` vira uma ponte.** O comando `serve` sai, mas essa linha exata é o que
 as peças instaladas por versões antigas chamam. Ela continua subindo o daemon até a migração
