@@ -18,6 +18,8 @@ from motor.config import (
     Tabela,
     VarAmbiente,
     caminho_config_global,
+    nunca_iniciar_login,
+    porta_daemon,
     repos_configurados,
 )
 from motor.config_edicao import (
@@ -31,6 +33,8 @@ from motor.config_edicao import (
     TipoCampo,
     catalogo_campos,
     gravar,
+    gravar_nunca_iniciar_login,
+    gravar_porta_daemon,
     ler_para_edicao,
     rascunho,
 )
@@ -520,3 +524,20 @@ def test_rascunho_invalido_e_versao_velha(tmp_path):
     _escrever('[tarefas]\na = "2"\n')
     with pytest.raises(RecusaDeInvariante, match="recarregue"):
         rascunho([_definir("3", "a", Tabela.TAREFAS)], versao)
+
+
+PORTA_GRAVADA = 9000
+
+
+def test_porta_do_daemon_gravada_e_lida():
+    gravar_porta_daemon(PORTA_GRAVADA)
+    assert porta_daemon() == PORTA_GRAVADA
+
+
+def test_nunca_iniciar_login_grava_e_apaga():
+    assert nunca_iniciar_login() is False
+    gravar_nunca_iniciar_login(True)
+    assert nunca_iniciar_login() is True
+    gravar_nunca_iniciar_login(False)
+    assert nunca_iniciar_login() is False
+    assert Tabela.DAEMON not in _bytes().decode()

@@ -34,6 +34,7 @@ from motor.config import (
     config_repo_do_documento,
     diretorio_dados,
     validar_nome_repo,
+    validar_porta,
 )
 from motor.errors import ErroDeEntrada, RecusaDeInvariante
 from motor.montagem import (
@@ -583,3 +584,19 @@ def gravar(alteracoes: list[Alteracao], versao: str) -> ConfigEditavel:
     _gravar_atomico(caminho_config_global(), texto.encode())
     aplicar_ambiente_central(ambiente_central())
     return ler_para_edicao()
+
+
+def gravar_porta_daemon(porta: int) -> None:
+    validar_porta(porta)
+    gravar(
+        [Alteracao(AcaoAlteracao.DEFINIR, None, Tabela.DAEMON, Chave.PORTA, porta)],
+        ler_para_edicao().versao,
+    )
+
+
+def gravar_nunca_iniciar_login(nunca: bool) -> None:
+    acao = AcaoAlteracao.DEFINIR if nunca else AcaoAlteracao.REMOVER
+    gravar(
+        [Alteracao(acao, None, Tabela.DAEMON, Chave.NUNCA_INICIAR_LOGIN, nunca)],
+        ler_para_edicao().versao,
+    )
