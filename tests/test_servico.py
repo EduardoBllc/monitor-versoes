@@ -8,7 +8,6 @@ import sys
 import sysconfig
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from enum import Enum, auto
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,7 +35,6 @@ from motor.servico import (
     ARGUMENTOS_SERVE,
     ARQUIVO_LOG_LAUNCHD,
     ARQUIVO_LOG_SERVE,
-    ARQUIVO_MARCA_BOOT,
     ARQUIVO_SERVICE,
     EXECUTAVEL_SERVE,
     FLAG_PERSISTIR,
@@ -46,13 +44,11 @@ from motor.servico import (
     ROTULO_LEGADO,
     ROTULO_LOGIN,
     ROTULO_PROCESSO,
-    TOLERANCIA_BOOT_S,
     EstadoServico,
     Situacao,
     apos_reinstalar,
     caminho,
     desligar_login,
-    deve_encerrar_no_windows,
     executavel_motor,
     executavel_servico,
     ligar_login,
@@ -66,10 +62,11 @@ from motor.servico import (
     subir,
 )
 from tests.plataforma import PLATAFORMA_WINDOWS
-from tests.test_agendador import Registro
+from tests.test_agendador import MOTIVO_FALHA, Registro
 
 EXE = "/opt/venv/bin/monitor-versoes"
 ARGUMENTOS_INICIAR_LOGIN = ["daemon", "iniciar", "--sem-perguntas"]
+ARGUMENTOS_PARAR_LOGIN = ["daemon", "parar", "--sem-perguntas"]
 ATIVO_LINUX = "active\n"
 INATIVO_LINUX = "inactive\n"
 HABILITADO_LINUX = "enabled\n"
@@ -502,14 +499,10 @@ XML_CONSULTA = (
     "<Enabled>true</Enabled></TimeTrigger></Triggers>\n"
     "  <Settings>\n    {}\n  </Settings>\n</Task>\n"
 )
+SETTINGS = "<Settings>"
+ENABLED_FALSO = "<Enabled>false</Enabled>"
 XML_ATIVADA = XML_CONSULTA.format("<Enabled>true</Enabled>")
-XML_DESATIVADA = XML_CONSULTA.format("<Enabled>false</Enabled>")
-
-
-class Marca(Enum):
-    DESTE_BOOT = auto()
-    OUTRO_BOOT = auto()
-    AUSENTE = auto()
+XML_DESATIVADA = XML_CONSULTA.format(ENABLED_FALSO)
 
 
 def _schtasks(tarefa: str, acao: AcaoSchtasks, *resto: str) -> list[str]:
@@ -517,7 +510,7 @@ def _schtasks(tarefa: str, acao: AcaoSchtasks, *resto: str) -> list[str]:
 
 
 class _Agendador(Registro):
-    """Lembra as tarefas criadas, ativadas e apagadas, e guarda o XML de cada `/create`."""
+    """Lembra as tarefas criadas, ativadas e apagadas, com o XML de cada `/create`."""
 
     def __init__(self, falhar_em: str | None = None) -> None:
         super().__init__(falhar_em)
@@ -525,10 +518,12 @@ class _Agendador(Registro):
         self.xmls: dict[str, str] = {}
 
     def __call__(self, cmd: list[str]) -> None:
-        if AcaoSchtasks.CREATE in cmd:
-            self.xmls[cmd[3]] = Path(cmd[cmd.index(FLAG_XML) + 1]).read_text("utf-16")
-        super().__call__(cmd)
         tarefa, acao = cmd[3], cmd[1]
+        if acao == AcaoSchtasks.CREATE:
+            self.xmls[tarefa] = Path(cmd[cmd.index(FLAG_XML) + 1]).read_text("utf-16")
+        super().__call__(cmd)
+        if acao == AcaoSchtasks.QUERY and tarefa not in self.ativadas:
+            raise BackendIndisponivel(MOTIVO_FALHA)
         if acao == AcaoSchtasks.CREATE:
             self.ativadas[tarefa] = True
         elif acao == AcaoSchtasks.CHANGE:
@@ -542,18 +537,24 @@ class _Agendador(Registro):
             return None
         if FLAG_XML not in cmd:
             return ""
-        return XML_ATIVADA if self.ativadas[tarefa] else XML_DESATIVADA
+        xml = self.xmls.get(tarefa, "")
+        if self.ativadas[tarefa]:
+            return xml
+        return xml.replace(SETTINGS, f"{SETTINGS}{ENABLED_FALSO}")
 
     def raiz(self, tarefa: str) -> ET.Element:
         return ET.fromstring(self.xmls[tarefa].split("?>", 1)[1])
+
+    def da(self, tarefa: str) -> list[list[str]]:
+        return [cmd for cmd in self.comandos if cmd[3] == tarefa]
 
 
 def _texto(raiz: ET.Element, caminho: str) -> str | None:
     return raiz.findtext("/".join(NS + p for p in caminho.split("/")))
 
 
-def _marca() -> Path:
-    return Path(diretorio_dados()) / ARQUIVO_MARCA_BOOT
+def _argumentos_do_login(agendador: _Agendador) -> list[str]:
+    return (_texto(agendador.raiz(NOME_TAREFA_LOGIN), XPATH_ARGUMENTOS) or "").split()
 
 
 def test_subir_windows_cria_a_tarefa_sem_logon_e_roda(tmp_path: Path) -> None:
@@ -561,9 +562,10 @@ def test_subir_windows_cria_a_tarefa_sem_logon_e_roda(tmp_path: Path) -> None:
 
     subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
 
-    cmd_criar = agendador.comandos[0]
+    cmd_criar = agendador.da(NOME_TAREFA_PROCESSO)[1]
     arquivo = cmd_criar[cmd_criar.index(FLAG_XML) + 1]
-    assert agendador.comandos == [
+    assert agendador.da(NOME_TAREFA_PROCESSO) == [
+        _schtasks(NOME_TAREFA_PROCESSO, AcaoSchtasks.END),
         _schtasks(
             NOME_TAREFA_PROCESSO,
             AcaoSchtasks.CREATE,
@@ -583,7 +585,34 @@ def test_subir_windows_cria_a_tarefa_sem_logon_e_roda(tmp_path: Path) -> None:
     for xpath, esperado in XML_ESPERADO.items():
         assert _texto(raiz, xpath) == esperado, xpath
     assert not Path(arquivo).exists()
-    assert _marca().exists()
+
+
+def test_subir_windows_sem_login_cria_o_logon_que_para(tmp_path: Path) -> None:
+    agendador = _Agendador()
+
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
+
+    assert _argumentos_do_login(agendador) == ARGUMENTOS_PARAR_LOGIN
+    assert not login_ligado(Sistema.WINDOWS, tmp_path, agendador.consultar)
+
+
+def test_subir_windows_mantem_o_login_ligado(tmp_path: Path) -> None:
+    agendador = _Agendador()
+    ligar_login(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
+
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
+
+    assert [cmd[1] for cmd in agendador.da(NOME_TAREFA_LOGIN)] == [
+        AcaoSchtasks.CREATE,
+        AcaoSchtasks.QUERY,
+    ]
+    assert login_ligado(Sistema.WINDOWS, tmp_path, agendador.consultar)
+
+
+def test_subir_windows_com_o_daemon_parado_cria_e_roda(tmp_path: Path) -> None:
+    registro = Registro(falhar_em=AcaoSchtasks.END)
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
+    assert registro.comandos[-1] == _schtasks(NOME_TAREFA_PROCESSO, AcaoSchtasks.RUN)
 
 
 def test_subir_windows_que_falha_apaga_a_tarefa(tmp_path: Path) -> None:
@@ -595,10 +624,12 @@ def test_subir_windows_que_falha_apaga_a_tarefa(tmp_path: Path) -> None:
     )
 
 
-def test_parar_windows_desativa_e_encerra(tmp_path: Path) -> None:
-    agendador = _Agendador()
-    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
-    agendador.comandos.clear()
+@pytest.mark.parametrize("falhar_em", [None, AcaoSchtasks.END])
+def test_parar_windows_desativa_e_encerra(
+    tmp_path: Path, falhar_em: AcaoSchtasks | None
+) -> None:
+    agendador = _Agendador(falhar_em)
+    agendador.ativadas[NOME_TAREFA_PROCESSO] = True
 
     parar(Sistema.WINDOWS, tmp_path, agendador)
 
@@ -606,7 +637,7 @@ def test_parar_windows_desativa_e_encerra(tmp_path: Path) -> None:
         _schtasks(NOME_TAREFA_PROCESSO, AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS),
         _schtasks(NOME_TAREFA_PROCESSO, AcaoSchtasks.END),
     ]
-    assert not rodando(Sistema.WINDOWS, tmp_path, agendador.consultar)
+    assert not agendador.ativadas[NOME_TAREFA_PROCESSO]
 
 
 @pytest.mark.parametrize(
@@ -631,21 +662,22 @@ def test_login_windows_cria_tarefa_de_logon_com_argumentos(
     ligar_login(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
 
     assert login_ligado(Sistema.WINDOWS, tmp_path, agendador.consultar)
-    assert [cmd[1:4:2] for cmd in agendador.comandos] == [
-        [AcaoSchtasks.CREATE, NOME_TAREFA_LOGIN]
-    ]
     raiz = agendador.raiz(NOME_TAREFA_LOGIN)
     assert _texto(raiz, XPATH_USUARIO) == "\\".join(USUARIO)
     assert raiz.find(f"{NS}Triggers/{NS}TimeTrigger") is None
-    assert _texto(raiz, XPATH_ARGUMENTOS) == " ".join(ARGUMENTOS_INICIAR_LOGIN)
+    assert _argumentos_do_login(agendador) == ARGUMENTOS_INICIAR_LOGIN
     for xpath, esperado in XML_ESPERADO.items():
         assert _texto(raiz, xpath) == esperado, xpath
 
-    agendador.comandos.clear()
+
+def test_desligar_login_windows_troca_a_acao_para_parar(tmp_path: Path) -> None:
+    agendador = _Agendador()
+    ligar_login(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
+
     desligar_login(Sistema.WINDOWS, tmp_path, agendador)
-    assert agendador.comandos == [
-        _schtasks(NOME_TAREFA_LOGIN, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
-    ]
+
+    assert NOME_TAREFA_LOGIN in agendador.ativadas
+    assert _argumentos_do_login(agendador) == ARGUMENTOS_PARAR_LOGIN
     assert not login_ligado(Sistema.WINDOWS, tmp_path, agendador.consultar)
 
 
@@ -656,11 +688,12 @@ def test_migrar_legado_windows_troca_a_tarefa_antiga(tmp_path: Path) -> None:
     assert migrar_legado(
         Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador, agendador.consultar
     )
-    assert agendador.comandos[:2] == [
+    assert agendador.da(NOME_TAREFA_SERVE) == [
         _schtasks(NOME_TAREFA_SERVE, AcaoSchtasks.END),
         _schtasks(NOME_TAREFA_SERVE, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
     ]
     assert agendador.ativadas == {NOME_TAREFA_LOGIN: True, NOME_TAREFA_PROCESSO: True}
+    assert login_ligado(Sistema.WINDOWS, tmp_path, agendador.consultar)
     assert agendador.comandos[-1] == _schtasks(NOME_TAREFA_PROCESSO, AcaoSchtasks.RUN)
 
     agendador.comandos.clear()
@@ -685,29 +718,6 @@ def test_remover_windows_apaga_as_tres_tarefas_mesmo_se_o_sistema_falha(
     ]
 
 
-@pytest.mark.parametrize(
-    ("login", "marca", "esperado"),
-    [
-        (True, Marca.AUSENTE, False),
-        (False, Marca.DESTE_BOOT, False),
-        (False, Marca.OUTRO_BOOT, True),
-        (False, Marca.AUSENTE, True),
-    ],
-)
-def test_deve_encerrar_no_windows(
-    tmp_path: Path, login: bool, marca: Marca, esperado: bool
-) -> None:
-    agendador = _Agendador()
-    if login:
-        ligar_login(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
-    if marca is not Marca.AUSENTE:
-        subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
-    if marca is Marca.OUTRO_BOOT:
-        _marca().write_text(str(int(_marca().read_text()) - 2 * TOLERANCIA_BOOT_S))
-
-    assert deve_encerrar_no_windows(tmp_path, agendador.consultar) is esperado
-
-
 def test_main_serve_com_argumentos_repassa_ao_main(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -721,26 +731,6 @@ def test_main_serve_com_argumentos_repassa_ao_main(
 
     assert recebidos == [ARGUMENTOS_INICIAR_LOGIN]
     assert not (Path(diretorio_dados()) / ARQUIVO_LOG_SERVE).exists()
-
-
-def test_main_serve_encerra_quando_nao_deve_rodar(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import motor.__main__ as cli
-    from motor import agendador
-
-    registro = Registro()
-    recebidos: list[list[str]] = []
-    monkeypatch.setattr(sys, "argv", [EXECUTAVEL_SERVE])
-    monkeypatch.setattr(cli, "main", recebidos.append)
-    monkeypatch.setattr(agendador, "rodar_comando_do_sistema", registro)
-
-    cli.main_serve()
-
-    assert registro.comandos == [
-        _schtasks(NOME_TAREFA_PROCESSO, AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS)
-    ]
-    assert not recebidos
 
 
 def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

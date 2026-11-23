@@ -169,8 +169,6 @@ def _consultar_tarefa() -> str | None:
 @pytest.fixture(scope="module")
 def servico_ligado() -> Iterator[str]:
     serve = _serve_instalado()
-    # A marca de boot vai no LOCALAPPDATA do teste, que a tarefa não vê: sem login, o daemon se encerraria.
-    servico.ligar_login(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
     servico.subir(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
     yield serve
     # O `remover` tolera a tarefa já apagada; o serve que sobrar morre aqui.

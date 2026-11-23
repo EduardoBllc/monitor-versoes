@@ -49,8 +49,6 @@ EXECUTAVEL_SERVE = "monitor-versoes-serve"
 NOME_TAREFA_SERVE = "monitor-versoes-serve"
 NOME_TAREFA_PROCESSO = "monitor-versoes-daemon"
 NOME_TAREFA_LOGIN = "monitor-versoes-login"
-ARQUIVO_MARCA_BOOT = "daemon.boot"
-TOLERANCIA_BOOT_S = 60
 ARQUIVO_LOG_SERVE = "serve.log"
 PRAZO_SUBIDA_S = 10
 INTERVALO_SONDA_S = 0.5
@@ -60,6 +58,7 @@ COMANDO_CONFIGURAR = "configurar"
 ARGUMENTOS_SERVE = ("daemon", "rodar", "--sem-navegador")
 ARGUMENTOS_LEGADOS = ("serve", "--sem-navegador")
 ARGUMENTOS_LOGIN = ("daemon", "iniciar", "--sem-perguntas")
+ARGUMENTOS_SEM_LOGIN = ("daemon", "parar", "--sem-perguntas")
 
 FLAG_PERSISTIR = "-w"
 ESTADO_SYSTEMD_ATIVO = "active"
@@ -203,12 +202,12 @@ def _gatilho_repetido() -> str:
     </TimeTrigger>"""
 
 
+def _argumentos_xml(argumentos: tuple[str, ...]) -> str:
+    return f"<Arguments>{escape(' '.join(argumentos))}</Arguments>"
+
+
 def _xml_tarefa(gatilho: str, executavel: str, argumentos: tuple[str, ...]) -> str:
-    args = (
-        f"\n      <Arguments>{escape(' '.join(argumentos))}</Arguments>"
-        if argumentos
-        else ""
-    )
+    args = f"\n      {_argumentos_xml(argumentos)}" if argumentos else ""
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <Triggers>
@@ -248,18 +247,22 @@ def _criar_tarefa(nome: str, xml_tarefa: str, rodar_comando: Comando) -> None:
         Path(xml.name).unlink(missing_ok=True)
 
 
-def _marca_boot() -> Path:
-    return Path(diretorio_dados()) / ARQUIVO_MARCA_BOOT
-
-
-def _boot_atual() -> int:
-    return int(time.time() - time.monotonic())
+def _criar_login(
+    executavel: str, argumentos: tuple[str, ...], rodar_comando: Comando
+) -> None:
+    xml_login = _xml_tarefa(_gatilho_logon(), executavel, argumentos)
+    _criar_tarefa(NOME_TAREFA_LOGIN, xml_login, rodar_comando)
 
 
 def _subir_windows(executavel: str, rodar_comando: Comando) -> None:
-    # Antes do `/run`: o processo que sobe lê a marca para decidir se fica.
-    _marca_boot().parent.mkdir(parents=True, exist_ok=True)
-    _marca_boot().write_text(str(_boot_atual()))
+    # Sem a tarefa de logon com `parar`, o gatilho de 1 min religaria no próximo logon um daemon iniciado sem login.
+    try:
+        rodar_comando(_tarefa(NOME_TAREFA_LOGIN, AcaoSchtasks.QUERY))
+    except BackendIndisponivel:
+        _criar_login(executavel, ARGUMENTOS_SEM_LOGIN, rodar_comando)
+    # Com IgnoreNew, o `/run` deixaria de pé o daemon antigo; parar o que não roda é inócuo.
+    with contextlib.suppress(BackendIndisponivel):
+        rodar_comando(_tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.END))
     _criar_tarefa(
         NOME_TAREFA_PROCESSO,
         _xml_tarefa(_gatilho_repetido(), executavel, ()),
@@ -276,12 +279,6 @@ def _subir_windows(executavel: str, rodar_comando: Comando) -> None:
                 _tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
             )
         raise
-
-
-def desativar_processo_windows(rodar_comando: Comando) -> None:
-    rodar_comando(
-        _tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS)
-    )
 
 
 def _remover_windows(rodar_comando: Comando) -> None:
@@ -330,8 +327,10 @@ def subir(
 
 def parar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
     if sistema is Sistema.WINDOWS:
-        desativar_processo_windows(rodar_comando)
-        # Desativada a tarefa, encerrar o processo que já caiu é inócuo.
+        rodar_comando(
+            _tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS)
+        )
+        # O `parar` do logon roda também com o daemon já parado: o `/end` falharia.
         with contextlib.suppress(BackendIndisponivel):
             rodar_comando(_tarefa(NOME_TAREFA_PROCESSO, AcaoSchtasks.END))
     elif sistema is Sistema.MACOS:
@@ -358,8 +357,7 @@ def ligar_login(
     sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
 ) -> None:
     if sistema is Sistema.WINDOWS:
-        xml_login = _xml_tarefa(_gatilho_logon(), executavel, ARGUMENTOS_LOGIN)
-        _criar_tarefa(NOME_TAREFA_LOGIN, xml_login, rodar_comando)
+        _criar_login(executavel, ARGUMENTOS_LOGIN, rodar_comando)
         return
     if sistema is Sistema.MACOS:
         arquivo = _agente(home, ROTULO_LOGIN)
@@ -376,9 +374,8 @@ def ligar_login(
 
 def desligar_login(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
     if sistema is Sistema.WINDOWS:
-        rodar_comando(
-            _tarefa(NOME_TAREFA_LOGIN, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
-        )
+        # A tarefa fica, com `parar`: sem ela o gatilho de 1 min religaria o daemon no logon.
+        _criar_login(executavel_servico(), ARGUMENTOS_SEM_LOGIN, rodar_comando)
     elif sistema is Sistema.MACOS:
         arquivo = _agente(home, ROTULO_LOGIN)
         # O arquivo é o que `login_ligado` olha: falha no unload não pode deixá-lo.
@@ -391,7 +388,8 @@ def desligar_login(sistema: Sistema, home: Path, rodar_comando: Comando) -> None
 
 def login_ligado(sistema: Sistema, home: Path, consultar: Consultar) -> bool:
     if sistema is Sistema.WINDOWS:
-        return _tarefa_existe(NOME_TAREFA_LOGIN, consultar)
+        saida = consultar(_tarefa(NOME_TAREFA_LOGIN, AcaoSchtasks.QUERY, FLAG_XML))
+        return saida is not None and _argumentos_xml(ARGUMENTOS_LOGIN) in saida
     if sistema is Sistema.MACOS:
         return _agente(home, ROTULO_LOGIN).exists()
     saida = consultar([*SYSTEMCTL, Acao.IS_ENABLED, ARQUIVO_SERVICE])
@@ -467,18 +465,6 @@ def _sistema_ou_none() -> Sistema | None:
 
 def _tarefa_existe(nome: str, consultar: Consultar) -> bool:
     return consultar(_tarefa(nome, AcaoSchtasks.QUERY)) is not None
-
-
-def deve_encerrar_no_windows(home: Path, consultar: Consultar) -> bool:
-    """Sem login, o daemon só vale no boot em que foi iniciado: o gatilho de 1 min não o religa após reiniciar."""
-    if login_ligado(Sistema.WINDOWS, home, consultar):
-        return False
-    # shortcut: logoff/logon sem reiniciar traz o daemon de volta em até 1 min; marcar a sessão de logon se incomodar.
-    try:
-        marca = int(_marca_boot().read_text())
-    except OSError, ValueError:
-        return True
-    return abs(marca - _boot_atual()) > TOLERANCIA_BOOT_S
 
 
 def apos_reinstalar(home: Path, rodar_comando: Comando, consultar: Consultar) -> bool:
