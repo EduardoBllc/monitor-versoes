@@ -225,6 +225,9 @@ def test_login_liga_e_desliga(
         assert dados["ProgramArguments"] == [EXE, *ARGUMENTOS_INICIAR_LOGIN]
         assert dados["RunAtLoad"] is True
         assert "KeepAlive" not in dados
+        log = str(tmp_path / "Library" / "Logs" / ARQUIVO_LOG_LAUNCHD)
+        assert dados["StandardOutPath"] == log
+        assert dados["StandardErrorPath"] == log
         assert not sistema_falso.comandos
 
     sistema_falso.comandos.clear()
@@ -290,11 +293,31 @@ def test_migrar_legado_macos_troca_plist_antigo_por_processo_e_login(
     assert not legado.exists()
     assert _agente(tmp_path, ROTULO_LOGIN).exists()
     assert registro.comandos == [
-        [LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(legado)],
         *_comandos_de_subir(Sistema.MACOS, tmp_path),
+        [LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(legado)],
     ]
 
     assert not migrar_legado(Sistema.MACOS, tmp_path, EXE, Registro(), _respondendo({}))
+
+
+@pula_mac_no_windows
+def test_migrar_legado_macos_que_falha_ao_subir_mantem_o_plist_antigo(
+    tmp_path: Path,
+) -> None:
+    legado = _agente(tmp_path, ROTULO_LEGADO)
+    legado.parent.mkdir(parents=True)
+    legado.touch()
+    registro = Registro(falhar_em=Acao.LOAD)
+
+    with pytest.raises(BackendIndisponivel):
+        migrar_legado(Sistema.MACOS, tmp_path, EXE, registro, _respondendo({}))
+    assert legado.exists()
+    assert [
+        LAUNCHCTL,
+        Acao.UNLOAD,
+        FLAG_PERSISTIR,
+        str(legado),
+    ] not in registro.comandos
 
 
 @pytest.mark.parametrize("ligado", [True, False])

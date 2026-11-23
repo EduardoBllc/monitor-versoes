@@ -147,12 +147,15 @@ def _unit(executavel: str) -> str:
     )
 
 
-def _plist_login(executavel: str) -> bytes:
+def _plist_login(executavel: str, home: Path) -> bytes:
+    log = str(_log_launchd(home))
     return plistlib.dumps(
         {
             "Label": ROTULO_LOGIN,
             "ProgramArguments": [executavel, *ARGUMENTOS_LOGIN],
             "RunAtLoad": True,
+            "StandardOutPath": log,
+            "StandardErrorPath": log,
         }
     )
 
@@ -308,7 +311,7 @@ def ligar_login(
     if sistema is Sistema.MACOS:
         arquivo = _agente(home, ROTULO_LOGIN)
         arquivo.parent.mkdir(parents=True, exist_ok=True)
-        arquivo.write_bytes(_plist_login(executavel))
+        arquivo.write_bytes(_plist_login(executavel, home))
         return
     arquivo = caminho(sistema, home)
     if not arquivo.exists():
@@ -353,11 +356,12 @@ def migrar_legado(
         legado = _agente(home, ROTULO_LEGADO)
         if not legado.exists():
             return False
+        # O antigo só sai depois do novo de pé: se subir falhar, a próxima reinstalação tenta de novo.
+        ligar_login(sistema, home, executavel, rodar_comando)
+        subir(sistema, home, executavel, rodar_comando)
         with contextlib.suppress(BackendIndisponivel):
             rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(legado)])
         legado.unlink()
-        ligar_login(sistema, home, executavel, rodar_comando)
-        subir(sistema, home, executavel, rodar_comando)
         return True
     arquivo = caminho(sistema, home)
     if not arquivo.exists() or _exec_start(executavel) in arquivo.read_text():
