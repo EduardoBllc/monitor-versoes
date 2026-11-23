@@ -250,7 +250,8 @@ export const test = base.extend<{
         uv(
           RAIZ_DO_PROJETO,
           "monitor-versoes",
-          "serve",
+          "daemon",
+          "rodar",
           "--sem-navegador",
           "--porta",
           String(porta),

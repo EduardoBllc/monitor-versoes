@@ -129,7 +129,7 @@ PERGUNTAS = (
 )
 
 
-def _terminal() -> bool:
+def terminal() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
@@ -372,7 +372,7 @@ def _fechar(imprimir_diagnostico: Callable[[], object], home: Path) -> None:
 
 
 def configurar(imprimir_diagnostico: Callable[[], object]) -> None:
-    if not _terminal():
+    if not terminal():
         raise ErroDeEntrada(
             "o configurar é interativo; rode-o num terminal ou edite o config.toml"
         )
@@ -492,7 +492,7 @@ def desinstalar() -> None:
     if not caminhos:
         print("Nenhum dado do monitor-versoes a remover.")
         return
-    apagar = _terminal() and _confirmar_apagar(caminhos)
+    apagar = terminal() and _confirmar_apagar(caminhos)
     for caminho in caminhos:
         removido = apagar and _apagar(caminho, pasta=caminho in pastas)
         situacao = Situacao.REMOVIDO if removido else Situacao.MANTIDO

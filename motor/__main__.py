@@ -12,14 +12,14 @@ import os
 import sys
 import textwrap
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
-from motor import cli_instalacao, servico
+from motor import agendador, cli_daemon, cli_instalacao, servico
 from motor.adapters.estado.engine import garantir_esquema
 from motor.config import (
     AMBIENTE_PADRAO,
@@ -227,7 +227,6 @@ def _desinstalar(args: argparse.Namespace) -> None:
     assistente.desinstalar()
 
 
-COMANDO_SERVE = "serve"
 COMANDO_DESINSTALAR = "desinstalar"
 COMANDO_TUI = "tui"
 COMANDO_INSCRICAO = "inscricao"
@@ -328,6 +327,7 @@ _SEM_BANCO: dict[str, Callable[[argparse.Namespace], None]] = {
     servico.COMANDO_CONFIGURAR: _configurar,
     COMANDO_DESINSTALAR: _desinstalar,
     COMANDO_INSCRICAO: _inscricao,
+    cli_daemon.COMANDO_DAEMON: cli_daemon.daemon,
     cli_instalacao.COMANDO_PLUGIN: cli_instalacao.plugin,
     cli_instalacao.COMANDO_ATUALIZAR_MOTOR: cli_instalacao.atualizar_motor,
     cli_instalacao.COMANDO_POS_REINSTALAR: cli_instalacao.pos_reinstalar,
@@ -471,13 +471,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="abre a interface interativa de consulta, verificacao e atualizacao",
     )
 
-    p_serve = sub.add_parser(COMANDO_SERVE, help="sobe a interface web local")
-    p_serve.add_argument("--porta", type=int, default=PORTA_PADRAO)
-    p_serve.add_argument(
-        "--sem-navegador",
-        action="store_true",
-        help="não abre o navegador ao subir (o serviço de login usa)",
-    )
+    cli_daemon.adicionar_parsers(sub)
 
     sub.add_parser("migrar", help="aplica as migrações pendentes do banco")
 
@@ -521,14 +515,6 @@ def _build_parser() -> argparse.ArgumentParser:
     cli_instalacao.adicionar_parsers(sub)
 
     return parser
-
-
-def _iniciar_serve(
-    porta: int, ambiente_filhos: Mapping[str, str], abrir_navegador: bool
-) -> None:
-    from motor.daemon.app import servir
-
-    servir(porta, ambiente_filhos, abrir_navegador)
 
 
 def _iniciar_tui() -> None:
@@ -827,7 +813,7 @@ def _despachar_orfaos(args: argparse.Namespace, deps: Deps) -> None:
 
 _SEM_AVISO = frozenset(
     {
-        COMANDO_SERVE,
+        cli_daemon.COMANDO_DAEMON,
         COMANDO_TUI,
         COMANDO_INSCRICAO,
         COMANDO_DESINSTALAR,
@@ -861,10 +847,28 @@ def _configurar_logging(debug: bool) -> None:
         logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
+def _ponte_do_serve() -> list[str]:
+    """O serviço instalado por versões antigas ainda chama `serve --sem-navegador`."""
+    # No macOS e no Windows a migração derrubaria o próprio serviço que nos chamou;
+    # no Linux ela só regrava a unit. Falhar nela não pode impedir o daemon de subir.
+    if sys.platform == agendador.Sistema.LINUX:
+        with contextlib.suppress(MotorError, OSError):
+            servico.migrar_legado(
+                agendador.Sistema.LINUX,
+                Path.home(),
+                servico.executavel_servico(),
+                agendador.rodar_comando_do_sistema,
+                servico.consultar_do_sistema,
+            )
+    return list(servico.ARGUMENTOS_SERVE)
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     # Antes do `.env` do cwd: os filhos do daemon reaplicam só o central (031).
     ambiente_filhos = dict(os.environ)
+    if argv == list(servico.ARGUMENTOS_LEGADOS):
+        argv = _ponte_do_serve()
     # ponytail: --version não depende do ambiente; só a forma isolada, que é a usada.
     if argv[:1] == ["--version"]:
         _build_parser().parse_args(argv)
@@ -876,6 +880,7 @@ def main(argv: list[str] | None = None) -> None:
 
     args = _build_parser().parse_args(argv)
     args.erro_central = erro_central
+    args.ambiente_filhos = ambiente_filhos
 
     _configurar_logging(getattr(args, "debug", False))
 
@@ -887,16 +892,9 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         try:
-            if args.comando in (COMANDO_SERVE, COMANDO_TUI):
-                # Os dois abrem o estado só depois de subir; a config antiga tem de
-                # parar antes de abrir a porta ou montar a tela.
-                checar_backend()
-
-            if args.comando == COMANDO_SERVE:
-                _iniciar_serve(args.porta, ambiente_filhos, not args.sem_navegador)
-                return
-
             if args.comando == COMANDO_TUI:
+                # Abre o estado só depois de montar a tela; a config antiga para antes.
+                checar_backend()
                 _iniciar_tui()
                 return
 
