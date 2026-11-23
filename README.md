@@ -235,7 +235,8 @@ variável de ambiente, e o motor a exporta no início de todo comando:
 # Arquivo do estado (opcional; padrão ~/.local/share/monitor-versoes/estado.db)
 # DATABASE_SQLITE_PATH = "..."
 
-# Credenciais do host de PR, se houver `[prs] fonte`. O plugin `bitbucket` lê estas:
+# Credenciais do host de PR, se houver `[prs] fonte`. O plugin `bitbucket` lê estas
+# (escopos do token no README do plugin, plugins/bitbucket/README.md):
 # BITBUCKET_TOKEN = "..."
 # BITBUCKET_EMAIL = "..."
 

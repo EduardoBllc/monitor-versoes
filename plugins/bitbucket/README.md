@@ -23,7 +23,7 @@ O plugin acompanha a tag do motor, e o `monitor-versoes atualizar-motor` o atual
 | --- | --- | --- | --- |
 | `[prs]` | `fonte = "bitbucket"` | sim | escolhe o plugin |
 | `[ambiente]` | `BITBUCKET_EMAIL` | sim | e-mail da conta do Bitbucket |
-| `[ambiente]` | `BITBUCKET_TOKEN` | sim | API token da conta |
+| `[ambiente]` | `BITBUCKET_TOKEN` | sim | API token da conta, com os escopos abaixo |
 
 O plugin não lê outras chaves de `[prs]`. O formato do config está no
 [README principal](../../README.md).
@@ -37,8 +37,14 @@ BITBUCKET_EMAIL = "voce@empresa.com"
 BITBUCKET_TOKEN = "..."
 ```
 
-O `monitor-versoes diagnostico` valida a credencial com `GET /user`, que exige escopo de
-leitura da conta no token.
+O token precisa de dois escopos, ambos só de leitura:
+
+| Escopo | Para quê |
+| --- | --- |
+| `read:user:bitbucket` | `GET /user`, com que o `monitor-versoes diagnostico` valida a credencial |
+| `read:pullrequest:bitbucket` | listar as PRs mergeadas e os commits de cada uma |
+
+`read:repository:bitbucket` não é necessário: as rotas de PR não o exigem.
 
 ## Erros
 
