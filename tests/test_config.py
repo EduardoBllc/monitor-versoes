@@ -10,6 +10,8 @@ from motor import config
 from motor.config import (
     CHAVE_CAMINHO,
     DIRETORIO_APP,
+    PORTA_MAXIMA,
+    PORTA_MINIMA,
     SECAO_REPOS,
     SUBDIRETORIO_CACHE,
     TABELA_AMBIENTE,
@@ -626,7 +628,7 @@ def test_porta_do_daemon_sem_config_vale_a_padrao(central):
     assert porta_daemon() == PORTA_PADRAO
 
 
-@pytest.mark.parametrize("porta", [0, 65536, '"abc"', "true"])
+@pytest.mark.parametrize("porta", [PORTA_MINIMA - 1, PORTA_MAXIMA + 1, '"abc"', "true"])
 def test_porta_do_daemon_invalida_recusa(central, porta):
     central.write_text(f"[{Tabela.DAEMON}]\n{Chave.PORTA} = {porta}\n")
     with pytest.raises(ErroDeEntrada, match=Chave.PORTA):

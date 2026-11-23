@@ -182,7 +182,6 @@ AMBIENTE_PADRAO = "production"
 
 SECAO_REPOS = "repos"
 TABELA_AMBIENTE = "ambiente"
-PORTA_MAXIMA = 65535
 CHAVE_CAMINHO = "caminho"
 #: Tabelas que valem só no topo do central: são da instalação, não do repo.
 _SO_NO_TOPO = (
@@ -286,14 +285,19 @@ def checagem_ligada() -> bool:
     return bruto
 
 
-def validar_porta(porta: int) -> int:
+PORTA_MINIMA = 1
+PORTA_MAXIMA = 65535
+
+
+def validar_porta(porta: object) -> int:
     if (
         isinstance(porta, bool)
         or not isinstance(porta, int)
-        or not 1 <= porta <= PORTA_MAXIMA
+        or not PORTA_MINIMA <= porta <= PORTA_MAXIMA
     ):
         raise ErroDeEntrada(
-            f"porta deve ser um inteiro de 1 a {PORTA_MAXIMA}, veio {porta!r}"
+            f"porta deve ser um inteiro de {PORTA_MINIMA} a {PORTA_MAXIMA}, "
+            f"veio {porta!r}"
         )
     return porta
 
@@ -305,7 +309,7 @@ def porta_daemon() -> int:
     if bruto is None:
         return PORTA_PADRAO
     try:
-        return validar_porta(bruto)  # type: ignore[arg-type]
+        return validar_porta(bruto)
     except ErroDeEntrada as e:
         raise ErroDeEntrada(f"{arquivo}: [{Tabela.DAEMON}] {Chave.PORTA}: {e}") from e
 
