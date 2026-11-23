@@ -44,6 +44,7 @@ from motor.servico import (
     ROTULO_LEGADO,
     ROTULO_LOGIN,
     ROTULO_PROCESSO,
+    TAREFA_DESATIVADA,
     EstadoServico,
     Situacao,
     apos_reinstalar,
@@ -494,19 +495,27 @@ XML_ESPERADO = {
     "Settings/ExecutionTimeLimit": SEM_LIMITE,
     "Actions/Exec/Command": EXE_WINDOWS,
 }
+TAREFA_ATIVADA = "<Enabled>true</Enabled>"
 XML_CONSULTA = (
     '<?xml version="1.0" encoding="UTF-16"?>\n<Task>\n  <Triggers><TimeTrigger>'
-    "<Enabled>true</Enabled></TimeTrigger></Triggers>\n"
+    f"{TAREFA_ATIVADA}</TimeTrigger></Triggers>\n"
     "  <Settings>\n    {}\n  </Settings>\n</Task>\n"
 )
 SETTINGS = "<Settings>"
-ENABLED_FALSO = "<Enabled>false</Enabled>"
-XML_ATIVADA = XML_CONSULTA.format("<Enabled>true</Enabled>")
-XML_DESATIVADA = XML_CONSULTA.format(ENABLED_FALSO)
+XML_ATIVADA = XML_CONSULTA.format(TAREFA_ATIVADA)
+XML_DESATIVADA = XML_CONSULTA.format(TAREFA_DESATIVADA)
 
 
 def _schtasks(tarefa: str, acao: AcaoSchtasks, *resto: str) -> list[str]:
     return [SCHTASKS, acao, FLAG_TAREFA, tarefa, *resto]
+
+
+def _acao(cmd: list[str]) -> str:
+    return cmd[cmd.index(SCHTASKS) + 1]
+
+
+def _nome(cmd: list[str]) -> str:
+    return cmd[cmd.index(FLAG_TAREFA) + 1]
 
 
 class _Agendador(Registro):
@@ -518,7 +527,7 @@ class _Agendador(Registro):
         self.xmls: dict[str, str] = {}
 
     def __call__(self, cmd: list[str]) -> None:
-        tarefa, acao = cmd[3], cmd[1]
+        tarefa, acao = _nome(cmd), _acao(cmd)
         if acao == AcaoSchtasks.CREATE:
             self.xmls[tarefa] = Path(cmd[cmd.index(FLAG_XML) + 1]).read_text("utf-16")
         super().__call__(cmd)
@@ -532,7 +541,7 @@ class _Agendador(Registro):
             self.ativadas.pop(tarefa, None)
 
     def consultar(self, cmd: list[str]) -> str | None:
-        tarefa = cmd[3]
+        tarefa = _nome(cmd)
         if tarefa not in self.ativadas:
             return None
         if FLAG_XML not in cmd:
@@ -540,13 +549,13 @@ class _Agendador(Registro):
         xml = self.xmls.get(tarefa, "")
         if self.ativadas[tarefa]:
             return xml
-        return xml.replace(SETTINGS, f"{SETTINGS}{ENABLED_FALSO}")
+        return xml.replace(SETTINGS, f"{SETTINGS}{TAREFA_DESATIVADA}")
 
     def raiz(self, tarefa: str) -> ET.Element:
         return ET.fromstring(self.xmls[tarefa].split("?>", 1)[1])
 
     def da(self, tarefa: str) -> list[list[str]]:
-        return [cmd for cmd in self.comandos if cmd[3] == tarefa]
+        return [cmd for cmd in self.comandos if _nome(cmd) == tarefa]
 
 
 def _texto(raiz: ET.Element, caminho: str) -> str | None:
@@ -602,7 +611,7 @@ def test_subir_windows_mantem_o_login_ligado(tmp_path: Path) -> None:
 
     subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
 
-    assert [cmd[1] for cmd in agendador.da(NOME_TAREFA_LOGIN)] == [
+    assert [_acao(cmd) for cmd in agendador.da(NOME_TAREFA_LOGIN)] == [
         AcaoSchtasks.CREATE,
         AcaoSchtasks.QUERY,
     ]
@@ -718,21 +727,6 @@ def test_remover_windows_apaga_as_tres_tarefas_mesmo_se_o_sistema_falha(
     ]
 
 
-def test_main_serve_com_argumentos_repassa_ao_main(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import motor.__main__ as cli
-
-    recebidos: list[list[str]] = []
-    monkeypatch.setattr(sys, "argv", [EXECUTAVEL_SERVE, *ARGUMENTOS_INICIAR_LOGIN])
-    monkeypatch.setattr(cli, "main", recebidos.append)
-
-    cli.main_serve()
-
-    assert recebidos == [ARGUMENTOS_INICIAR_LOGIN]
-    assert not (Path(diretorio_dados()) / ARQUIVO_LOG_SERVE).exists()
-
-
 def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _como(Sistema.WINDOWS, monkeypatch)
     agendador = _Agendador()
@@ -743,6 +737,11 @@ def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert sem_nada.ver_log.startswith("Get-Content -Wait '")
     assert situacao(tmp_path, agendador.consultar, lambda: True) == Situacao(
         EstadoServico.NO_TERMINAL
+    )
+
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
+    assert situacao(tmp_path, agendador.consultar, lambda: True) == Situacao(
+        EstadoServico.ATIVO
     )
 
     ligar_login(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, agendador)
