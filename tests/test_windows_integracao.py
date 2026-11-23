@@ -43,7 +43,7 @@ from motor.instalacao import (
     PASTA_PLUGINS,
     PREFIXO_GIT,
 )
-from motor.servico import NOME_TAREFA_SERVE, consultar_do_sistema
+from motor.servico import NOME_TAREFA_PROCESSO, consultar_do_sistema
 
 VAR_INTEGRACAO_WINDOWS = "MONITOR_VERSOES_INTEGRACAO_WINDOWS"
 VAR_UV_TOOL_DIR = "UV_TOOL_DIR"
@@ -78,7 +78,7 @@ CAMINHO_RUN_LEVEL = "t:Principals/t:Principal/t:RunLevel"
 RUN_LEVEL_SEM_ELEVACAO = "LeastPrivilege"
 PS_SAIDA_UTF8 = "[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false"
 PS_EXPORTAR_TAREFA = (
-    f"{PS_SAIDA_UTF8}; Export-ScheduledTask -TaskName '{NOME_TAREFA_SERVE}'"
+    f"{PS_SAIDA_UTF8}; Export-ScheduledTask -TaskName '{NOME_TAREFA_PROCESSO}'"
 )
 # Filtrar em vez de `-Name`: sem processo, o `-Name` erra e o `-Command` sai com 1.
 PS_MATAR_SERVE = (
@@ -162,7 +162,7 @@ def _tarefa_xml() -> ET.Element:
 
 def _consultar_tarefa() -> str | None:
     return consultar_do_sistema(
-        [SCHTASKS, AcaoSchtasks.QUERY, FLAG_TAREFA, NOME_TAREFA_SERVE]
+        [SCHTASKS, AcaoSchtasks.QUERY, FLAG_TAREFA, NOME_TAREFA_PROCESSO]
     )
 
 
@@ -176,12 +176,21 @@ def servico_ligado() -> Iterator[str]:
     _powershell(PS_MATAR_SERVE)
 
 
+def test_consultas_leem_o_schtasks_de_verdade(servico_ligado):
+    # O XML do `/query` decodificado e o texto dos argumentos, sem fakes.
+    home = Path.home()
+    assert servico.rodando(Sistema.WINDOWS, home, consultar_do_sistema)
+    assert not servico.login_ligado(Sistema.WINDOWS, home, consultar_do_sistema)
+    servico.ligar_login(Sistema.WINDOWS, home, servico_ligado, rodar_comando_do_sistema)
+    assert servico.login_ligado(Sistema.WINDOWS, home, consultar_do_sistema)
+
+
 def test_ligar_sobe_o_serve(servico_ligado):
     # O primeiro início no runner pode passar dos 10 s do `serve_responde(esperar=True)`.
     assert _serve_de_pe(PRAZO_SERVE_SUBIR_S)
     tarefa = _tarefa_xml()
     assert tarefa.findtext(CAMINHO_COMANDO, namespaces=NS_TAREFA) == servico_ligado
-    assert tarefa.find(CAMINHO_LOGON, NS_TAREFA) is not None
+    assert tarefa.find(CAMINHO_LOGON, NS_TAREFA) is None
     for caminho, valor in VALORES_DA_TAREFA.items():
         assert tarefa.findtext(caminho, namespaces=NS_TAREFA) == valor, caminho
     # O Export omite o RunLevel quando é o padrão; o que importa é nunca elevar.

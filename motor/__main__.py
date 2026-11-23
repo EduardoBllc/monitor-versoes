@@ -941,7 +941,10 @@ def main_inscricoes() -> None:
 
 
 def main_serve() -> None:
-    """`serve` como executável sem console: o log do serviço vai para `serve.log`."""
+    """Executável sem console: com argumentos é a tarefa de login; sem, o daemon, com o log em `serve.log`."""
+    if sys.argv[1:]:
+        main(sys.argv[1:])
+        return
     log = Path(diretorio_dados()) / servico.ARQUIVO_LOG_SERVE
     log.parent.mkdir(parents=True, exist_ok=True)
     # Sem console não há stdout/stderr; "w" a cada subida mantém o log do tamanho de uma sessão.

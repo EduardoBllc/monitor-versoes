@@ -1258,11 +1258,25 @@ def test_main_serve_grava_o_log_e_trunca(monkeypatch, tmp_path):
         print(f"erro {len(chamadas)}", file=sys.stderr)
 
     monkeypatch.setattr(cli, "main", falso)
+    monkeypatch.setattr(sys, "argv", [servico.EXECUTAVEL_SERVE])
     cli.main_serve()
     cli.main_serve()
     log = tmp_path / "dados" / servico.ARQUIVO_LOG_SERVE
     assert log.read_text(encoding="utf-8").split() == ["saida", "2", "erro", "2"]
     assert chamadas == [list(servico.ARGUMENTOS_SERVE)] * 2
+
+
+def test_main_serve_com_argumentos_repassa_ao_main(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "diretorio_dados", lambda: str(tmp_path / "dados"))
+    recebidos: list[list[str]] = []
+    argumentos = list(servico.ARGUMENTOS_LOGIN)
+    monkeypatch.setattr(sys, "argv", [servico.EXECUTAVEL_SERVE, *argumentos])
+    monkeypatch.setattr(cli, "main", recebidos.append)
+
+    cli.main_serve()
+
+    assert recebidos == [argumentos]
+    assert not (tmp_path / "dados" / servico.ARQUIVO_LOG_SERVE).exists()
 
 
 def test_inscricao_rodar_nao_le_env_nem_central(inscricoes_env, monkeypatch, tmp_path):
