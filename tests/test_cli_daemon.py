@@ -22,6 +22,7 @@ from motor.cli_daemon import (
 )
 from motor.config import (
     PORTA_MAXIMA,
+    PORTA_MINIMA,
     caminho_config_global,
     nunca_iniciar_login,
     porta_daemon,
@@ -29,7 +30,14 @@ from motor.config import (
 from motor.config_edicao import gravar_nunca_iniciar_login, gravar_porta_daemon
 from motor.daemon import PORTA_PADRAO
 from motor.errors import CodigoSaida
-from motor.servico import ARGUMENTOS_LEGADOS, ARGUMENTOS_SERVE, ARQUIVO_SERVICE, caminho
+from motor.servico import (
+    ARGUMENTOS_LEGADOS,
+    ARGUMENTOS_SERVE,
+    ARQUIVO_SERVICE,
+    ESTADO_SYSTEMD_ATIVO,
+    ESTADO_SYSTEMD_HABILITADO,
+    caminho,
+)
 from tests.test_agendador import Registro
 
 AVISO_RODAR = "para rodar em segundo plano, use `monitor-versoes daemon iniciar`"
@@ -42,6 +50,11 @@ PORTA_SALVA = 9100
 PORTA_NOVA = 9200
 EXE_ANTIGO = "/opt/antigo/bin/monitor-versoes"
 SIM = "sim"
+ROTULO_RODANDO = "rodando"
+ROTULO_NO_TERMINAL = "rodando no terminal"
+ROTULO_PARADO = "parado"
+INATIVO_SYSTEMD = "inactive"
+DESABILITADO_SYSTEMD = "disabled"
 
 
 class _Systemd(Registro):
@@ -63,9 +76,12 @@ class _Systemd(Registro):
     def consultar(self, cmd: list[str]) -> str | None:
         acao = cmd[len(SYSTEMCTL)]
         if acao == Acao.IS_ACTIVE:
-            return "active\n" if self.ativo else "inactive\n"
+            return f"{ESTADO_SYSTEMD_ATIVO if self.ativo else INATIVO_SYSTEMD}\n"
         if acao == Acao.IS_ENABLED:
-            return "enabled\n" if self.login else "disabled\n"
+            habilitado = (
+                ESTADO_SYSTEMD_HABILITADO if self.login else DESABILITADO_SYSTEMD
+            )
+            return f"{habilitado}\n"
         return None
 
     def acoes(self) -> list[str]:
@@ -293,9 +309,9 @@ def test_iniciar_e_parar_recusam_daemon_no_terminal(maquina, caplog, acao) -> No
 @pytest.mark.parametrize(
     ("ativo", "responde", "rotulo"),
     [
-        (True, False, "rodando"),
-        (False, True, "rodando no terminal"),
-        (False, False, "parado"),
+        (True, False, ROTULO_RODANDO),
+        (False, True, ROTULO_NO_TERMINAL),
+        (False, False, ROTULO_PARADO),
     ],
 )
 def test_estado_mostra_rodando_login_nunca_e_log(
@@ -321,7 +337,7 @@ def _unit_antiga(home: Path) -> Path:
     return unit
 
 
-@pytest.mark.parametrize("porta", [0, PORTA_MAXIMA + 1])
+@pytest.mark.parametrize("porta", [PORTA_MINIMA - 1, PORTA_MAXIMA + 1])
 @pytest.mark.parametrize(
     "acao", [AcaoDaemon.RODAR, AcaoDaemon.INICIAR, AcaoDaemon.REINICIAR]
 )
