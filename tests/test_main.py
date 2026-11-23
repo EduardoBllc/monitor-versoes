@@ -39,7 +39,8 @@ from motor.adapters.git.fake import FakeGit
 from motor.cli_daemon import COMANDO_DAEMON, FLAG_PORTA, AcaoDaemon
 from motor.cli_instalacao import COMANDO_ATUALIZAR_MOTOR
 from motor.config import SECAO_REPOS
-from motor.diagnostico import Estado, Peca, Resultado, formatar
+from motor.config_edicao import gravar_porta_daemon
+from motor.diagnostico import Estado, Peca, Resultado
 from motor.domain.referencia import Referencia
 from motor.domain.types import (
     Atribuicao,
@@ -50,7 +51,7 @@ from motor.domain.types import (
 )
 from motor.engine.atualizar import AtualizarResult, AtualizarStatus
 from motor.engine.deps import Deps
-from motor.errors import CodigoSaida, MotorError
+from motor.errors import MotorError
 from motor.inscricoes import Inscricao
 from motor.instalacao import PACOTE_MOTOR
 from motor.novidades import Cache, Novidade
@@ -1080,26 +1081,34 @@ def test_diagnostico_imprime_e_sai_com_o_codigo_certo(
     assert estado.value in capsys.readouterr().out
 
 
-def test_diagnostico_mostra_a_peca_daemon(monkeypatch, capsys):
+PORTA_SALVA = 9123
+
+
+def test_diagnostico_mostra_a_peca_daemon_na_porta_salva(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    gravar_porta_daemon(PORTA_SALVA)
     monkeypatch.setattr(cli, "head", lambda: "rev")
     monkeypatch.setattr(
         cli,
         "diagnosticar",
         lambda *a, **k: [Resultado(Peca.SQLITE, Estado.OK, "x")],
     )
+    sondadas: list[int] = []
     monkeypatch.setattr(
-        servico,
-        "situacao",
-        lambda *a: Situacao(EstadoServico.PARADO, login=True, ver_log="ver o log"),
+        servico, "serve_responde", lambda porta, esperar: sondadas.append(porta)
     )
 
-    with pytest.raises(SystemExit) as saida:
-        main(["diagnostico"])
+    def situacao(_home, _consultar, responde):
+        responde()
+        return Situacao(EstadoServico.PARADO)
 
-    assert saida.value.code == CodigoSaida.ERRO
+    monkeypatch.setattr(servico, "situacao", situacao)
+
+    main(["diagnostico"])
+
+    assert sondadas == [PORTA_SALVA]
     ultima = capsys.readouterr().out.splitlines()[-1]
-    assert ultima.startswith(f"{Estado.FALHA.value}  {Peca.DAEMON}")
-    assert formatar(Resultado(Peca.DAEMON, Estado.FALHA)) in ultima
+    assert ultima.startswith(f"{Estado.NAO_CONFIGURADO.value}  {Peca.DAEMON}")
 
 
 def test_diagnostico_le_a_fonte_do_config_central(monkeypatch, capsys, tmp_path):

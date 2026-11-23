@@ -284,14 +284,15 @@ def _subir_windows(executavel: str, rodar_comando: Comando) -> None:
         raise
 
 
-def _remover_windows(rodar_comando: Comando) -> None:
+def _remover_windows(rodar_comando: Comando) -> bool:
+    havia = False
     for nome in (NOME_TAREFA_PROCESSO, NOME_TAREFA_LOGIN, NOME_TAREFA_SERVE):
-        for acao in (
-            _tarefa(nome, AcaoSchtasks.END),
-            _tarefa(nome, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
-        ):
-            with contextlib.suppress(BackendIndisponivel):
-                rodar_comando(acao)
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando(_tarefa(nome, AcaoSchtasks.END))
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando(_tarefa(nome, AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS))
+            havia = True
+    return havia
 
 
 def regravar(
@@ -435,12 +436,13 @@ def migrar_legado(
     return True
 
 
-def remover(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
+def remover(sistema: Sistema, home: Path, rodar_comando: Comando) -> bool:
+    """Devolve se havia alguma peça a remover."""
     if sistema is Sistema.WINDOWS:
-        _remover_windows(rodar_comando)
-        return
+        return _remover_windows(rodar_comando)
     # Desativar o que não está ativo não pode impedir a remoção dos arquivos.
     if sistema is Sistema.MACOS:
+        havia = False
         for arquivo, flags in (
             (caminho(sistema, home), ()),
             (_agente(home, ROTULO_LOGIN), ()),
@@ -451,13 +453,17 @@ def remover(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
             with contextlib.suppress(BackendIndisponivel):
                 rodar_comando([LAUNCHCTL, Acao.UNLOAD, *flags, str(arquivo)])
             arquivo.unlink()
-        return
+            havia = True
+        return havia
+    unit = caminho(sistema, home)
+    havia = unit.exists()
     for acao in (Acao.STOP, Acao.DISABLE):
         with contextlib.suppress(BackendIndisponivel):
             rodar_comando([*SYSTEMCTL, acao, ARQUIVO_SERVICE])
-    caminho(sistema, home).unlink(missing_ok=True)
+    unit.unlink(missing_ok=True)
     with contextlib.suppress(BackendIndisponivel):
         rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+    return havia
 
 
 def _sistema_ou_none() -> Sistema | None:

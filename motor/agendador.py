@@ -110,7 +110,7 @@ def remover_agendador_antigo(home: Path, rodar_comando: Comando) -> bool:
     else:
         desagendar(sistema, home, rodar_comando)
     print(
-        "timer antigo das inscrições removido: o `serve` passou a dispará-las",
+        "timer antigo das inscrições removido: o daemon passou a dispará-las",
         file=sys.stderr,
     )
     return True

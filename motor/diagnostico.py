@@ -16,6 +16,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from motor.adapters.estado import sqlite as estado_sqlite
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.config import SECAO_REPOS, Chave, ConfigProjeto, Tabela, checar_backend
 from motor.errors import ErroDeEntrada, MotorError, formatar_com_notas
 from motor.montagem import (
@@ -24,7 +25,7 @@ from motor.montagem import (
     instanciar_provedor_sugestao,
 )
 from motor.novidades import Cache
-from motor.servico import COMANDO_CONFIGURAR, EXECUTAVEL, EstadoServico, Situacao
+from motor.servico import EXECUTAVEL, EstadoServico, Situacao
 
 
 class Peca(enum.StrEnum):
@@ -136,22 +137,15 @@ def diagnosticar(  # noqa: PLR0913
 def peca_daemon(situacao: Situacao) -> Resultado:
     match situacao.estado:
         case EstadoServico.ATIVO:
-            return Resultado(Peca.DAEMON, Estado.OK, "serviço de login ativo")
+            return Resultado(Peca.DAEMON, Estado.OK, "daemon rodando")
         case EstadoServico.NO_TERMINAL:
             return Resultado(Peca.DAEMON, Estado.OK, "daemon rodando no terminal")
-        case EstadoServico.PARADO if not situacao.login:
-            return Resultado(
-                Peca.DAEMON,
-                Estado.NAO_CONFIGURADO,
-                "serviço de login desligado",
-                f"{EXECUTAVEL} {COMANDO_CONFIGURAR}",
-            )
         case EstadoServico.PARADO:
+            iniciar = f"{EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"
+            # Parado com o login ligado sugere queda: o log diz por quê.
+            correcao = f"{iniciar}; {situacao.ver_log}" if situacao.login else iniciar
             return Resultado(
-                Peca.DAEMON,
-                Estado.FALHA,
-                "serviço de login parado",
-                situacao.ver_log,
+                Peca.DAEMON, Estado.NAO_CONFIGURADO, "daemon parado", correcao
             )
         case EstadoServico.SEM_SUPORTE:
             return Resultado(

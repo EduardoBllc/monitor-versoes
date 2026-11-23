@@ -38,6 +38,7 @@ from motor.assistente import (
     Pergunta,
     Situacao,
 )
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
     VAR_XDG_CACHE_HOME,
@@ -48,6 +49,7 @@ from motor.config import (
     caminho_config_global,
     diretorio_cache,
     diretorio_dados,
+    nunca_iniciar_login,
 )
 from motor.config_edicao import GrupoPlugin
 from motor.daemon import PORTA_PADRAO
@@ -55,10 +57,11 @@ from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
 from motor.servico import (
-    ARGUMENTOS_LEGADOS,
     ARQUIVO_SERVICE,
     COMANDO_CONFIGURAR,
     EXECUTAVEL,
+    NOME_TAREFA_LOGIN,
+    NOME_TAREFA_PROCESSO,
     NOME_TAREFA_SERVE,
 )
 
@@ -102,6 +105,8 @@ REMOVER = [
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
 ]
 HABILITADO = "enabled\n"
+NUNCA_SALVO = f"\n[{Tabela.DAEMON}]\n{Chave.NUNCA_INICIAR_LOGIN} = true\n"
+MARCA_REMOVIDOS = "daemon e início no login removidos"
 
 ORIGINAL = """\
 # config central de teste
@@ -431,28 +436,36 @@ def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, caplog):
 
 
 @pytest.mark.parametrize(
-    ("ligado", "tecla", "comandos"),
-    [(False, SIM, LIGAR), (True, NAO, DESLIGAR)],
-    ids=["liga", "desliga"],
+    ("ligado", "tecla", "comandos", "nunca_depois"),
+    [(False, SIM, LIGAR, False), (True, NAO, DESLIGAR, True)],
+    ids=["sim-liga-sobe-e-apaga-o-nunca", "nao-so-desliga"],
 )
-def test_ligar_e_desligar_no_login(cen, ligado, tecla, comandos):
+def test_configurar_login(cen, ligado, tecla, comandos, nunca_depois):
+    cen.escrever(cen.original + NUNCA_SALVO)
     cen.login = ligado
     assert _rodar(ENTER, ENTER, tecla) == CodigoSaida.OK
     assert cen.comandos == comandos
+    assert nunca_iniciar_login() is nunca_depois
 
 
 @pytest.mark.parametrize(
-    ("com_config", "ligado", "comandos"),
-    [(False, False, LIGAR), (True, False, []), (True, True, LIGAR)],
-    ids=["primeira-vez-liga", "desligado-fica", "ligado-religa"],
+    ("com_config", "ligado", "nunca", "comandos"),
+    [
+        (False, False, False, LIGAR),
+        (True, False, False, []),
+        (True, True, False, LIGAR),
+        (True, True, True, DESLIGAR),
+    ],
+    ids=["primeira-vez-liga", "desligado-fica", "ligado-religa", "nunca-vence"],
 )
-def test_padrao_do_login(cen, com_config, ligado, comandos):
+def test_padrao_do_login(cen, com_config, ligado, nunca, comandos):
+    if nunca:
+        cen.escrever(cen.original + NUNCA_SALVO)
     if not com_config:
         cen.config.unlink()
     cen.login = ligado
     assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert cen.comandos == comandos
-    assert cen.unit().exists() is (ligado or not com_config)
 
 
 def test_sistema_sem_suporte_nao_pergunta_o_login(cen):
@@ -513,7 +526,7 @@ def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
     [
         (True, True, (SIM,), [ENDERECO_WEB], ""),
         (True, False, (), [], ENDERECO_WEB),
-        (False, True, (), [], f"{EXECUTAVEL} {ARGUMENTOS_LEGADOS[0]}"),
+        (False, True, (), [], f"{EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"),
     ],
     ids=["abre", "sem-grafico", "sem-serve"],
 )
@@ -561,7 +574,9 @@ def _listados(dados: list[Path]) -> list[Path]:
     return [d for d in dados if not any(o != d and d.is_relative_to(o) for o in dados)]
 
 
-def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
+def test_desinstalar_remove_daemon_e_login_e_timer_antigo(
+    cen, tmp_path, monkeypatch, capsys
+):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
     cen.unit().parent.mkdir(parents=True)
     cen.unit().write_text("")
@@ -578,11 +593,10 @@ def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
         [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     ]
     assert all(d.exists() for d in dados)
+    assert MARCA_REMOVIDOS in capsys.readouterr().out
 
 
-def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
-    cen, tmp_path, monkeypatch
-):
+def test_desinstalar_windows_encerra_e_apaga_as_tarefas(cen, tmp_path, monkeypatch):
     dados = _dados_do_usuario(tmp_path, monkeypatch)
     monkeypatch.setattr(servico, "consultar_do_sistema", lambda cmd: TAREFA_EXISTE)
 
@@ -591,7 +605,12 @@ def test_desinstalar_windows_encerra_e_apaga_as_duas_tarefas(
         == CodigoSaida.OK
     )
 
-    tarefas = (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES)
+    tarefas = (
+        NOME_TAREFA_PROCESSO,
+        NOME_TAREFA_LOGIN,
+        NOME_TAREFA_SERVE,
+        NOME_TAREFA_INSCRICOES,
+    )
     ordem = [
         (acao, tarefa)
         for _, acao, _, tarefa, *_ in cen.comandos
@@ -680,7 +699,9 @@ def test_desinstalar_sem_nada_diz_que_nao_ha_o_que_remover(cen, capsys):
 
     assert _rodar(comando=COMANDO_DESINSTALAR) == CodigoSaida.OK
 
-    assert "Nenhum dado" in capsys.readouterr().out
+    saida = capsys.readouterr().out
+    assert "Nenhum dado" in saida
+    assert MARCA_REMOVIDOS not in saida
 
 
 def _trocar_por_link(caminho: Path, alvo: Path) -> None:

@@ -312,43 +312,75 @@ def test_falha_do_motor_instalado_nao_reinstala(maquina, sonda, atualizar):
 
 
 FLAG_KICKSTART_FORCAR = "-k"
+ACAO_TRY_RESTART = "try-restart"
+VAR_CARREGADOS = "FALSO_CARREGADOS"
+# `launchctl print` só acha o que está carregado, e carregado com KeepAlive é rodando.
+_LAUNCHCTL = f"""#!/bin/sh
+{_REGISTRA}[ "$1" = {agendador.Acao.PRINT} ] || exit 0
+for rotulo in ${VAR_CARREGADOS}; do
+  [ "$2" = "gui/$(id -u)/$rotulo" ] && exit 0
+done
+exit 1
+"""
 
 
-def _arquivo_do_servico(sistema: Sistema, home: Path) -> Path:
-    """O arquivo que o install.sh conhece: no macOS, o plist do `serve` antigo."""
+def _arquivos_do_servico(sistema: Sistema, home: Path) -> list[Path]:
     if sistema is Sistema.MACOS:
-        return home / "Library" / "LaunchAgents" / f"{servico.ROTULO_LEGADO}.plist"
-    return servico.caminho(sistema, home)
+        agentes = home / "Library" / "LaunchAgents"
+        return [
+            servico.caminho(sistema, home),
+            agentes / f"{servico.ROTULO_LOGIN}.plist",
+            agentes / f"{servico.ROTULO_LEGADO}.plist",
+        ]
+    return [servico.caminho(sistema, home)]
 
 
-def _reinicio(uname: Uname) -> str:
-    if uname is Uname.DARWIN:
-        return (
-            f"{agendador.LAUNCHCTL} {agendador.Acao.KICKSTART} {FLAG_KICKSTART_FORCAR} "
-            f"gui/{os.getuid()}/{servico.ROTULO_LEGADO}"
-        )
-    return f"{' '.join(agendador.SYSTEMCTL)} {agendador.Acao.RESTART} {servico.ARQUIVO_SERVICE}"
-
-
-@pytest.mark.parametrize("com_arquivo", [True, False])
-@pytest.mark.parametrize("caminho", list(Caminho))
-@pytest.mark.parametrize("uname", list(SISTEMA))
-def test_reinicia_o_servico_ligado_depois_de_instalar(
-    maquina, uname, caminho, com_arquivo
-):
-    maquina.env[Var.UNAME] = uname
+def _rodar_no_caminho(maquina: Maquina, caminho: Caminho) -> None:
     if caminho is Caminho.REINSTALACAO:
         maquina.env[Var.SAIDA_SONDA] = str(CodigoSaida.USO)
         maquina.instalar_motor()
-    if com_arquivo:
-        arquivo = _arquivo_do_servico(SISTEMA[uname], maquina.home)
-        arquivo.parent.mkdir(parents=True)
-        arquivo.touch()
-
     r = maquina.rodar(FLAG_SEM_CONFIGURAR)
-
     assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
-    assert (_reinicio(uname) in maquina.chamadas()) is com_arquivo
+
+
+@pytest.mark.parametrize("com_unit", [True, False])
+@pytest.mark.parametrize("caminho", list(Caminho))
+def test_linux_reinicia_so_o_daemon_rodando_depois_de_instalar(
+    maquina, caminho, com_unit
+):
+    if com_unit:
+        unit = servico.caminho(Sistema.LINUX, maquina.home)
+        unit.parent.mkdir(parents=True)
+        unit.touch()
+
+    _rodar_no_caminho(maquina, caminho)
+
+    reinicio = (
+        f"{' '.join(agendador.SYSTEMCTL)} {ACAO_TRY_RESTART} {servico.ARQUIVO_SERVICE}"
+    )
+    assert (reinicio in maquina.chamadas()) is com_unit
+
+
+@pytest.mark.parametrize(
+    "carregados",
+    [(servico.ROTULO_PROCESSO,), (servico.ROTULO_LEGADO,), ()],
+    ids=["daemon", "servico-antigo", "parado"],
+)
+@pytest.mark.parametrize("caminho", list(Caminho))
+def test_macos_reinicia_so_o_daemon_rodando_depois_de_instalar(
+    maquina, caminho, carregados
+):
+    maquina.env[Var.UNAME] = Uname.DARWIN
+    maquina.env[VAR_CARREGADOS] = " ".join(carregados)
+    maquina.com(agendador.LAUNCHCTL, _LAUNCHCTL)
+
+    _rodar_no_caminho(maquina, caminho)
+
+    prefixo = f"{agendador.LAUNCHCTL} {agendador.Acao.KICKSTART} {FLAG_KICKSTART_FORCAR} gui/{os.getuid()}/"
+    reiniciados = [
+        c.removeprefix(prefixo) for c in maquina.chamadas() if c.startswith(prefixo)
+    ]
+    assert reiniciados == list(carregados)
 
 
 @pytest.mark.parametrize("no_path", [True, False])
@@ -429,14 +461,14 @@ def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
     if motor_quebrado:
         maquina.env[Var.SAIDA_DESINSTALAR] = str(CodigoSaida.ERRO)
         maquina.instalar_motor()
+    monkeypatch.setenv("HOME", str(maquina.home))
     arquivos = [
-        _arquivo_do_servico(sistema, maquina.home),
+        *_arquivos_do_servico(sistema, maquina.home),
         *agendador.caminhos(sistema, maquina.home),
     ]
     for arquivo in arquivos:
         arquivo.parent.mkdir(parents=True, exist_ok=True)
         arquivo.touch()
-    monkeypatch.setenv("HOME", str(maquina.home))
     for var in (config.VAR_XDG_CONFIG_HOME, config.VAR_XDG_CACHE_HOME):
         monkeypatch.setenv(var, "")
     dados = [
@@ -445,7 +477,7 @@ def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
         Path(config.diretorio_cache()),
     ]
     for pasta in dados:
-        pasta.mkdir(parents=True)
+        pasta.mkdir(parents=True, exist_ok=True)
 
     r = maquina.rodar(FLAG_DESINSTALAR)
 

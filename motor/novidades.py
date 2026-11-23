@@ -311,7 +311,7 @@ def vencido(cache: Cache | None, agora: datetime) -> bool:
     return cache is None or agora - cache.checado_em > VALIDADE
 
 
-# Uma vez por cache vencido: o diagnóstico o lê duas vezes; o `serve` segue renovando.
+# Uma vez por cache vencido: o diagnóstico o lê duas vezes; o daemon segue renovando.
 @functools.cache
 def disparar_renovacao(_vencido_em: datetime | None) -> None:
     comando = [sys.executable, "-P", "-m", "motor.novidades"]

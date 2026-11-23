@@ -317,7 +317,7 @@ def test_plugin_atualizar_leva_a_versao_nova_e_mantem_o_resto(
     ]
     saida = capsys.readouterr().out
     assert f"{PLUGIN_A}: {A_CURTO} → {NOVO_CURTO}" in saida
-    assert f"{PACOTE_MOTOR} serve" in saida
+    assert LEMBRETE in saida
 
 
 @pytest.mark.parametrize(
@@ -668,52 +668,61 @@ def test_atualizar_motor_sem_ref_nao_apaga_a_tag_do_plugin_do_repo(
 
 
 ATIVO_SYSTEMD = "active\n"
+# O texto é o requisito: diz o que fazer quando o reinício não foi automático.
+LEMBRETE = "Se o daemon estiver rodando, use `monitor-versoes daemon reiniciar`."
 
 
-def _daemon_rodando(monkeypatch: pytest.MonkeyPatch) -> None:
+def _daemon_instalado(monkeypatch: pytest.MonkeyPatch, rodando: bool) -> None:
     servico.regravar(
         Sistema.LINUX, Path.home(), servico.executavel_servico(), lambda cmd: None
     )
+    resposta = ATIVO_SYSTEMD if rodando else None
     monkeypatch.setattr(
         servico,
         "consultar_do_sistema",
-        lambda cmd: ATIVO_SYSTEMD if Acao.IS_ACTIVE in cmd else None,
+        lambda cmd: resposta if Acao.IS_ACTIVE in cmd else None,
     )
 
 
-@pytest.mark.parametrize("ligado", [True, False])
 @pytest.mark.parametrize(
     "argv",
     [[COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B], [COMANDO_ATUALIZAR_MOTOR]],
 )
-def test_reinstalar_reinicia_o_servico_ligado(
-    inst: Instalacao,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys,
-    argv: list[str],
-    ligado: bool,
+def test_reinstalar_reinicia_o_daemon_rodando(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch, capsys, argv: list[str]
 ) -> None:
-    inst.remotos[URL_A] = _remoto(head=COMMIT_NOVO)
     inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
     inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR, TAG_MOTOR_NOVA))
     monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
-    if ligado:
-        _daemon_rodando(monkeypatch)
+    _daemon_instalado(monkeypatch, rodando=True)
     chamados: list[list[str]] = []
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", chamados.append)
 
     main(argv)
 
-    saida = capsys.readouterr().out
-    if ligado:
-        assert chamados == [
-            [*SYSTEMCTL, Acao.DAEMON_RELOAD],
-            [*SYSTEMCTL, Acao.RESTART, servico.ARQUIVO_SERVICE],
-        ]
-        assert "reinicie-o" not in saida
-    else:
-        assert chamados == []
-        assert f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o." in saida
+    assert chamados == [
+        [*SYSTEMCTL, Acao.DAEMON_RELOAD],
+        [*SYSTEMCTL, Acao.RESTART, servico.ARQUIVO_SERVICE],
+    ]
+    assert LEMBRETE not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("instalado", [True, False])
+def test_reinstalar_nao_sobe_daemon_parado(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch, capsys, instalado: bool
+) -> None:
+    inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
+    monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
+    if instalado:
+        _daemon_instalado(monkeypatch, rodando=False)
+    chamados: list[list[str]] = []
+    monkeypatch.setattr(agendador, "rodar_comando_do_sistema", chamados.append)
+
+    main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
+
+    # Instalado e parado, só a unit é regravada com o executável novo.
+    assert chamados == ([[*SYSTEMCTL, Acao.DAEMON_RELOAD]] if instalado else [])
+    assert LEMBRETE in capsys.readouterr().out
 
 
 def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
@@ -721,7 +730,7 @@ def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
 ) -> None:
     inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
     monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
-    _daemon_rodando(monkeypatch)
+    _daemon_instalado(monkeypatch, rodando=True)
     monkeypatch.setattr(
         agendador,
         "rodar_comando_do_sistema",
@@ -731,7 +740,7 @@ def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
     main([COMANDO_PLUGIN, AcaoPlugin.INSTALAR, URL_B])
 
     saida = capsys.readouterr().out
-    assert f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o." in saida
+    assert LEMBRETE in saida
     assert MOTIVO_FALHA in saida
 
 
@@ -769,3 +778,22 @@ def test_pos_reinstalar_imprime_mudancas_e_apaga_o_cache(
         capsys.readouterr().out == f"  {PLUGIN_JIRA}: {TAG_MOTOR} → {TAG_MOTOR_NOVA}\n"
     )
     assert not _cache().exists()
+
+
+@pytest.mark.parametrize("no_windows", [True, False])
+def test_pos_reinstalar_no_windows_troca_o_servico_antigo(
+    inst: Instalacao, monkeypatch: pytest.MonkeyPatch, no_windows: bool
+) -> None:
+    pasta = ajudante.pasta_reinstalacao()
+    pasta.mkdir(parents=True)
+    (pasta / ajudante.ARQUIVO_ANTES).write_text(registro_para_json(Registro(MOTOR, ())))
+    inst.registros = [Registro(MOTOR, ())]
+    monkeypatch.setattr(cli_instalacao, "_reinstala_pelo_ajudante", lambda: no_windows)
+    migrados: list[Sistema] = []
+    monkeypatch.setattr(
+        servico, "migrar_legado", lambda sistema, *_: migrados.append(sistema)
+    )
+
+    main([COMANDO_POS_REINSTALAR])
+
+    assert migrados == ([Sistema.WINDOWS] if no_windows else [])

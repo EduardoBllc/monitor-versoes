@@ -39,8 +39,9 @@ from motor.cli_instalacao import (
 )
 from motor.errors import CodigoSaida
 from motor.instalacao import PACOTE_MOTOR, UV, ArgUv
-from motor.servico import NOME_TAREFA_SERVE
+from motor.servico import NOME_TAREFA_LOGIN, NOME_TAREFA_PROCESSO, NOME_TAREFA_SERVE
 from tests.plataforma import PLATAFORMA_WINDOWS
+from tests.tarefas_falsas import EstadoTarefa, com_tarefas
 
 RAIZ = Path(__file__).resolve().parent.parent
 SCRIPT = RAIZ / "install.ps1"
@@ -123,6 +124,7 @@ class Pasta(StrEnum):
     TOOLDIR = "tooldir"
     LOCAL = "localappdata"
     ROAMING = "appdata"
+    MODULOS = "modulos"
 
 
 class Var(StrEnum):
@@ -131,7 +133,6 @@ class Var(StrEnum):
     LINHA_UV = "FALSO_LINHA_UV"
     MOTOR = "FALSO_MOTOR"
     SAIDA_UV = "FALSO_SAIDA_UV"
-    SAIDA_QUERY = "FALSO_SAIDA_QUERY"
     SAIDA_SONDA = "FALSO_SAIDA_SONDA"
     SAIDA_SONDA_AJUDANTE = "FALSO_SAIDA_SONDA_AJUDANTE"
     SAIDA_ATUALIZAR = "FALSO_SAIDA_ATUALIZAR"
@@ -197,8 +198,6 @@ elif nome == "{Falso.UV}" and args[:1] == ["{ArgUv.TOOL}"]:
             motor.unlink()
         else:
             codigo = {SAIDA_UV_NAO_INSTALADO}
-elif nome == "{Falso.SCHTASKS}" and args[:1] == ["{AcaoSchtasks.QUERY}"]:
-    codigo = int(env["{Var.SAIDA_QUERY}"])
 elif nome == "{Falso.MOTOR}":
     if args == ["{COMANDO_ATUALIZAR_MOTOR}", "{FLAG_HELP}"]:
         codigo = int(env["{Var.SAIDA_SONDA}"])
@@ -260,6 +259,9 @@ class Maquina:
 
     def sem(self, nome: str) -> None:
         (self.falsos / f"{nome}{SUFIXO_CMD}").unlink()
+
+    def com_tarefas(self, tarefas: dict[str, EstadoTarefa]) -> None:
+        self.env = com_tarefas(self.raiz / Pasta.MODULOS, self.env, tarefas)
 
     def instalar_motor(self) -> None:
         shutil.copy(self.env[Var.MOTOR], self.toolbin)
@@ -362,7 +364,6 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
         Var.LINHA_UV: f"{PACOTE_MOTOR} {VERSAO_ANTIGA}",
         Var.MOTOR: str(motor),
         Var.SAIDA_UV: str(CodigoSaida.OK),
-        Var.SAIDA_QUERY: str(CodigoSaida.ERRO),
         Var.SAIDA_SONDA: str(CodigoSaida.OK),
         Var.SAIDA_SONDA_AJUDANTE: str(CodigoSaida.OK),
         Var.SAIDA_ATUALIZAR: str(CodigoSaida.OK),
@@ -371,6 +372,8 @@ def maquina(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Maquina]
     m = Maquina(tmp_path, casca, falsos, pacotes, toolbin, tmp_path / ARQUIVO_LOG, env)
     for falso in (Falso.GIT, Falso.UV, Falso.SCHTASKS):
         m.com(falso)
+    # Sem tarefas por padrão: as de verdade da máquina não entram no teste.
+    m.com_tarefas({})
     yield m
 
 
@@ -379,12 +382,8 @@ def _instalacao(tag: str, *, reinstalar: bool = False) -> str:
     return f"{UV} {ArgUv.TOOL} {AcaoUv.INSTALL}{flag} {PACOTE_MOTOR} @ git+{URL_REPO}@{tag}"
 
 
-def _schtasks(acao: AcaoSchtasks, tarefa: str = NOME_TAREFA_SERVE) -> str:
-    return f"{SCHTASKS} {acao} {FLAG_TAREFA} {tarefa}"
-
-
-def _schtasks_serve(acao: AcaoSchtasks, flag: str) -> str:
-    return f"{_schtasks(acao)} {flag}"
+def _schtasks(acao: AcaoSchtasks, tarefa: str, *resto: str) -> str:
+    return " ".join([SCHTASKS, acao, FLAG_TAREFA, tarefa, *resto])
 
 
 def _configurar() -> str:
@@ -546,9 +545,20 @@ def test_sonda_2_ou_3_reinstala_e_lista_plugins(
     assert f"{instalar} 'git+{URL_REPO}{sufixo_repo}{SUBPASTA_JIRA}'" in r.stdout
 
 
+@pytest.mark.parametrize(
+    ("tarefas", "religadas"),
+    [
+        ({NOME_TAREFA_PROCESSO: EstadoTarefa.ATIVADA}, [NOME_TAREFA_PROCESSO]),
+        ({NOME_TAREFA_PROCESSO: EstadoTarefa.DESATIVADA}, []),
+        ({NOME_TAREFA_SERVE: EstadoTarefa.ATIVADA}, [NOME_TAREFA_SERVE]),
+    ],
+    ids=["daemon-ativado", "daemon-parado", "servico-antigo"],
+)
 @pytest.mark.parametrize("caminho", list(Caminho))
-def test_servico_ligado_encerra_antes_e_sobe_depois_do_uv(maquina, caminho):
-    maquina.env[Var.SAIDA_QUERY] = str(CodigoSaida.OK)
+def test_uv_com_o_daemon_encerrado_e_religado_so_se_estava_ativado(
+    maquina, caminho, tarefas, religadas
+):
+    maquina.com_tarefas(tarefas)
     reinstalar = caminho is Caminho.REINSTALACAO
     if reinstalar:
         maquina.env[Var.SAIDA_SONDA] = str(CodigoSaida.USO)
@@ -557,15 +567,28 @@ def test_servico_ligado_encerra_antes_e_sobe_depois_do_uv(maquina, caminho):
     r = maquina.rodar(ArgScript.SEM_CONFIGURAR)
 
     assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
-    chamadas = maquina.chamadas()
-    ordem = [
-        _schtasks_serve(AcaoSchtasks.CHANGE, FLAG_DESATIVAR_SCHTASKS),
-        _schtasks(AcaoSchtasks.END),
-        _instalacao(ULTIMA_TAG, reinstalar=reinstalar),
-        _schtasks_serve(AcaoSchtasks.CHANGE, FLAG_ATIVAR_SCHTASKS),
-        _schtasks(AcaoSchtasks.RUN),
+    uv = _instalacao(ULTIMA_TAG, reinstalar=reinstalar)
+    esperado = [
+        *(
+            linha
+            for t in religadas
+            for linha in (
+                _schtasks(AcaoSchtasks.CHANGE, t, FLAG_DESATIVAR_SCHTASKS),
+                _schtasks(AcaoSchtasks.END, t),
+            )
+        ),
+        uv,
+        *(
+            linha
+            for t in religadas
+            for linha in (
+                _schtasks(AcaoSchtasks.CHANGE, t, FLAG_ATIVAR_SCHTASKS),
+                _schtasks(AcaoSchtasks.RUN, t),
+            )
+        ),
     ]
-    assert [c for c in chamadas if c in ordem] == ordem
+    chamadas = maquina.chamadas()
+    assert [c for c in chamadas if c == uv or c.startswith(SCHTASKS)] == esperado
 
 
 def _processo_do_ambiente(maquina: Maquina, codigo: str) -> subprocess.Popen[bytes]:
@@ -704,7 +727,12 @@ def test_desinstalar_sem_motor_encerra_e_apaga_as_tarefas(
 
     assert r.returncode == CodigoSaida.OK, r.stdout + r.stderr
     chamadas = maquina.chamadas()
-    for tarefa in (NOME_TAREFA_SERVE, NOME_TAREFA_INSCRICOES):
+    for tarefa in (
+        NOME_TAREFA_PROCESSO,
+        NOME_TAREFA_LOGIN,
+        NOME_TAREFA_SERVE,
+        NOME_TAREFA_INSCRICOES,
+    ):
         assert _schtasks(AcaoSchtasks.END, tarefa) in chamadas
         assert (
             f"{_schtasks(AcaoSchtasks.DELETE, tarefa)} {FLAG_FORCAR_SCHTASKS}"

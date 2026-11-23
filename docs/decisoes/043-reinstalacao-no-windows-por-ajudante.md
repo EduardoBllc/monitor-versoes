@@ -1,6 +1,7 @@
 # Reinstalação no Windows por ajudante
 
-- **Status:** aceita
+- **Status:** substituída por [045](045-daemon-processo-e-login-separados.md) no ponto "o
+  serviço sobe de novo ao fim" (sobe só se estava ativado); vale nos demais pontos
 - **Data:** 2026-11-16
 - **Depende de:** [040](040-instalacao-pelo-registro-do-uv.md),
   [042](042-instalador-e-daemon-no-login.md)

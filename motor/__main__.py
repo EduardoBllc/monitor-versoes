@@ -33,6 +33,7 @@ from motor.config import (
     checar_backend,
     database_url,
     diretorio_dados,
+    porta_daemon,
     repos_configurados,
     validar_nome_repo,
 )
@@ -190,12 +191,16 @@ def _imprimir_diagnostico(args: argparse.Namespace) -> bool:
         erro_ambiente=args.erro_central,
         novidades=novidades_do_cache,
     )
+    try:
+        porta = porta_daemon()
+    except ErroDeEntrada:  # a config inválida já aparece numa peça acima
+        porta = PORTA_PADRAO
     resultados.append(
         peca_daemon(
             servico.situacao(
                 Path.home(),
                 servico.consultar_do_sistema,
-                lambda: servico.serve_responde(PORTA_PADRAO, esperar=False),
+                lambda: servico.serve_responde(porta, esperar=False),
             )
         )
     )
@@ -298,7 +303,7 @@ def _inscricao_executar(args: argparse.Namespace) -> None:
     except MotorError as e:
         resultado = Resultado(Desfecho.ERRO, mensagem=str(e))
     except Exception as e:
-        # Grava antes de propagar: o traceback segue para o log de quem disparou (serve, cron ou timer).
+        # Grava antes de propagar: o traceback segue para o log de quem disparou (daemon, cron ou timer).
         erro = Resultado(Desfecho.ERRO, mensagem=f"{type(e).__name__}: {e}")
         registrar_execucao(caminho, inscricao, erro, notificador, datetime.now(UTC))
         raise

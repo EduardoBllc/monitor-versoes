@@ -5,9 +5,9 @@ Reinstala o monitor-versoes pelo uv depois que o motor sai (decisão 043).
 .DESCRIPTION
 O motor grava antes.json e comando.json em -Pasta e dispara este script fora
 do ambiente. O uv só troca o ambiente sem nenhum processo dele vivo; por isso
-o script espera o motor sair, encerra o serviço de login, espera o ambiente
-ficar livre, roda o uv, mostra as mudanças, sobe o serviço de novo e grava
-0 ou 1 em -Pasta\resultado.
+o script espera o motor sair, encerra o daemon, espera o ambiente ficar
+livre, roda o uv, mostra as mudanças, sobe o daemon de novo se ele rodava e
+grava 0 ou 1 em -Pasta\resultado.
 #>
 [CmdletBinding()]
 param(
@@ -19,12 +19,13 @@ param(
     [Parameter(Mandatory = $true)][int]$PrazoProcessos
 )
 
-# Os mesmos nomes de motor/agendador.py.
+# Os mesmos nomes de motor/agendador.py e motor/servico.py.
 $SCHTASKS = 'schtasks'
 $ACAO_ALTERAR = '/change'
 $FLAG_DESATIVAR = '/disable'
 $FLAG_ATIVAR = '/enable'
-$TAREFA_SERVE = 'monitor-versoes-serve'
+$TAREFA_DAEMON = 'monitor-versoes-daemon'
+$ESTADO_DESATIVADA = 'Disabled'
 $COMANDO_POS_REINSTALAR = 'pos-reinstalar'
 $ARQUIVO_COMANDO = 'comando.json'
 $ARQUIVO_RESULTADO = 'resultado'
@@ -72,7 +73,7 @@ try {
 }
 
 $resultado = $RESULTADO_FALHA
-$servicoLigado = $false
+$daemonAtivado = $false
 # Um prazo só para a espera dos PIDs e a do ambiente.
 $limite = (Get-Date).AddSeconds($PrazoProcessos)
 try {
@@ -81,12 +82,13 @@ try {
         Wait-Process -Id ([int]$id) -Timeout $restante -ErrorAction SilentlyContinue
     }
 
-    & $SCHTASKS /query /tn $TAREFA_SERVE *> $null
-    $servicoLigado = $LASTEXITCODE -eq 0
-    if ($servicoLigado) {
-        # Desativada, o gatilho de 1 min não sobe o serve no meio do uv.
-        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_DESATIVAR *> $null
-        & $SCHTASKS /end /tn $TAREFA_SERVE *> $null
+    # Ativada é o daemon que deve rodar; desativada é um `daemon parar`, que a reinstalação respeita.
+    $tarefa = Get-ScheduledTask -TaskName $TAREFA_DAEMON -ErrorAction SilentlyContinue
+    $daemonAtivado = $null -ne $tarefa -and $tarefa.State -ne $ESTADO_DESATIVADA
+    if ($daemonAtivado) {
+        # Desativada, o gatilho de 1 min não sobe o daemon no meio do uv.
+        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_DAEMON $FLAG_DESATIVAR *> $null
+        & $SCHTASKS /end /tn $TAREFA_DAEMON *> $null
     }
 
     $vivos = @(Wait-AmbienteLivre -Ambiente $Ambiente -Bin $Bin -Executaveis $EXECUTAVEIS_DO_MOTOR -Limite $limite -IntervaloMs $INTERVALO_MS)
@@ -121,9 +123,9 @@ try {
         }
     }
 } finally {
-    if ($servicoLigado) {
-        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_ATIVAR *> $null
-        & $SCHTASKS /run /tn $TAREFA_SERVE *> $null
+    if ($daemonAtivado) {
+        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_DAEMON $FLAG_ATIVAR *> $null
+        & $SCHTASKS /run /tn $TAREFA_DAEMON *> $null
     }
     Set-Content -LiteralPath (Join-Path -Path $Pasta -ChildPath $ARQUIVO_RESULTADO) -Value $resultado -NoNewline -Encoding Ascii
     if ($codificacaoTrocada) {

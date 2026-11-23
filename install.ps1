@@ -48,7 +48,10 @@ $SCHTASKS = 'schtasks'
 $ACAO_ALTERAR = '/change'
 $FLAG_DESATIVAR = '/disable'
 $FLAG_ATIVAR = '/enable'
+$TAREFA_DAEMON = 'monitor-versoes-daemon'
+$TAREFA_LOGIN = 'monitor-versoes-login'
 $TAREFA_SERVE = 'monitor-versoes-serve'
+$ESTADO_DESATIVADA = 'Disabled'
 $TAREFA_INSCRICOES = 'monitor-versoes-inscricoes'
 $VAR_AJUDANTE_ESTADO = 'MONITOR_VERSOES_AJUDANTE_ESTADO'
 $PASTA_APP = 'monitor-versoes'
@@ -138,19 +141,24 @@ function Assert-AmbienteLivre {
     }
 }
 
-function Test-ServicoLigado {
-    & $SCHTASKS /query /tn $TAREFA_SERVE *> $null
-    return $LASTEXITCODE -eq $SAIDA_OK
+function Get-TarefaAtivada {
+    # Ativada é o daemon que deve rodar; desativada é um `daemon parar`, que a reinstalação respeita.
+    foreach ($nome in @($TAREFA_DAEMON, $TAREFA_SERVE)) {
+        $tarefa = Get-ScheduledTask -TaskName $nome -ErrorAction SilentlyContinue
+        if ($null -ne $tarefa -and $tarefa.State -ne $ESTADO_DESATIVADA) {
+            $nome
+        }
+    }
 }
 
 function Invoke-UvComServico {
-    # O uv não troca o ambiente com o serve vivo (decisão 043).
+    # O uv não troca o ambiente com o daemon vivo (decisão 043).
     param([string[]]$Argumentos, [string]$Falha)
-    $ligado = Test-ServicoLigado
-    if ($ligado) {
-        # Desativada, o gatilho de 1 min não sobe o serve no meio do uv.
-        & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_DESATIVAR *> $null
-        & $SCHTASKS /end /tn $TAREFA_SERVE *> $null
+    $ativadas = @(Get-TarefaAtivada)
+    foreach ($tarefa in $ativadas) {
+        # Desativada, o gatilho de 1 min não sobe o daemon no meio do uv.
+        & $SCHTASKS $ACAO_ALTERAR /tn $tarefa $FLAG_DESATIVAR *> $null
+        & $SCHTASKS /end /tn $tarefa *> $null
     }
     try {
         Assert-AmbienteLivre
@@ -159,9 +167,9 @@ function Invoke-UvComServico {
             throw $Falha
         }
     } finally {
-        if ($ligado) {
-            & $SCHTASKS $ACAO_ALTERAR /tn $TAREFA_SERVE $FLAG_ATIVAR *> $null
-            & $SCHTASKS /run /tn $TAREFA_SERVE *> $null
+        foreach ($tarefa in $ativadas) {
+            & $SCHTASKS $ACAO_ALTERAR /tn $tarefa $FLAG_ATIVAR *> $null
+            & $SCHTASKS /run /tn $tarefa *> $null
         }
     }
 }
@@ -323,7 +331,7 @@ function Invoke-Desinstalacao {
     }
     # O motor pode estar quebrado (config inválida): sem ele, o script faz o mínimo.
     if ($codigo -ne $SAIDA_OK) {
-        foreach ($tarefa in @($TAREFA_SERVE, $TAREFA_INSCRICOES)) {
+        foreach ($tarefa in @($TAREFA_DAEMON, $TAREFA_LOGIN, $TAREFA_SERVE, $TAREFA_INSCRICOES)) {
             & $SCHTASKS /end /tn $tarefa *> $null
             & $SCHTASKS /delete /tn $tarefa /f *> $null
         }

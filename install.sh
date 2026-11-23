@@ -19,8 +19,9 @@ CMD_DESINSTALAR="desinstalar"
 CMD_PLUGIN_INSTALAR="plugin instalar"
 # Os mesmos nomes de motor/servico.py e do timer antigo em motor/agendador.py.
 SERVICO_SYSTEMD="monitor-versoes-serve.service"
-ROTULO_LAUNCHD="monitor-versoes.serve"
-PLIST_LAUNCHD="$ROTULO_LAUNCHD.plist"
+ROTULO_DAEMON="monitor-versoes.daemon"
+ROTULO_LOGIN="monitor-versoes.login"
+ROTULO_LEGADO="monitor-versoes.serve"
 TIMER_SERVICE="monitor-versoes-inscricoes.service"
 TIMER_TIMER="monitor-versoes-inscricoes.timer"
 TIMER_PLIST="monitor-versoes.inscricoes.plist"
@@ -35,6 +36,7 @@ SISTEMA_MACOS="Darwin"
 
 PASTA_SYSTEMD="$HOME/.config/systemd/user"
 PASTA_LAUNCHD="$HOME/Library/LaunchAgents"
+PASTA_DADOS="$HOME/.local/share/monitor-versoes"
 PATH_ORIGINAL="$PATH"
 
 ok() { printf '✔ %s\n' "$1"; }
@@ -50,28 +52,37 @@ tem_terminal() {
 	[ -t 1 ] && (: </dev/tty) 2>/dev/null
 }
 
+# Só o daemon que está rodando é reiniciado: um `daemon parar` continua valendo.
 reiniciar_servico() {
 	if [ "$sistema" = "$SISTEMA_MACOS" ]; then
-		[ -f "$PASTA_LAUNCHD/$PLIST_LAUNCHD" ] || return 0
-		alvo="gui/$(id -u)/$ROTULO_LAUNCHD"
-		if launchctl kickstart -k "$alvo"; then
-			ok "serviço do login reiniciado"
-		else
-			aviso "não consegui reiniciar o serviço; rode: launchctl kickstart -k $alvo"
-		fi
+		for rotulo in "$ROTULO_DAEMON" "$ROTULO_LEGADO"; do
+			alvo="gui/$(id -u)/$rotulo"
+			launchctl print "$alvo" >/dev/null 2>&1 || continue
+			if launchctl kickstart -k "$alvo"; then
+				ok "daemon reiniciado"
+			else
+				aviso "não consegui reiniciar o daemon; rode: launchctl kickstart -k $alvo"
+			fi
+		done
 		return 0
 	fi
 	[ -f "$PASTA_SYSTEMD/$SERVICO_SYSTEMD" ] || return 0
-	if systemctl --user restart "$SERVICO_SYSTEMD"; then
-		ok "serviço do login reiniciado"
+	if systemctl --user try-restart "$SERVICO_SYSTEMD"; then
+		ok "daemon reiniciado, se estava rodando"
 	else
-		aviso "não consegui reiniciar o serviço; rode: systemctl --user restart $SERVICO_SYSTEMD"
+		aviso "não consegui reiniciar o daemon; rode: systemctl --user try-restart $SERVICO_SYSTEMD"
 	fi
 }
 
 remover_servicos() {
 	if [ "$sistema" = "$SISTEMA_MACOS" ]; then
-		for plist in "$PASTA_LAUNCHD/$PLIST_LAUNCHD" "$PASTA_LAUNCHD/$TIMER_PLIST"; do
+		# Os do motor novo saem sem `-w`: ele marcaria o rótulo como desativado para sempre.
+		for plist in "$PASTA_DADOS/$ROTULO_DAEMON.plist" "$PASTA_LAUNCHD/$ROTULO_LOGIN.plist"; do
+			[ -f "$plist" ] || continue
+			launchctl unload "$plist" || true
+			rm -f "$plist"
+		done
+		for plist in "$PASTA_LAUNCHD/$ROTULO_LEGADO.plist" "$PASTA_LAUNCHD/$TIMER_PLIST"; do
 			[ -f "$plist" ] || continue
 			launchctl unload -w "$plist" || true
 			rm -f "$plist"
@@ -87,7 +98,7 @@ remover_servicos() {
 	ok "serviços do monitor-versoes removidos"
 	printf '%s\n' "Os dados ficaram, nos caminhos padrão:" \
 		"  ${XDG_CONFIG_HOME:-$HOME/.config}/monitor-versoes" \
-		"  $HOME/.local/share/monitor-versoes" \
+		"  $PASTA_DADOS" \
 		"  ${XDG_CACHE_HOME:-$HOME/.cache}/monitor-versoes" \
 		"Um DATABASE_SQLITE_PATH fora do padrão não foi conferido."
 }

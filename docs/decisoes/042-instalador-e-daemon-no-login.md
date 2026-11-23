@@ -1,6 +1,8 @@
 # Instalador, configurar e daemon no login
 
-- **Status:** aceita
+- **Status:** substituída por [045](045-daemon-processo-e-login-separados.md) nos pontos "uma
+  peça só para manter o daemon de pé e subi-lo no login" e "toda reinstalação reinicia o
+  serviço"; vale nos demais pontos
 - **Data:** 2026-11-15
 - **Depende de:** [039](039-versionamento-por-tag.md), [040](040-instalacao-pelo-registro-do-uv.md),
   [041](041-disparo-das-inscricoes-pelo-daemon.md)

@@ -1,4 +1,4 @@
-"""`monitor-versoes configurar`: fontes, serviço de login e o caminho até a web."""
+"""`monitor-versoes configurar`: fontes, início do daemon no login e o caminho até a web."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from prompt_toolkit.keys import Keys
 
 from motor import agendador, console, instalacao, plugins, servico
 from motor.agendador import Sistema
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
 from motor.config import (
     Chave,
@@ -33,15 +34,17 @@ from motor.config import (
     caminho_config_global,
     diretorio_cache,
     diretorio_dados,
+    nunca_iniciar_login,
+    porta_daemon,
 )
 from motor.config_edicao import (
     AcaoAlteracao,
     Alteracao,
     GrupoPlugin,
     gravar,
+    gravar_nunca_iniciar_login,
     ler_para_edicao,
 )
-from motor.daemon import PORTA_PADRAO
 from motor.errors import CodigoSaida, ErroDeEntrada, MotorError
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PREFIXO_GIT
 
@@ -324,7 +327,7 @@ def _quer_login(home: Path) -> bool | None:
     except ErroDeEntrada:
         return None
     padrao = _login_ligado(home) or not Path(caminho_config_global()).exists()
-    return confirmar("Iniciar o `serve` no login?", padrao)
+    return confirmar("Iniciar o daemon no login?", padrao and not nunca_iniciar_login())
 
 
 def _alteracoes(
@@ -349,26 +352,28 @@ def _aplicar_login(home: Path, quer: bool | None) -> None:
         if quer:
             servico.ligar_login(sistema, home, servico.executavel_servico(), rodar)
             servico.subir(sistema, home, servico.executavel_servico(), rodar)
+            gravar_nunca_iniciar_login(False)
         else:
             servico.desligar_login(sistema, home, rodar)
     except MotorError as e:
-        marcar(Marca.FALHA, f"serviço de login: {e}")
+        marcar(Marca.FALHA, f"início no login: {e}")
         return
-    marcar(Marca.OK, f"serviço de login {'ligado' if quer else 'desligado'}")
+    marcar(
+        Marca.OK,
+        "daemon rodando e iniciando no login" if quer else "início no login desligado",
+    )
 
 
 def _fechar(imprimir_diagnostico: Callable[[], object], home: Path) -> None:
     imprimir_diagnostico()
-    if not servico.serve_responde(PORTA_PADRAO, esperar=_login_ligado(home)):
-        print(
-            f"Para terminar a configuração na web, rode `{servico.EXECUTAVEL} serve`."
-        )
+    porta = porta_daemon()
+    if not servico.serve_responde(porta, esperar=_login_ligado(home)):
+        iniciar = f"{servico.EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}"
+        print(f"Para terminar a configuração na web, rode `{iniciar}`.")
     elif not _ambiente_grafico():
-        print(
-            f"Configuração na web: {servico.endereco_web(PORTA_PADRAO)} (→ Configuração)"
-        )
+        print(f"Configuração na web: {servico.endereco_web(porta)} (→ Configuração)")
     elif confirmar("Abrir a configuração da web no navegador?", True):
-        webbrowser.open(servico.endereco_web(PORTA_PADRAO))
+        webbrowser.open(servico.endereco_web(porta))
 
 
 def configurar(imprimir_diagnostico: Callable[[], object]) -> None:
@@ -482,10 +487,10 @@ def _apagar(caminho: Path, pasta: bool) -> bool:
 def desinstalar() -> None:
     home = Path.home()
     with contextlib.suppress(ErroDeEntrada):
-        servico.remover(
+        if servico.remover(
             agendador.sistema_atual(), home, agendador.rodar_comando_do_sistema
-        )
-        marcar(Marca.OK, "serviço de login removido")
+        ):
+            marcar(Marca.OK, "daemon e início no login removidos")
     agendador.remover_agendador_antigo(home, agendador.rodar_comando_do_sistema)
     pastas, arquivos = _caminhos_de_dados()
     caminhos = [*pastas, *arquivos]

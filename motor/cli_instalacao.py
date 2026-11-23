@@ -16,8 +16,15 @@ from urllib.parse import parse_qsl, urlsplit
 
 from motor import agendador, ajudante, console, servico
 from motor.agendador import Sistema
+from motor.cli_daemon import COMANDO_DAEMON, AcaoDaemon
 from motor.config import diretorio_cache
-from motor.errors import BackendIndisponivel, CodigoSaida, ErroDeEntrada, OrigemRecusada
+from motor.errors import (
+    BackendIndisponivel,
+    CodigoSaida,
+    ErroDeEntrada,
+    MotorError,
+    OrigemRecusada,
+)
 from motor.instalacao import (
     PACOTE_MOTOR,
     PARAMETRO_SUBDIRETORIO,
@@ -54,6 +61,11 @@ COMANDO_PLUGIN = "plugin"
 COMANDO_ATUALIZAR_MOTOR = "atualizar-motor"
 COMANDO_POS_REINSTALAR = "pos-reinstalar"
 URL_INSTALAR_UV = "https://docs.astral.sh/uv/getting-started/installation/"
+LEMBRETE_REINICIAR = (
+    f"Se o daemon estiver rodando, use `{servico.EXECUTAVEL} {COMANDO_DAEMON} "
+    f"{AcaoDaemon.REINICIAR}`."
+)
+LEMBRETE_INICIAR = f"Use `{servico.EXECUTAVEL} {COMANDO_DAEMON} {AcaoDaemon.INICIAR}`."
 # `git@host:caminho`: o git aceita, o `uv` só aceita como `ssh://git@host/caminho`.
 _SCP = re.compile(r"([^@/:]+@[^/:]+):(?!//)(.+)")
 _SEPARADORES = ("/", "\\", ":")
@@ -166,6 +178,21 @@ def _depois_do_uv(antes: Registro) -> None:
 
 def pos_reinstalar(_args: argparse.Namespace) -> None:
     _depois_do_uv(ajudante.ler_antes())
+    if not _reinstala_pelo_ajudante():
+        return
+    # Roda com o motor novo; o ajudante que nos chamou pode ser o antigo, que só conhece a tarefa legada.
+    try:
+        servico.migrar_legado(
+            Sistema.WINDOWS,
+            Path.home(),
+            servico.executavel_servico(),
+            agendador.rodar_comando_do_sistema,
+            servico.consultar_do_sistema,
+        )
+    except MotorError as e:
+        print(
+            f"Não deu para trocar o serviço antigo pelo daemon ({e}). {LEMBRETE_INICIAR}"
+        )
 
 
 def _reinstala_pelo_ajudante() -> bool:
@@ -186,17 +213,16 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
         )
         sys.exit(CodigoSaida.ERRO)
     _depois_do_uv(antes)
-    lembrete = f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o."
     try:
         if not servico.apos_reinstalar(
             Path.home(),
             agendador.rodar_comando_do_sistema,
             servico.consultar_do_sistema,
         ):
-            print(lembrete)
+            print(LEMBRETE_REINICIAR)
     except BackendIndisponivel as e:
         # A reinstalação já deu certo; o reinício é só conveniência.
-        print(f"Não deu para reiniciar o serviço de login ({e}). {lembrete}")
+        print(f"Não deu para reiniciar o daemon ({e}). {LEMBRETE_REINICIAR}")
 
 
 def _instalar(reg: Registro, origem: str) -> list[str]:
