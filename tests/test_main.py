@@ -1087,7 +1087,9 @@ def test_diagnostico_mostra_a_peca_daemon(monkeypatch, capsys):
         lambda *a, **k: [Resultado(Peca.SQLITE, Estado.OK, "x")],
     )
     monkeypatch.setattr(
-        servico, "situacao", lambda *a: Situacao(EstadoServico.PARADO, "ver o log")
+        servico,
+        "situacao",
+        lambda *a: Situacao(EstadoServico.PARADO, login=True, ver_log="ver o log"),
     )
 
     with pytest.raises(SystemExit) as saida:

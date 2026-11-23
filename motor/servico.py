@@ -1,4 +1,4 @@
-"""Serviço de login que mantém o daemon (`serve`) de pé: systemd, LaunchAgent e Agendador de Tarefas."""
+"""Daemon em segundo plano: a peça do processo e a do login, no systemd, no launchd e no Agendador de Tarefas."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ import httpx
 
 from motor import console
 from motor.agendador import (
-    FLAG_AGORA,
     FLAG_FORCAR_SCHTASKS,
     FLAG_TAREFA,
     FLAG_XML,
@@ -35,28 +34,29 @@ from motor.agendador import (
     sistema_atual,
 )
 from motor.config import diretorio_dados
-from motor.daemon import PORTA_PADRAO
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 
 ARQUIVO_SERVICE = "monitor-versoes-serve.service"
-ROTULO_LAUNCHD = "monitor-versoes.serve"
-ARQUIVO_PLIST = f"{ROTULO_LAUNCHD}.plist"
+ROTULO_PROCESSO = "monitor-versoes.daemon"
+ROTULO_LOGIN = "monitor-versoes.login"
+ROTULO_LEGADO = "monitor-versoes.serve"
 ARQUIVO_LOG_LAUNCHD = "monitor-versoes-serve.log"
 EXECUTAVEL = "monitor-versoes"
 EXECUTAVEL_SERVE = "monitor-versoes-serve"
 NOME_TAREFA_SERVE = "monitor-versoes-serve"
 ARQUIVO_LOG_SERVE = "serve.log"
-ENDERECO_WEB = f"http://127.0.0.1:{PORTA_PADRAO}/"
 PRAZO_SUBIDA_S = 10
 INTERVALO_SONDA_S = 0.5
 TIMEOUT_SONDA_S = 2
 FORMATO_INICIO_TAREFA = "%Y-%m-%dT%H:%M:%S"
 COMANDO_CONFIGURAR = "configurar"
-ARGUMENTOS_SERVE = ("serve", "--sem-navegador")
+ARGUMENTOS_SERVE = ("daemon", "rodar", "--sem-navegador")
+ARGUMENTOS_LEGADOS = ("serve", "--sem-navegador")
+ARGUMENTOS_LOGIN = ("daemon", "iniciar", "--sem-perguntas")
 
 FLAG_PERSISTIR = "-w"
-FLAG_FORCAR = "-k"
 ESTADO_SYSTEMD_ATIVO = "active"
+ESTADO_SYSTEMD_HABILITADO = "enabled"
 ESTADO_LAUNCHD_ATIVO = "state = running"
 
 Consultar = Callable[[list[str]], str | None]
@@ -65,13 +65,14 @@ Consultar = Callable[[list[str]], str | None]
 class EstadoServico(StrEnum):
     ATIVO = "ativo"
     PARADO = "parado"
-    DESLIGADO = "desligado"
+    NO_TERMINAL = "no terminal"
     SEM_SUPORTE = "sem suporte"
 
 
 @dataclass(frozen=True)
 class Situacao:
     estado: EstadoServico
+    login: bool = False
     ver_log: str = ""
 
 
@@ -93,11 +94,15 @@ def executavel_servico() -> str:
     return executavel_motor()
 
 
-def serve_responde(esperar: bool) -> bool:
+def endereco_web(porta: int) -> str:
+    return f"http://127.0.0.1:{porta}/"
+
+
+def serve_responde(porta: int, esperar: bool) -> bool:
     limite = time.monotonic() + (PRAZO_SUBIDA_S if esperar else 0)
     while True:
         try:
-            if httpx.get(ENDERECO_WEB, timeout=TIMEOUT_SONDA_S).is_success:
+            if httpx.get(endereco_web(porta), timeout=TIMEOUT_SONDA_S).is_success:
                 return True
         except httpx.HTTPError:
             pass
@@ -107,9 +112,15 @@ def serve_responde(esperar: bool) -> bool:
 
 
 def caminho(sistema: Sistema, home: Path) -> Path:
+    """O arquivo da peça do processo."""
     if sistema is Sistema.MACOS:
-        return home / "Library" / "LaunchAgents" / ARQUIVO_PLIST
+        # Fora do LaunchAgents: o launchd não o carrega sozinho no login.
+        return Path(diretorio_dados()) / f"{ROTULO_PROCESSO}.plist"
     return home / ".config" / "systemd" / "user" / ARQUIVO_SERVICE
+
+
+def _agente(home: Path, rotulo: str) -> Path:
+    return home / "Library" / "LaunchAgents" / f"{rotulo}.plist"
 
 
 def _log_launchd(home: Path) -> Path:
@@ -117,7 +128,11 @@ def _log_launchd(home: Path) -> Path:
 
 
 def _alvo_launchd() -> str:
-    return f"gui/{os.getuid()}/{ROTULO_LAUNCHD}"
+    return f"gui/{os.getuid()}/{ROTULO_PROCESSO}"
+
+
+def _exec_start(executavel: str) -> str:
+    return f'ExecStart="{executavel}" {" ".join(ARGUMENTOS_SERVE)}\n'
 
 
 def _unit(executavel: str) -> str:
@@ -125,10 +140,20 @@ def _unit(executavel: str) -> str:
         "[Unit]\n"
         "Description=monitor-versoes: interface web e disparo das inscrições\n\n"
         "[Service]\n"
-        f'ExecStart="{executavel}" {" ".join(ARGUMENTOS_SERVE)}\n'
+        f"{_exec_start(executavel)}"
         "Restart=on-failure\n\n"
         "[Install]\n"
         "WantedBy=default.target\n"
+    )
+
+
+def _plist_login(executavel: str) -> bytes:
+    return plistlib.dumps(
+        {
+            "Label": ROTULO_LOGIN,
+            "ProgramArguments": [executavel, *ARGUMENTOS_LOGIN],
+            "RunAtLoad": True,
+        }
     )
 
 
@@ -136,7 +161,7 @@ def _plist(executavel: str, home: Path) -> bytes:
     log = str(_log_launchd(home))
     return plistlib.dumps(
         {
-            "Label": ROTULO_LAUNCHD,
+            "Label": ROTULO_PROCESSO,
             "ProgramArguments": [executavel, *ARGUMENTOS_SERVE],
             "RunAtLoad": True,
             "KeepAlive": True,
@@ -211,61 +236,159 @@ def _ligar_windows(executavel: str, rodar_comando: Comando) -> None:
         raise
 
 
-def ligar(
+def _remover_windows(rodar_comando: Comando) -> None:
+    for acao in (
+        _tarefa(AcaoSchtasks.END),
+        _tarefa(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
+    ):
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando(acao)
+
+
+def regravar(
+    sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
+) -> None:
+    # shortcut: no Windows a tarefa única só se grava ao subir; separar é da Tarefa 3.
+    if sistema is Sistema.WINDOWS:
+        return
+    arquivo = caminho(sistema, home)
+    arquivo.parent.mkdir(parents=True, exist_ok=True)
+    if sistema is Sistema.MACOS:
+        _log_launchd(home).parent.mkdir(parents=True, exist_ok=True)
+        arquivo.write_bytes(_plist(executavel, home))
+        return
+    arquivo.write_text(_unit(executavel))
+    rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+
+
+def subir(
     sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
 ) -> None:
     if sistema is Sistema.WINDOWS:
         _ligar_windows(executavel, rodar_comando)
         return
-    arquivo = caminho(sistema, home)
-    arquivo.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if sistema is Sistema.MACOS:
-            _log_launchd(home).parent.mkdir(parents=True, exist_ok=True)
-            arquivo.write_bytes(_plist(executavel, home))
-            # Um job já carregado ignoraria o plist novo; descarregar antes é inócuo se não estiver.
-            with contextlib.suppress(BackendIndisponivel):
-                rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)])
-            rodar_comando([LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(arquivo)])
-            return
-        arquivo.write_text(_unit(executavel))
-        rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
-        rodar_comando([*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE])
-        # `enable --now` não reinicia uma unit ativa, que seguiria com o ExecStart antigo.
-        rodar_comando([*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE])
-    except BackendIndisponivel:
-        # O arquivo é o que `ligado()` olha: deixá-lo sem o serviço de pé mente que está ligado.
-        if sistema is Sistema.LINUX:
-            # O `enable` já criou o link em default.target.wants; sem a unit ele ficaria órfão.
-            with contextlib.suppress(BackendIndisponivel):
-                rodar_comando([*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE])
-        arquivo.unlink(missing_ok=True)
-        if sistema is Sistema.LINUX:
-            with contextlib.suppress(BackendIndisponivel):
-                rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
-        raise
+    regravar(sistema, home, executavel, rodar_comando)
+    if sistema is Sistema.MACOS:
+        arquivo = str(caminho(sistema, home))
+        # Um job já carregado ignoraria o plist novo; descarregar antes é inócuo se não estiver.
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando([LAUNCHCTL, Acao.UNLOAD, arquivo])
+        rodar_comando([LAUNCHCTL, Acao.LOAD, arquivo])
+        return
+    # `start` não reinicia uma unit ativa, que seguiria com o ExecStart antigo.
+    rodar_comando([*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE])
 
 
-def desligar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
+def parar(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
     if sistema is Sistema.WINDOWS:
-        for acao in (
-            _tarefa(AcaoSchtasks.END),
-            _tarefa(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
-        ):
-            with contextlib.suppress(BackendIndisponivel):
-                rodar_comando(acao)
+        rodar_comando(_tarefa(AcaoSchtasks.END))
+    elif sistema is Sistema.MACOS:
+        rodar_comando([LAUNCHCTL, Acao.UNLOAD, str(caminho(sistema, home))])
+    else:
+        rodar_comando([*SYSTEMCTL, Acao.STOP, ARQUIVO_SERVICE])
+
+
+def rodando(sistema: Sistema, home: Path, consultar: Consultar) -> bool:
+    if sistema is Sistema.WINDOWS:
+        return _tarefa_existe(consultar)
+    if sistema is Sistema.MACOS:
+        saida = consultar([LAUNCHCTL, Acao.PRINT, _alvo_launchd()])
+        return saida is not None and ESTADO_LAUNCHD_ATIVO in saida
+    saida = consultar([*SYSTEMCTL, Acao.IS_ACTIVE, ARQUIVO_SERVICE])
+    return saida is not None and saida.strip() == ESTADO_SYSTEMD_ATIVO
+
+
+def ligar_login(
+    sistema: Sistema, home: Path, executavel: str, rodar_comando: Comando
+) -> None:
+    if sistema is Sistema.WINDOWS:
+        # Até a Tarefa 3, a tarefa única é processo e login: o gatilho de logon vem com ela.
+        _ligar_windows(executavel, rodar_comando)
+        return
+    if sistema is Sistema.MACOS:
+        arquivo = _agente(home, ROTULO_LOGIN)
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        arquivo.write_bytes(_plist_login(executavel))
         return
     arquivo = caminho(sistema, home)
-    # Desativar o que não está ativo não pode impedir a remoção do arquivo.
-    with contextlib.suppress(BackendIndisponivel):
-        if sistema is Sistema.MACOS:
-            rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)])
-        else:
-            rodar_comando([*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_SERVICE])
-    arquivo.unlink(missing_ok=True)
-    if sistema is Sistema.LINUX:
+    if not arquivo.exists():
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        arquivo.write_text(_unit(executavel))
+    rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+    rodar_comando([*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE])
+
+
+def desligar_login(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
+    if sistema is Sistema.WINDOWS:
+        _remover_windows(rodar_comando)
+    elif sistema is Sistema.MACOS:
+        arquivo = _agente(home, ROTULO_LOGIN)
+        # O arquivo é o que `login_ligado` olha: falha no unload não pode deixá-lo.
         with contextlib.suppress(BackendIndisponivel):
-            rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
+            rodar_comando([LAUNCHCTL, Acao.UNLOAD, str(arquivo)])
+        arquivo.unlink(missing_ok=True)
+    else:
+        rodar_comando([*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE])
+
+
+def login_ligado(sistema: Sistema, home: Path, consultar: Consultar) -> bool:
+    if sistema is Sistema.WINDOWS:
+        return _tarefa_existe(consultar)
+    if sistema is Sistema.MACOS:
+        return _agente(home, ROTULO_LOGIN).exists()
+    saida = consultar([*SYSTEMCTL, Acao.IS_ENABLED, ARQUIVO_SERVICE])
+    return saida is not None and saida.strip() == ESTADO_SYSTEMD_HABILITADO
+
+
+def migrar_legado(
+    sistema: Sistema,
+    home: Path,
+    executavel: str,
+    rodar_comando: Comando,
+    consultar: Consultar,
+) -> bool:
+    if sistema is Sistema.WINDOWS:
+        return False
+    if sistema is Sistema.MACOS:
+        legado = _agente(home, ROTULO_LEGADO)
+        if not legado.exists():
+            return False
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando([LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(legado)])
+        legado.unlink()
+        ligar_login(sistema, home, executavel, rodar_comando)
+        subir(sistema, home, executavel, rodar_comando)
+        return True
+    arquivo = caminho(sistema, home)
+    if not arquivo.exists() or _exec_start(executavel) in arquivo.read_text():
+        return False
+    regravar(sistema, home, executavel, rodar_comando)
+    return True
+
+
+def remover(sistema: Sistema, home: Path, rodar_comando: Comando) -> None:
+    if sistema is Sistema.WINDOWS:
+        _remover_windows(rodar_comando)
+        return
+    # Desativar o que não está ativo não pode impedir a remoção dos arquivos.
+    if sistema is Sistema.MACOS:
+        for arquivo, flags in (
+            (caminho(sistema, home), ()),
+            (_agente(home, ROTULO_LOGIN), ()),
+            (_agente(home, ROTULO_LEGADO), (FLAG_PERSISTIR,)),
+        ):
+            if not arquivo.exists():
+                continue
+            with contextlib.suppress(BackendIndisponivel):
+                rodar_comando([LAUNCHCTL, Acao.UNLOAD, *flags, str(arquivo)])
+            arquivo.unlink()
+        return
+    for acao in (Acao.STOP, Acao.DISABLE):
+        with contextlib.suppress(BackendIndisponivel):
+            rodar_comando([*SYSTEMCTL, acao, ARQUIVO_SERVICE])
+    caminho(sistema, home).unlink(missing_ok=True)
+    with contextlib.suppress(BackendIndisponivel):
+        rodar_comando([*SYSTEMCTL, Acao.DAEMON_RELOAD])
 
 
 def _sistema_ou_none() -> Sistema | None:
@@ -275,31 +398,23 @@ def _sistema_ou_none() -> Sistema | None:
         return None
 
 
-def ligado(home: Path) -> bool:
-    sistema = _sistema_ou_none()
-    if sistema is Sistema.WINDOWS:
-        return _tarefa_existe(consultar_do_sistema)
-    return sistema is not None and caminho(sistema, home).exists()
-
-
 def _tarefa_existe(consultar: Consultar) -> bool:
     return consultar(_tarefa(AcaoSchtasks.QUERY)) is not None
 
 
-def reiniciar_se_ligado(home: Path, rodar_comando: Comando) -> bool:
+def apos_reinstalar(home: Path, rodar_comando: Comando, consultar: Consultar) -> bool:
     sistema = _sistema_ou_none()
     # No Windows quem reinicia é o ajudante da reinstalação, não este caminho.
-    if (
-        sistema is None
-        or sistema is Sistema.WINDOWS
-        or not caminho(sistema, home).exists()
-    ):
+    if sistema is None or sistema is Sistema.WINDOWS:
         return False
-    if sistema is Sistema.MACOS:
-        rodar_comando([LAUNCHCTL, Acao.KICKSTART, FLAG_FORCAR, _alvo_launchd()])
-    else:
-        rodar_comando([*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE])
-    return True
+    executavel = executavel_servico()
+    migrar_legado(sistema, home, executavel, rodar_comando, consultar)
+    if rodando(sistema, home, consultar):
+        subir(sistema, home, executavel, rodar_comando)
+        return True
+    if caminho(sistema, home).exists():
+        regravar(sistema, home, executavel, rodar_comando)
+    return False
 
 
 def situacao(
@@ -308,28 +423,23 @@ def situacao(
     sistema = _sistema_ou_none()
     if sistema is None:
         return Situacao(EstadoServico.SEM_SUPORTE)
+    login = login_ligado(sistema, home, consultar)
     if sistema is Sistema.WINDOWS:
-        if not _tarefa_existe(consultar):
-            return Situacao(EstadoServico.DESLIGADO)
+        # A tarefa única não diz se o processo está de pé: só a porta diz.
         if responde():
-            return Situacao(EstadoServico.ATIVO)
+            estado = EstadoServico.ATIVO if login else EstadoServico.NO_TERMINAL
+            return Situacao(estado, login)
         log = Path(diretorio_dados()) / ARQUIVO_LOG_SERVE
-        return Situacao(EstadoServico.PARADO, f"Get-Content -Wait '{log}'")
-    if not caminho(sistema, home).exists():
-        return Situacao(EstadoServico.DESLIGADO)
+        return Situacao(EstadoServico.PARADO, login, f"Get-Content -Wait '{log}'")
+    if rodando(sistema, home, consultar):
+        return Situacao(EstadoServico.ATIVO, login)
+    if responde():
+        return Situacao(EstadoServico.NO_TERMINAL, login)
     if sistema is Sistema.MACOS:
-        saida = consultar([LAUNCHCTL, Acao.PRINT, _alvo_launchd()])
-        ativo = saida is not None and ESTADO_LAUNCHD_ATIVO in saida
         ver_log = f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}"
     else:
-        saida = consultar([*SYSTEMCTL, Acao.IS_ACTIVE, ARQUIVO_SERVICE])
-        ativo = saida is not None and saida.strip() == ESTADO_SYSTEMD_ATIVO
         ver_log = f"journalctl --user -u {ARQUIVO_SERVICE}"
-    return (
-        Situacao(EstadoServico.ATIVO)
-        if ativo
-        else Situacao(EstadoServico.PARADO, ver_log)
-    )
+    return Situacao(EstadoServico.PARADO, login, ver_log)
 
 
 def consultar_do_sistema(cmd: list[str]) -> str | None:

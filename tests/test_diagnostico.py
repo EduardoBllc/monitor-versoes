@@ -795,13 +795,19 @@ VER_LOG = "dica de log opaca"
     ("situacao", "estado", "correcao", "detalhe"),
     [
         (Situacao(EstadoServico.ATIVO), Estado.OK, "", ""),
+        (Situacao(EstadoServico.NO_TERMINAL), Estado.OK, "", "no terminal"),
         (
-            Situacao(EstadoServico.DESLIGADO),
+            Situacao(EstadoServico.PARADO),
             Estado.NAO_CONFIGURADO,
             f"{EXECUTAVEL} {COMANDO_CONFIGURAR}",
             "",
         ),
-        (Situacao(EstadoServico.PARADO, VER_LOG), Estado.FALHA, VER_LOG, ""),
+        (
+            Situacao(EstadoServico.PARADO, login=True, ver_log=VER_LOG),
+            Estado.FALHA,
+            VER_LOG,
+            "",
+        ),
         (
             Situacao(EstadoServico.SEM_SUPORTE),
             Estado.NAO_CONFIGURADO,

@@ -26,34 +26,48 @@ from motor.agendador import (
     AcaoSchtasks,
     Sistema,
 )
+from motor.config import diretorio_dados
 from motor.errors import BackendIndisponivel, ErroDeEntrada
 from motor.servico import (
+    ARGUMENTOS_LEGADOS,
     ARGUMENTOS_SERVE,
     ARQUIVO_LOG_LAUNCHD,
     ARQUIVO_LOG_SERVE,
     ARQUIVO_SERVICE,
     EXECUTAVEL_SERVE,
-    FLAG_FORCAR,
     FLAG_PERSISTIR,
     NOME_TAREFA_SERVE,
-    ROTULO_LAUNCHD,
+    ROTULO_LEGADO,
+    ROTULO_LOGIN,
+    ROTULO_PROCESSO,
     EstadoServico,
+    Situacao,
+    apos_reinstalar,
     caminho,
-    desligar,
+    desligar_login,
     executavel_motor,
     executavel_servico,
-    ligado,
-    ligar,
-    reiniciar_se_ligado,
+    ligar_login,
+    login_ligado,
+    migrar_legado,
+    parar,
+    regravar,
+    remover,
+    rodando,
     situacao,
+    subir,
 )
 from tests.plataforma import PLATAFORMA_WINDOWS
 from tests.test_agendador import Registro
 
 EXE = "/opt/venv/bin/monitor-versoes"
+ARGUMENTOS_INICIAR_LOGIN = ["daemon", "iniciar", "--sem-perguntas"]
 ATIVO_LINUX = "active\n"
+INATIVO_LINUX = "inactive\n"
+HABILITADO_LINUX = "enabled\n"
+DESABILITADO_LINUX = "disabled\n"
 ATIVO_MACOS = "\tstate = running\n"
-OUTROS_ESTADOS = (None, "inactive\n", "\tstate = waiting\n")
+INATIVO_MACOS = "\tstate = waiting\n"
 VER_LOG_LINUX = f"journalctl --user -u {ARQUIVO_SERVICE}"
 VER_LOG_MACOS = f"tail -f ~/Library/Logs/{ARQUIVO_LOG_LAUNCHD}"
 FLAG_PORTA = "--porta"
@@ -61,7 +75,7 @@ FLAG_SEM_NAVEGADOR = ARGUMENTOS_SERVE[-1]
 
 
 def _nunca_pergunta() -> bool:
-    raise AssertionError("só o Windows pergunta se o serve responde")
+    raise AssertionError("o serviço já responde por si; não se sonda a porta")
 
 
 pula_mac_no_windows = pytest.mark.skipif(
@@ -81,116 +95,307 @@ def _sem_suporte() -> Sistema:
     raise ErroDeEntrada("agendador automático não suportado")
 
 
+def _respondendo(
+    respostas: dict[tuple[str, ...], str],
+) -> Callable[[list[str]], str | None]:
+    return lambda cmd: respostas.get(tuple(cmd))
+
+
 def _devolvendo(saida: str | None) -> Callable[[list[str]], str | None]:
     return lambda _: saida
 
 
-def _alvo_mac() -> str:
-    return f"gui/{os.getuid()}/{ROTULO_LAUNCHD}"
+def _alvo_mac(rotulo: str) -> str:
+    return f"gui/{os.getuid()}/{rotulo}"
 
 
-def _criar_arquivo(sistema: Sistema, home: Path) -> Path:
-    arquivo = caminho(sistema, home)
-    arquivo.parent.mkdir(parents=True, exist_ok=True)
-    arquivo.touch()
-    return arquivo
+def _agente(home: Path, rotulo: str) -> Path:
+    return home / "Library" / "LaunchAgents" / f"{rotulo}.plist"
+
+
+def _cmd_ativo(sistema: Sistema) -> tuple[str, ...]:
+    if sistema is Sistema.LINUX:
+        return (*SYSTEMCTL, Acao.IS_ACTIVE, ARQUIVO_SERVICE)
+    return (LAUNCHCTL, Acao.PRINT, _alvo_mac(ROTULO_PROCESSO))
+
+
+def _comandos_de_subir(sistema: Sistema, home: Path) -> list[list[str]]:
+    if sistema is Sistema.LINUX:
+        return [
+            [*SYSTEMCTL, Acao.DAEMON_RELOAD],
+            [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE],
+        ]
+    arquivo = str(caminho(sistema, home))
+    return [[LAUNCHCTL, Acao.UNLOAD, arquivo], [LAUNCHCTL, Acao.LOAD, arquivo]]
 
 
 @pytest.mark.parametrize("sistema", SISTEMAS)
-def test_ligar_cria_o_servico_e_sobe(
+def test_subir_grava_e_sobe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema
 ) -> None:
     _como(sistema, monkeypatch)
     registro = Registro()
-    ligar(sistema, tmp_path, EXE, registro)
+    subir(sistema, tmp_path, EXE, registro)
 
     arquivo = caminho(sistema, tmp_path)
-    assert arquivo.exists()
+    assert registro.comandos == _comandos_de_subir(sistema, tmp_path)
     if sistema is Sistema.LINUX:
         texto = arquivo.read_text()
         assert f'ExecStart="{EXE}" {" ".join(ARGUMENTOS_SERVE)}' in texto
         assert "Restart=on-failure" in texto
-        assert registro.comandos == [
-            [*SYSTEMCTL, Acao.DAEMON_RELOAD],
-            [*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE],
-            [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE],
-        ]
     else:
+        assert arquivo.parent == Path(diretorio_dados())
         dados = plistlib.loads(arquivo.read_bytes())
         log = str(tmp_path / "Library" / "Logs" / ARQUIVO_LOG_LAUNCHD)
+        assert dados["Label"] == ROTULO_PROCESSO
         assert dados["ProgramArguments"] == [EXE, *ARGUMENTOS_SERVE]
         assert dados["RunAtLoad"] is True
         assert dados["KeepAlive"] is True
         assert dados["StandardOutPath"] == log
         assert dados["StandardErrorPath"] == log
-        assert registro.comandos == [
-            [LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(arquivo)],
-            [LAUNCHCTL, Acao.LOAD, FLAG_PERSISTIR, str(arquivo)],
+
+
+@pula_mac_no_windows
+def test_subir_no_macos_com_o_job_ja_carregado_recarrega(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _como(Sistema.MACOS, monkeypatch)
+    registro = Registro(falhar_em=Acao.UNLOAD)
+    subir(Sistema.MACOS, tmp_path, EXE, registro)
+    assert registro.comandos[-1][1] == Acao.LOAD
+
+
+@pytest.mark.parametrize("sistema", SISTEMAS)
+def test_parar_so_para(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema
+) -> None:
+    _como(sistema, monkeypatch)
+    subir(sistema, tmp_path, EXE, Registro())
+    registro = Registro()
+    parar(sistema, tmp_path, registro)
+
+    arquivo = caminho(sistema, tmp_path)
+    esperado = (
+        [*SYSTEMCTL, Acao.STOP, ARQUIVO_SERVICE]
+        if sistema is Sistema.LINUX
+        else [LAUNCHCTL, Acao.UNLOAD, str(arquivo)]
+    )
+    assert registro.comandos == [esperado]
+    assert arquivo.exists()
+
+
+class _Systemd(Registro):
+    """Lembra o `enable`/`disable` e responde ao `is-enabled` como o systemd."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.habilitado = False
+
+    def __call__(self, cmd: list[str]) -> None:
+        super().__call__(cmd)
+        if cmd[len(SYSTEMCTL)] in {Acao.ENABLE, Acao.DISABLE}:
+            self.habilitado = cmd[len(SYSTEMCTL)] == Acao.ENABLE
+
+    def consultar(self, cmd: list[str]) -> str | None:
+        if cmd != [*SYSTEMCTL, Acao.IS_ENABLED, ARQUIVO_SERVICE]:
+            return None
+        return HABILITADO_LINUX if self.habilitado else DESABILITADO_LINUX
+
+
+@pytest.mark.parametrize("sistema", SISTEMAS)
+def test_login_liga_e_desliga(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema
+) -> None:
+    _como(sistema, monkeypatch)
+    sistema_falso = _Systemd()
+    assert not login_ligado(sistema, tmp_path, sistema_falso.consultar)
+
+    ligar_login(sistema, tmp_path, EXE, sistema_falso)
+    assert login_ligado(sistema, tmp_path, sistema_falso.consultar)
+    login = _agente(tmp_path, ROTULO_LOGIN)
+    if sistema is Sistema.LINUX:
+        assert caminho(sistema, tmp_path).exists()
+        assert sistema_falso.comandos == [
+            [*SYSTEMCTL, Acao.DAEMON_RELOAD],
+            [*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE],
         ]
+    else:
+        dados = plistlib.loads(login.read_bytes())
+        assert dados["Label"] == ROTULO_LOGIN
+        assert dados["ProgramArguments"] == [EXE, *ARGUMENTOS_INICIAR_LOGIN]
+        assert dados["RunAtLoad"] is True
+        assert "KeepAlive" not in dados
+        assert not sistema_falso.comandos
+
+    sistema_falso.comandos.clear()
+    desligar_login(sistema, tmp_path, sistema_falso)
+    assert not login_ligado(sistema, tmp_path, sistema_falso.consultar)
+    esperado = (
+        [*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE]
+        if sistema is Sistema.LINUX
+        else [LAUNCHCTL, Acao.UNLOAD, str(login)]
+    )
+    assert sistema_falso.comandos == [esperado]
+
+
+@pytest.mark.parametrize(
+    ("sistema", "saida", "esperado"),
+    [
+        (Sistema.LINUX, ATIVO_LINUX, True),
+        (Sistema.LINUX, INATIVO_LINUX, False),
+        (Sistema.LINUX, None, False),
+        pytest.param(Sistema.MACOS, ATIVO_MACOS, True, marks=pula_mac_no_windows),
+        pytest.param(Sistema.MACOS, INATIVO_MACOS, False, marks=pula_mac_no_windows),
+        pytest.param(Sistema.MACOS, None, False, marks=pula_mac_no_windows),
+    ],
+)
+def test_rodando(
+    tmp_path: Path, sistema: Sistema, saida: str | None, esperado: bool
+) -> None:
+    respostas = {} if saida is None else {_cmd_ativo(sistema): saida}
+    assert rodando(sistema, tmp_path, _respondendo(respostas)) is esperado
+
+
+def test_migrar_legado_linux_regrava_unit_antiga(tmp_path: Path) -> None:
+    arquivo = caminho(Sistema.LINUX, tmp_path)
+    arquivo.parent.mkdir(parents=True)
+    arquivo.write_text(f'[Service]\nExecStart="{EXE}" {" ".join(ARGUMENTOS_LEGADOS)}\n')
+    registro = Registro()
+
+    assert migrar_legado(Sistema.LINUX, tmp_path, EXE, registro, _respondendo({}))
+    assert f'ExecStart="{EXE}" {" ".join(ARGUMENTOS_SERVE)}' in arquivo.read_text()
+    assert registro.comandos == [[*SYSTEMCTL, Acao.DAEMON_RELOAD]]
+
+    assert not migrar_legado(Sistema.LINUX, tmp_path, EXE, registro, _respondendo({}))
+    assert len(registro.comandos) == 1
+
+
+def test_migrar_legado_linux_sem_unit_nao_age(tmp_path: Path) -> None:
+    registro = Registro()
+    assert not migrar_legado(Sistema.LINUX, tmp_path, EXE, registro, _respondendo({}))
+    assert not registro.comandos
+    assert not caminho(Sistema.LINUX, tmp_path).exists()
+
+
+@pula_mac_no_windows
+def test_migrar_legado_macos_troca_plist_antigo_por_processo_e_login(
+    tmp_path: Path,
+) -> None:
+    legado = _agente(tmp_path, ROTULO_LEGADO)
+    legado.parent.mkdir(parents=True)
+    legado.touch()
+    registro = Registro()
+
+    assert migrar_legado(Sistema.MACOS, tmp_path, EXE, registro, _respondendo({}))
+    assert not legado.exists()
+    assert _agente(tmp_path, ROTULO_LOGIN).exists()
+    assert registro.comandos == [
+        [LAUNCHCTL, Acao.UNLOAD, FLAG_PERSISTIR, str(legado)],
+        *_comandos_de_subir(Sistema.MACOS, tmp_path),
+    ]
+
+    assert not migrar_legado(Sistema.MACOS, tmp_path, EXE, Registro(), _respondendo({}))
+
+
+@pytest.mark.parametrize("ligado", [True, False])
+@pytest.mark.parametrize("sistema", SISTEMAS)
+def test_apos_reinstalar_reinicia_so_se_rodando(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema, ligado: bool
+) -> None:
+    _como(sistema, monkeypatch)
+    regravar(sistema, tmp_path, executavel_servico(), Registro())
+    saida = ATIVO_LINUX if sistema is Sistema.LINUX else ATIVO_MACOS
+    respostas = {_cmd_ativo(sistema): saida} if ligado else {}
+    registro = Registro()
+
+    assert apos_reinstalar(tmp_path, registro, _respondendo(respostas)) is ligado
+    assert caminho(sistema, tmp_path).exists()
+    if ligado:
+        assert registro.comandos == _comandos_de_subir(sistema, tmp_path)
+    else:
+        so_regravou = (
+            [[*SYSTEMCTL, Acao.DAEMON_RELOAD]] if sistema is Sistema.LINUX else []
+        )
+        assert registro.comandos == so_regravou
+
+
+@pytest.mark.parametrize("sistema", [Sistema.WINDOWS, None])
+def test_apos_reinstalar_sem_suporte_ou_no_windows_nao_age(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema | None
+) -> None:
+    if sistema is None:
+        monkeypatch.setattr(servico, "sistema_atual", _sem_suporte)
+    else:
+        _como(sistema, monkeypatch)
+    registro = Registro()
+    assert not apos_reinstalar(tmp_path, registro, _respondendo({}))
+    assert not registro.comandos
 
 
 @pytest.mark.parametrize(
     ("sistema", "acao"),
     [
+        (Sistema.LINUX, Acao.STOP),
         (Sistema.LINUX, Acao.DISABLE),
         (Sistema.LINUX, Acao.DAEMON_RELOAD),
         pytest.param(Sistema.MACOS, Acao.UNLOAD, marks=pula_mac_no_windows),
     ],
 )
-def test_desligar_para_e_remove_mesmo_se_o_sistema_falha(
+def test_remover_apaga_tudo_mesmo_se_o_sistema_falha(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema, acao: Acao
 ) -> None:
     _como(sistema, monkeypatch)
-    arquivo = _criar_arquivo(sistema, tmp_path)
-    desligar(sistema, tmp_path, Registro(falhar_em=acao))
-    assert not arquivo.exists()
+    ligar_login(sistema, tmp_path, EXE, Registro())
+    subir(sistema, tmp_path, EXE, Registro())
+    arquivos = [caminho(sistema, tmp_path)]
+    if sistema is Sistema.MACOS:
+        arquivos += [_agente(tmp_path, ROTULO_LOGIN), _agente(tmp_path, ROTULO_LEGADO)]
+        arquivos[-1].touch()
 
+    remover(sistema, tmp_path, Registro(falhar_em=acao))
 
-@pytest.mark.parametrize("sistema", SISTEMAS)
-def test_reiniciar_se_ligado(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema
-) -> None:
-    _como(sistema, monkeypatch)
-    desligado = Registro()
-    assert not reiniciar_se_ligado(tmp_path, desligado)
-    assert not desligado.comandos
-
-    _criar_arquivo(sistema, tmp_path)
-    registro = Registro()
-    assert reiniciar_se_ligado(tmp_path, registro)
-    esperado = (
-        [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE]
-        if sistema is Sistema.LINUX
-        else [LAUNCHCTL, Acao.KICKSTART, FLAG_FORCAR, _alvo_mac()]
-    )
-    assert registro.comandos == [esperado]
-
-
-def test_reiniciar_se_ligado_sem_suporte(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(servico, "sistema_atual", _sem_suporte)
-    registro = Registro()
-    assert not reiniciar_se_ligado(tmp_path, registro)
-    assert not ligado(tmp_path)
-    assert not registro.comandos
+    assert not [a for a in arquivos if a.exists()]
 
 
 @pytest.mark.parametrize(
-    ("sistema", "ativo", "ver_log"),
+    ("sistema", "ativo", "login", "responde", "esperado"),
     [
-        pytest.param(
+        (
             Sistema.LINUX,
-            ATIVO_LINUX,
-            VER_LOG_LINUX,
-            id="linux",
+            True,
+            True,
+            _nunca_pergunta,
+            Situacao(EstadoServico.ATIVO, login=True),
+        ),
+        (
+            Sistema.LINUX,
+            False,
+            False,
+            lambda: False,
+            Situacao(EstadoServico.PARADO, ver_log=VER_LOG_LINUX),
+        ),
+        (
+            Sistema.LINUX,
+            False,
+            True,
+            lambda: True,
+            Situacao(EstadoServico.NO_TERMINAL, login=True),
         ),
         pytest.param(
             Sistema.MACOS,
-            ATIVO_MACOS,
-            VER_LOG_MACOS,
+            True,
+            False,
+            _nunca_pergunta,
+            Situacao(EstadoServico.ATIVO),
             marks=pula_mac_no_windows,
-            id="macos",
+        ),
+        pytest.param(
+            Sistema.MACOS,
+            False,
+            True,
+            lambda: False,
+            Situacao(EstadoServico.PARADO, login=True, ver_log=VER_LOG_MACOS),
+            marks=pula_mac_no_windows,
         ),
     ],
 )
@@ -198,31 +403,30 @@ def test_situacao(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     sistema: Sistema,
-    ativo: str,
-    ver_log: str,
+    ativo: bool,
+    login: bool,
+    responde: Callable[[], bool],
+    esperado: Situacao,
 ) -> None:
     _como(sistema, monkeypatch)
-    assert (
-        situacao(tmp_path, lambda _: ativo, _nunca_pergunta).estado
-        is EstadoServico.DESLIGADO
-    )
-
-    _criar_arquivo(sistema, tmp_path)
-    assert (
-        situacao(tmp_path, lambda _: ativo, _nunca_pergunta).estado
-        is EstadoServico.ATIVO
-    )
-    for saida in OUTROS_ESTADOS:
-        parado = situacao(tmp_path, _devolvendo(saida), _nunca_pergunta)
-        assert parado.estado is EstadoServico.PARADO
-        assert parado.ver_log == ver_log
+    if sistema is Sistema.LINUX:
+        respostas = {
+            _cmd_ativo(sistema): ATIVO_LINUX if ativo else INATIVO_LINUX,
+            (*SYSTEMCTL, Acao.IS_ENABLED, ARQUIVO_SERVICE): (
+                HABILITADO_LINUX if login else DESABILITADO_LINUX
+            ),
+        }
+    else:
+        respostas = {_cmd_ativo(sistema): ATIVO_MACOS if ativo else INATIVO_MACOS}
+        if login:
+            ligar_login(sistema, tmp_path, EXE, Registro())
+    assert situacao(tmp_path, _respondendo(respostas), responde) == esperado
 
 
 def test_situacao_sem_suporte(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(servico, "sistema_atual", _sem_suporte)
-    assert (
-        situacao(tmp_path, lambda _: None, _nunca_pergunta).estado
-        is EstadoServico.SEM_SUPORTE
+    assert situacao(tmp_path, _respondendo({}), _nunca_pergunta) == Situacao(
+        EstadoServico.SEM_SUPORTE
     )
 
 
@@ -231,44 +435,6 @@ def test_executavel_motor_nao_depende_do_path(monkeypatch: pytest.MonkeyPatch) -
     exe = Path(executavel_motor())
     assert exe.is_absolute()
     assert exe.stem == servico.EXECUTAVEL
-
-
-@pytest.mark.parametrize(
-    ("sistema", "acao"),
-    [
-        pytest.param(Sistema.LINUX, Acao.ENABLE, id="linux-enable"),
-        pytest.param(Sistema.LINUX, Acao.RESTART, id="linux-restart"),
-        pytest.param(Sistema.MACOS, Acao.LOAD, id="macos", marks=pula_mac_no_windows),
-    ],
-)
-def test_ligar_que_falha_propaga_e_nao_deixa_o_arquivo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sistema: Sistema, acao: Acao
-) -> None:
-    _como(sistema, monkeypatch)
-    with pytest.raises(BackendIndisponivel):
-        ligar(sistema, tmp_path, EXE, Registro(falhar_em=acao))
-    assert not ligado(tmp_path)
-
-
-def test_ligar_com_restart_que_falha_desfaz_o_enable_antes_de_remover_o_arquivo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _como(Sistema.LINUX, monkeypatch)
-    arquivo_existia_no_disable: list[bool] = []
-
-    class RegistroComArquivo(Registro):
-        def __call__(self, cmd: list[str]) -> None:
-            if Acao.DISABLE in cmd:
-                arquivo_existia_no_disable.append(
-                    caminho(Sistema.LINUX, tmp_path).exists()
-                )
-            super().__call__(cmd)
-
-    registro = RegistroComArquivo(falhar_em=Acao.RESTART)
-    with pytest.raises(BackendIndisponivel):
-        ligar(Sistema.LINUX, tmp_path, EXE, registro)
-    assert [*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE] in registro.comandos
-    assert arquivo_existia_no_disable == [True]
 
 
 @pytest.mark.parametrize("sem_navegador", [False, True])
@@ -302,16 +468,6 @@ def test_serve_sem_navegador_nao_abre(
     assert bool(abertos) is not sem_navegador
 
 
-@pula_mac_no_windows
-def test_ligar_no_macos_com_o_job_ja_carregado_recarrega(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _como(Sistema.MACOS, monkeypatch)
-    registro = Registro(falhar_em=Acao.UNLOAD)
-    ligar(Sistema.MACOS, tmp_path, EXE, registro)
-    assert registro.comandos[-1][1] == Acao.LOAD
-
-
 EXE_WINDOWS = r"C:\venv\Scripts\monitor-versoes-serve.exe"
 SAIDA_ALEMA = "FEHLER: Das System kann die angegebene Datei nicht finden."
 SUFIXO_EXE = ".exe"
@@ -343,7 +499,7 @@ def _schtasks(acao: AcaoSchtasks, *resto: str) -> list[str]:
     return [SCHTASKS, acao, FLAG_TAREFA, NOME_TAREFA_SERVE, *resto]
 
 
-def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
+def test_subir_windows_cria_a_tarefa_pelo_xml_e_a_roda(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("USERDOMAIN", USUARIO[0])
@@ -356,7 +512,7 @@ def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
         if AcaoSchtasks.CREATE in cmd:
             xmls.append(Path(cmd[cmd.index(FLAG_XML) + 1]).read_text("utf-16"))
 
-    ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, rodar)
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, rodar)
 
     arquivo = chamadas[1][chamadas[1].index(FLAG_XML) + 1]
     assert chamadas == [
@@ -378,9 +534,9 @@ def test_ligar_windows_cria_a_tarefa_pelo_xml_e_a_roda(
     assert not Path(arquivo).exists()
 
 
-def test_ligar_windows_sem_tarefa_anterior_cria_e_roda(tmp_path: Path) -> None:
+def test_subir_windows_sem_tarefa_anterior_cria_e_roda(tmp_path: Path) -> None:
     registro = Registro(falhar_em=AcaoSchtasks.END)
-    ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
+    subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
     assert [cmd[1] for cmd in registro.comandos] == [
         AcaoSchtasks.END,
         AcaoSchtasks.CREATE,
@@ -388,16 +544,16 @@ def test_ligar_windows_sem_tarefa_anterior_cria_e_roda(tmp_path: Path) -> None:
     ]
 
 
-def test_ligar_windows_que_falha_apaga_a_tarefa(tmp_path: Path) -> None:
+def test_subir_windows_que_falha_apaga_a_tarefa(tmp_path: Path) -> None:
     registro = Registro(falhar_em=AcaoSchtasks.RUN)
     with pytest.raises(BackendIndisponivel):
-        ligar(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
+        subir(Sistema.WINDOWS, tmp_path, EXE_WINDOWS, registro)
     assert registro.comandos[-1] == _schtasks(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS)
 
 
-def test_desligar_windows_encerra_e_apaga(tmp_path: Path) -> None:
+def test_remover_windows_encerra_e_apaga(tmp_path: Path) -> None:
     registro = Registro(falhar_em=AcaoSchtasks.END)
-    desligar(Sistema.WINDOWS, tmp_path, registro)
+    remover(Sistema.WINDOWS, tmp_path, registro)
     assert registro.comandos == [
         _schtasks(AcaoSchtasks.END),
         _schtasks(AcaoSchtasks.DELETE, FLAG_FORCAR_SCHTASKS),
@@ -406,26 +562,20 @@ def test_desligar_windows_encerra_e_apaga(tmp_path: Path) -> None:
 
 def test_situacao_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _como(Sistema.WINDOWS, monkeypatch)
-    assert (
-        situacao(tmp_path, _devolvendo(None), _nunca_pergunta).estado
-        is EstadoServico.DESLIGADO
+    sem_tarefa = situacao(tmp_path, _devolvendo(None), lambda: False)
+    assert sem_tarefa.estado is EstadoServico.PARADO
+    assert not sem_tarefa.login
+    assert situacao(tmp_path, _devolvendo(None), lambda: True) == Situacao(
+        EstadoServico.NO_TERMINAL
     )
     parado = situacao(tmp_path, _devolvendo(SAIDA_ALEMA), lambda: False)
     assert parado.estado is EstadoServico.PARADO
+    assert parado.login
     assert parado.ver_log.endswith(f"{ARQUIVO_LOG_SERVE}'")
     assert parado.ver_log.startswith("Get-Content -Wait '")
-    assert (
-        situacao(tmp_path, _devolvendo(""), lambda: True).estado is EstadoServico.ATIVO
+    assert situacao(tmp_path, _devolvendo(""), lambda: True) == Situacao(
+        EstadoServico.ATIVO, login=True
     )
-
-
-def test_reiniciar_se_ligado_no_windows_nao_age(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _como(Sistema.WINDOWS, monkeypatch)
-    registro = Registro()
-    assert not reiniciar_se_ligado(tmp_path, registro)
-    assert not registro.comandos
 
 
 def test_executavel_servico_windows_tem_exe(monkeypatch: pytest.MonkeyPatch) -> None:

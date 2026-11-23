@@ -137,7 +137,9 @@ def peca_daemon(situacao: Situacao) -> Resultado:
     match situacao.estado:
         case EstadoServico.ATIVO:
             return Resultado(Peca.DAEMON, Estado.OK, "serviço de login ativo")
-        case EstadoServico.DESLIGADO:
+        case EstadoServico.NO_TERMINAL:
+            return Resultado(Peca.DAEMON, Estado.OK, "daemon rodando no terminal")
+        case EstadoServico.PARADO if not situacao.login:
             return Resultado(
                 Peca.DAEMON,
                 Estado.NAO_CONFIGURADO,

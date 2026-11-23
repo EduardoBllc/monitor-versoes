@@ -195,7 +195,7 @@ def _imprimir_diagnostico(args: argparse.Namespace) -> bool:
             servico.situacao(
                 Path.home(),
                 servico.consultar_do_sistema,
-                lambda: servico.serve_responde(esperar=False),
+                lambda: servico.serve_responde(PORTA_PADRAO, esperar=False),
             )
         )
     )

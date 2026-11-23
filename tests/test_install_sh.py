@@ -311,11 +311,21 @@ def test_falha_do_motor_instalado_nao_reinstala(maquina, sonda, atualizar):
     assert not [c for c in maquina.chamadas() if "--reinstall" in c]
 
 
+FLAG_KICKSTART_FORCAR = "-k"
+
+
+def _arquivo_do_servico(sistema: Sistema, home: Path) -> Path:
+    """O arquivo que o install.sh conhece: no macOS, o plist do `serve` antigo."""
+    if sistema is Sistema.MACOS:
+        return home / "Library" / "LaunchAgents" / f"{servico.ROTULO_LEGADO}.plist"
+    return servico.caminho(sistema, home)
+
+
 def _reinicio(uname: Uname) -> str:
     if uname is Uname.DARWIN:
         return (
-            f"{agendador.LAUNCHCTL} {agendador.Acao.KICKSTART} {servico.FLAG_FORCAR} "
-            f"gui/{os.getuid()}/{servico.ROTULO_LAUNCHD}"
+            f"{agendador.LAUNCHCTL} {agendador.Acao.KICKSTART} {FLAG_KICKSTART_FORCAR} "
+            f"gui/{os.getuid()}/{servico.ROTULO_LEGADO}"
         )
     return f"{' '.join(agendador.SYSTEMCTL)} {agendador.Acao.RESTART} {servico.ARQUIVO_SERVICE}"
 
@@ -331,7 +341,7 @@ def test_reinicia_o_servico_ligado_depois_de_instalar(
         maquina.env[Var.SAIDA_SONDA] = str(CodigoSaida.USO)
         maquina.instalar_motor()
     if com_arquivo:
-        arquivo = servico.caminho(SISTEMA[uname], maquina.home)
+        arquivo = _arquivo_do_servico(SISTEMA[uname], maquina.home)
         arquivo.parent.mkdir(parents=True)
         arquivo.touch()
 
@@ -420,7 +430,7 @@ def test_desinstalar_sem_motor_remove_servicos_e_mantem_dados(
         maquina.env[Var.SAIDA_DESINSTALAR] = str(CodigoSaida.ERRO)
         maquina.instalar_motor()
     arquivos = [
-        servico.caminho(sistema, maquina.home),
+        _arquivo_do_servico(sistema, maquina.home),
         *agendador.caminhos(sistema, maquina.home),
     ]
     for arquivo in arquivos:

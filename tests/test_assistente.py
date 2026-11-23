@@ -50,6 +50,7 @@ from motor.config import (
     diretorio_dados,
 )
 from motor.config_edicao import GrupoPlugin
+from motor.daemon import PORTA_PADRAO
 from motor.diagnostico import Estado, Peca
 from motor.errors import CodigoSaida, ErroDeEntrada
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PASTA_PLUGINS, PREFIXO_GIT
@@ -67,6 +68,7 @@ CTRL_C = "\x03"
 SIM = "s"
 NAO = "n"
 MOTIVO_NEGADO = "sem permissão"
+ENDERECO_WEB = servico.endereco_web(PORTA_PADRAO)
 
 URL_MOTOR = "https://github.com/EduardoBllc/monitor-versoes.git"
 URL_OUTRO = "https://example.com/outro-plugin.git"
@@ -89,12 +91,16 @@ NOMES_PRS = [e.nome for e in EMBUTIDOS[GrupoPlugin.PRS]]
 LIGAR = [
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     [*SYSTEMCTL, Acao.ENABLE, ARQUIVO_SERVICE],
+    [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     [*SYSTEMCTL, Acao.RESTART, ARQUIVO_SERVICE],
 ]
-DESLIGAR = [
-    [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_SERVICE],
+DESLIGAR = [[*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE]]
+REMOVER = [
+    [*SYSTEMCTL, Acao.STOP, ARQUIVO_SERVICE],
+    [*SYSTEMCTL, Acao.DISABLE, ARQUIVO_SERVICE],
     [*SYSTEMCTL, Acao.DAEMON_RELOAD],
 ]
+HABILITADO = "enabled\n"
 
 ORIGINAL = """\
 # config central de teste
@@ -124,6 +130,10 @@ class Cenario:
     comandos: list[list[str]] = field(default_factory=list)
     abertos: list[str] = field(default_factory=list)
     original: str = ""
+    login: bool = False
+
+    def consultar(self, cmd: list[str]) -> str | None:
+        return HABILITADO if self.login and Acao.IS_ENABLED in cmd else None
 
     @property
     def config(self) -> Path:
@@ -174,10 +184,11 @@ def cen(monkeypatch, tmp_path) -> Cenario:
     monkeypatch.setattr(plugins, "pontos_instalados", pontos)
     monkeypatch.setattr(assistente, "instalar_plugin", instalar)
     monkeypatch.setattr(assistente, "_terminal", lambda: True)
-    monkeypatch.setattr(servico, "serve_responde", lambda esperar: False)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: False)
     monkeypatch.setattr(webbrowser, "open", c.abertos.append)
     monkeypatch.setattr(instalacao, "url_do_motor", lambda: URL_MOTOR)
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", c.comandos.append)
+    monkeypatch.setattr(servico, "consultar_do_sistema", c.consultar)
     repo = tmp_path / "repo"
     repo.mkdir()
     c.escrever(ORIGINAL.format(repo=repo))
@@ -424,12 +435,9 @@ def test_sem_terminal_recusa_sem_mudar_nada(cen, monkeypatch, caplog):
     ids=["liga", "desliga"],
 )
 def test_ligar_e_desligar_no_login(cen, ligado, tecla, comandos):
-    if ligado:
-        cen.unit().parent.mkdir(parents=True)
-        cen.unit().write_text("")
+    cen.login = ligado
     assert _rodar(ENTER, ENTER, tecla) == CodigoSaida.OK
     assert cen.comandos == comandos
-    assert cen.unit().exists() is not ligado
 
 
 @pytest.mark.parametrize(
@@ -440,9 +448,7 @@ def test_ligar_e_desligar_no_login(cen, ligado, tecla, comandos):
 def test_padrao_do_login(cen, com_config, ligado, comandos):
     if not com_config:
         cen.config.unlink()
-    if ligado:
-        cen.unit().parent.mkdir(parents=True)
-        cen.unit().write_text("")
+    cen.login = ligado
     assert _rodar(ENTER, ENTER, ENTER) == CodigoSaida.OK
     assert cen.comandos == comandos
     assert cen.unit().exists() is (ligado or not com_config)
@@ -455,16 +461,19 @@ def test_sistema_sem_suporte_nao_pergunta_o_login(cen):
 
 def test_windows_pergunta_o_login_e_liga_pelo_agendador(cen, monkeypatch):
     ligadas: list[tuple[object, ...]] = []
-    monkeypatch.setattr(servico, "ligar", lambda *args: ligadas.append(args))
-    assert _rodar(ENTER, ENTER, SIM, sistema=Sistema.WINDOWS) == CodigoSaida.OK
-    assert ligadas == [
-        (
-            Sistema.WINDOWS,
-            Path.home(),
-            servico.executavel_servico(),
-            agendador.rodar_comando_do_sistema,
+    pecas = (servico.ligar_login, servico.subir)
+    for peca in pecas:
+        monkeypatch.setattr(
+            servico, peca.__name__, lambda *args, p=peca: ligadas.append((p, *args))
         )
-    ]
+    assert _rodar(ENTER, ENTER, SIM, sistema=Sistema.WINDOWS) == CodigoSaida.OK
+    argumentos = (
+        Sistema.WINDOWS,
+        Path.home(),
+        servico.executavel_servico(),
+        agendador.rodar_comando_do_sistema,
+    )
+    assert ligadas == [(peca, *argumentos) for peca in pecas]
 
 
 class _SysWindows:
@@ -479,10 +488,10 @@ class _SysWindows:
 def test_windows_conta_como_ambiente_grafico(cen, monkeypatch):
     for var in assistente.VARS_DISPLAY:
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(servico, "serve_responde", lambda esperar: True)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: True)
     monkeypatch.setattr(assistente, "sys", _SysWindows())
     assert _rodar(ENTER, ENTER, ENTER, SIM) == CodigoSaida.OK
-    assert cen.abertos == [servico.ENDERECO_WEB]
+    assert cen.abertos == [ENDERECO_WEB]
 
 
 def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
@@ -501,8 +510,8 @@ def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
 @pytest.mark.parametrize(
     ("serve", "grafico", "teclas", "abertos", "no_stdout"),
     [
-        (True, True, (SIM,), [servico.ENDERECO_WEB], ""),
-        (True, False, (), [], servico.ENDERECO_WEB),
+        (True, True, (SIM,), [ENDERECO_WEB], ""),
+        (True, False, (), [], ENDERECO_WEB),
         (False, True, (), [], f"{EXECUTAVEL} {COMANDO_SERVE}"),
     ],
     ids=["abre", "sem-grafico", "sem-serve"],
@@ -510,7 +519,7 @@ def test_windows_plugin_entregue_ao_ajudante_termina_sem_gravar(
 def test_fechamento(
     cen, monkeypatch, capsys, serve, grafico, teclas, abertos, no_stdout
 ):
-    monkeypatch.setattr(servico, "serve_responde", lambda esperar: serve)
+    monkeypatch.setattr(servico, "serve_responde", lambda porta, esperar: serve)
     monkeypatch.setattr(assistente, "_ambiente_grafico", lambda: grafico)
     assert _rodar(ENTER, ENTER, ENTER, *teclas) == CodigoSaida.OK
     saida = capsys.readouterr().out
@@ -563,7 +572,7 @@ def test_desinstalar_remove_servico_e_timer_antigo(cen, tmp_path, monkeypatch):
     assert not cen.unit().exists()
     assert not any(a.exists() for a in agendador.caminhos(Sistema.LINUX, Path.home()))
     assert cen.comandos == [
-        *DESLIGAR,
+        *REMOVER,
         [*SYSTEMCTL, Acao.DISABLE, FLAG_AGORA, ARQUIVO_TIMER],
         [*SYSTEMCTL, Acao.DAEMON_RELOAD],
     ]

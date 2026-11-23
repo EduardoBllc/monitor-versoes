@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import shutil
@@ -40,6 +41,7 @@ from motor.config_edicao import (
     gravar,
     ler_para_edicao,
 )
+from motor.daemon import PORTA_PADRAO
 from motor.errors import CodigoSaida, ErroDeEntrada, MotorError
 from motor.instalacao import PARAMETRO_SUBDIRETORIO, PREFIXO_GIT
 
@@ -308,12 +310,20 @@ def _escolher(p: Pergunta, atual: str | None, url_motor: str | None) -> str | No
             return escolhida
 
 
+def _login_ligado(home: Path) -> bool:
+    try:
+        sistema = agendador.sistema_atual()
+    except ErroDeEntrada:
+        return False
+    return servico.login_ligado(sistema, home, servico.consultar_do_sistema)
+
+
 def _quer_login(home: Path) -> bool | None:
     try:
         agendador.sistema_atual()
     except ErroDeEntrada:
         return None
-    padrao = servico.ligado(home) or not Path(caminho_config_global()).exists()
+    padrao = _login_ligado(home) or not Path(caminho_config_global()).exists()
     return confirmar("Iniciar o `serve` no login?", padrao)
 
 
@@ -331,19 +341,16 @@ def _alteracoes(
 
 def _aplicar_login(home: Path, quer: bool | None) -> None:
     # Sim sempre religa: repara um serviço parado e atualiza o caminho do executável.
-    if quer is None or (not quer and not servico.ligado(home)):
+    if quer is None or (not quer and not _login_ligado(home)):
         return
     sistema = agendador.sistema_atual()
+    rodar = agendador.rodar_comando_do_sistema
     try:
         if quer:
-            servico.ligar(
-                sistema,
-                home,
-                servico.executavel_servico(),
-                agendador.rodar_comando_do_sistema,
-            )
+            servico.ligar_login(sistema, home, servico.executavel_servico(), rodar)
+            servico.subir(sistema, home, servico.executavel_servico(), rodar)
         else:
-            servico.desligar(sistema, home, agendador.rodar_comando_do_sistema)
+            servico.desligar_login(sistema, home, rodar)
     except MotorError as e:
         marcar(Marca.FALHA, f"serviço de login: {e}")
         return
@@ -352,14 +359,16 @@ def _aplicar_login(home: Path, quer: bool | None) -> None:
 
 def _fechar(imprimir_diagnostico: Callable[[], object], home: Path) -> None:
     imprimir_diagnostico()
-    if not servico.serve_responde(esperar=servico.ligado(home)):
+    if not servico.serve_responde(PORTA_PADRAO, esperar=_login_ligado(home)):
         print(
             f"Para terminar a configuração na web, rode `{servico.EXECUTAVEL} serve`."
         )
     elif not _ambiente_grafico():
-        print(f"Configuração na web: {servico.ENDERECO_WEB} (→ Configuração)")
+        print(
+            f"Configuração na web: {servico.endereco_web(PORTA_PADRAO)} (→ Configuração)"
+        )
     elif confirmar("Abrir a configuração da web no navegador?", True):
-        webbrowser.open(servico.ENDERECO_WEB)
+        webbrowser.open(servico.endereco_web(PORTA_PADRAO))
 
 
 def configurar(imprimir_diagnostico: Callable[[], object]) -> None:
@@ -472,8 +481,8 @@ def _apagar(caminho: Path, pasta: bool) -> bool:
 
 def desinstalar() -> None:
     home = Path.home()
-    if servico.ligado(home):
-        servico.desligar(
+    with contextlib.suppress(ErroDeEntrada):
+        servico.remover(
             agendador.sistema_atual(), home, agendador.rodar_comando_do_sistema
         )
         marcar(Marca.OK, "serviço de login removido")

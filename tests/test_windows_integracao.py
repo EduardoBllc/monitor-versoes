@@ -34,6 +34,7 @@ from motor.ajudante import (
     pasta_reinstalacao,
 )
 from motor.cli_instalacao import COMANDO_PLUGIN, AcaoPlugin
+from motor.daemon import PORTA_PADRAO
 from motor.errors import CodigoSaida
 from motor.instalacao import (
     GIT,
@@ -139,12 +140,15 @@ def _esperar(condicao: Callable[[], bool], prazo_s: float) -> bool:
 
 
 def _serve_de_pe(prazo_s: float) -> bool:
-    return _esperar(lambda: servico.serve_responde(esperar=False), prazo_s)
+    return _esperar(
+        lambda: servico.serve_responde(PORTA_PADRAO, esperar=False), prazo_s
+    )
 
 
 def _serve_caiu() -> bool:
     return _esperar(
-        lambda: not servico.serve_responde(esperar=False), PRAZO_SERVE_CAIR_S
+        lambda: not servico.serve_responde(PORTA_PADRAO, esperar=False),
+        PRAZO_SERVE_CAIR_S,
     )
 
 
@@ -165,10 +169,10 @@ def _consultar_tarefa() -> str | None:
 @pytest.fixture(scope="module")
 def servico_ligado() -> Iterator[str]:
     serve = _serve_instalado()
-    servico.ligar(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
+    servico.subir(Sistema.WINDOWS, Path.home(), serve, rodar_comando_do_sistema)
     yield serve
-    # O `desligar` tolera a tarefa já apagada; o serve que sobrar morre aqui.
-    servico.desligar(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
+    # O `remover` tolera a tarefa já apagada; o serve que sobrar morre aqui.
+    servico.remover(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
     _powershell(PS_MATAR_SERVE)
 
 
@@ -216,7 +220,7 @@ def test_plugin_instalar_com_o_servico_ligado(servico_ligado):
 
 
 def test_desligar_apaga_a_tarefa(servico_ligado):
-    servico.desligar(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
+    servico.remover(Sistema.WINDOWS, Path.home(), rodar_comando_do_sistema)
 
     assert _consultar_tarefa() is None
     assert _serve_caiu()

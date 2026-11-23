@@ -667,6 +667,20 @@ def test_atualizar_motor_sem_ref_nao_apaga_a_tag_do_plugin_do_repo(
     assert inst.comandos == []
 
 
+ATIVO_SYSTEMD = "active\n"
+
+
+def _daemon_rodando(monkeypatch: pytest.MonkeyPatch) -> None:
+    servico.regravar(
+        Sistema.LINUX, Path.home(), servico.executavel_servico(), lambda cmd: None
+    )
+    monkeypatch.setattr(
+        servico,
+        "consultar_do_sistema",
+        lambda cmd: ATIVO_SYSTEMD if Acao.IS_ACTIVE in cmd else None,
+    )
+
+
 @pytest.mark.parametrize("ligado", [True, False])
 @pytest.mark.parametrize(
     "argv",
@@ -682,11 +696,9 @@ def test_reinstalar_reinicia_o_servico_ligado(
     inst.remotos[URL_A] = _remoto(head=COMMIT_NOVO)
     inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
     inst.remotos[URL_MOTOR] = _remoto(tags=(TAG_MOTOR, TAG_MOTOR_NOVA))
-    if ligado:
-        arquivo = servico.caminho(Sistema.LINUX, Path.home())
-        arquivo.parent.mkdir(parents=True)
-        arquivo.write_text("")
     monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
+    if ligado:
+        _daemon_rodando(monkeypatch)
     chamados: list[list[str]] = []
     monkeypatch.setattr(agendador, "rodar_comando_do_sistema", chamados.append)
 
@@ -694,7 +706,10 @@ def test_reinstalar_reinicia_o_servico_ligado(
 
     saida = capsys.readouterr().out
     if ligado:
-        assert chamados == [[*SYSTEMCTL, Acao.RESTART, servico.ARQUIVO_SERVICE]]
+        assert chamados == [
+            [*SYSTEMCTL, Acao.DAEMON_RELOAD],
+            [*SYSTEMCTL, Acao.RESTART, servico.ARQUIVO_SERVICE],
+        ]
         assert "reinicie-o" not in saida
     else:
         assert chamados == []
@@ -705,10 +720,8 @@ def test_reinstalar_com_o_reinicio_falhando_avisa_e_mantem_o_sucesso(
     inst: Instalacao, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
     inst.remotos[URL_B_UV] = _remoto(tags=(TAG_B,))
-    arquivo = servico.caminho(Sistema.LINUX, Path.home())
-    arquivo.parent.mkdir(parents=True)
-    arquivo.write_text("")
     monkeypatch.setattr(servico, "sistema_atual", lambda: Sistema.LINUX)
+    _daemon_rodando(monkeypatch)
     monkeypatch.setattr(
         agendador,
         "rodar_comando_do_sistema",

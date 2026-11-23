@@ -188,8 +188,10 @@ def _reinstalar(antes: Registro, cmd: list[str]) -> None:
     _depois_do_uv(antes)
     lembrete = f"Se o `{PACOTE_MOTOR} serve` estiver rodando, reinicie-o."
     try:
-        if not servico.reiniciar_se_ligado(
-            Path.home(), agendador.rodar_comando_do_sistema
+        if not servico.apos_reinstalar(
+            Path.home(),
+            agendador.rodar_comando_do_sistema,
+            servico.consultar_do_sistema,
         ):
             print(lembrete)
     except BackendIndisponivel as e:
