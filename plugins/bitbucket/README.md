@@ -44,7 +44,9 @@ O token precisa de dois escopos, ambos só de leitura:
 | `read:user:bitbucket` | `GET /user`, com que o `monitor-versoes diagnostico` valida a credencial |
 | `read:pullrequest:bitbucket` | listar as PRs mergeadas e os commits de cada uma |
 
-`read:repository:bitbucket` não é necessário: as rotas de PR não o exigem.
+A [referência da API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/)
+não pede `read:repository:bitbucket` nas rotas de PR. Se a varredura responder 403 com o
+diagnóstico verde, falta escopo no token, porque o diagnóstico só testa `GET /user`.
 
 ## Erros
 
